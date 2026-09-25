@@ -76,6 +76,10 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
 
     @app.middleware("http")
     async def _correlate(request: Request, call_next):
+        raw = request.scope.get("raw_path", b"") + b"?" + request.scope.get("query_string", b"")
+        if b"%00" in raw or b"\x00" in raw:
+            error = errors.ApiError("VALIDATION_FAILED", "Parameters must not contain NUL characters.")
+            return JSONResponse(error.body(), status_code=400)
         token = call_id_var.set(request.headers.get("x-call-id"))
         started = time.perf_counter()
         try:

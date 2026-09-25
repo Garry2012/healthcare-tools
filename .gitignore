@@ -15,3 +15,4 @@ build/
 # Research archive: patient transcripts and real hospital data stay out of git.
 docs/archive/*
 !docs/archive/README.md
+.schemathesis/

@@ -53,7 +53,7 @@ def main() -> None:
     migrate = sub.add_parser("migrate", help="alembic upgrade (owner role only)")
     migrate.add_argument("revision", nargs="?", default="head")
     seed = sub.add_parser("seed", help="load synthetic demo data (idempotent)")
-    seed.add_argument("--reset", action="store_true", help="delete bookings/exceptions/board first")
+    seed.add_argument("--reset", action="store_true", help="DESTRUCTIVE: empty every table, then reload")
     sub.add_parser("maintenance", help="purge expired idempotency keys and board entries")
     args = parser.parse_args()
     if args.command == "serve":

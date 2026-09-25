@@ -89,4 +89,5 @@ def install(app: FastAPI) -> None:
         code = {401: "UNAUTHORIZED", 403: "FORBIDDEN", 404: "NOT_FOUND", 405: "VALIDATION_FAILED"}
         mapped = code.get(exc.status_code, "INTERNAL" if exc.status_code >= 500 else "VALIDATION_FAILED")
         error = ApiError(mapped, str(exc.detail) if exc.detail else mapped.replace("_", " ").lower())
-        return JSONResponse(error.body(), status_code=exc.status_code)
+        # Keep Starlette's headers: a 405 must say which methods are allowed.
+        return JSONResponse(error.body(), status_code=exc.status_code, headers=getattr(exc, "headers", None))

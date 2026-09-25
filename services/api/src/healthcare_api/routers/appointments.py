@@ -18,6 +18,7 @@ router = APIRouter(tags=["Appointments"], dependencies=[Depends(require_scopes("
 
 
 async def _staff(session, settings, row) -> s.Appointment:
+    await session.refresh(row)  # server-side updated_at is expired after a write
     ctx = await svc.context_for(session, settings, [row])
     history = await svc.history_of(session, [row.id])
     return svc.staff_view(row, ctx, history[row.id])

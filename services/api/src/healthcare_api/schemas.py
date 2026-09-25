@@ -7,7 +7,7 @@ import datetime as dt
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic.alias_generators import to_camel
 
 ClockTime = Annotated[str, StringConstraints(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
@@ -16,8 +16,28 @@ Language = str
 LocalizedText = dict[str, str]
 
 
+def _reject_nul(value: Any) -> None:
+    if isinstance(value, str):
+        if "\x00" in value:
+            raise ValueError("text must not contain NUL characters")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _reject_nul(key)
+            _reject_nul(item)
+    elif isinstance(value, list | tuple):
+        for item in value:
+            _reject_nul(item)
+
+
 class ApiModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_nul(cls, data: Any) -> Any:
+        # PostgreSQL text cannot hold NUL; reject it as a validation error, not a 500.
+        _reject_nul(data)
+        return data
 
 
 # ---------------------------------------------------------------- enums
@@ -109,7 +129,7 @@ ErrorCode = Literal[
 
 
 class Money(ApiModel):
-    amount: float
+    amount: Annotated[float, Field(ge=0, le=10_000_000)]
     currency: str
     confirmed: bool
 
@@ -147,7 +167,7 @@ class DoctorInput(ApiModel):
     gender: Gender | None = None
     department_ids: Annotated[list[str], Field(min_length=1)]
     qualification: str | None = None
-    years_of_experience: int | None = None
+    years_of_experience: Annotated[int, Field(ge=0, le=80)] | None = None
     languages_spoken: list[Language] | None = None
     fee: Money | None = None
     attendance_type: Attendance | None = None
@@ -180,7 +200,7 @@ class LexiconEntryInput(ApiModel):
 
 class CapacitySpec(ApiModel):
     mode: Literal["FIXED", "PER_HOUR", "DEFAULT"]
-    value: Annotated[int, Field(ge=1)] | None = None
+    value: Annotated[int, Field(ge=1, le=1000)] | None = None
 
 
 class TemplateSession(ApiModel):
@@ -190,10 +210,10 @@ class TemplateSession(ApiModel):
     start: ClockTime
     end: ClockTime
     capacity_model: CapacityModel
-    slot_minutes: Annotated[int, Field(ge=1)] | None = None
+    slot_minutes: Annotated[int, Field(ge=1, le=480)] | None = None
     capacity: CapacitySpec
     walk_in_reserve_percent: Annotated[int, Field(ge=0, le=100)] = 0
-    last_arrival_offset_minutes: Annotated[int, Field(ge=0)] = 15
+    last_arrival_offset_minutes: Annotated[int, Field(ge=0, le=720)] = 15
 
 
 class ScheduleTemplate(ApiModel):
@@ -220,7 +240,7 @@ class ScheduleExceptionInput(ApiModel):
     effect: ExceptionEffect
     new_start: ClockTime | None = None
     new_end: ClockTime | None = None
-    new_capacity: Annotated[int, Field(ge=0)] | None = None
+    new_capacity: Annotated[int, Field(ge=0, le=1000)] | None = None
     reason_category: ReasonCategory | None = None
     note: Annotated[str, StringConstraints(max_length=500)] | None = None
 
@@ -242,10 +262,10 @@ class BoardEntryInput(ApiModel):
     session_id: str
     presence: Presence | None = None
     expected_start: ClockTime | None = None
-    delay_minutes: Annotated[int, Field(ge=0)] | None = None
+    delay_minutes: Annotated[int, Field(ge=0, le=720)] | None = None
     session_ended: bool | None = None
     capacity_state: Literal["OPEN", "FULL"] | None = None
-    tokens_issued: Annotated[int, Field(ge=0)] | None = None
+    tokens_issued: Annotated[int, Field(ge=0, le=100000)] | None = None
     last_arrival_time: ClockTime | None = None
     timing_confirmed: bool | None = None
 
@@ -611,7 +631,7 @@ class CallSummary(ApiModel):
     id: str | None = None
     call_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
     started_at: dt.datetime
-    duration_seconds: Annotated[int, Field(ge=0)] | None = None
+    duration_seconds: Annotated[int, Field(ge=0, le=86400)] | None = None
     language: Language | None = None
     caller_number: str | None = None
     intent: Literal[

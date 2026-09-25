@@ -2,7 +2,7 @@
 
 Directory rows (departments, doctors, templates, lexicon) are upserted every run.
 Date-specific data (bookings, exceptions, board) is created once; a second run leaves it
-alone. `--reset` deletes the date-specific data first so the demo can be re-dated.
+alone. `--reset` empties every table first (destructive) so the demo can be re-dated.
 Bookings and exceptions go through the same services the API uses, so the surgery
 exception really does move its patients to NEEDS_RESCHEDULE and queue notifications.
 """
@@ -29,9 +29,12 @@ from .services.idempotency import run as idempotent
 logger = logging.getLogger(__name__)
 TEMPLATE_FROM = date(2020, 1, 1)
 SEED_ACTOR = "seed"
-DYNAMIC_TABLES = (
+# Children before parents. `--reset` empties all of them: a demo database returns to exactly
+# the seed state, whatever was written through the API in between.
+ALL_TABLES = (
     t.Notification, t.AppointmentHistory, t.Appointment, t.ScheduleException, t.BoardEntry,
-    t.IdempotencyKey, t.CallSummary,
+    t.IdempotencyKey, t.CallSummary, t.LexiconEntry, t.TemplateSession, t.ScheduleTemplate,
+    t.DoctorDepartment, t.Doctor, t.Department,
 )
 
 
@@ -216,7 +219,7 @@ async def run(settings: Settings, *, reset: bool = False) -> dict[str, int]:
     try:
         async with make_sessionmaker(engine)() as session:
             if reset:
-                for table in DYNAMIC_TABLES:
+                for table in ALL_TABLES:
                     await session.execute(delete(table))
                 await session.commit()
             await _upsert_directory(session, settings)

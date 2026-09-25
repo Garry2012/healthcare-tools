@@ -121,7 +121,7 @@ async def agent_search(
         default_days=settings.tenant_search_default_days,
     )
     understood.dates = s.DateRange(from_=resolved.date_from, to=resolved.date_to)
-    understood.day_part = resolved.day_part
+    understood.day_part = s.DayPart(resolved.day_part) if resolved.day_part else None
 
     if res.action == "CLARIFY":
         options = [_option(kind, cid, snap) for kind, cid in res.clarification_options]
