@@ -172,6 +172,11 @@ async def agent_search(
         candidates = [d for d in candidates if snap.doctors[d].gender in (gender, None)]
         if unknown:
             notes.append("Some doctors have no recorded gender and are included as unknown.")
+    spoken = body.preferences.language if body.preferences and body.preferences.language else None
+    if spoken:
+        # A doctor with no recorded languages is kept (unknown), never silently dropped.
+        candidates = [d for d in candidates if not snap.doctors[d].languages_spoken
+                      or spoken in snap.doctors[d].languages_spoken]
 
     # Same-department alternatives are computed from the same load.
     alt_pool: list[str] = []

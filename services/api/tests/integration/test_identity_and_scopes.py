@@ -121,3 +121,22 @@ async def test_board_and_exception_internals_are_redacted_for_the_agent(client, 
     assert "reasonCategory" not in items[0] and "note" not in items[0]
     items = (await client.get("/schedule-exceptions", headers=STAFF)).json()["items"]
     assert items[0]["reasonCategory"] == "SURGERY"
+
+
+async def test_preferences_filter_by_gender_and_language(client, app, app_settings):
+    from healthcare_api.db import tables as t
+
+    async with app.state.sessionmaker() as session:
+        (await session.get(t.Doctor, "doc_arjun_menon")).languages_spoken = ["en", "ml"]
+        await session.commit()
+    body = {"utterance": "general physician", "language": "en", "department": "general physician",
+            "when": {"expression": "next monday"}}
+    everyone = (await client.post("/agent/availability-search", headers=call(), json=body)).json()
+    ladies = (await client.post("/agent/availability-search", headers=call(),
+                                json={**body, "preferences": {"gender": "FEMALE"}})).json()
+    kannada = (await client.post("/agent/availability-search", headers=call(),
+                                 json={**body, "preferences": {"language": "kn"}})).json()
+    names = lambda r: sorted(x["doctor"]["name"] for x in r["results"])  # noqa: E731
+    assert names(everyone) == ["Dr. Arjun Menon", "Dr. Garima"]
+    assert names(ladies) == ["Dr. Garima"]
+    assert names(kannada) == ["Dr. Garima"]
