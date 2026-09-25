@@ -1,0 +1,18 @@
+# Collaboration area and local state
+.context/
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+dist/
+build/
+*.egg-info/
+
+# Research archive: patient transcripts and real hospital data stay out of git.
+docs/archive/*
+!docs/archive/README.md
+.schemathesis/

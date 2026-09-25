@@ -1,0 +1,4 @@
+{
+  "find_availability": "Find which doctors can be seen and when. Give the caller's words for the doctor, department or problem exactly as spoken, and when they want to come. Returns understood meaning, bookable slots with times, fee, and what to do next (offer slots, ask a clarifying question, or transfer).",
+  "manage_appointment": "Book, list, cancel or reschedule an appointment for the caller. Book uses a slotId from find_availability. List/cancel/reschedule are checked against the caller's phone number and the patient's name."
+}
