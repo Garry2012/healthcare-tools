@@ -1,4 +1,4 @@
-"""Booking, lookup, cancel, reschedule — agent and desk paths.
+"""Booking, lookup, cancel and reschedule — the caller-facing lifecycle (agent and desk booking).
 
 Slot uniqueness is enforced by the partial unique index `uq_bookings_live_slot`:
 booking is `INSERT … ON CONFLICT DO NOTHING`, rescheduling is an UPDATE inside a savepoint.
@@ -10,9 +10,9 @@ from __future__ import annotations
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import date, time, timedelta
+from datetime import date, timedelta
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import schemas as s
 from ..config import Settings
 from ..db import tables as t
-from ..domain import ids
+from ..domain import booking_status, ids
 from ..domain.availability import SessionView, SlotView, find_session
 from ..domain.identity import (
     BookingIdentity,
@@ -32,14 +32,9 @@ from ..domain.identity import (
 from ..domain.text import normalise_person_name
 from ..errors import ApiError, not_found, validation
 from . import schedule, views
+from .booking_views import agent_view, context_for, slot_in
 
-LISTED_STATUSES = ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "NEEDS_RESCHEDULE", "ARRIVED")
-CHANGEABLE_STATUSES = ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "NEEDS_RESCHEDULE")
 _LIVE_WHERE = text(t.LIVE_SQL)
-
-
-def new_id(prefix: str) -> str:
-    return f"{prefix}_{secrets.token_hex(6)}"
 
 
 def _code() -> str:
@@ -50,145 +45,8 @@ def _identity(row: t.Booking) -> BookingIdentity:
     return BookingIdentity(row.id, row.customer_name, row.phone, row.caller_number)
 
 
-def _history(session: AsyncSession, booking_id: str, by: str, change: str, **details) -> None:
+def add_history(session: AsyncSession, booking_id: str, by: str, change: str, **details) -> None:
     session.add(t.BookingHistory(booking_id=booking_id, by=by, change=change, details=details))
-
-
-# ---------------------------------------------------------------- views
-
-
-def _slot_from_id(slot_id: str) -> SlotView:
-    ref = ids.parse_slot_id(slot_id)
-    suffix = ref.suffix if ref else ""
-    # Positions are written with two or three digits, TIMED slots as HHMM.
-    if len(suffix) == 4 and int(suffix[:2]) < 24 and int(suffix[2:]) < 60:
-        at = time(int(suffix[:2]), int(suffix[2:]))
-        return SlotView(slot_id=slot_id, kind="TIMED", available=False, start=at)
-    return SlotView(slot_id=slot_id, kind="SEQUENCE", available=False,
-                    position=int(suffix) if suffix.isdigit() else None)
-
-
-def _slot_in(view: SessionView | None, slot_id: str) -> SlotView:
-    if view is not None:
-        for slot in view.slots:
-            if slot.slot_id == slot_id:
-                return slot
-    return _slot_from_id(slot_id)
-
-
-@dataclass(slots=True)
-class Context:
-    """Everything needed to describe bookings without further queries."""
-
-    data: schedule.ScheduleData
-    categories: dict[str, t.Category]
-
-    def session_view(self, row: t.Booking) -> SessionView | None:
-        if row.resource_id not in self.data.resources:
-            return None
-        return find_session(self.data.sessions(row.resource_id, row.date, channel="DESK"), row.session_id)
-
-
-async def context_for(
-    session: AsyncSession, settings: Settings, rows: list[t.Booking]
-) -> Context:
-    now = schedule.now_in(settings)
-    if rows:
-        first, last = min(r.date for r in rows), max(r.date for r in rows)
-        first = min(first, now.date())
-        last = max(last, now.date())
-    else:
-        first = last = now.date()
-    data = await schedule.load(session, settings, now, {r.resource_id for r in rows}, first, last)
-    categories = {d.id: d for d in (await session.scalars(select(t.Category))).all()}
-    return Context(data, categories)
-
-
-def _certainty(row: t.Booking, view: SessionView | None) -> str:
-    if row.timing_confirmed:
-        return "CONFIRMED"
-    return view.timing_certainty if view else "EXPECTED"
-
-
-def agent_view(
-    row: t.Booking, ctx: Context, outcome: str, *, previous_slot: SlotView | None = None,
-    with_today: bool = False,
-) -> s.AgentBooking:
-    view = ctx.session_view(row)
-    resource = ctx.data.resources.get(row.resource_id)
-    cat = ctx.categories.get(row.category_id or "")
-    today = ctx.data.now.date()
-    return s.AgentBooking(
-        outcome=outcome,
-        booking_id=row.id,
-        confirmation_code=row.confirmation_code,
-        status=row.status,
-        customer=s.CustomerSummary(name=row.customer_name, phone=row.phone),
-        resource=s.ResourceSummary(
-            resource_id=row.resource_id,
-            name=resource.name if resource else None,
-            localized_names=(resource.localized_names or None) if resource else None,
-        ),
-        category=views.category(cat) if cat else None,
-        date=row.date,
-        session=s.SessionSummary(
-            session_id=row.session_id,
-            label=view.label if view else None,
-            start=views.clock(view.start) if view else None,
-            end=views.clock(view.end) if view else None,
-        ),
-        slot=views.slot(_slot_in(view, row.slot_id)),
-        previous_slot=views.slot(previous_slot) if previous_slot else None,
-        arrive_by=views.clock(view.arrive_by) if view else None,
-        timing_certainty=_certainty(row, view),
-        price=views.spoken_money(resource) if resource else None,
-        follow_up=row.follow_up,
-        resource_today=(
-            views.session_instance(view, include_slots=False)
-            if with_today and view is not None and row.date == today else None
-        ),
-    )
-
-
-def staff_view(row: t.Booking, ctx: Context, history: list[t.BookingHistory]) -> s.Booking:
-    view = ctx.session_view(row)
-    return s.Booking(
-        id=row.id,
-        confirmation_code=row.confirmation_code,
-        status=row.status,
-        customer=s.BookingCustomer(
-            name=row.customer_name, phone=row.phone, relation_to_caller=row.relation_to_caller
-        ),
-        caller_number=row.caller_number,
-        resource_id=row.resource_id,
-        session_id=row.session_id,
-        slot_id=row.slot_id,
-        date=row.date,
-        slot=views.slot(_slot_in(view, row.slot_id)),
-        arrive_by=views.clock(view.arrive_by) if view else None,
-        timing_certainty=_certainty(row, view),
-        confirmed_start=views.clock(row.confirmed_start),
-        reason_verbatim=row.reason_verbatim,
-        language=row.language,
-        created_via=row.created_via,
-        call_id=row.call_id,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-        history=[s.HistoryItem(at=h.at, by=h.by, change=h.change) for h in history],
-    )
-
-
-async def history_of(session: AsyncSession, booking_ids: list[str]) -> dict[str, list[t.BookingHistory]]:
-    out: dict[str, list[t.BookingHistory]] = {a: [] for a in booking_ids}
-    if booking_ids:
-        rows = await session.scalars(
-            select(t.BookingHistory)
-            .where(t.BookingHistory.booking_id.in_(booking_ids))
-            .order_by(t.BookingHistory.id)
-        )
-        for h in rows:
-            out[h.booking_id].append(h)
-    return out
 
 
 # ---------------------------------------------------------------- slot checks
@@ -266,14 +124,16 @@ async def book(
         raise _slot_unavailable(check.view, "That slot does not exist in the current schedule.")
 
     name_key = normalise_person_name(body.customer.name)
-    existing = await session.scalar(
+    # Names are compared fresh, like every other identity check: a key stored by an older
+    # normaliser must not let the same customer book this session twice.
+    same_number = await session.scalars(
         select(t.Booking).where(
             t.Booking.session_id == check.view.session_id,
-            t.Booking.customer_name_normalized == name_key,
             t.Booking.phone == body.customer.phone,
-            t.Booking.status.in_(t.LIVE_STATUSES),
+            t.Booking.status.in_(booking_status.HOLDS_SLOT),
         )
     )
+    existing = next((row for row in same_number if name_matches(_identity(row), body.customer.name)), None)
     if existing is not None:
         # Only the number the booking belongs to (or the desk) may see it; to anyone else a name
         # and a phone are not proof of identity (CLAUDE.md: identity comes only from headers).
@@ -301,7 +161,7 @@ async def book(
         and check.view.timing_certainty == "NOT_CONFIRMED"
         else "NONE"
     )
-    booking_id = new_id("bkg")
+    booking_id = ids.new_id("bkg")
     inserted = await session.scalar(
         insert(t.Booking)
         .values(
@@ -329,7 +189,7 @@ async def book(
     )
     if inserted is None:
         raise await _recheck(session, settings, body.slot_id, channel)
-    _history(session, booking_id, actor, "BOOKED", slotId=body.slot_id)
+    add_history(session, booking_id, actor, "BOOKED", slotId=body.slot_id)
     await session.flush()
     row = await session.get(t.Booking, booking_id)
     assert row is not None
@@ -369,7 +229,7 @@ async def agent_list(
     if caller_number:
         reachable.append(t.Booking.caller_number == caller_number)
     query = select(t.Booking).where(
-        t.Booking.status.in_(LISTED_STATUSES),
+        t.Booking.status.in_(booking_status.LISTED),
         t.Booking.date >= (date_from or today),
         or_(*reachable),
     )
@@ -420,13 +280,13 @@ async def cancel(
 ) -> tuple[t.Booking, bool]:
     """Returns the booking and whether this request cancelled it."""
     row = await _locate(session, settings, booking_id, body.customer_name, caller_number)
-    if row.status in ("CANCELLED_BY_CUSTOMER", "CANCELLED_BY_PROVIDER"):
+    if row.status in booking_status.CANCELLED:
         return row, False  # already what the caller wants; the status says who cancelled it
-    if row.status not in CHANGEABLE_STATUSES:
+    if row.status not in booking_status.CHANGEABLE:
         raise ApiError("CONFLICT", "This booking can no longer be cancelled.")
     previous = row.status
     row.status = "CANCELLED_BY_CUSTOMER"
-    _history(session, row.id, actor, "CANCELLED_BY_CUSTOMER", previous=previous,
+    add_history(session, row.id, actor, "CANCELLED_BY_CUSTOMER", previous=previous,
              reasonProvided=bool(body.reason_verbatim))
     await session.flush()
     return row, True
@@ -440,7 +300,7 @@ async def _move(
     if new_slot_id == row.slot_id:
         raise ApiError("CONFLICT", "The booking already holds that slot.")
     old_check = await _check_slot(session, settings, row.slot_id, "DESK")
-    previous = _slot_in(old_check.view, row.slot_id)
+    previous = slot_in(old_check.view, row.slot_id)
     check = await _check_slot(session, settings, new_slot_id, channel)
     if check.view is None or check.slot is None or not check.view.bookable or not check.slot.available:
         raise _slot_unavailable(check.view)
@@ -468,7 +328,7 @@ async def _move(
         # The savepoint rolled back; the booking still holds its original slot.
         await session.refresh(row)
         raise await _recheck(session, settings, new_slot_id, channel) from None
-    _history(session, row.id, actor, "RESCHEDULED", fromSlot=old_slot, toSlot=new_slot_id)
+    add_history(session, row.id, actor, "RESCHEDULED", fromSlot=old_slot, toSlot=new_slot_id)
     await session.flush()
     return previous
 
@@ -486,68 +346,8 @@ async def reschedule(
     for resource_id in sorted({r for r in (current, target.session.resource_id) if r}):
         await schedule.lock_resource(session, resource_id, exclusive=False)
     row = await _locate(session, settings, booking_id, body.customer_name, caller_number)
-    if row.status not in CHANGEABLE_STATUSES:
+    if row.status not in booking_status.CHANGEABLE:
         raise ApiError("CONFLICT", "This booking can no longer be moved.")
     previous = await _move(session, settings, row, body.new_slot_id, channel="AGENT", actor=actor,
                            status="RESCHEDULED")
     return row, previous
-
-
-# ---------------------------------------------------------------- staff
-
-
-async def search(
-    session: AsyncSession, *, resource_id: str | None, session_id: str | None, on: date | None,
-    phone: str | None, status: str | None, limit: int, offset: int,
-) -> tuple[list[t.Booking], int]:
-    query = select(t.Booking)
-    if resource_id:
-        query = query.where(t.Booking.resource_id == resource_id)
-    if session_id:
-        query = query.where(t.Booking.session_id == session_id)
-    if on:
-        query = query.where(t.Booking.date == on)
-    if phone:
-        query = query.where(t.Booking.phone == phone)
-    if status:
-        query = query.where(t.Booking.status == status)
-    total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
-    rows = (
-        await session.scalars(
-            query.order_by(t.Booking.date, t.Booking.slot_id).limit(limit).offset(offset)
-        )
-    ).all()
-    return list(rows), total
-
-
-async def get(session: AsyncSession, booking_id: str, *, lock: bool = False) -> t.Booking:
-    row = await session.get(t.Booking, booking_id, with_for_update=lock)
-    if row is None:
-        raise not_found("No such booking.")
-    return row
-
-
-_STAFF_TRANSITIONS = {
-    "ARRIVED": ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED"),
-    "COMPLETED": ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "ARRIVED"),
-    "NO_SHOW": ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED"),
-    "CANCELLED_BY_PROVIDER": CHANGEABLE_STATUSES,
-}
-
-
-async def set_status(
-    session: AsyncSession, settings: Settings, booking_id: str, body: s.StatusRequest, actor: str
-) -> t.Booking:
-    row = await get(session, booking_id, lock=True)
-    if row.status not in _STAFF_TRANSITIONS[body.status]:
-        raise ApiError("CONFLICT", f"Cannot move a booking from {row.status} to {body.status}.")
-    today = schedule.now_in(settings).date()
-    if body.status == "ARRIVED" and row.date != today:
-        raise ApiError("CONFLICT", "A customer can only arrive on the day of the booking.")
-    if body.status in ("COMPLETED", "NO_SHOW") and row.date > today:
-        raise ApiError("CONFLICT", f"A booking on {row.date} cannot be {body.status} yet.")
-    previous = row.status
-    row.status = body.status
-    _history(session, row.id, actor, body.status, previous=previous, note=body.note)
-    await session.flush()
-    return row

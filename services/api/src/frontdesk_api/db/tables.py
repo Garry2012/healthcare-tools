@@ -27,14 +27,14 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from ..domain import booking_status
+
 
 def _in(column: str, values: tuple[str, ...]) -> str:
     return f"{column} IN ({', '.join(repr(v) for v in values)})"
 
 
-# Statuses in which a booking holds its slot (openapi getAvailability, step 4).
-LIVE_STATUSES = ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "ARRIVED")
-LIVE_SQL = _in("status", LIVE_STATUSES)
+LIVE_SQL = _in("status", booking_status.HOLDS_SLOT)
 
 
 class Base(DeclarativeBase):
@@ -229,16 +229,10 @@ class BoardEntry(Base):
     updated_by: Mapped[str] = mapped_column(Text, nullable=False)
 
 
-BOOKING_STATUSES = (
-    "BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "NEEDS_RESCHEDULE", "ARRIVED", "COMPLETED",
-    "NO_SHOW", "CANCELLED_BY_CUSTOMER", "CANCELLED_BY_PROVIDER",
-)
-
-
 class Booking(_Stamped, Base):
     __tablename__ = "bookings"
     __table_args__ = (
-        CheckConstraint(_in("status", BOOKING_STATUSES), name="status"),
+        CheckConstraint(_in("status", booking_status.ALL), name="status"),
         CheckConstraint(_in("created_via", ("AGENT", "DESK", "WEB")), name="created_via"),
         CheckConstraint(_in("follow_up", ("NONE", "DESK_WILL_CONFIRM_TIMING")), name="follow_up"),
         # One live booking per slot: uniqueness is a constraint, not application logic.

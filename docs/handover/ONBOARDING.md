@@ -1,7 +1,8 @@
 # Onboarding a provider (hospital or hotel)
 
 Each provider is its own deployment of the same two images and has its own database
-(docs/architecture/TARGET.md A1). Onboarding is configuration and data; it needs no code change.
+(docs/architecture/TARGET.md A1). Onboarding is configuration and data; it needs no code change,
+except a language module the first time a provider needs a language not yet supported (step 1).
 Rough effort: half a day of setup, plus the provider's time to sign off data and policy.
 
 ## 1. Configure (non-secret, committed)
@@ -21,6 +22,13 @@ docker run --rm --env-file deploy/providers/<provider>.env frontdesk-api frontde
 
 It exits non-zero on any problem: an unknown timezone, a pack reference to something that
 doesn't exist, transfer destinations missing the escalation target, or inverted thresholds.
+
+**A language not yet supported** (e.g. Tamil for a Chennai hospital): add
+`services/api/src/frontdesk_api/locales/ta.py` modelled on `kn.py` (today/tomorrow, weekdays,
+months, titles, filler and availability words, in native script and the romanised forms
+speech-to-text produces), register it in `LOCALES`, then add the pack's lexicon terms and
+knowledge answers in that language. `tests/unit/test_locales.py` checks each word is filed
+under the right script. No matching logic changes.
 
 ## 2. Provision (secrets, in the secret store)
 

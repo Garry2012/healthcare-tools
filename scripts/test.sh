@@ -39,7 +39,7 @@ fi
 [[ -n "$USE_DOCKER" ]] && "${COMPOSE[@]}" --profile test up -d --wait postgres-test
 
 echo "== api: lint, unit, contract (hermetic), integration (postgres)"
-(cd services/api && uv sync --frozen -q && uv run ruff check . \
+(cd services/api && uv sync --frozen -q && uv run ruff check . && uv run lint-imports \
   && DATABASE_URL="$TEST_DATABASE_OWNER_URL" uv run frontdesk-api migrate \
   && uv run pytest tests/unit tests/contract/test_openapi_matches_spec.py tests/integration \
        -q -p no:cacheprovider)

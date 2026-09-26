@@ -83,7 +83,8 @@ async def agent_search(
                      for h in decision.options],
         )
     return s.KnowledgeSearchResponse(
-        outcome="NO_ANSWER", as_of=now, routing=s.KnowledgeRouting(action="TRANSFER_DESK", destination="desk"),
+        outcome="NO_ANSWER", as_of=now,
+        routing=s.KnowledgeRouting(action="TRANSFER_DESK", destination=settings.pack.desk_destination),
     )
 
 

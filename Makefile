@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 
-.PHONY: up down migrate seed seed-reset test demo lint logs build
+.PHONY: up down migrate seed seed-reset test test-fast demo lint logs build
 
 up: ## Start postgres, run migrations, start api and mcp (dev profile)
 	$(COMPOSE) --profile dev up -d --build --wait api mcp
@@ -19,14 +19,18 @@ seed: ## Load synthetic demo data (idempotent)
 seed-reset: ## DESTRUCTIVE: empty every table in the dev database and reload the seed
 	$(COMPOSE) --profile dev exec api frontdesk-api seed --reset
 
-test: ## Unit + integration + contract + MCP suites against a throwaway postgres
+test: ## Everything (L4): unit + integration + contract + MCP e2e + schemathesis, on a throwaway postgres
 	./scripts/test.sh
+
+test-fast: ## Seconds, no database (L1): lint, architecture contracts, API unit + spec, MCP unit
+	cd services/api && uv run ruff check . && uv run lint-imports && uv run pytest tests/unit tests/contract/test_openapi_matches_spec.py -q
+	cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e"
 
 demo: ## Kannada search → book → list → reschedule → cancel against the dev stack
 	./scripts/demo.sh
 
-lint: ## ruff on both services
-	cd services/api && uv run ruff check .
+lint: ## ruff on both services, and the API's architecture contracts
+	cd services/api && uv run ruff check . && uv run lint-imports
 	cd services/mcp && uv run ruff check . ../../deploy
 
 build: ## Build both images

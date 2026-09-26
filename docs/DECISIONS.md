@@ -1,7 +1,9 @@
 # Decisions
 
-Architecture is fixed by the build brief (`docs/handover/PLAN.md`). This file records the
-choices made inside it and every library adopted.
+The MVP's implementation choices and every library adopted (D-series). Platform decisions
+made since (tenancy, domain packs, knowledge base, caching, architecture checks, languages)
+are the A-series in `docs/architecture/TARGET.md`. Names below are the current,
+domain-neutral ones.
 
 | # | Decision | Why | Alternatives considered |
 |---|---|---|---|

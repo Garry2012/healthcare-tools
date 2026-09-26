@@ -7,7 +7,7 @@ import os
 import subprocess
 import sys
 from collections.abc import AsyncIterator
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import httpx
@@ -53,6 +53,22 @@ def migrated() -> None:
 @pytest.fixture(scope="session")
 def app_settings(make_settings):
     return make_settings(database_url=APP_URL, database_pool_size=10)
+
+
+# Every integration test runs at the same instant, so no result depends on the day or hour the
+# suite runs (a session that has already ended at 22:00, a date rolling over at midnight).
+# A Wednesday morning: sessions ahead today, and every weekday reachable within the week.
+FIXED_NOW = (date(2026, 9, 23), time(10, 0))
+
+
+@pytest.fixture(autouse=True)
+def fixed_clock(monkeypatch, app_settings) -> datetime:
+    """TEST_NOW=2026-09-27T21:30 reruns the suite at another moment (e.g. to reproduce a bug)."""
+    override = os.environ.get("TEST_NOW")
+    now = (datetime.fromisoformat(override).replace(tzinfo=app_settings.tz) if override
+           else datetime.combine(*FIXED_NOW, app_settings.tz))
+    monkeypatch.setattr(schedule, "now_in", lambda settings: now)
+    return now
 
 
 @pytest.fixture

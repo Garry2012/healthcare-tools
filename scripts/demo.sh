@@ -3,10 +3,13 @@
 # "Dr Garima tomorrow evening", books, looks the booking up, moves it, and cancels it.
 # Uses the agent token from AUTH_TOKENS_JSON. Needs curl and jq.
 set -euo pipefail
+# Against a deployed API (e.g. Azure): API_URL=https://<api-host>/api/v1 AGENT_TOKEN=<agent token> ./scripts/demo.sh
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-set -a; . "$ROOT/.env"; set +a
-API="http://127.0.0.1:${API_HOST_PORT:-8000}/api/v1"
-AGENT="$(jq -r 'to_entries | map(select(.value | index("agent"))) | .[0].key' <<<"$AUTH_TOKENS_JSON")"
+if [[ -z "${API_URL:-}" || -z "${AGENT_TOKEN:-}" ]]; then
+  set -a; . "$ROOT/.env"; set +a
+fi
+API="${API_URL:-http://127.0.0.1:${API_HOST_PORT:-8000}/api/v1}"
+AGENT="${AGENT_TOKEN:-$(jq -r 'to_entries | map(select(.value | index("agent"))) | .[0].key' <<<"$AUTH_TOKENS_JSON")}"
 CALL="demo-$(date +%s)"
 CALLER="+919000000777"
 CUSTOMER='{"name":"Demo Customer","phone":"9000000777","relationToCaller":"SELF"}'

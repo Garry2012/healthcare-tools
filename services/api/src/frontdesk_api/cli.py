@@ -25,26 +25,26 @@ def _migrate(revision: str) -> None:
 
 
 def _seed(reset: bool) -> None:
-    from .seed import LegacyDemoData, run
+    from .seed import SeedRefused, run
 
     try:
         asyncio.run(run(get_settings(), reset=reset))
-    except LegacyDemoData as exc:
+    except SeedRefused as exc:
         raise SystemExit(str(exc)) from None
 
 
 def _maintenance() -> None:
     from .db.session import make_engine, make_sessionmaker
-    from .services import idempotency, schedule, scheduling
+    from .services import board, idempotency, schedule
 
     async def work() -> None:
         settings = get_settings()
         engine = make_engine(settings)
         async with make_sessionmaker(engine)() as session:
             keys = await idempotency.purge_expired(session)
-            board = await scheduling.purge_board_before(session, schedule.now_in(settings).date())
+            entries = await board.purge_board_before(session, schedule.now_in(settings).date())
         await engine.dispose()
-        print(f"purged {keys} idempotency keys, {board} expired board entries")
+        print(f"purged {keys} idempotency keys, {entries} expired board entries")
 
     asyncio.run(work())
 
@@ -70,7 +70,8 @@ def check_config() -> int:
         if escalation not in destinations:
             problems.append(f"transfer destinations lack the pack's escalation {escalation!r}")
         # Every destination the running system can route to must exist for this provider.
-        needed = {"desk"} | {cid for ctype, cid, _, _ in settings.pack.lexicon if ctype == "SERVICE_TRANSFER"}
+        needed = {settings.pack.desk_destination}
+        needed |= {cid for ctype, cid, _, _ in settings.pack.lexicon if ctype == "SERVICE_TRANSFER"}
         needed |= {k.destination for k in settings.pack.knowledge if k.destination}
         problems += [f"transfer destinations lack {d!r}" for d in sorted(needed - set(destinations))]
         if settings.tenant_knowledge_clarify_threshold > settings.tenant_knowledge_answer_threshold:

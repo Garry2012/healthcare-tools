@@ -1,5 +1,21 @@
 # Front-Desk Voice Agent — Implementation Guide
 
+> **Status: historical design rationale (v1 names).** `openapi.yaml` in this folder is the
+> normative contract. Since v2 the API and tools use domain-neutral names; read this guide
+> with this mapping:
+>
+> | v1 (here) | current |
+> |---|---|
+> | doctor, `doctorId`, `doc_*` ids | resource, `resourceId`, `res_*` ids |
+> | department | category |
+> | appointment, `/agent/appointments` | booking, `/agent/bookings` |
+> | patient, `patient{…}`, `patientName` | customer, `customer{…}`, `customerName` |
+> | `manage_appointment` | `manage_booking` (+ `search_knowledge`, a third tool) |
+> | `NO_OPD` | `NOT_OFFERED` |
+>
+> Part 1's reasoning (why the agent never computes dates, why identity comes from headers,
+> why failures are never "none available") still holds.
+
 Companion to `openapi.yaml` in this folder. Two halves: **Part 1** is for anyone
 (hospital, product, voice team). **Part 2** is for the people building it (backend,
 MCP, LiveKit agent). Read Part 1 even if you are an engineer; it is where the design

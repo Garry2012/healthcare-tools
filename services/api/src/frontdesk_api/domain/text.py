@@ -15,6 +15,8 @@ from functools import lru_cache
 from indic_transliteration import sanscript
 from metaphone import doublemetaphone
 
+from .. import locales
+
 # Unicode blocks -> sanscript scheme. Scripts not listed pass through unchanged.
 _SCRIPTS: tuple[tuple[int, int, str], ...] = (
     (0x0900, 0x097F, sanscript.DEVANAGARI),
@@ -39,36 +41,17 @@ _IAST_FIXUPS: tuple[tuple[str, str], ...] = (
 _ANUSVARA = re.compile(r"ṃ(?=[pbm])")
 # \w misses Indic vowel signs and viramas (category M), which would split words apart.
 _WORD = re.compile(r"(?:[^\W_]|[\u0300-\u036f\u0900-\u0dff\u200c\u200d])+")
+# English possessive: "children's doctor" means "children doctor"; "D'Souza" is untouched.
+_POSSESSIVE = re.compile(r"(?<=\w)['’]s\b")
 
 # Titles callers put in front of a resource's name, in the scripts we see.
-HONORIFICS = frozenset(
-    {
-        "dr", "doctor", "docter", "doctr", "daktar", "dakter", "sir", "madam", "mam", "ji",
-        "ಡಾ", "ಡಾಕ್ಟರ್", "ಡಾಕ್ಟ್ರು", "ಡಾಕ್ಟರ", "ಸರ್", "ಮೇಡಂ",
-        "डॉ", "डा", "डॉक्टर", "डाक्टर", "सर", "जी",
-    }
-)
+HONORIFICS = frozenset(locales.union("titles"))
 
 
 # Words that carry no topic in the languages callers use (romanised forms included, since
 # Kannada and Devanagari are transliterated before this runs). Question words (when/where,
 # kab/kahan, yavaga/elli) are kept: they separate "opening hours" from "location".
-STOPWORDS = frozenset(
-    {
-        # en
-        "a", "an", "the", "is", "are", "am", "was", "be", "do", "does", "did", "can", "could", "will",
-        "would", "i", "me", "my", "you", "your", "we", "our", "it", "its", "to", "of", "in", "on", "at",
-        "for", "and", "or", "there", "what", "which", "how", "please", "tell", "want",
-        "know", "any", "this", "that", "with", "from", "about", "have", "has", "get", "sir", "madam",
-        "near", "nearby", "here", "also", "just", "some", "like",
-        # hi (romanised)
-        "kya", "hai", "hain", "ka", "ki", "ke", "ko", "se", "mein", "aur",
-        "kaise", "koi", "mujhe", "hum", "aap", "ji", "bhi", "tha", "ho",
-        # kn (romanised)
-        "ide", "idheya", "ideya", "yenu", "enu", "hege", "nanage", "nimma",
-        "beku", "illa", "hauda", "swalpa",
-    }
-)
+STOPWORDS = frozenset(locales.union("stopwords"))
 
 
 def _script_of(ch: str) -> str | None:
@@ -91,7 +74,8 @@ def _romanise_word(word: str, scheme: str) -> str:
         last = word[-1]
         if unicodedata.category(last) == "Lo" and not ("ऄ" <= last <= "औ"):
             latin = latin[:-1]
-    latin = _ANUSVARA.sub("m", latin).replace("ṃ", "n")
+    # Chandrabindu (ँ) comes out as "~"; it is a nasal like anusvara (ं), so "पाँच" = "पांच".
+    latin = _ANUSVARA.sub("m", latin.replace("~", "ṃ")).replace("ṃ", "n")
     for src, dst in _IAST_FIXUPS:
         latin = latin.replace(src, dst)
     return latin
@@ -116,13 +100,13 @@ def tokens(text: str) -> list[str]:
 @lru_cache(maxsize=16384)
 def native_form(text: str) -> str:
     """NFC + lower-case + punctuation removed, script preserved."""
-    return " ".join(tokens(unicodedata.normalize("NFC", text).casefold()))
+    return " ".join(tokens(_POSSESSIVE.sub("", unicodedata.normalize("NFC", text).casefold())))
 
 
 @lru_cache(maxsize=16384)
 def normalise(text: str, *, strip_honorifics: bool = False) -> str:
     """NFC → lower → (honorifics) → transliterate → strip accents → single spaces."""
-    words = tokens(unicodedata.normalize("NFC", text).casefold())
+    words = tokens(_POSSESSIVE.sub("", unicodedata.normalize("NFC", text).casefold()))
     if strip_honorifics:
         words = [w for w in words if w not in HONORIFICS]
     latin = _strip_marks(transliterate(" ".join(words)))

@@ -253,3 +253,20 @@ async def test_cancelling_twice_says_it_is_cancelled_not_that_it_cannot_be(clien
     r = await client.post(f"/agent/bookings/{other}/cancel", headers=call(key="c2-c"), json=body)
     assert r.status_code == 200 and r.json()["outcome"] == "ALREADY_CANCELLED"
     assert r.json()["status"] == "CANCELLED_BY_PROVIDER"
+
+
+async def test_duplicate_check_does_not_trust_a_stale_stored_name_key(client, app, app_settings):
+    """A booking stored before a normaliser fix keeps its old key ('चाँदनी' was 'cha dani'); the
+    same patient booking again in that session must still be recognised, not double-booked."""
+    monday = next_weekday(0, app_settings)
+    first = await client.post("/agent/bookings", headers=call(key="stale-1"),
+                              json=book_body(garima_slot(monday, 1), name="चाँदनी राव"))
+    assert first.status_code == 201
+    async with app.state.sessionmaker() as session:
+        row = await session.get(t.Booking, first.json()["bookingId"])
+        row.customer_name_normalized = "cha dani rav"  # what the old normaliser stored
+        await session.commit()
+    again = await client.post("/agent/bookings", headers=call(call_id="call-2", key="stale-2"),
+                              json=book_body(garima_slot(monday, 2), name="चाँदनी राव"))
+    assert again.status_code == 200 and again.json()["outcome"] == "ALREADY_BOOKED"
+    assert again.json()["bookingId"] == first.json()["bookingId"]

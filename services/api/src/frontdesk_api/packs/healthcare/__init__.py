@@ -8,13 +8,9 @@ weekly templates; everything date-specific (bookings, exceptions, the board) is 
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
 
-from .. import ALL_DAYS, CategorySeed, CustomerSeed, Pack, ResourceSeed, SessionSeed
+from .. import ALL_DAYS, CategorySeed, CustomerSeed, Pack, ResourceSeed, ScenarioBuilder, SessionSeed
 from .knowledge import KNOWLEDGE
-
-if TYPE_CHECKING:
-    from ...seed import Seeder
 
 LANGUAGES = ("en", "kn", "hi")
 
@@ -150,6 +146,69 @@ LEXICON: tuple[tuple[str, str, str, str], ...] = (
     ("NEED_ROUTE", "cat_ortho", "ಮೊಣಕಾಲು ನೋವು", "kn"),
     ("NEED_ROUTE", "cat_ortho", "घुटने का दर्द", "hi"),
     ("NEED_ROUTE", "cat_derm", "skin rash", "en"),
+    # everyday complaints, as callers (and speech-to-text) say them in all three languages
+    ("NEED_ROUTE", "cat_genmed", "stomach pain", "en"),
+    ("NEED_ROUTE", "cat_genmed", "stomach ache", "en"),
+    ("NEED_ROUTE", "cat_genmed", "tummy pain", "en"),
+    ("NEED_ROUTE", "cat_genmed", "pet mein dard", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "pet dard", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "पेट में दर्द", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "पेट दर्द", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "ಹೊಟ್ಟೆ ನೋವು", "kn"),
+    ("NEED_ROUTE", "cat_genmed", "hotte novu", "kn"),
+    ("NEED_ROUTE", "cat_genmed", "cough", "en"),
+    ("NEED_ROUTE", "cat_genmed", "common cold", "en"),
+    ("NEED_ROUTE", "cat_genmed", "runny nose", "en"),
+    ("NEED_ROUTE", "cat_genmed", "khansi", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "zukam", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "jukam", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "खांसी", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "जुकाम", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "ಕೆಮ್ಮು", "kn"),
+    ("NEED_ROUTE", "cat_genmed", "ನೆಗಡಿ", "kn"),
+    ("NEED_ROUTE", "cat_genmed", "kemmu", "kn"),
+    ("NEED_ROUTE", "cat_genmed", "headache", "en"),
+    ("NEED_ROUTE", "cat_genmed", "sar dard", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "sir dard", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "सिर दर्द", "hi"),
+    ("NEED_ROUTE", "cat_genmed", "ತಲೆ ನೋವು", "kn"),
+    ("NEED_ROUTE", "cat_genmed", "tale novu", "kn"),
+    ("NEED_ROUTE", "cat_ortho", "back pain", "en"),
+    ("NEED_ROUTE", "cat_ortho", "kamar dard", "hi"),
+    ("NEED_ROUTE", "cat_ortho", "कमर दर्द", "hi"),
+    ("NEED_ROUTE", "cat_ortho", "ಬೆನ್ನು ನೋವು", "kn"),
+    ("NEED_ROUTE", "cat_ortho", "bennu novu", "kn"),
+    # who the patient is changes the department: with a symptom, the caller is asked which
+    ("NEED_ROUTE", "cat_obg", "pregnant", "en"),
+    ("NEED_ROUTE", "cat_obg", "pregnancy", "en"),
+    ("NEED_ROUTE", "cat_obg", "garbhvati", "hi"),
+    ("NEED_ROUTE", "cat_obg", "गर्भवती", "hi"),
+    ("NEED_ROUTE", "cat_obg", "ಗರ್ಭಿಣಿ", "kn"),
+    ("NEED_ROUTE", "cat_paed", "child", "en"),
+    ("NEED_ROUTE", "cat_paed", "baby", "en"),
+    ("NEED_ROUTE", "cat_paed", "bachcha", "hi"),
+    ("NEED_ROUTE", "cat_paed", "बच्चा", "hi"),
+    ("NEED_ROUTE", "cat_paed", "ಮಗು", "kn"),
+    # severity or a fall: a person triages (transfer to the desk), never a routine slot
+    ("SERVICE_TRANSFER", "desk", "severe", "en"),
+    ("SERVICE_TRANSFER", "desk", "unbearable", "en"),
+    ("SERVICE_TRANSFER", "desk", "after a fall", "en"),
+    ("SERVICE_TRANSFER", "desk", "had a fall", "en"),
+    ("SERVICE_TRANSFER", "desk", "fell down", "en"),
+    ("SERVICE_TRANSFER", "desk", "accident", "en"),
+    ("SERVICE_TRANSFER", "desk", "tez dard", "hi"),
+    ("SERVICE_TRANSFER", "desk", "tez sir dard", "hi"),
+    ("SERVICE_TRANSFER", "desk", "bahut dard", "hi"),
+    ("SERVICE_TRANSFER", "desk", "gir gaya", "hi"),
+    ("SERVICE_TRANSFER", "desk", "gir gayi", "hi"),
+    ("SERVICE_TRANSFER", "desk", "sir dard aur ulti", "hi"),
+    ("SERVICE_TRANSFER", "desk", "sir mein chot", "hi"),
+    ("SERVICE_TRANSFER", "desk", "सिर में चोट", "hi"),
+    ("SERVICE_TRANSFER", "desk", "सिर दर्द और उल्टी", "hi"),
+    ("SERVICE_TRANSFER", "desk", "ತುಂಬಾ ನೋವು", "kn"),
+    ("SERVICE_TRANSFER", "desk", "ತುಂಬಾ ತಲೆ ನೋವು", "kn"),
+    ("SERVICE_TRANSFER", "desk", "ನೋವು ಜಾಸ್ತಿ", "kn"),
+    ("SERVICE_TRANSFER", "desk", "ಬಿದ್ದು", "kn"),
     # red flags: checked before anything else, in three languages
     ("RED_FLAG", "chest_pain", "chest pain", "en"),
     ("RED_FLAG", "chest_pain", "ಎದೆ ನೋವು", "kn"),
@@ -186,6 +245,36 @@ LEXICON: tuple[tuple[str, str, str, str], ...] = (
     ("RED_FLAG", "fits", "jhatke", "hi"),
     ("RED_FLAG", "fits", "झटके", "hi"),
     ("RED_FLAG", "fits", "ಸೆಳವು", "kn"),
+    # danger signs that can come with an everyday complaint (checked before any symptom route)
+    ("RED_FLAG", "neuro", "worst headache", "en"),
+    ("RED_FLAG", "neuro", "sudden headache", "en"),
+    ("RED_FLAG", "neuro", "headache vomiting", "en"),
+    ("RED_FLAG", "neuro", "neck stiffness", "en"),
+    ("RED_FLAG", "neuro", "stiff neck", "en"),
+    ("RED_FLAG", "neuro", "head injury", "en"),
+    ("RED_FLAG", "neuro", "head fall", "en"),
+    ("RED_FLAG", "neuro", "face drooping", "en"),
+    ("RED_FLAG", "neuro", "slurred speech", "en"),
+    ("RED_FLAG", "neuro", "cannot speak properly", "en"),
+    ("RED_FLAG", "neuro", "cannot move legs", "en"),
+    ("RED_FLAG", "neuro", "numbness legs", "en"),
+    ("RED_FLAG", "neuro", "ತಲೆ ನೋವು ವಾಂತಿ", "kn"),
+    ("RED_FLAG", "neuro", "ತಲೆಗೆ ಪೆಟ್ಟು", "kn"),
+    ("RED_FLAG", "bleeding", "vomiting blood", "en"),
+    ("RED_FLAG", "bleeding", "blood vomit", "en"),
+    ("RED_FLAG", "bleeding", "blood stool", "en"),
+    ("RED_FLAG", "bleeding", "cough blood", "en"),
+    ("RED_FLAG", "bleeding", "khoon ulti", "hi"),
+    ("RED_FLAG", "bleeding", "खून उल्टी", "hi"),
+    ("RED_FLAG", "bleeding", "khansi khoon", "hi"),
+    ("RED_FLAG", "bleeding", "खांसी खून", "hi"),
+    ("RED_FLAG", "bleeding", "ರಕ್ತ ವಾಂತಿ", "kn"),
+    ("RED_FLAG", "bleeding", "ಕೆಮ್ಮು ರಕ್ತ", "kn"),
+    ("RED_FLAG", "breathlessness", "breathing problem", "en"),
+    ("RED_FLAG", "breathlessness", "breathing fast", "en"),
+    ("RED_FLAG", "chest_pain", "chest pressure", "en"),
+    ("RED_FLAG", "chest_pain", "cold sweat", "en"),
+    ("RED_FLAG", "unconscious", "fainting", "en"),
     # day parts
     ("DAY_PART", "MORNING", "morning", "en"),
     ("DAY_PART", "AFTERNOON", "afternoon", "en"),
@@ -246,7 +335,7 @@ POOL = tuple(
 )
 
 
-async def scenario(seed: Seeder) -> dict[str, int]:
+async def scenario(seed: ScenarioBuilder) -> dict[str, int]:
     """Dated demo data: every case in docs/handover/SEED.md, relative to the run date."""
     today = seed.today
     tomorrow = today + timedelta(days=1)
@@ -308,6 +397,7 @@ async def scenario(seed: Seeder) -> dict[str, int]:
 PACK = Pack(
     name="healthcare",
     escalation_destination="emergency",
+    desk_destination="desk",
     transfer_destinations={"emergency": "Emergency", "desk": "Front desk", "lab": "Laboratory",
                            "pharmacy": "Pharmacy", "insurance": "Insurance desk"},
     categories=CATEGORIES,

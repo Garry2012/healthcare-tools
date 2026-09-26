@@ -23,6 +23,9 @@ from .domain.resolver import ResolverThresholds
 DAY_PART_DEFAULT = '{"MORNING":["06:00","12:00"],"AFTERNOON":["12:00","16:00"],"EVENING":["16:00","23:00"]}'
 
 
+_SSLMODE = re.compile(r"([?&])sslmode=")
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore", frozen=True)
 
@@ -61,6 +64,8 @@ class Settings(BaseSettings):
     tenant_last_arrival_offset_minutes: int = Field(default=15, ge=0)
     tenant_walk_in_reserve_percent: int = Field(default=0, ge=0, le=100)
     tenant_sequence_window_minutes: int = Field(default=20, ge=1)
+    # A shorter queue only moves someone to a position whose window ends at least this far ahead.
+    tenant_move_lead_minutes: int = Field(default=15, ge=0, le=240)
     tenant_default_slot_minutes: int = Field(default=15, ge=1)
     tenant_search_default_days: int = Field(default=7, ge=1, le=31)
     # The agent never computes more than this many days in one search (voice latency, payload).
@@ -141,6 +146,9 @@ class Settings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         url = self.database_url.get_secret_value()
+        # Managed PostgreSQL (Azure, Supabase) hands out libpq URLs with `sslmode=`; asyncpg
+        # takes the same values as `ssl=` and fails on `sslmode`.
+        url = _SSLMODE.sub(r"\1ssl=", url)
         for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
             if url.startswith(prefix):
                 return "postgresql+asyncpg://" + url[len(prefix):]
