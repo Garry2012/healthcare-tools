@@ -15,6 +15,8 @@ from functools import lru_cache
 from indic_transliteration import sanscript
 from metaphone import doublemetaphone
 
+from .. import locales
+
 # Unicode blocks -> sanscript scheme. Scripts not listed pass through unchanged.
 _SCRIPTS: tuple[tuple[int, int, str], ...] = (
     (0x0900, 0x097F, sanscript.DEVANAGARI),
@@ -41,34 +43,13 @@ _ANUSVARA = re.compile(r"ṃ(?=[pbm])")
 _WORD = re.compile(r"(?:[^\W_]|[\u0300-\u036f\u0900-\u0dff\u200c\u200d])+")
 
 # Titles callers put in front of a resource's name, in the scripts we see.
-HONORIFICS = frozenset(
-    {
-        "dr", "doctor", "docter", "doctr", "daktar", "dakter", "sir", "madam", "mam", "ji",
-        "ಡಾ", "ಡಾಕ್ಟರ್", "ಡಾಕ್ಟ್ರು", "ಡಾಕ್ಟರ", "ಸರ್", "ಮೇಡಂ",
-        "डॉ", "डा", "डॉक्टर", "डाक्टर", "सर", "जी",
-    }
-)
+HONORIFICS = frozenset(locales.union("titles"))
 
 
 # Words that carry no topic in the languages callers use (romanised forms included, since
 # Kannada and Devanagari are transliterated before this runs). Question words (when/where,
 # kab/kahan, yavaga/elli) are kept: they separate "opening hours" from "location".
-STOPWORDS = frozenset(
-    {
-        # en
-        "a", "an", "the", "is", "are", "am", "was", "be", "do", "does", "did", "can", "could", "will",
-        "would", "i", "me", "my", "you", "your", "we", "our", "it", "its", "to", "of", "in", "on", "at",
-        "for", "and", "or", "there", "what", "which", "how", "please", "tell", "want",
-        "know", "any", "this", "that", "with", "from", "about", "have", "has", "get", "sir", "madam",
-        "near", "nearby", "here", "also", "just", "some", "like",
-        # hi (romanised)
-        "kya", "hai", "hain", "ka", "ki", "ke", "ko", "se", "mein", "aur",
-        "kaise", "koi", "mujhe", "hum", "aap", "ji", "bhi", "tha", "ho",
-        # kn (romanised)
-        "ide", "idheya", "ideya", "yenu", "enu", "hege", "nanage", "nimma",
-        "beku", "illa", "hauda", "swalpa",
-    }
-)
+STOPWORDS = frozenset(locales.union("stopwords"))
 
 
 def _script_of(ch: str) -> str | None:

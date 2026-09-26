@@ -2,7 +2,7 @@
 
 The model never does calendar arithmetic; it forwards what the caller said. Day-part
 words ("evening", "ಸಂಜೆ", "shaam") come from the tenant's DAY_PART lexicon; the words
-for today/tomorrow/weekdays are language data kept here so a new tenant gets them free.
+for today/tomorrow/weekdays/months are language data in `frontdesk_api.locales`.
 
 Rules:
 - explicit `dateFrom`/`dateTo` always win;
@@ -21,6 +21,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from .. import locales
 from .text import contains_phrase, normalise, tokens
 
 
@@ -28,50 +29,20 @@ def _forms(*words: str) -> frozenset[str]:
     return frozenset(normalise(w) for w in words)
 
 
-_TODAY = _forms("today", "now", "right now", "abhi", "aaj", "ivattu", "indu", "iga",
-                "ಇಂದು", "ಇವತ್ತು", "ಈಗ", "ಈಗಲೇ", "आज", "अभी")
-_TOMORROW = _forms("tomorrow", "tmrw", "tommorow", "kal", "naale", "nale",
-                   "ನಾಳೆ", "कल")
-_DAY_AFTER = _forms("day after tomorrow", "parso", "parson", "naadiddu", "nadiddu",
-                    "ನಾಡಿದ್ದು", "परसों")
-_NEXT = _forms("next", "coming", "agle", "agla", "agli", "mundina", "ಮುಂದಿನ", "अगले", "अगला")
-_THIS = _forms("this", "is", "ee", "ಈ", "इस")
-_WEEK = _forms("week", "hafte", "hafta", "vaara", "ವಾರ", "हफ्ते", "सप्ताह")
-
-_WEEKDAYS: tuple[frozenset[str], ...] = (
-    _forms("monday", "mon", "somvar", "somavara", "somavar", "ಸೋಮವಾರ", "सोमवार"),
-    _forms("tuesday", "tue", "tues", "mangalvar", "mangalavara", "mangalavar",
-           "ಮಂಗಳವಾರ", "मंगलवार"),
-    _forms("wednesday", "wed", "budhvar", "budhavara", "budhavar", "ಬುಧವಾರ", "बुधवार"),
-    _forms("thursday", "thu", "thurs", "guruvar", "guruvara", "brihaspativar",
-           "ಗುರುವಾರ", "गुरुवार"),
-    _forms("friday", "fri", "shukravar", "shukravara", "ಶುಕ್ರವಾರ", "शुक्रवार"),
-    _forms("saturday", "sat", "shanivar", "shanivara", "ಶನಿವಾರ", "शनिवार"),
-    _forms("sunday", "sun", "ravivar", "bhanuvar", "bhanuvara", "ಭಾನುವಾರ", "रविवार"),
-)
-
-
-_MONTHS: tuple[frozenset[str], ...] = (
-    _forms("january", "jan", "जनवरी", "ಜನವರಿ"),
-    _forms("february", "feb", "फरवरी", "फ़रवरी", "ಫೆಬ್ರವರಿ"),
-    _forms("march", "mar", "मार्च", "ಮಾರ್ಚ್"),
-    _forms("april", "apr", "अप्रैल", "ಏಪ್ರಿಲ್"),
-    _forms("may", "मई", "ಮೇ"),
-    _forms("june", "jun", "जून", "ಜೂನ್"),
-    _forms("july", "jul", "जुलाई", "ಜುಲೈ"),
-    _forms("august", "aug", "अगस्त", "ಆಗಸ್ಟ್"),
-    _forms("september", "sep", "sept", "सितंबर", "सितम्बर", "ಸೆಪ್ಟೆಂಬರ್"),
-    _forms("october", "oct", "अक्टूबर", "ಅಕ್ಟೋಬರ್"),
-    _forms("november", "nov", "नवंबर", "नवम्बर", "ನವೆಂಬರ್"),
-    _forms("december", "dec", "दिसंबर", "दिसम्बर", "ಡಿಸೆಂಬರ್"),
-)
+_TODAY = _forms(*locales.union("today"))
+_TOMORROW = _forms(*locales.union("tomorrow"))
+_DAY_AFTER = _forms(*locales.union("day_after_tomorrow"))
+_NEXT = _forms(*locales.union("next"))
+_THIS = _forms(*locales.union("this"))
+_WEEK = _forms(*locales.union("week"))
+_WEEKDAYS: tuple[frozenset[str], ...] = tuple(_forms(*day) for day in locales.calendar("weekdays"))
+_MONTHS: tuple[frozenset[str], ...] = tuple(_forms(*month) for month in locales.calendar("months"))
 # "5 tareekh": the 5th, whichever month it next falls in.
-_DAY_OF_MONTH = _forms("tareekh", "tarikh", "taarikh", "tarik", "tareek", "तारीख", "तारीख़", "ತಾರೀಖು",
-                       "ತಾರೀಕು")
+_DAY_OF_MONTH = _forms(*locales.union("day_of_month"))
 # In a sentence these start history, not the visit: "fever since monday", "pain last night".
-_HISTORY = _forms("since", "last", "from", "pichle", "pichhle", "pichla", "se")
+_HISTORY = _forms(*locales.union("history"))
 # Words that are dates only when given as the time: "indu" is Kannada 'today' and a common name.
-_AMBIGUOUS_IN_SPEECH = _forms("indu")
+_AMBIGUOUS_IN_SPEECH = _forms(*locales.union("ambiguous_in_speech"))
 _ORDINAL = re.compile(r"^(\d{1,2})(st|nd|rd|th)?$")
 _ISO = re.compile(r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)")
 _NUMERIC = re.compile(r"(?<![\d/.-])(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?(?![\d/.-])")

@@ -100,6 +100,15 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "Locales are language data only"
+type = "forbidden"
+source_modules = ["frontdesk_api.locales"]
+forbidden_modules = [
+    "frontdesk_api.domain", "frontdesk_api.db", "frontdesk_api.services", "frontdesk_api.routers",
+    "frontdesk_api.packs", "frontdesk_api.config", "fastapi", "sqlalchemy",
+]
+
+[[tool.importlinter.contracts]]
 name = "Domain packs are independent of each other"
 type = "independence"
 modules = ["frontdesk_api.packs.healthcare", "frontdesk_api.packs.hospitality"]

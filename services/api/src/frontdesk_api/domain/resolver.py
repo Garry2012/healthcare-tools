@@ -14,6 +14,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from .. import locales
 from .dates import time_words
 from .text import (
     HONORIFICS,
@@ -137,14 +138,8 @@ class Resolution:
     departed: str | None = None  # the caller named a resource that no longer takes bookings
 
 
-# Words that only ask "is someone free?" (en, hi and kn, romanised as the normaliser does).
-AVAILABILITY_WORDS = frozenset(normalise(w) for w in (
-    "any", "anyone", "anybody", "someone", "somebody", "available", "availability", "free", "sitting",
-    "present", "open", "see", "consult", "consultation", "appointment", "book", "booking", "slot", "token",
-    "time", "timing", "currently", "koi", "milega", "milegi", "milenge", "baithe", "baithi", "yaradaru",
-    "yaaradaru", "iddara", "iddare", "iddaara", "sigtara", "sigthare", "ಯಾರಾದರೂ", "ಇದ್ದಾರಾ", "ಇದ್ದಾರೆ",
-    "कोई", "मिलेगा", "बैठे",
-))
+# Words that only ask "is someone free?", in every registered language.
+AVAILABILITY_WORDS = frozenset(normalise(w) for w in locales.union("availability"))
 HONORIFICS_LATIN = frozenset(normalise(h) for h in HONORIFICS)
 _NUMBER = re.compile(r"\d+(st|nd|rd|th)?")
 

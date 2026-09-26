@@ -19,6 +19,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from .. import locales
 from .text import STOPWORDS, contains_phrase, normalise, tokens
 
 CONF_PHRASE = 1.0
@@ -140,7 +141,7 @@ def decide(hits: Sequence[Hit], thresholds: Thresholds) -> Decision:
     return Decision("CLARIFICATION_NEEDED", options=close[:3])
 
 
-_SCRIPTS = {"kn": ("\u0c80", "\u0cff"), "hi": ("\u0900", "\u097f")}
+_SCRIPTS = {loc.code: loc.script for loc in locales.LOCALES if loc.script}
 
 
 def option_label(entry: Entry, language: str) -> str:

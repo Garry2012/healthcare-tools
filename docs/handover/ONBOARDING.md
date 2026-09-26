@@ -22,6 +22,13 @@ docker run --rm --env-file deploy/providers/<provider>.env frontdesk-api frontde
 It exits non-zero on any problem: an unknown timezone, a pack reference to something that
 doesn't exist, transfer destinations missing the escalation target, or inverted thresholds.
 
+**A language not yet supported** (e.g. Tamil for a Chennai hospital): add
+`services/api/src/frontdesk_api/locales/ta.py` modelled on `kn.py` (today/tomorrow, weekdays,
+months, titles, filler and availability words, in native script and the romanised forms
+speech-to-text produces), register it in `LOCALES`, then add the pack's lexicon terms and
+knowledge answers in that language. `tests/unit/test_locales.py` checks each word is filed
+under the right script. No matching logic changes.
+
 ## 2. Provision (secrets, in the secret store)
 
 - A PostgreSQL database with an owner role and a DML-only runtime role (DEPLOY.md).
