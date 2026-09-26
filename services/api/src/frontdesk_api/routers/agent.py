@@ -27,7 +27,7 @@ from .deps import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["Agent"], dependencies=[Depends(require_scopes())])
+router = APIRouter(tags=["Agent"], dependencies=[Depends(require_scopes("agent"))])
 REPLAY = {"Idempotent-Replay": "true"}
 
 

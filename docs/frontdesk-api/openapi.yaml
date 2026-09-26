@@ -151,6 +151,7 @@ paths:
     post:
       tags: [Agent]
       operationId: agentAvailabilitySearch
+      security: [{ oauth2: [agent] }]
       summary: Find resources, sessions and bookable slots from the caller's own words
       description: >
         The single discovery call. Accepts any combination of resource name,
@@ -253,6 +254,7 @@ paths:
     post:
       tags: [Agent]
       operationId: agentCreateBooking
+      security: [{ oauth2: [agent] }]
       summary: Reserve one slot for one customer
       description: >
         Atomically reserves the slot. RULE: if the slot was taken or the session
@@ -319,6 +321,7 @@ paths:
     get:
       tags: [Agent]
       operationId: agentListBookings
+      security: [{ oauth2: [agent] }]
       summary: Bookings belonging to the caller's phone number
       description: >
         Scoped by X-Caller-Number (matches the booking phone or the number the
@@ -363,6 +366,7 @@ paths:
     post:
       tags: [Agent]
       operationId: agentCancelBooking
+      security: [{ oauth2: [agent] }]
       summary: Cancel the caller's booking
       description: >
         RULE: succeeds only when X-Caller-Number matches the booking phone or the
@@ -403,6 +407,7 @@ paths:
     post:
       tags: [Agent]
       operationId: agentRescheduleBooking
+      security: [{ oauth2: [agent] }]
       summary: Move the caller's booking to another slot
       description: >
         Same verification as cancel. newSlotId comes from find_availability and
@@ -447,6 +452,7 @@ paths:
     post:
       tags: [Agent]
       operationId: agentKnowledgeSearch
+      security: [{ oauth2: [agent] }]
       summary: Answer a caller's general question from approved answers only
       description: >
         Deterministic retrieval over the knowledge base's question variants (any

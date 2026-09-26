@@ -160,3 +160,21 @@ async def test_preferences_filter_by_gender_and_language(client, app, app_settin
     assert names(everyone) == ["Dr. Arjun Menon", "Dr. Garima"]
     assert names(ladies) == ["Dr. Garima"]
     assert names(kannada) == ["Dr. Garima"]
+
+
+async def test_only_the_agent_scope_reaches_the_agent_operations(client):
+    """Spec defect S3 closed: a staff (or any other) token cannot act as the voice agent."""
+    staff = {**STAFF, "X-Call-Id": "c-staff", "X-Caller-Number": "+919000000101", "Idempotency-Key": "k-staff"}
+    checks = [
+        ("POST", "/agent/availability-search", {"utterance": "Dr Garima", "language": "en"}),
+        ("POST", "/agent/knowledge-search", {"question": "parking", "language": "en"}),
+        ("GET", "/agent/bookings", None),
+        ("POST", "/agent/bookings", {"slotId": "slot_x_01", "customer": {"name": "A", "phone": "9000000101"},
+                                     "language": "en"}),
+        ("POST", "/agent/bookings/bkg_x/cancel", {"customerName": "A"}),
+        ("POST", "/agent/bookings/bkg_x/reschedule", {"customerName": "A", "newSlotId": "slot_x_02"}),
+    ]
+    for method, path, body in checks:
+        r = await client.request(method, path, headers=staff, json=body)
+        assert r.status_code == 403, (path, r.status_code, r.text)
+        assert r.json()["error"]["code"] == "FORBIDDEN"
