@@ -275,6 +275,13 @@ async def book(
         )
     )
     if existing is not None:
+        # Only the number the booking belongs to (or the desk) may see it; to anyone else a name
+        # and a phone are not proof of identity (CLAUDE.md: identity comes only from headers).
+        own = channel != "AGENT" or number_matches(
+            _identity(existing), caller_number=caller_number, spoken_phone=None,
+            country_code=settings.tenant_country_calling_code)
+        if not own:
+            raise ApiError("CONFLICT", "This customer already has a booking in this session.")
         return Booked(existing, created=False)
 
     if not check.view.bookable or not check.slot.available:

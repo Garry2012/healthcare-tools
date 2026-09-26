@@ -178,3 +178,20 @@ async def test_only_the_agent_scope_reaches_the_agent_operations(client):
         r = await client.request(method, path, headers=staff, json=body)
         assert r.status_code == 403, (path, r.status_code, r.text)
         assert r.json()["error"]["code"] == "FORBIDDEN"
+
+
+async def test_a_duplicate_booking_reveals_nothing_to_another_caller(client, app_settings):
+    """ALREADY_BOOKED returns the existing booking (id, confirmation code) only to the number it
+    belongs to; anyone else who knows a name and phone learns nothing (tech-lead N7)."""
+    monday = next_weekday(0, app_settings)
+    first = await client.post("/agent/bookings", headers=call(key="dup-1"),
+                              json=book_body(garima_slot(monday, 1)))
+    assert first.status_code == 201
+    stranger = await client.post("/agent/bookings", headers=call(caller="+919000000999", key="dup-2"),
+                                 json=book_body(garima_slot(monday, 2)))
+    assert stranger.status_code == 409
+    text = stranger.text
+    assert first.json()["bookingId"] not in text and first.json()["confirmationCode"] not in text
+    owner = await client.post("/agent/bookings", headers=call(key="dup-3"), json=book_body(garima_slot(monday, 3)))
+    assert owner.status_code == 200 and owner.json()["outcome"] == "ALREADY_BOOKED"
+    assert owner.json()["bookingId"] == first.json()["bookingId"]
