@@ -265,7 +265,9 @@ async def agent_search(
         return result, (presence_rank if anyone else 0, soonest, doc.name)
 
     ranked = [x for d in candidates if (x := resource_result(d, report_gaps=bool(named)))]
-    ranked.sort(key=lambda pair: pair[1])
+    # With a gender preference, confirmed matches come before unknown ones (never presented as a match).
+    ranked.sort(key=lambda pair: (bool(gender) and snap.resources[pair[0].resource.resource_id].gender is None,
+                                  pair[1]))
     results = [pair[0] for pair in ranked[: body.max_resources]]
 
     def bookable(result: s.ResourceResult) -> bool:

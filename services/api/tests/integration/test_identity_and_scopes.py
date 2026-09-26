@@ -195,3 +195,22 @@ async def test_a_duplicate_booking_reveals_nothing_to_another_caller(client, app
     owner = await client.post("/agent/bookings", headers=call(key="dup-3"), json=book_body(garima_slot(monday, 3)))
     assert owner.status_code == 200 and owner.json()["outcome"] == "ALREADY_BOOKED"
     assert owner.json()["bookingId"] == first.json()["bookingId"]
+
+
+async def test_identity_basis_says_spoken_whenever_a_spoken_number_was_used(client, app_settings):
+    monday = next_weekday(0, app_settings)
+    await _book(client, garima_slot(monday, 1), "Lakshmi Rao", "9000000101", "+919000000101", "ib1")
+    r = await client.get("/agent/bookings", headers=call(caller="+919000000999"),
+                         params={"phone": "9000000101", "customerName": "Lakshmi Rao"})
+    assert r.json()["identityBasis"] == "SPOKEN_NUMBER"
+    r = await client.get("/agent/bookings", headers=call(), params={"customerName": "Lakshmi Rao"})
+    assert r.json()["identityBasis"] == "CALLER_NUMBER"
+
+
+async def test_confirmed_gender_matches_come_before_unknown_ones(client):
+    r = await client.post("/agent/availability-search", headers=call(), json={
+        "utterance": "lady heart doctor", "language": "en", "category": "heart doctor",
+        "preferences": {"gender": "FEMALE"}, "when": {"expression": "next week"}})
+    genders = [x["resource"].get("gender") for x in r.json()["results"]]
+    assert "MALE" not in genders
+    assert genders == sorted(genders, key=lambda g: g is None)

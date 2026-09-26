@@ -353,7 +353,8 @@ async def agent_list(
         return s.AgentBookingList(
             outcome="IDENTITY_UNAVAILABLE", items=[], customers_on_number=0, identity_basis="NONE"
         )
-    basis = "CALLER_NUMBER" if caller_number else "SPOKEN_NUMBER"
+    # A spoken number is weaker evidence than caller ID; say so whenever one was used.
+    basis = "SPOKEN_NUMBER" if phone or not caller_number else "CALLER_NUMBER"
     if phone and not customer_name:
         # Anyone can say a number: without the name, disclose nothing (not even whether it has
         # bookings or how many customers use it).
