@@ -79,3 +79,41 @@ def test_a_persons_name_is_not_spell_corrected_into_a_department(directory):
     res = resolve(utterance="I want to see Dr Hegdey Kiranov", resource_name="Dr Hegdey Kiranov",
                   directory=_without(directory, "res_kiran_hegde"))
     assert res.action == "NO_SERVICE" and res.clarification_options == []
+
+
+@pytest.mark.parametrize(("name", "category"), [
+    ("dermatalogy", "cat_derm"), ("cardiolgy", "cat_cardio"),
+])
+def test_a_misspelt_department_in_the_name_field_is_still_suggested(directory, name, category):
+    """Tech-lead review: the model sometimes puts a department word in resourceName. Only a name
+    said as a person's ("Dr …") is kept out of the spelling suggestions."""
+    res = resolve(utterance=f"{name} doctor", resource_name=name, directory=directory)
+    assert res.action == "CLARIFY" and ("category", category) in res.clarification_options
+
+
+def test_a_departed_doctor_named_only_in_the_sentence_is_recognised(directory):
+    gone = _without(directory, "res_kiran_hegde")
+    res = resolve(utterance="I want to see Dr Kiran Hegde", directory=gone)
+    assert res.departed == "res_kiran_hegde" and [c.category_id for c in res.categories] == ["cat_uro"]
+
+
+def test_a_departed_doctor_whose_department_closed_still_says_so(directory):
+    from dataclasses import replace
+
+    gone = _without(directory, "res_kiran_hegde")
+    gone = replace(gone, categories=tuple(replace(c, active=False) if c.category_id == "cat_uro" else c
+                                          for c in gone.categories))
+    res = resolve(utterance="Dr Kiran Hegde", resource_name="Dr Kiran Hegde", directory=gone)
+    assert res.departed == "res_kiran_hegde" and res.categories == [] and res.action == "OFFER_SLOTS"
+
+
+def test_two_departed_namesakes_are_still_reported(directory):
+    from dataclasses import replace
+
+    twin = replace(next(d for d in directory.resources if d.resource_id == "res_kiran_hegde"),
+                   resource_id="res_kiran_hegde_2", active=False)
+    gone = _without(directory, "res_kiran_hegde")
+    gone = replace(gone, resources=(*gone.resources, twin))
+    res = resolve(utterance="Kiran Hegde", resource_name="Kiran Hegde", directory=gone)
+    assert res.departed in {"res_kiran_hegde", "res_kiran_hegde_2"}
+    assert [c.category_id for c in res.categories] == ["cat_uro"]

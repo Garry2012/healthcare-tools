@@ -146,11 +146,12 @@ _SCRIPTS = {"kn": ("\u0c80", "\u0cff"), "hi": ("\u0900", "\u097f")}
 def option_label(entry: Entry, language: str) -> str:
     """How a clarifying option is read out: the entry's own (approved) question in the caller's
     script, else its first question. Never the variant that happened to match."""
-    low, high = _SCRIPTS.get(language.split("-")[0], ("", ""))
-    if low:
-        for question in entry.questions:
-            if any(low <= ch <= high for ch in question):
-                return question
+    low, high = _SCRIPTS.get(language.split("-")[0].lower(), ("", ""))
+    for question in entry.questions:
+        if low and any(low <= ch <= high for ch in question):
+            return question
+        if not low and all(ch < "\u0250" for ch in question):  # Latin script for anyone else
+            return question
     return entry.questions[0]
 
 

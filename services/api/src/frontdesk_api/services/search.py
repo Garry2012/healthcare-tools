@@ -233,7 +233,7 @@ async def agent_search(
     else:
         candidates = [d.id for d in snap.resources.values() if eligible(d)]
 
-    if res.departed and not candidates:
+    if res.departed and (not cat_ids or not candidates):
         return _response("TRANSFER", now, "TRANSFER_DESK", understood, destination="desk", notes=notes)
 
     gender = body.preferences.gender.value if body.preferences and body.preferences.gender else None

@@ -105,3 +105,11 @@ def test_clarification_label_is_the_entrys_question_in_the_callers_script():
     assert option_label(parking, "hi") == "पार्किंग है क्या"
     only_latin = Entry("kb_x", "x", ("visiting hours", "patient se milne ka time"), {"en": "x"})
     assert option_label(only_latin, "kn") == "visiting hours"
+
+
+def test_clarification_label_prefers_latin_script_for_english_and_ignores_case():
+    from frontdesk_api.domain.knowledge import option_label
+
+    kannada_first = Entry("kb_y", "y", ("ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", "is there parking"), {"en": "x"})
+    assert option_label(kannada_first, "en") == "is there parking"
+    assert option_label(kannada_first, "KN-IN") == "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ"

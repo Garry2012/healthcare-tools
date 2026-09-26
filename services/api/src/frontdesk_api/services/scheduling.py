@@ -299,12 +299,18 @@ async def _impact(
             # The queue got shorter but has free places: move forward instead of bumping.
             free = _free_position(now_view, held, now)
             if free is not None:
-                previous_slot, booking.slot_id = booking.slot_id, free
+                previous_slot, previous_status = booking.slot_id, booking.status
+                booking.slot_id = free
+                # A time the desk confirmed was for the old position.
+                booking.timing_confirmed, booking.confirmed_start = False, None
+                if booking.status == "CONFIRMED_BY_DESK":
+                    booking.status = "BOOKED"
                 held.add(free)
                 held.discard(previous_slot)
                 session.add(t.BookingHistory(
                     booking_id=booking.id, by=actor, change="SLOT_MOVED",
-                    details={"previousSlotId": previous_slot, "slotId": free, "exceptionId": exception_id},
+                    details={"previousSlotId": previous_slot, "slotId": free, "exceptionId": exception_id,
+                             "previous": previous_status},
                 ))
                 gone = False
         moved = not gone and was is not None and (
@@ -314,6 +320,7 @@ async def _impact(
             continue
         # The session keeps its hours: only its size changed, so no one is told "the time changed".
         same_hours = not removed and was is not None and (was.start, was.end) == (now_view.start, now_view.end)
+        smaller = same_hours and now_view.total < was.total
         if template_change:
             trigger = "TEMPLATE_CHANGED"
         else:
@@ -345,7 +352,7 @@ async def _impact(
                 "currentSession": None if removed else _session_facts(now_view),
                 "suggestedSlots": _suggestions(suggest, resource.id, booking.date) if gone else [],
                 **({"previousSlotId": previous_slot} if previous_slot else {}),
-                **({"reason": "CAPACITY_REDUCED"} if same_hours else {}),
+                **({"reason": "CAPACITY_REDUCED"} if smaller else {}),
             },
         ))
         notified += 1
@@ -367,13 +374,20 @@ def _position(slot_id: str) -> int:
     return int(ref.suffix) if ref else 0
 
 
+# Today, a position is only worth moving someone to if they can still get there.
+MOVE_LEAD = timedelta(minutes=15)
+_STILL_ADMITS = (None, "FULL", "DESK_ONLY")  # FULL: the cut itself over-fills the session
+
+
 def _free_position(view: SessionView, held: set[str], now: datetime) -> str | None:
     """The first queue position in `view` nobody holds and the caller can still reach."""
-    clock = now.time() if view.date == now.date() else None
+    if view.not_bookable_reason not in _STILL_ADMITS:
+        return None  # ended, doctor left, arrive-by passed, not offered
+    reachable_from = (now + MOVE_LEAD).time() if view.date == now.date() else None
     for slot in view.slots:
         if slot.slot_id in held:
             continue
-        if clock is not None and slot.window_to is not None and slot.window_to <= clock:
+        if reachable_from is not None and slot.window_to is not None and slot.window_to < reachable_from:
             continue
         return slot.slot_id
     return None

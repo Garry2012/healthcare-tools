@@ -904,8 +904,10 @@ paths:
         NEEDS_RESCHEDULE and creates a Notification per booking. When a queue
         (SEQUENCE) session only gets shorter, bookings whose position no longer
         exists first move, earliest in the queue first, to a free position the
-        caller can still reach (SESSION_TIME_CHANGED notification with
-        previousSlotId); only those left over become NEEDS_RESCHEDULE. The reason
+        caller can still reach (today: its window ends at least 15 minutes from
+        now, and the session still admits people) with a SESSION_TIME_CHANGED
+        notification carrying previousSlotId; a desk-confirmed time is cleared by
+        the move. Only those left over become NEEDS_RESCHEDULE. The reason
         category is internal; the agent never receives it.
       security:
         - oauth2: [schedule.write]

@@ -83,3 +83,22 @@ async def test_template_rejects_overlapping_sessions_and_a_foreign_resource_id(c
         "resourceId": "res_anil_sharma", "effectiveFrom": today,
         "sessions": [session_def("tpl_res_garima_am", "09:00", "12:00")]})
     assert r.status_code == 400 and r.json()["error"]["details"][0]["field"] == "resourceId", r.text
+
+
+async def test_a_new_slot_length_is_not_reported_as_a_capacity_cut(client, app_settings):
+    """Tech-lead review: same hours, a 10-minute grid instead of 15. The 10:15 booking no longer
+    exists as a slot, but the session did not get smaller."""
+    monday = next_weekday(0, app_settings)
+    booked = await client.post("/agent/bookings", headers=call(key="grid"),
+                               json=book_body(f"slot_ses_res_sunita_patil_{monday.isoformat()}_1_1015"))
+    assert booked.status_code == 201, booked.text
+    today = str(schedule.now_in(app_settings).date())
+    r = await client.put("/resources/res_sunita_patil/schedule-template", headers=STAFF, json={
+        "resourceId": "res_sunita_patil", "effectiveFrom": today, "sessions": [{
+            "templateSessionId": "tpl_res_sunita_patil_am", "daysOfWeek": ["MON", "TUE", "WED", "THU", "FRI", "SAT"],
+            "start": "10:00", "end": "13:00", "capacityModel": "TIMED", "slotMinutes": 10,
+            "capacity": {"mode": "FIXED", "value": 12}, "walkInReservePercent": 0}]})
+    assert r.status_code == 200, r.text
+    [note] = [n for n in (await client.get("/notifications", headers=STAFF)).json()["items"]
+              if n["bookingId"] == booked.json()["bookingId"]]
+    assert note["trigger"] == "TEMPLATE_CHANGED" and "reason" not in note["facts"]

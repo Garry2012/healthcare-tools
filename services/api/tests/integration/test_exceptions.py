@@ -117,16 +117,22 @@ async def test_exception_validation(client, app_settings):
 
 
 async def test_capacity_cut_moves_queue_bookings_into_free_positions(client, app, app_settings):
-    """Positions 1-2 are free, 3-5 booked. Cutting to 2 phone positions keeps the two earliest
-    in the queue by moving them forward (and telling them); only the last one is bumped."""
+    """Positions 1-2 are free, 3-5 booked (in the order 5, 4, 3). Cutting to 2 phone positions
+    keeps the two earliest in the queue by moving them forward (and telling them); only the last
+    one is bumped. A desk-confirmed time does not survive the move."""
     thursday = next_weekday(3, app_settings)
-    ids = []
-    for i in (3, 4, 5):
+    by_position = {}
+    for i in (5, 4, 3):
         r = await client.post("/agent/bookings",
                               headers=call(caller=f"+91900000{i:04d}", call_id=f"c{i}", key=f"k{i}"),
                               json=book_body(garima_slot(thursday, i), name=f"Customer {i}", phone=f"900000{i:04d}"))
         assert r.status_code == 201
-        ids.append(r.json()["bookingId"])
+        by_position[i] = r.json()["bookingId"]
+    confirmed = await client.post(f"/bookings/{by_position[4]}/confirm", headers=STAFF,
+                                  json={"confirmedStart": "16:10"})
+    assert confirmed.status_code == 200, confirmed.text
+    ids = [by_position[i] for i in (3, 4, 5)]
+
     r = await client.post("/schedule-exceptions", headers=STAFF, json={
         "resourceId": "res_garima", "dateFrom": str(thursday), "dateTo": str(thursday), "scope": "SESSION",
         "templateSessionId": "tpl_res_garima_pm", "effect": "CAPACITY_CHANGE", "newCapacity": 3})
@@ -141,19 +147,76 @@ async def test_capacity_cut_moves_queue_bookings_into_free_positions(client, app
         ("BOOKED", garima_slot(thursday, 2)),
         ("NEEDS_RESCHEDULE", garima_slot(thursday, 5)),
     ]
+    assert (rows[1].timing_confirmed, rows[1].confirmed_start) == (False, None)
     assert history and history[0].details["previousSlotId"] == garima_slot(thursday, 3)
 
     notes = {n["bookingId"]: n for n in (await client.get("/notifications", headers=STAFF)).json()["items"]}
     moved = notes[ids[0]]
-    assert moved["trigger"] == "SESSION_TIME_CHANGED"
+    assert moved["trigger"] == "SESSION_TIME_CHANGED" and moved["facts"]["reason"] == "CAPACITY_REDUCED"
     assert moved["facts"]["previousSlotId"] == garima_slot(thursday, 3)
     assert moved["facts"]["slotId"] == garima_slot(thursday, 1) and moved["facts"]["suggestedSlots"] == []
     assert notes[ids[2]]["facts"]["bookingStatus"] == "NEEDS_RESCHEDULE"
     assert "previousSlotId" not in notes[ids[2]]["facts"]
 
-    # the moved caller hears the new position on lookup, and the freed slot 3 stays unoffered
-    lookup = (await client.get("/agent/bookings", headers=call(caller="+919000000003"))).json()
-    assert lookup["items"][0]["status"] == "BOOKED"
+    # the moved caller hears the new position and its window on lookup
+    [item] = (await client.get("/agent/bookings", headers=call(caller="+919000000003"))).json()["items"]
+    assert item["status"] == "BOOKED" and item["slot"]["slotId"] == garima_slot(thursday, 1)
+    assert item["slot"]["expectedWindow"]["from"] == "15:00"
+
+
+def _freeze(monkeypatch, app_settings, weekday, at):
+    from datetime import datetime
+
+    from frontdesk_api.services import schedule
+
+    day = next_weekday(weekday, app_settings)
+    now = datetime.combine(day, at, app_settings.tz)
+    monkeypatch.setattr(schedule, "now_in", lambda settings: now)
+    return day
+
+
+async def _book_positions(client, day, positions):
+    ids = []
+    for i in positions:
+        r = await client.post("/agent/bookings",
+                              headers=call(caller=f"+91900000{i:04d}", call_id=f"c{i}", key=f"k{i}"),
+                              json=book_body(garima_slot(day, i), name=f"Customer {i}", phone=f"900000{i:04d}"))
+        assert r.status_code == 201, r.text
+        ids.append(r.json()["bookingId"])
+    return ids
+
+
+def _cut(day):
+    return {"resourceId": "res_garima", "dateFrom": str(day), "dateTo": str(day), "scope": "SESSION",
+            "templateSessionId": "tpl_res_garima_pm", "effect": "CAPACITY_CHANGE", "newCapacity": 3}
+
+
+async def test_today_a_position_about_to_close_is_not_a_place_to_move_to(client, app, monkeypatch, app_settings):
+    """After the cut the session holds 3 over two hours, so positions are 40 minutes apart and
+    position 2 is expected 15:40-16:00. At 15:50 it closes in ten minutes: nobody can get there."""
+    from datetime import time
+
+    today = _freeze(monkeypatch, app_settings, 3, time(15, 50))
+    ids = await _book_positions(client, today, (5, 6))
+    r = await client.post("/schedule-exceptions", headers=STAFF, json=_cut(today))
+    assert r.status_code == 201, r.text
+    assert r.json()["impact"] == {"bookingsImpacted": 2, "notificationsCreated": 2}
+    async with app.state.sessionmaker() as session:
+        assert {(await session.get(t.Booking, i)).status for i in ids} == {"NEEDS_RESCHEDULE"}
+
+
+async def test_nobody_is_moved_into_a_session_the_doctor_has_left(client, app, monkeypatch, app_settings):
+    from datetime import time
+
+    today = _freeze(monkeypatch, app_settings, 3, time(13, 0))
+    ids = await _book_positions(client, today, (5, 6))
+    left = await client.put("/board/res_garima", headers=STAFF, json={
+        "date": str(today), "sessionId": f"ses_res_garima_{today.isoformat()}_2", "presence": "LEFT"})
+    assert left.status_code == 200, left.text
+    r = await client.post("/schedule-exceptions", headers=STAFF, json=_cut(today))
+    assert r.json()["impact"] == {"bookingsImpacted": 2, "notificationsCreated": 2}
+    async with app.state.sessionmaker() as session:
+        assert {(await session.get(t.Booking, i)).status for i in ids} == {"NEEDS_RESCHEDULE"}
 
 
 async def _deliver(client, booking_id):

@@ -250,12 +250,14 @@ def match_resources(
     return sorted((m for m in scored if m.confidence >= tier), key=lambda m: -m.confidence)
 
 
-def _scan_utterance_for_resources(utterance: str, directory: Directory) -> list[ResourceMatch]:
+def _scan_utterance_for_resources(
+    utterance: str, directory: Directory, *, former: bool = False
+) -> list[ResourceMatch]:
     """Without an explicit resourceName, only exact name tokens in the utterance count."""
     words = set(tokens(normalise(utterance, strip_honorifics=True)))
     hits: list[ResourceMatch] = []
     for doc in directory.resources:
-        if not doc.active:
+        if doc.active == former:
             continue
         name = _name_tokens(doc.name)
         distinctive = [t for t in name if len(t) >= 3]
@@ -371,22 +373,25 @@ def resolve(
     else:
         resources = []
 
-    departed: ResourceEntry | None = None
-    if resource_name and not resources:
+    former: list[ResourceMatch] = []
+    if not resources:
         # Never by sound alone: "Dr Keeran" must not be told that a doctor has left.
-        former = [m for m in match_resources(resource_name, directory, allow_phonetic=False, former=True)
-                  if m.confidence >= thresholds.resource]
-        if len(former) == 1:
-            departed = next(d for d in directory.resources if d.resource_id == former[0].resource_id)
+        if resource_name:
+            former = [m for m in match_resources(resource_name, directory, allow_phonetic=False, former=True)
+                      if m.confidence >= thresholds.resource]
+        elif not category and not need_text:
+            former = _scan_utterance_for_resources(utterance, directory, former=True)
 
     cat_texts = [t for t in (category, need_text) if t]
-    if departed and not cat_texts:
+    if former and not cat_texts:
         # The caller still needs that department: search it, and say the named person is not here.
-        wanted = [c for c in departed.category_ids
-                  if (entry := directory.category(c)) and entry.offers_bookings and entry.active]
-        if wanted:
-            return Resolution(action="OFFER_SLOTS", departed=departed.resource_id,
-                              categories=[CategoryMatch(c, 1.0, "FORMER_RESOURCE") for c in wanted])
+        # Namesakes who both left count once; with no open department the search hands over.
+        gone = [d for d in directory.resources if d.resource_id in {m.resource_id for m in former}]
+        wanted = list(dict.fromkeys(
+            c for d in gone for c in d.category_ids
+            if (entry := directory.category(c)) and entry.offers_bookings and entry.active))
+        return Resolution(action="OFFER_SLOTS", departed=gone[0].resource_id,
+                          categories=[CategoryMatch(c, 1.0, "FORMER_RESOURCE") for c in wanted])
     if not cat_texts and (not resources or not resource_name):
         # A name found only by scanning the sentence ("I am Garima, need a skin doctor") must not
         # hide the department the caller asked for: match categories too, so a mismatch is asked.
@@ -431,10 +436,14 @@ def resolve(
     if categories:
         return resolution
 
-    # A person's name is not a misspelt department: leave it out of the spelling suggestions.
-    name_words = set(_name_tokens(resource_name)) if resource_name else set()
+    # A name said as a person's ("Dr Hegde") is not a misspelt department: leave it out of the
+    # spelling suggestions. A bare word the model put in resourceName ("dermatalogy") stays in.
+    as_person = bool(resource_name) and _name_tokens(resource_name) != tokens(normalise(resource_name))
+    name_words = set(_name_tokens(resource_name)) if as_person else set()
     said = " ".join(w for w in tokens(normalise(utterance)) if w not in name_words)
     probe = [t for t in (category, need_text, said) if t]
+    if resource_name and not as_person:
+        probe.insert(0, resource_name)
     suggestions = suggest_categories(probe, directory, thresholds.suggestion)
     if suggestions:
         resolution.action = "CLARIFY"
