@@ -95,6 +95,9 @@ async def test_shortening_a_session_only_impacts_what_no_longer_fits(client, app
     async with app.state.sessionmaker() as session:
         statuses = [(await session.get(t.Booking, i)).status for i in ids]
     assert statuses == ["BOOKED", "BOOKED", "NEEDS_RESCHEDULE"]
+    [note] = (await client.get("/notifications", headers=STAFF)).json()["items"]
+    # the session keeps its hours: the desk must not tell the customer the time changed
+    assert note["facts"]["reason"] == "CAPACITY_REDUCED"
 
 
 async def test_exception_validation(client, app_settings):

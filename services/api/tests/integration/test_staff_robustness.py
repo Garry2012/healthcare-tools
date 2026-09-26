@@ -46,3 +46,10 @@ async def test_an_acknowledged_notification_keeps_what_the_customer_said(client,
     kept = [n for n in (await client.get("/notifications", headers=STAFF,
                                          params={"status": "ACKNOWLEDGED"})).json()["items"] if n["id"] == notice["id"]]
     assert kept[0]["outcome"] == "CANCELLED" and kept[0]["channel"] == "PHONE"
+
+
+async def test_call_summary_time_needs_an_offset(client):
+    """A timestamp without an offset would be stored as UTC: 5 h 30 min off for an Indian hospital."""
+    r = await client.post("/call-summaries", headers=STAFF, json={
+        "callId": "naive", "startedAt": "2026-09-26T10:00:00", "intent": "OTHER", "outcome": "ABANDONED"})
+    assert r.status_code == 400, r.text

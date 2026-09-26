@@ -63,3 +63,23 @@ async def test_deactivating_a_resource_moves_its_future_bookings_and_queues_noti
     notices = [n for n in (await client.get("/notifications", headers=STAFF)).json()["items"]
                if n["bookingId"] == row.id]
     assert len(notices) == 1 and notices[0]["trigger"] == "SESSION_CANCELLED"
+
+
+async def test_template_rejects_overlapping_sessions_and_a_foreign_resource_id(client, app_settings):
+    today = str(schedule.now_in(app_settings).date())
+    overlapping = [session_def("tpl_a", "09:00", "12:00"), session_def("tpl_b", "11:30", "13:00")]
+    r = await client.put("/resources/res_garima/schedule-template", headers=STAFF,
+                         json={"resourceId": "res_garima", "effectiveFrom": today, "sessions": overlapping})
+    assert r.status_code == 400 and r.json()["error"]["details"][0]["field"] == "sessions[1]", r.text
+
+    # the same hours on different days do not overlap
+    evening = {**session_def("tpl_b", "11:30", "13:00"), "daysOfWeek": ["TUE"]}
+    r = await client.put("/resources/res_garima/schedule-template", headers=STAFF, json={
+        "resourceId": "res_garima", "effectiveFrom": today,
+        "sessions": [session_def("tpl_res_garima_am", "09:00", "12:00"), evening]})
+    assert r.status_code == 200, r.text
+
+    r = await client.put("/resources/res_garima/schedule-template", headers=STAFF, json={
+        "resourceId": "res_anil_sharma", "effectiveFrom": today,
+        "sessions": [session_def("tpl_res_garima_am", "09:00", "12:00")]})
+    assert r.status_code == 400 and r.json()["error"]["details"][0]["field"] == "resourceId", r.text

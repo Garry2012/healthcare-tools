@@ -7,7 +7,7 @@ import datetime as dt
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic.alias_generators import to_camel
 
 ClockTime = Annotated[str, StringConstraints(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
@@ -665,7 +665,7 @@ class NotificationList(ApiModel):
 class CallSummary(ApiModel):
     id: str | None = None
     call_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
-    started_at: dt.datetime
+    started_at: AwareDatetime
     duration_seconds: Annotated[int, Field(ge=0, le=86400)] | None = None
     language: Language | None = None
     caller_number: str | None = None

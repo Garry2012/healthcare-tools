@@ -105,12 +105,18 @@ def _validate_template(body: s.ScheduleTemplate) -> None:
             raise validation("capacity.value is required unless mode is DEFAULT.", f"{where}.capacity")
     if body.effective_to is not None and body.effective_to < body.effective_from:
         raise validation("effectiveTo must not be before effectiveFrom.", "effectiveTo")
+    for i, sess in enumerate(body.sessions):
+        for other in body.sessions[:i]:
+            if set(sess.days_of_week) & set(other.days_of_week) and sess.start < other.end and other.start < sess.end:
+                raise validation(f"Overlaps {other.template_session_id} on the same day.", f"sessions[{i}]")
 
 
 async def set_template(
     session: AsyncSession, settings: Settings, resource_id: str, body: s.ScheduleTemplate, actor: str
 ) -> s.ScheduleTemplate:
     resource = await _require_resource(session, resource_id)
+    if body.resource_id != resource_id:
+        raise validation("resourceId must match the path.", "resourceId")
     await schedule.lock_resource(session, resource.id, exclusive=True)
     _validate_template(body)
     now = schedule.now_in(settings)
@@ -306,6 +312,8 @@ async def _impact(
         )
         if not gone and not moved:
             continue
+        # The session keeps its hours: only its size changed, so no one is told "the time changed".
+        same_hours = not removed and was is not None and (was.start, was.end) == (now_view.start, now_view.end)
         if template_change:
             trigger = "TEMPLATE_CHANGED"
         else:
@@ -337,6 +345,7 @@ async def _impact(
                 "currentSession": None if removed else _session_facts(now_view),
                 "suggestedSlots": _suggestions(suggest, resource.id, booking.date) if gone else [],
                 **({"previousSlotId": previous_slot} if previous_slot else {}),
+                **({"reason": "CAPACITY_REDUCED"} if same_hours else {}),
             },
         ))
         notified += 1

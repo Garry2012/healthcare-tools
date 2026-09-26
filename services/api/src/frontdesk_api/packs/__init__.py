@@ -124,6 +124,10 @@ def validate(pack: Pack) -> list[str]:
         problems += [f"{r.id}: unknown category {c!r}" for c in r.categories if c not in categories]
         if not r.categories:
             problems.append(f"{r.id}: needs at least one category")
+        for i, a in enumerate(r.sessions):  # the same rule PUT /schedule-template enforces
+            for b in r.sessions[:i]:
+                if set(a.days) & set(b.days) and a.start < b.end and b.start < a.end:
+                    problems.append(f"{r.id}: sessions {b.key!r} and {a.key!r} overlap")
     targets = {"CATEGORY": categories, "NEED_ROUTE": categories, "RESOURCE": resources,
                "SERVICE_TRANSFER": destinations, "DAY_PART": {"MORNING", "AFTERNOON", "EVENING", "ANY"}}
     for concept_type, concept_id, term, _ in pack.lexicon:

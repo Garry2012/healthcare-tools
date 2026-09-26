@@ -833,7 +833,7 @@ paths:
     put:
       tags: [Scheduling]
       operationId: setScheduleTemplate
-      x-rules: ["RULE: effectiveFrom must not be before today (400)."]
+      x-rules: ["RULE: effectiveFrom must not be before today (400).", "RULE: body resourceId must match the path (400).", "RULE: two sessions that share a weekday must not overlap in time (400)."]
       summary: Replace the resource's recurring sessions (admin/desk)
       description: >
         RULE: a new template takes effect from effectiveFrom; existing
@@ -2274,7 +2274,7 @@ components:
         customerLanguage: { $ref: '#/components/schemas/Language' }
         facts:
           type: object
-          description: "Structured facts for the outbound message (never prose): resource, old and new session, suggested slots."
+          description: "Structured facts for the outbound message (never prose): resource, old and new session, suggested slots. previousSlotId when the booking was moved to a free queue position; reason CAPACITY_REDUCED when the session kept its hours and only got smaller."
           additionalProperties: true
         createdAt: { type: string, format: date-time }
         deliveredAt: { type: string, format: date-time, nullable: true }
@@ -2288,7 +2288,7 @@ components:
       properties:
         id: { type: string }
         callId: { type: string }
-        startedAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, description: "Must carry a UTC offset (400 otherwise)." }
         durationSeconds: { type: integer }
         language: { $ref: '#/components/schemas/Language' }
         callerNumber: { type: string, nullable: true }

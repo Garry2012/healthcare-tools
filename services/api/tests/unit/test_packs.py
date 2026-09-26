@@ -44,6 +44,15 @@ def test_validate_reports_dangling_references():
     assert any("lexicon" in p for p in problems)
 
 
+def test_validate_reports_overlapping_sessions():
+    sessions = (packs.SessionSeed("am", "Morning", ("MON", "TUE"), "09:00", "12:00"),
+                packs.SessionSeed("late_am", "Late", ("TUE",), "11:00", "13:00"),
+                packs.SessionSeed("pm", "Evening", ("MON",), "12:00", "14:00"))
+    pack = packs.Pack("p", "desk", {"desk": "Desk"}, (packs.CategorySeed("cat_a", "a", "A"),),
+                      (packs.ResourceSeed("res_x", "X", ("cat_a",), sessions=sessions),), ())
+    assert packs.validate(pack) == ["res_x: sessions 'am' and 'late_am' overlap"]
+
+
 @pytest.mark.parametrize(("utterance", "fields", "action", "category"), [
     ("I want a massage tomorrow", {"category": "massage"}, "OFFER_SLOTS", "cat_spa"),
     ("table for dinner tonight", {"category": "table for dinner"}, "OFFER_SLOTS", "cat_dining"),
