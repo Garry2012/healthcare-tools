@@ -41,6 +41,8 @@ _IAST_FIXUPS: tuple[tuple[str, str], ...] = (
 _ANUSVARA = re.compile(r"ṃ(?=[pbm])")
 # \w misses Indic vowel signs and viramas (category M), which would split words apart.
 _WORD = re.compile(r"(?:[^\W_]|[\u0300-\u036f\u0900-\u0dff\u200c\u200d])+")
+# English possessive: "children's doctor" means "children doctor"; "D'Souza" is untouched.
+_POSSESSIVE = re.compile(r"(?<=\w)['’]s\b")
 
 # Titles callers put in front of a resource's name, in the scripts we see.
 HONORIFICS = frozenset(locales.union("titles"))
@@ -72,7 +74,8 @@ def _romanise_word(word: str, scheme: str) -> str:
         last = word[-1]
         if unicodedata.category(last) == "Lo" and not ("ऄ" <= last <= "औ"):
             latin = latin[:-1]
-    latin = _ANUSVARA.sub("m", latin).replace("ṃ", "n")
+    # Chandrabindu (ँ) comes out as "~"; it is a nasal like anusvara (ं), so "पाँच" = "पांच".
+    latin = _ANUSVARA.sub("m", latin.replace("~", "ṃ")).replace("ṃ", "n")
     for src, dst in _IAST_FIXUPS:
         latin = latin.replace(src, dst)
     return latin
@@ -97,13 +100,13 @@ def tokens(text: str) -> list[str]:
 @lru_cache(maxsize=16384)
 def native_form(text: str) -> str:
     """NFC + lower-case + punctuation removed, script preserved."""
-    return " ".join(tokens(unicodedata.normalize("NFC", text).casefold()))
+    return " ".join(tokens(_POSSESSIVE.sub("", unicodedata.normalize("NFC", text).casefold())))
 
 
 @lru_cache(maxsize=16384)
 def normalise(text: str, *, strip_honorifics: bool = False) -> str:
     """NFC → lower → (honorifics) → transliterate → strip accents → single spaces."""
-    words = tokens(unicodedata.normalize("NFC", text).casefold())
+    words = tokens(_POSSESSIVE.sub("", unicodedata.normalize("NFC", text).casefold()))
     if strip_honorifics:
         words = [w for w in words if w not in HONORIFICS]
     latin = _strip_marks(transliterate(" ".join(words)))

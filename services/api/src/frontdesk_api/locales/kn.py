@@ -1,5 +1,22 @@
 """Kannada: Kannada script and the romanised forms callers and speech-to-text produce."""
 
+_CARDINALS = (
+    ("ಒಂದು", "ondu"), ("ಎರಡು", "eradu"), ("ಮೂರು", "mooru"), ("ನಾಲ್ಕು", "naalku"), ("ಐದು", "aidu"),
+    ("ಆರು", "aaru"), ("ಏಳು", "elu"), ("ಎಂಟು", "entu"), ("ಒಂಬತ್ತು", "ombattu"), ("ಹತ್ತು", "hattu"),
+    ("ಹನ್ನೊಂದು", "hannondu"), ("ಹನ್ನೆರಡು", "hanneradu"), ("ಹದಿಮೂರು", "hadimooru"), ("ಹದಿನಾಲ್ಕು", "hadinaalku"),
+    ("ಹದಿನೈದು", "hadinaidu"), ("ಹದಿನಾರು", "hadinaaru"), ("ಹದಿನೇಳು", "hadinelu"), ("ಹದಿನೆಂಟು", "hadinentu"),
+    ("ಹತ್ತೊಂಬತ್ತು", "hattombattu"), ("ಇಪ್ಪತ್ತು", "ippattu"), ("ಇಪ್ಪತ್ತೊಂದು", "ippattondu"),
+    ("ಇಪ್ಪತ್ತೆರಡು", "ippatteradu"), ("ಇಪ್ಪತ್ತಮೂರು", "ippattamooru"), ("ಇಪ್ಪತ್ತನಾಲ್ಕು", "ippattanaalku"),
+    ("ಇಪ್ಪತ್ತೈದು", "ippattaidu"), ("ಇಪ್ಪತ್ತಾರು", "ippattaaru"), ("ಇಪ್ಪತ್ತೇಳು", "ippattelu"),
+    ("ಇಪ್ಪತ್ತೆಂಟು", "ippattentu"), ("ಇಪ್ಪತ್ತೊಂಬತ್ತು", "ippattombattu"), ("ಮೂವತ್ತು", "moovattu"),
+    ("ಮೂವತ್ತೊಂದು", "moovattondu"),
+)
+_NUMBERS = {
+    **{word: n for n, forms in enumerate(_CARDINALS, 1) for word in forms},
+    # ordinal "ಐದನೇ" (fifth): the cardinal without its final ು, plus ನೇ
+    **{forms[0].removesuffix("ು") + "ನೇ": n for n, forms in enumerate(_CARDINALS, 1)},
+}
+
 WORDS = dict(
     code="kn",
     script=("ಀ", "೿"),
@@ -28,4 +45,5 @@ WORDS = dict(
         "yaradaru", "yaaradaru", "iddara", "iddare", "iddaara", "sigtara", "sigthare", "ಯಾರಾದರೂ", "ಇದ್ದಾರಾ",
         "ಇದ್ದಾರೆ",
     ),
+    numbers=_NUMBERS,
 )

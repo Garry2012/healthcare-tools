@@ -1,5 +1,23 @@
 """Hindi: Devanagari and the romanised forms callers and speech-to-text produce."""
 
+_NUMBERS = {
+    **dict.fromkeys(("ek", "एक"), 1), **dict.fromkeys(("do", "दो"), 2), **dict.fromkeys(("teen", "तीन"), 3),
+    **dict.fromkeys(("char", "chaar", "चार"), 4), **dict.fromkeys(("paanch", "panch", "पाँच", "पांच"), 5),
+    **dict.fromkeys(("chhah", "chhe", "cheh", "छह", "छः"), 6), **dict.fromkeys(("saat", "सात"), 7),
+    **dict.fromkeys(("aath", "आठ"), 8), **dict.fromkeys(("nau", "नौ"), 9), **dict.fromkeys(("das", "दस"), 10),
+    **dict.fromkeys(("gyarah", "ग्यारह"), 11), **dict.fromkeys(("barah", "baarah", "बारह"), 12),
+    **dict.fromkeys(("terah", "तेरह"), 13), **dict.fromkeys(("chaudah", "चौदह"), 14),
+    **dict.fromkeys(("pandrah", "पंद्रह", "पन्द्रह"), 15), **dict.fromkeys(("solah", "सोलह"), 16),
+    **dict.fromkeys(("satrah", "सत्रह"), 17), **dict.fromkeys(("atharah", "athaarah", "अठारह"), 18),
+    **dict.fromkeys(("unnis", "उन्नीस"), 19), **dict.fromkeys(("bees", "बीस"), 20),
+    **dict.fromkeys(("ikkis", "इक्कीस"), 21), **dict.fromkeys(("bais", "baais", "बाईस"), 22),
+    **dict.fromkeys(("teis", "तेईस"), 23), **dict.fromkeys(("chaubis", "चौबीस"), 24),
+    **dict.fromkeys(("pachchis", "pachis", "पच्चीस"), 25), **dict.fromkeys(("chhabbis", "छब्बीस"), 26),
+    **dict.fromkeys(("sattais", "सत्ताईस"), 27), **dict.fromkeys(("atthais", "अट्ठाईस"), 28),
+    **dict.fromkeys(("untis", "उनतीस"), 29), **dict.fromkeys(("tees", "तीस"), 30),
+    **dict.fromkeys(("ikattis", "ikatis", "इकतीस", "इकत्तीस"), 31),
+}
+
 WORDS = dict(
     code="hi",
     script=("ऀ", "ॿ"),
@@ -27,4 +45,5 @@ WORDS = dict(
         "kaise", "koi", "mujhe", "hum", "aap", "ji", "bhi", "tha", "ho",
     ),
     availability=("koi", "milega", "milegi", "milenge", "baithe", "baithi", "कोई", "मिलेगा", "बैठे"),
+    numbers=_NUMBERS,
 )

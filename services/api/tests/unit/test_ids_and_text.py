@@ -46,3 +46,21 @@ def test_periods_overlap_only_when_they_share_time():
     assert overlaps("09:00", "12:00", "10:00", "11:00")  # HH:MM strings order the same way
     assert weekly_clash(["MON", "TUE"], "09:00", "12:00", ["TUE"], "11:00", "13:00")
     assert not weekly_clash(["MON"], "09:00", "12:00", ["TUE"], "09:00", "12:00")
+
+
+def test_chandrabindu_is_a_nasal_not_a_word_break():
+    """'पाँच' (five) split into 'pa ch'; every Hindi word with ँ did (कहाँ, हाँ, माँ)."""
+    from frontdesk_api.domain.text import normalise
+
+    assert normalise("पाँच") == normalise("पांच") == "panch"
+    assert normalise("अस्पताल कहाँ है") == "aspatal kahan hai"  # meets the romanised 'kahan'
+    assert len(normalise("हाँ जी").split()) == 2
+
+
+def test_an_english_possessive_is_the_word_itself():
+    """Speech-to-speech models say "a children's doctor"; the lexicon has "children doctor"."""
+    from frontdesk_api.domain.text import native_form, normalise
+
+    assert normalise("children's doctor") == normalise("children’s doctor") == "children doctor"
+    assert native_form("Garima's") == "garima"
+    assert normalise("D'Souza") == "d souza"  # not a possessive

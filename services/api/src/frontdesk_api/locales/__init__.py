@@ -31,12 +31,13 @@ class Locale:
     titles: tuple[str, ...]  # put before a person's name ("Dr", "sir", "ji")
     stopwords: tuple[str, ...]  # carry no topic
     availability: tuple[str, ...]  # only ask "is someone free?"
+    numbers: dict[str, int]  # 1-31 said as words (cardinal and ordinal), for dates
 
 
 LOCALES: tuple[Locale, ...] = tuple(Locale(**m.WORDS) for m in (en, hi, kn))
 BY_CODE: dict[str, Locale] = {loc.code: loc for loc in LOCALES}
 
-_WORD_LISTS = {f.name for f in fields(Locale)} - {"code", "script", "weekdays", "months"}
+_WORD_LISTS = {f.name for f in fields(Locale)} - {"code", "script", "weekdays", "months", "numbers"}
 
 
 def union(name: str) -> tuple[str, ...]:
@@ -44,6 +45,14 @@ def union(name: str) -> tuple[str, ...]:
     if name not in _WORD_LISTS:
         raise KeyError(name)
     return tuple(word for loc in LOCALES for word in getattr(loc, name))
+
+
+def numbers() -> dict[str, int]:
+    """Every registered language's number words, 1-31."""
+    merged: dict[str, int] = {}
+    for loc in LOCALES:
+        merged.update(loc.numbers)
+    return merged
 
 
 def calendar(name: str) -> tuple[tuple[str, ...], ...]:
