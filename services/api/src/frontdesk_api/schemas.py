@@ -403,7 +403,7 @@ class UnderstoodCategory(ApiModel):
     name: str
     localized_names: LocalizedText | None = None
     confidence: Annotated[float, Field(ge=0, le=1)]
-    matched_on: Literal["LEXICON", "NEED_ROUTE", "SEMANTIC"]
+    matched_on: Literal["LEXICON", "NEED_ROUTE", "SEMANTIC", "FORMER_RESOURCE"]
 
 
 class DateRange(ApiModel):

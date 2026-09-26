@@ -2005,7 +2005,10 @@ components:
               name: { type: string }
               localizedNames: { $ref: '#/components/schemas/LocalizedText' }
               confidence: { type: number, minimum: 0, maximum: 1 }
-              matchedOn: { type: string, enum: [LEXICON, NEED_ROUTE, SEMANTIC] }
+              matchedOn:
+                type: string
+                enum: [LEXICON, NEED_ROUTE, SEMANTIC, FORMER_RESOURCE]
+                description: FORMER_RESOURCE — the caller named a resource that no longer takes bookings; this is its category, and notes say so.
         dates:
           type: object
           nullable: true

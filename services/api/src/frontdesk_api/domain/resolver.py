@@ -134,6 +134,7 @@ class Resolution:
     clarification_type: str | None = None
     clarification_options: list[tuple[str, str]] = field(default_factory=list)  # (kind, id)
     suggestions: list[str] = field(default_factory=list)  # category ids
+    departed: str | None = None  # the caller named a resource that no longer takes bookings
 
 
 # Words that only ask "is someone free?" (en, hi and kn, romanised as the normaliser does).
@@ -202,8 +203,11 @@ def _name_tokens(name: str) -> list[str]:
     return tokens(normalise(name, strip_honorifics=True))
 
 
-def match_resources(query: str, directory: Directory, *, allow_phonetic: bool) -> list[ResourceMatch]:
-    """Score every active resource; keep only the best tier."""
+def match_resources(
+    query: str, directory: Directory, *, allow_phonetic: bool, former: bool = False
+) -> list[ResourceMatch]:
+    """Score every active resource (or, with `former`, every one that no longer takes bookings);
+    keep only the best tier."""
     q = _name_tokens(query)
     if not q:
         return []
@@ -211,7 +215,7 @@ def match_resources(query: str, directory: Directory, *, allow_phonetic: bool) -
     resource_terms = directory.terms("RESOURCE")
     scored: list[ResourceMatch] = []
     for doc in directory.resources:
-        if not doc.active:
+        if doc.active == former:
             continue
         name = _name_tokens(doc.name)
         localized = [_name_tokens(n) for n in doc.localized_names]
@@ -367,7 +371,22 @@ def resolve(
     else:
         resources = []
 
+    departed: ResourceEntry | None = None
+    if resource_name and not resources:
+        # Never by sound alone: "Dr Keeran" must not be told that a doctor has left.
+        former = [m for m in match_resources(resource_name, directory, allow_phonetic=False, former=True)
+                  if m.confidence >= thresholds.resource]
+        if len(former) == 1:
+            departed = next(d for d in directory.resources if d.resource_id == former[0].resource_id)
+
     cat_texts = [t for t in (category, need_text) if t]
+    if departed and not cat_texts:
+        # The caller still needs that department: search it, and say the named person is not here.
+        wanted = [c for c in departed.category_ids
+                  if (entry := directory.category(c)) and entry.offers_bookings and entry.active]
+        if wanted:
+            return Resolution(action="OFFER_SLOTS", departed=departed.resource_id,
+                              categories=[CategoryMatch(c, 1.0, "FORMER_RESOURCE") for c in wanted])
     if not cat_texts and (not resources or not resource_name):
         # A name found only by scanning the sentence ("I am Garima, need a skin doctor") must not
         # hide the department the caller asked for: match categories too, so a mismatch is asked.
@@ -412,7 +431,10 @@ def resolve(
     if categories:
         return resolution
 
-    probe = [t for t in (resource_name, category, need_text, utterance) if t]
+    # A person's name is not a misspelt department: leave it out of the spelling suggestions.
+    name_words = set(_name_tokens(resource_name)) if resource_name else set()
+    said = " ".join(w for w in tokens(normalise(utterance)) if w not in name_words)
+    probe = [t for t in (category, need_text, said) if t]
     suggestions = suggest_categories(probe, directory, thresholds.suggestion)
     if suggestions:
         resolution.action = "CLARIFY"

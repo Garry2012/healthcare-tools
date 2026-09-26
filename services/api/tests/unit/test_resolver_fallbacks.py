@@ -49,3 +49,33 @@ def test_a_name_in_the_sentence_does_not_override_the_department_asked_for(direc
 def test_a_named_doctor_with_reports_to_show_is_still_that_doctor(directory):
     res = resolve(utterance="Dr Garima, I have my reports to show", directory=directory, resource_name="Dr Garima")
     assert res.action == "OFFER_SLOTS" and [m.resource_id for m in res.resources] == ["res_garima"]
+
+
+def _without(directory, resource_id):
+    from dataclasses import replace
+
+    return replace(directory, resources=tuple(
+        replace(d, active=False) if d.resource_id == resource_id else d for d in directory.resources))
+
+
+@pytest.mark.parametrize("name", ["Kiran Hegde", "Dr Kiran Hegde", "ಡಾ. ಕಿರಣ್ ಹೆಗ್ಡೆ"])
+def test_a_departed_doctor_leads_to_their_department_not_a_guess(directory, name):
+    """PO review 3: after Dr Kiran Hegde (urology) left, his name was 'corrected' to Obstetrics."""
+    gone = _without(directory, "res_kiran_hegde")
+    res = resolve(utterance=f"I want to see {name}", resource_name=name, directory=gone)
+    assert res.action == "OFFER_SLOTS" and res.resources == []
+    assert res.departed == "res_kiran_hegde"
+    assert [c.category_id for c in res.categories] == ["cat_uro"]
+    assert res.categories[0].matched_on == "FORMER_RESOURCE"
+
+
+def test_a_departed_doctor_is_never_matched_by_sound_alone(directory):
+    gone = _without(directory, "res_kiran_hegde")
+    res = resolve(utterance="Dr Keeran Hedge", resource_name="Dr Keeran Hedge", directory=gone)
+    assert res.departed is None
+
+
+def test_a_persons_name_is_not_spell_corrected_into_a_department(directory):
+    res = resolve(utterance="I want to see Dr Hegdey Kiranov", resource_name="Dr Hegdey Kiranov",
+                  directory=_without(directory, "res_kiran_hegde"))
+    assert res.action == "NO_SERVICE" and res.clarification_options == []

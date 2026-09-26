@@ -211,6 +211,9 @@ async def agent_search(
         date_to = date_from + longest
         notes.append(f"The date range was shortened to {settings.tenant_search_max_days} days.")
         understood.dates = s.DateRange(from_=date_from, to=date_to)
+    if res.departed:
+        notes.append(f"{snap.resources[res.departed].name} is not taking bookings here. Say so, then offer "
+                     "the results below, which are from the same category. Never book the named one.")
     named = [m.resource_id for m in res.resources]
     cat_ids = [m.category_id for m in res.categories]
     anyone = not named and not cat_ids
@@ -229,6 +232,9 @@ async def agent_search(
         ]
     else:
         candidates = [d.id for d in snap.resources.values() if eligible(d)]
+
+    if res.departed and not candidates:
+        return _response("TRANSFER", now, "TRANSFER_DESK", understood, destination="desk", notes=notes)
 
     gender = body.preferences.gender.value if body.preferences and body.preferences.gender else None
     if gender:

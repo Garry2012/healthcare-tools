@@ -90,3 +90,31 @@ async def test_unconfirmed_hours_are_not_used_to_tell_doctors_apart(client):
     details = {o["id"]: o["detail"] for o in found["clarification"]["options"]}
     assert details["res_ravi_sharma"] == "Cardiology"
     assert details["res_anil_sharma"] == "Cardiology, MON WED FRI 10:00-13:00"
+
+
+async def _deactivate(client, resource_id):
+    doc = (await client.get(f"/resources/{resource_id}", headers=STAFF)).json()
+    body = {k: v for k, v in doc.items() if k not in ("id", "categories")}
+    r = await client.put(f"/resources/{resource_id}", headers=STAFF,
+                         json={**body, "categoryIds": [c["id"] for c in doc["categories"]], "active": False})
+    assert r.status_code == 200, r.text
+
+
+async def test_a_departed_doctor_is_named_as_gone_and_a_colleague_offered(client):
+    """PO review 3: 'Dr Anil Sharma' after he left must not become a guess at another department."""
+    await _deactivate(client, "res_anil_sharma")
+    body = await search(client, utterance="I want to see Dr Anil Sharma", resourceName="Dr Anil Sharma",
+                        when={"expression": "next week"})
+    assert body["routing"]["action"] == "OFFER_SLOTS"
+    assert [(c["id"], c["matchedOn"]) for c in body["understood"]["categories"]] == [("cat_cardio", "FORMER_RESOURCE")]
+    assert body["understood"]["resources"] == []
+    assert {r["resource"]["resourceId"] for r in body["results"]} == {"res_ravi_sharma"}
+    assert any("Dr. Anil Sharma is not taking bookings here" in n for n in body["notes"])
+
+
+async def test_a_departed_doctor_with_no_colleague_goes_to_the_desk(client):
+    await _deactivate(client, "res_kiran_hegde")  # the only urologist
+    body = await search(client, utterance="I want to see Kiran Hegde", resourceName="Kiran Hegde")
+    assert body["outcome"] == "TRANSFER"
+    assert body["routing"] == {"action": "TRANSFER_DESK", "destination": "desk"}
+    assert any("Dr. Kiran Hegde is not taking bookings here" in n for n in body["notes"])
