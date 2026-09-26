@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -10,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from .. import schemas as s
 from ..auth import require_scopes
 from ..services import scheduling as svc
-from .deps import ActingUser, Session, SettingsDep, errors, respond
+from .deps import ActingUser, ApiDate, Session, SettingsDep, errors, respond
 
 router = APIRouter(tags=["Notifications"], dependencies=[Depends(require_scopes("bookings.staff"))])
 
@@ -22,7 +21,7 @@ async def list_notifications(
     session: Session,
     status: Literal["PENDING", "SENT", "FAILED", "ACKNOWLEDGED"] = "PENDING",
     resource_id: Annotated[str | None, Query(alias="resourceId")] = None,
-    on: Annotated[date | None, Query(alias="date")] = None,
+    on: Annotated[ApiDate | None, Query(alias="date")] = None,
 ):
     return respond(await svc.list_notifications(session, status=status, resource_id=resource_id, on=on))
 

@@ -26,8 +26,10 @@ else
 fi
 
 cleanup() {
-  [[ -n "$API_PID" ]] && kill "$API_PID" 2>/dev/null || true
-  [[ -n "$USE_DOCKER" ]] && { "${COMPOSE[@]}" --profile test rm -sf postgres-test >/dev/null 2>&1 || true; }
+  local rc=$?  # the suites' result; nothing below may change it
+  if [[ -n "$API_PID" ]]; then kill "$API_PID" 2>/dev/null || true; fi
+  if [[ -n "$USE_DOCKER" ]]; then "${COMPOSE[@]}" --profile test rm -sf postgres-test >/dev/null 2>&1 || true; fi
+  exit "$rc"
 }
 trap cleanup EXIT
 

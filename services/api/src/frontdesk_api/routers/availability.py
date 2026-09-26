@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -11,7 +10,7 @@ from .. import schemas as s
 from ..auth import require_scopes
 from ..errors import validation
 from ..services import search
-from .deps import Session, SettingsDep, errors, respond
+from .deps import ApiDate, Session, SettingsDep, errors, respond
 
 router = APIRouter(tags=["Availability"], dependencies=[Depends(require_scopes())])
 MAX_DAYS = 62
@@ -24,8 +23,8 @@ async def get_availability(
     request: Request,
     session: Session,
     settings: SettingsDep,
-    date_from: Annotated[date, Query(alias="from")],
-    date_to: Annotated[date, Query(alias="to")],
+    date_from: Annotated[ApiDate, Query(alias="from")],
+    date_to: Annotated[ApiDate, Query(alias="to")],
     resource_id: Annotated[str | None, Query(alias="resourceId")] = None,
     category: str | None = None,
     include_slots: Annotated[bool, Query(alias="includeSlots")] = True,

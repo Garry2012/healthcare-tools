@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -11,7 +10,7 @@ from .. import schemas as s
 from ..auth import Principal, require_scopes
 from ..services import idempotency as idem
 from ..services import scheduling as svc
-from .deps import ActingUser, IdempotencyKey, Session, SettingsDep, errors, respond
+from .deps import ActingUser, ApiDate, IdempotencyKey, Session, SettingsDep, errors, respond
 
 router = APIRouter(tags=["Scheduling"])
 
@@ -40,8 +39,8 @@ async def list_schedule_exceptions(
     session: Session,
     principal: Annotated[Principal, Depends(require_scopes())],
     resource_id: Annotated[str | None, Query(alias="resourceId")] = None,
-    date_from: Annotated[date | None, Query(alias="from")] = None,
-    date_to: Annotated[date | None, Query(alias="to")] = None,
+    date_from: Annotated[ApiDate | None, Query(alias="from")] = None,
+    date_to: Annotated[ApiDate | None, Query(alias="to")] = None,
 ):
     return respond(await svc.list_exceptions(session, resource_id=resource_id, date_from=date_from,
                                              date_to=date_to, staff=principal.is_staff))
@@ -92,7 +91,7 @@ async def get_board(
     session: Session,
     settings: SettingsDep,
     principal: Annotated[Principal, Depends(require_scopes())],
-    on: Annotated[date | None, Query(alias="date")] = None,
+    on: Annotated[ApiDate | None, Query(alias="date")] = None,
 ):
     return respond(await svc.get_board(session, settings, resourceId, on, staff=principal.is_staff))
 

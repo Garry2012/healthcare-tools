@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
@@ -181,6 +181,15 @@ async def load(
     for resource_id, slot_id in held:
         data.held.setdefault(resource_id, set()).add(slot_id)
     return data
+
+
+async def lock_resource(session: AsyncSession, resource_id: str, *, exclusive: bool) -> None:
+    """Transaction-scoped lock per resource. Bookings take it shared (they never wait for each
+    other: the slot's unique index decides between them); schedule changes take it exclusive, so
+    a booking can never commit into a session that a concurrent exception or template is
+    removing, and two schedule changes cannot both pass an overlap check."""
+    fn = "pg_advisory_xact_lock" if exclusive else "pg_advisory_xact_lock_shared"
+    await session.execute(text(f"SELECT {fn}(hashtext(:key))"), {"key": f"resource:{resource_id}"})
 
 
 def now_in(settings: Settings) -> datetime:

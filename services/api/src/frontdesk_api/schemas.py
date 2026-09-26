@@ -18,17 +18,33 @@ LocalizedText = dict[str, str]
 Attributes = dict[str, str | int | float | bool]
 
 
+MAX_DEPTH = 32
+# Every date the API accepts or stores; outside it an input is a mistake (or an attack), and
+# date arithmetic near year 9999 overflows.
+EARLIEST, LATEST = dt.date(2000, 1, 1), dt.date(2100, 12, 31)
+
+
 def _reject_nul(value: Any) -> None:
-    if isinstance(value, str):
-        if "\x00" in value:
-            raise ValueError("text must not contain NUL characters")
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            _reject_nul(key)
-            _reject_nul(item)
-    elif isinstance(value, list | tuple):
-        for item in value:
-            _reject_nul(item)
+    """Iterative walk (a deeply nested body must be a 400, not a RecursionError)."""
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    while stack:
+        item, depth = stack.pop()
+        if depth > MAX_DEPTH:
+            raise ValueError(f"request nests deeper than {MAX_DEPTH} levels")
+        if isinstance(item, str):
+            if "\x00" in item:
+                raise ValueError("text must not contain NUL characters")
+        elif isinstance(item, dict):
+            stack.extend((x, depth + 1) for pair in item.items() for x in pair)
+        elif isinstance(item, list | tuple):
+            stack.extend((x, depth + 1) for x in item)
+
+
+def in_range(value: dt.date) -> dt.date:
+    day = value.date() if isinstance(value, dt.datetime) else value
+    if not EARLIEST <= day <= LATEST:
+        raise ValueError(f"date must be between {EARLIEST} and {LATEST}")
+    return value
 
 
 class ApiModel(BaseModel):
@@ -40,6 +56,17 @@ class ApiModel(BaseModel):
         # PostgreSQL text cannot hold NUL; reject it as a validation error, not a 500.
         _reject_nul(data)
         return data
+
+    @model_validator(mode="after")
+    def _dates_in_range(self) -> ApiModel:
+        for name in type(self).model_fields:
+            value = getattr(self, name)
+            if isinstance(value, dt.date):
+                try:
+                    in_range(value)
+                except ValueError as exc:
+                    raise ValueError(f"{name}: {exc}") from None
+        return self
 
 
 # ---------------------------------------------------------------- enums

@@ -109,8 +109,12 @@ async def set_template(
     session: AsyncSession, settings: Settings, resource_id: str, body: s.ScheduleTemplate, actor: str
 ) -> s.ScheduleTemplate:
     resource = await _require_resource(session, resource_id)
+    await schedule.lock_resource(session, resource.id, exclusive=True)
     _validate_template(body)
     now = schedule.now_in(settings)
+    if body.effective_from < now.date():
+        raise validation("A template cannot take effect before today (history is never rewritten).",
+                         "effectiveFrom")
     start = max(body.effective_from, now.date())
     last_appt = await session.scalar(
         select(t.Booking.date)
@@ -392,8 +396,12 @@ async def create_exception(
 ) -> s.ScheduleException:
     """Does not commit; the caller's idempotency wrapper does."""
     resource = await _require_resource(session, body.resource_id)
-    await _validate_exception(session, body)
+    await schedule.lock_resource(session, resource.id, exclusive=True)
     now = schedule.now_in(settings)
+    if body.date_from < now.date():
+        # A past exception would move customers who have already been seen and phone them about it.
+        raise validation("An exception cannot start before today.", "dateFrom")
+    await _validate_exception(session, body)
     horizon = body.date_to + timedelta(days=settings.tenant_next_bookable_horizon_days)
     before = await schedule.load(session, settings, now, [resource.id], body.date_from, horizon)
     dates = schedule.daterange(body.date_from, body.date_to)
@@ -433,7 +441,10 @@ async def delete_exception(
     )
     if row is None:
         raise not_found("No such exception.")
+    await schedule.lock_resource(session, row.resource_id, exclusive=True)
     now = schedule.now_in(settings)
+    horizon = row.date_to + timedelta(days=settings.tenant_next_bookable_horizon_days)
+    with_exception = await schedule.load(session, settings, now, [row.resource_id], row.date_from, horizon)
     row.deleted_at, row.deleted_by = now, actor
     await session.flush()
 
@@ -453,6 +464,7 @@ async def delete_exception(
     dates = [a.date for a in bookings.values()] or [row.date_from]
     data = await schedule.load(session, settings, now, [row.resource_id], min(dates), max(dates))
 
+    previous = await _status_before(session, list(bookings), exception_id)
     restored: dict[str, bool] = {}
     for booking in bookings.values():
         if booking.status != "NEEDS_RESCHEDULE" or booking.impacted_by_exception_id != exception_id:
@@ -462,7 +474,8 @@ async def delete_exception(
         if ok:
             try:
                 async with session.begin_nested():
-                    booking.status = "BOOKED"
+                    # Back to what it was (e.g. CONFIRMED_BY_DESK), not a blanket BOOKED.
+                    booking.status = previous.get(booking.id, "BOOKED")
                     booking.impacted_by_exception_id = None
                     await session.flush()
             except IntegrityError:
@@ -501,7 +514,40 @@ async def delete_exception(
                     "bookingStatus": booking.status,
                 },
             ))
+    await session.flush()
+
+    # Bookings that existed only because of the exception (an extra session, added capacity, a
+    # moved time) lose their session when it is withdrawn: they are impacted like any removal.
+    resource_row = resource or await _require_resource(session, row.resource_id)
+    today = now.date()
+    dates = [d for d in schedule.daterange(max(row.date_from, today), row.date_to)] if row.date_to >= today else []
+    after = await schedule.load(session, settings, now, [row.resource_id], row.date_from, horizon)
+    await _impact(
+        session, settings, resource_row, dates,
+        before=lambda d: with_exception.sessions(row.resource_id, d, channel="DESK"),
+        after=lambda d: after.sessions(row.resource_id, d, channel="DESK"),
+        suggest=after,
+        exception_id=exception_id,
+        template_change=False,
+        actor=actor,
+    )
     await session.commit()
+
+
+async def _status_before(session: AsyncSession, booking_ids: list[str], exception_id: str) -> dict[str, str]:
+    """The live status each booking had before this exception moved it to NEEDS_RESCHEDULE."""
+    if not booking_ids:
+        return {}
+    rows = await session.execute(
+        select(t.BookingHistory.booking_id, t.BookingHistory.details)
+        .where(t.BookingHistory.booking_id.in_(booking_ids), t.BookingHistory.change == "NEEDS_RESCHEDULE")
+        .order_by(t.BookingHistory.id)
+    )
+    found: dict[str, str] = {}
+    for booking_id, details in rows:
+        if (details or {}).get("exceptionId") == exception_id and (details or {}).get("previous") in IMPACTABLE:
+            found[booking_id] = details["previous"]
+    return found
 
 
 async def impact_of(session: AsyncSession, settings: Settings, exception_id: str) -> s.ImpactList:

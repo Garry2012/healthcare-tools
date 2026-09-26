@@ -4,19 +4,22 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import Depends, Header, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
 from ..db.session import get_session
 from ..errors import ApiError, validation
-from ..schemas import Error
+from ..schemas import Error, in_range
 
 CALLER_PATTERN = r"^\+[1-9][0-9]{6,14}$"
+# A date query parameter within the range the API accepts (schemas.EARLIEST..LATEST).
+ApiDate = Annotated[date, AfterValidator(in_range)]
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 CallId = Annotated[str, Header(alias="X-Call-Id", max_length=64)]

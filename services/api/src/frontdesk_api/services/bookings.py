@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import date, time, timedelta
 
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
@@ -255,6 +255,12 @@ async def book(
 ) -> Booked:
     if not re.fullmatch(settings.tenant_phone_pattern, body.customer.phone):
         raise validation("customer.phone does not match the facility's phone format.", "customer.phone")
+    ref = ids.parse_slot_id(body.slot_id)
+    if ref is not None:
+        await schedule.lock_resource(session, ref.session.resource_id, exclusive=False)
+        today = schedule.now_in(settings).date()
+        if ref.session.date > today + timedelta(days=settings.tenant_booking_horizon_days):
+            raise validation(f"Bookings open {settings.tenant_booking_horizon_days} days ahead.", "slotId")
     check = await _check_slot(session, settings, body.slot_id, channel)
     if check.view is None or check.slot is None:
         raise _slot_unavailable(check.view, "That slot does not exist in the current schedule.")
@@ -460,11 +466,17 @@ async def reschedule(
     session: AsyncSession, settings: Settings, booking_id: str, body: s.RescheduleRequest,
     *, caller_number: str | None, actor: str,
 ) -> tuple[t.Booking, SlotView]:
+    target = ids.parse_slot_id(body.new_slot_id)
+    if target is None:
+        raise validation("newSlotId is not a slot id returned by availability search.", "newSlotId")
+    # Resource locks before the row lock, in a fixed order: an exception being created takes the
+    # resource lock and then locks its bookings, so the reverse order here would deadlock.
+    current = await session.scalar(select(t.Booking.resource_id).where(t.Booking.id == booking_id))
+    for resource_id in sorted({r for r in (current, target.session.resource_id) if r}):
+        await schedule.lock_resource(session, resource_id, exclusive=False)
     row = await _locate(session, settings, booking_id, body.customer_name, caller_number)
     if row.status not in CHANGEABLE_STATUSES:
         raise ApiError("CONFLICT", "This booking can no longer be moved.")
-    if ids.parse_slot_id(body.new_slot_id) is None:
-        raise validation("newSlotId is not a slot id returned by availability search.", "newSlotId")
     previous = await _move(session, settings, row, body.new_slot_id, channel="AGENT", actor=actor,
                            status="RESCHEDULED")
     return row, previous

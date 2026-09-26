@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -17,6 +16,7 @@ from ..logging import log_event
 from ..services import bookings, knowledge, schedule, search
 from ..services import idempotency as idem
 from .deps import (
+    ApiDate,
     CallerNumber,
     CallId,
     IdempotencyKey,
@@ -131,8 +131,8 @@ async def list_bookings(
     caller_number: CallerNumber = None,
     customer_name: Annotated[str | None, Query(alias="customerName", max_length=100)] = None,
     phone: Annotated[str | None, Query(pattern=r"^[0-9]{6,15}$")] = None,
-    date_from: Annotated[date | None, Query(alias="from")] = None,
-    date_to: Annotated[date | None, Query(alias="to")] = None,
+    date_from: Annotated[ApiDate | None, Query(alias="from")] = None,
+    date_to: Annotated[ApiDate | None, Query(alias="to")] = None,
 ):
     result = await bookings.agent_list(session, settings, caller_number=caller_number,
                                     customer_name=customer_name, phone=phone,

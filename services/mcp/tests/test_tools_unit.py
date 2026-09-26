@@ -263,19 +263,17 @@ async def test_credential_errors_never_reach_the_model(make_settings, status):
     assert write.structured_content["outcome"] == "COULD_NOT_RECORD"
 
 
-async def test_corrected_phone_is_a_new_booking_request_not_a_conflict(make_settings):
+async def test_corrected_phone_is_a_new_booking_request_not_a_conflict(make_settings, monkeypatch):
     keys: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         keys.append(request.headers["idempotency-key"])
         return httpx.Response(201, json={"outcome": "BOOKED"})
 
+    # In process (no uvicorn): the call context the gateway would forward.
+    monkeypatch.setattr(tools, "get_http_headers", lambda: {"x-call-id": "call-9", "x-caller-number": "+919000000101"})
     args = {"action": "BOOK", "slotId": "slot_ses_res_garima_2026-09-28_2_01", "language": "en"}
-    app = create_app(make_settings(), transport=httpx.MockTransport(handler))
-    async with serving(app) as base:
-        transport = StreamableHttpTransport(f"{base}/mcp/", headers={
-            "Authorization": "Bearer mcp-token", "X-Call-Id": "call-9", "X-Caller-Number": "+919000000101"})
-        async with Client(transport) as client:
-            for phone in ("9000000101", "9000000101", "9000000102"):
-                await client.call_tool("manage_booking", {**args, "customer": {"name": "Lakshmi Rao", "phone": phone}})
+    async with Client(mcp_with(make_settings(), handler)) as client:
+        for phone in ("9000000101", "9000000101", "9000000102"):
+            await client.call_tool("manage_booking", {**args, "customer": {"name": "Lakshmi Rao", "phone": phone}})
     assert keys[0] == keys[1] != keys[2]

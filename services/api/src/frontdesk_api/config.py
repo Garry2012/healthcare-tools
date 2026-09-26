@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     tenant_sequence_window_minutes: int = Field(default=20, ge=1)
     tenant_default_slot_minutes: int = Field(default=15, ge=1)
     tenant_search_default_days: int = Field(default=7, ge=1, le=31)
+    # The agent never computes more than this many days in one search (voice latency, payload).
+    tenant_search_max_days: int = Field(default=31, ge=1, le=62)
+    # How far ahead a booking may be made.
+    tenant_booking_horizon_days: int = Field(default=180, ge=1, le=730)
     tenant_next_bookable_horizon_days: int = Field(default=14, ge=1, le=60)
     tenant_resolver_resource_threshold: float = Field(default=0.8, ge=0, le=1)
     tenant_resolver_category_threshold: float = Field(default=0.8, ge=0, le=1)

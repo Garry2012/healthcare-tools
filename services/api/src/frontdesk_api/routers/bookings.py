@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -12,7 +11,7 @@ from ..auth import require_scopes
 from ..services import bookings as svc
 from ..services import idempotency as idem
 from ..services import scheduling
-from .deps import ActingUser, IdempotencyKey, Session, SettingsDep, errors, respond
+from .deps import ActingUser, ApiDate, IdempotencyKey, Session, SettingsDep, errors, respond
 
 router = APIRouter(tags=["Bookings"], dependencies=[Depends(require_scopes("bookings.staff"))])
 
@@ -31,7 +30,7 @@ async def search_bookings(
     settings: SettingsDep,
     resource_id: Annotated[str | None, Query(alias="resourceId")] = None,
     session_id: Annotated[str | None, Query(alias="sessionId")] = None,
-    on: Annotated[date | None, Query(alias="date")] = None,
+    on: Annotated[ApiDate | None, Query(alias="date")] = None,
     phone: Annotated[str | None, Query(pattern=r"^[0-9]{6,15}$")] = None,
     status: s.BookingStatus | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -10,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from .. import schemas as s
 from ..auth import require_scopes
 from ..services import calls as svc
-from .deps import Session, SettingsDep, errors, respond
+from .deps import ApiDate, Session, SettingsDep, errors, respond
 
 router = APIRouter(tags=["Calls"])
 
@@ -32,8 +31,8 @@ async def store_call_summary(body: s.CallSummary, session: Session):
 async def list_call_summaries(
     session: Session,
     settings: SettingsDep,
-    date_from: Annotated[date | None, Query(alias="from")] = None,
-    date_to: Annotated[date | None, Query(alias="to")] = None,
+    date_from: Annotated[ApiDate | None, Query(alias="from")] = None,
+    date_to: Annotated[ApiDate | None, Query(alias="to")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):

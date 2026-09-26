@@ -112,7 +112,40 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
         app.include_router(router.router, prefix=API_PREFIX)
     app.include_router(health.router)
     _describe_errors_as_400(app)
+    app.add_middleware(BodyLimit, limit=settings.max_request_bytes)
     return app
+
+
+class BodyLimit:
+    """Reads the request body (at most MAX_REQUEST_BYTES) before the app sees it, so a chunked
+    upload without Content-Length cannot get past the limit either; then replays it."""
+
+    def __init__(self, app, limit: int) -> None:
+        self.app, self.limit = app, limit
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] in ("GET", "HEAD", "DELETE", "OPTIONS"):
+            await self.app(scope, receive, send)
+            return
+        messages, size = [], 0
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message["type"] != "http.request":
+                break
+            size += len(message.get("body", b""))
+            if size > self.limit:
+                error = errors.ApiError("VALIDATION_FAILED", f"Request body exceeds {self.limit} bytes.")
+                await JSONResponse(error.body(), status_code=413)(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+        pending = iter(messages)
+
+        async def replay():
+            return next(pending, None) or await receive()
+
+        await self.app(scope, replay, send)
 
 
 def _describe_errors_as_400(app: FastAPI) -> None:

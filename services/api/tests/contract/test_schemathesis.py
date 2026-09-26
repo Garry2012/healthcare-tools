@@ -41,5 +41,6 @@ def test_schemathesis_smoke():
         ],
         capture_output=True, text=True, timeout=900,
     )
-    summary = result.stdout[result.stdout.find("SUMMARY"):] if "SUMMARY" in result.stdout else result.stdout[-3000:]
-    assert result.returncode == 0, summary
+    # Keep the failure details (request, response, curl reproduction), not just the tally.
+    failures = result.stdout[result.stdout.find("FAILURES"):] if "FAILURES" in result.stdout else result.stdout
+    assert result.returncode == 0, failures[-8000:]

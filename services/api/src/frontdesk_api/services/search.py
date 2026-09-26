@@ -168,6 +168,12 @@ async def agent_search(
 
     date_from = max(resolved.date_from, today)
     date_to = resolved.date_to
+    notes: list[str] = []
+    longest = timedelta(days=settings.tenant_search_max_days - 1)
+    if date_to - date_from > longest:
+        date_to = date_from + longest
+        notes.append(f"The date range was shortened to {settings.tenant_search_max_days} days.")
+        understood.dates = s.DateRange(from_=date_from, to=date_to)
     named = [m.resource_id for m in res.resources]
     cat_ids = [m.category_id for m in res.categories]
     anyone = not named and not cat_ids
@@ -187,7 +193,6 @@ async def agent_search(
     else:
         candidates = [d.id for d in snap.resources.values() if eligible(d)]
 
-    notes: list[str] = []
     gender = body.preferences.gender.value if body.preferences and body.preferences.gender else None
     if gender:
         unknown = [d for d in candidates if snap.resources[d].gender is None]
