@@ -52,7 +52,7 @@ for _ in $(seq 1 50); do curl -sf "http://127.0.0.1:${API_PORT}/ready" >/dev/nul
 curl -sf "http://127.0.0.1:${API_PORT}/ready" >/dev/null || { cat "$LOG"; exit 1; }
 
 echo "== mcp: lint, unit, end-to-end through the adapter"
-(cd services/mcp && uv sync --frozen -q && uv run ruff check . \
+(cd services/mcp && uv sync --frozen -q && uv run ruff check . ../../deploy \
   && MCP_E2E_API_URL="http://127.0.0.1:${API_PORT}/api/v1" MCP_E2E_API_TOKEN="$AGENT_TOKEN" \
      uv run pytest tests -q -p no:cacheprovider)
 

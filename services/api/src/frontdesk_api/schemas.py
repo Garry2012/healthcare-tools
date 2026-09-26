@@ -145,6 +145,14 @@ class Category(ApiModel):
     active: bool
 
 
+class CategoryInput(ApiModel):
+    code: Annotated[str, StringConstraints(max_length=20)] | None = None
+    name: Annotated[str, StringConstraints(min_length=1, max_length=100)]
+    localized_names: LocalizedText | None = None
+    offers_bookings: bool = True
+    active: bool = True
+
+
 class Resource(ApiModel):
     id: str
     name: str

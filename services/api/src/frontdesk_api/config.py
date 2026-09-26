@@ -11,7 +11,7 @@ import re
 from datetime import time
 from functools import lru_cache
 from typing import Literal
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -75,7 +75,10 @@ class Settings(BaseSettings):
     @field_validator("tenant_timezone")
     @classmethod
     def _tz(cls, value: str) -> str:
-        ZoneInfo(value)
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"unknown IANA timezone {value!r}") from exc
         return value
 
     @field_validator("tenant_phone_pattern")

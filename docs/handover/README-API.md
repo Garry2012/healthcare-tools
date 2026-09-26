@@ -31,7 +31,7 @@ leaves to the implementation. The spec's gaps and the choices made are in `OPEN-
 | Walk-in / phone booking by desk | `GET /availability?resourceId=…`, `POST /bookings` (same slot rules; `DESK_ONLY` resources allowed) |
 | Register | `GET /bookings?date=…&resourceId=…`, `POST /bookings/{id}/status` (ARRIVED, COMPLETED, NO_SHOW, CANCELLED_BY_PROVIDER), `POST /bookings/{id}/confirm` |
 | Knowledge base | `GET/POST /knowledge`, `PUT/DELETE /knowledge/{entryId}` (scope `knowledge.write`; drafts stay invisible to the agent until `approved: true`) |
-| Directory admin | `GET/POST /resources`, `PUT /resources/{id}`, `GET/PUT /resources/{id}/schedule-template`, `GET/POST /lexicon` |
+| Directory admin | `PUT /categories/{id}`, `GET/POST /resources`, `PUT /resources/{id}`, `GET/PUT /resources/{id}/schedule-template`, `GET/POST /lexicon` |
 
 ## Behaviour worth knowing
 

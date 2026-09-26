@@ -142,6 +142,16 @@ async def list_categories(session: AsyncSession) -> tuple[s.CategoryList, str]:
     return body, f'"{etag}"'
 
 
+async def upsert_category(session: AsyncSession, category_id: str, body: s.CategoryInput) -> s.Category:
+    row = await session.get(t.Category, category_id) or t.Category(id=category_id)
+    row.code, row.name, row.localized_names = body.code, body.name, body.localized_names or {}
+    row.offers_bookings, row.active = body.offers_bookings, body.active
+    session.add(row)
+    await cache.bump(session, cache.DIRECTORY)
+    await session.commit()
+    return views.category(row)
+
+
 # ---------------------------------------------------------------- resources
 
 

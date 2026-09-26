@@ -46,6 +46,39 @@ def _maintenance() -> None:
     asyncio.run(work())
 
 
+def check_config() -> int:
+    """Validate a provider's settings (and its pack) without touching the database."""
+    import json
+    import sys
+
+    from pydantic import ValidationError
+
+    from . import packs
+    from .config import Settings
+
+    try:
+        settings = Settings()
+        problems = list(packs.validate(settings.pack))
+        parts = settings.day_parts
+        if not {"MORNING", "AFTERNOON", "EVENING"} <= set(parts):
+            problems.append("TENANT_DAY_PARTS_JSON must define MORNING, AFTERNOON and EVENING")
+        destinations = settings.transfer_destinations
+        escalation = settings.pack.escalation_destination
+        if escalation not in destinations:
+            problems.append(f"transfer destinations lack the pack's escalation {escalation!r}")
+        if settings.tenant_knowledge_clarify_threshold > settings.tenant_knowledge_answer_threshold:
+            problems.append("TENANT_KNOWLEDGE_CLARIFY_THRESHOLD must not exceed the answer threshold")
+    except (ValidationError, ValueError) as exc:
+        print(f"invalid configuration: {exc}", file=sys.stderr)
+        return 1
+    effective = {k: v for k, v in settings.model_dump(mode="json").items()
+                 if k == "domain_pack" or k.startswith("tenant_")}
+    print(json.dumps({"effective": effective, "transferDestinations": destinations,
+                      "escalation": settings.pack.escalation_destination, "problems": problems},
+                     indent=2, ensure_ascii=False))
+    return 1 if problems else 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="frontdesk-api")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -55,6 +88,7 @@ def main() -> None:
     seed = sub.add_parser("seed", help="load synthetic demo data (idempotent)")
     seed.add_argument("--reset", action="store_true", help="DESTRUCTIVE: empty every table, then reload")
     sub.add_parser("maintenance", help="purge expired idempotency keys and board entries")
+    sub.add_parser("check-config", help="validate provider settings and the domain pack (no database)")
     args = parser.parse_args()
     if args.command == "serve":
         _serve()
@@ -62,6 +96,8 @@ def main() -> None:
         _migrate(args.revision)
     elif args.command == "seed":
         _seed(args.reset)
+    elif args.command == "check-config":
+        raise SystemExit(check_config())
     else:
         _maintenance()
 

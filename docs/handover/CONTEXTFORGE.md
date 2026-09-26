@@ -2,7 +2,8 @@
 
 ContextForge is infrastructure: it federates `frontdesk-mcp` as an MCP gateway
 (`integration_type: MCP`, streamable HTTP) and adds auth, observability and rate limits.
-Nothing is built or changed in the ContextForge fork.
+Nothing is built or changed in the ContextForge fork. Each provider (hospital or hotel) is
+one gateway entry, `frontdesk-<provider>`, pointing at that provider's adapter.
 
 ```
 voice agent ──MCP + X-Call-Id, X-Caller-Number──▶ ContextForge ──passthrough──▶ frontdesk-mcp ──▶ frontdesk-api
@@ -22,6 +23,7 @@ export CONTEXTFORGE_URL=https://<gateway-host>
 export CONTEXTFORGE_ADMIN_EMAIL=... CONTEXTFORGE_ADMIN_PASSWORD=...   # or CONTEXTFORGE_TOKEN=<admin JWT>
 export MCP_PUBLIC_URL=https://<adapter-host>/mcp/
 export MCP_BEARER_TOKEN=<same value the adapter is configured with>
+export PROVIDER_ID=<provider> DOMAIN_PACK=<pack>   # from deploy/providers/<provider>.env
 
 cd services/mcp
 uv run python ../../deploy/contextforge/register.py --dry-run   # prints the payload, token redacted
@@ -41,7 +43,7 @@ TOKEN=$(curl -s -X POST "$CONTEXTFORGE_URL/v1/auth/login" -H 'Content-Type: appl
 curl -s -X POST "$CONTEXTFORGE_URL/v1/gateways" -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d @- <<JSON
 {
-  "name": "healthcare-frontdesk",
+  "name": "frontdesk-<provider>",
   "url": "$MCP_PUBLIC_URL",
   "description": "Hospital front-desk tools: find_availability, manage_booking",
   "transport": "STREAMABLEHTTP",
@@ -49,11 +51,11 @@ curl -s -X POST "$CONTEXTFORGE_URL/v1/gateways" -H "Authorization: Bearer $TOKEN
   "auth_token": "$MCP_BEARER_TOKEN",
   "passthrough_headers": ["X-Call-Id", "X-Caller-Number"],
   "visibility": "private",
-  "tags": ["healthcare", "front-desk"]
+  "tags": ["front-desk", "<pack>", "frontdesk-<provider>"]
 }
 JSON
 ```
 
 ContextForge then lists the tools with the gateway prefix, e.g.
-`healthcare-frontdesk-find-availability`. The live registration hasn't been run from this
+`frontdesk-<provider>-find-availability`. The live registration hasn't been run from this
 workspace; only `--dry-run` has been verified.

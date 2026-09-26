@@ -1,5 +1,8 @@
 # Deploy
 
+One deployment per provider (hospital or hotel). Provider settings live in
+`deploy/providers/<provider>.env`; `ONBOARDING.md` is the runbook for adding one.
+
 Two images, one database. Configuration is environment only; `.env.example` lists every
 variable. No secret is baked into an image.
 
@@ -56,7 +59,7 @@ Only `DATABASE_URL` changes. No Supabase SDK or Supabase-only feature is used.
 |---|---|---|
 | `DATABASE_URL` | api | owner for `migrate`, runtime role for `serve` |
 | `AUTH_TOKENS_JSON` | api | `{"token": ["scope", ...]}`; replace with an OAuth2 verifier later (`auth.TokenVerifier`) |
-| `TENANT_*` | api | timezone, phone pattern, currency, day parts, capacity defaults, thresholds, policies |
+| `PROVIDER_ID`, `DOMAIN_PACK`, `TENANT_*` | api, mcp | from `deploy/providers/<provider>.env`; validate with `frontdesk-api check-config` |
 | `API_BASE_URL`, `API_BEARER_TOKEN` | mcp | the token must hold the `agent` scope |
 | `MCP_BEARER_TOKEN` | mcp | what ContextForge presents; required when `ENV=production` |
 | `MCP_DEV_CALLER_NUMBER` | mcp | dev only; the service refuses to start with it when `ENV=production` |

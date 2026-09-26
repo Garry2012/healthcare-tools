@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from frontdesk_api import packs
+from frontdesk_api.config import Settings
 from frontdesk_api.domain.resolver import CategoryEntry, Directory, LexiconTerm, ResourceEntry, resolve
 
 PACKS = ("healthcare", "hospitality")
@@ -55,3 +56,22 @@ def test_hospitality_words_resolve_with_the_same_core(utterance, fields, action,
     assert res.action == action
     if category:
         assert [d.category_id for d in res.categories] == [category]
+
+
+def test_unknown_timezone_is_a_validation_error_not_a_crash(make_settings):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="unknown IANA timezone"):
+        make_settings(tenant_timezone="Mars/Base")
+
+
+@pytest.mark.parametrize("provider", ["demo-hospital", "demo-hotel"])
+def test_committed_provider_files_are_valid(make_settings, provider):
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[4] / "deploy/providers" / f"{provider}.env"
+    values = dict(line.split("=", 1) for line in path.read_text().splitlines() if line and not line.startswith("#"))
+    fields = {k.lower(): v for k, v in values.items() if k.lower() in Settings.model_fields and v != ""}
+    settings = make_settings(**fields)
+    assert packs.validate(settings.pack) == []
+    assert settings.pack.escalation_destination in settings.transfer_destinations

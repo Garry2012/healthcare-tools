@@ -63,3 +63,14 @@ async def test_directory_cache_builds_once_and_rebuilds_after_a_directory_write(
                               json={"utterance": "rash doctor please", "language": "en", "category": "rash doctor"})
     assert cache.builds == 2
     assert [c["id"] for c in found.json()["understood"]["categories"]] == ["cat_derm"]
+
+
+async def test_new_category_is_bookable_on_the_next_question(client, app):
+    await client.post("/agent/availability-search", headers=call(),
+                      json={"utterance": "skin doctor", "language": "en", "category": "skin doctor"})
+    r = await client.put("/categories/cat_ent", headers=STAFF,
+                         json={"code": "ENT", "name": "ENT", "localizedNames": {"kn": "ಕಿವಿ ಮೂಗು ಗಂಟಲು"}})
+    assert r.status_code == 200 and r.json()["id"] == "cat_ent"
+    found = await client.post("/agent/availability-search", headers=call(),
+                              json={"utterance": "I need ENT", "language": "en", "category": "ENT"})
+    assert [c["id"] for c in found.json()["understood"]["categories"]] == ["cat_ent"]

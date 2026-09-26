@@ -27,7 +27,7 @@ demo: ## Kannada search → book → list → reschedule → cancel against the 
 
 lint: ## ruff on both services
 	cd services/api && uv run ruff check .
-	cd services/mcp && uv run ruff check .
+	cd services/mcp && uv run ruff check . ../../deploy
 
 build: ## Build both images
 	docker build -t frontdesk-api:dev services/api

@@ -1,9 +1,11 @@
-name: healthcare-frontdesk
+name: frontdesk-${PROVIDER_ID:-demo-hospital}
 
 # One compose file, two profiles:
 #   dev  : postgres + migrate (one-shot) + api + mcp
 #   test : a throwaway postgres for the integration, contract and MCP suites
-# Values come from the repository-root .env (the Makefile passes --env-file ../.env).
+# Secrets and ports come from the repository-root .env (the Makefile passes --env-file .env).
+# Provider settings (domain pack, TENANT_*) come from providers/$PROVIDER_ID.env, one file per
+# hospital or hotel; each provider is its own stack (project name frontdesk-<provider>).
 # Host ports bind to 127.0.0.1 only.
 
 x-db-env: &db-env
@@ -17,11 +19,9 @@ x-api-env: &api-env
   ENV: ${ENV:-development}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   AUTH_TOKENS_JSON: ${AUTH_TOKENS_JSON}
-  TENANT_TIMEZONE: ${TENANT_TIMEZONE:-Asia/Kolkata}
-  TENANT_COUNTRY_CALLING_CODE: ${TENANT_COUNTRY_CALLING_CODE:-91}
-  TENANT_CURRENCY: ${TENANT_CURRENCY:-INR}
-  TENANT_DISCLOSURE_POLICY: ${TENANT_DISCLOSURE_POLICY:-NAME_REQUIRED}
-  TENANT_CANCEL_ON_SPOKEN_NUMBER: ${TENANT_CANCEL_ON_SPOKEN_NUMBER:-false}
+
+x-provider: &provider
+  env_file: providers/${PROVIDER_ID:-demo-hospital}.env
 
 services:
   postgres:
@@ -40,6 +40,7 @@ services:
 
   migrate:
     profiles: [dev]
+    <<: *provider
     build: ../services/api
     command: ["frontdesk-api", "migrate"]
     environment:
@@ -51,6 +52,7 @@ services:
 
   api:
     profiles: [dev]
+    <<: *provider
     build: ../services/api
     environment:
       <<: *api-env
@@ -63,6 +65,7 @@ services:
 
   mcp:
     profiles: [dev]
+    <<: *provider
     build: ../services/mcp
     environment:
       ENV: ${ENV:-development}

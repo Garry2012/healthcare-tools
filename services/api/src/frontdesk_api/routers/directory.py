@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 
 from .. import schemas as s
 from ..auth import require_scopes
@@ -22,6 +22,17 @@ Offset = Annotated[int, Query(ge=0)]
 async def list_categories(session: Session):
     body, etag = await svc.list_categories(session)
     return respond(body, 200, {"ETag": etag})
+
+
+@router.put("/categories/{categoryId}", operation_id="upsertCategory",
+            summary="Create or replace a category (admin, onboarding)", response_model=s.Category,
+            responses=errors(400, 401, 403), dependencies=[Depends(require_scopes("directory.write"))])
+async def upsert_category(
+    categoryId: Annotated[str, Path(pattern=r"^[a-z0-9_]+$", max_length=50)],  # noqa: N803
+    body: s.CategoryInput,
+    session: Session,
+):
+    return respond(await svc.upsert_category(session, categoryId, body))
 
 
 @router.get("/resources", operation_id="listResources",

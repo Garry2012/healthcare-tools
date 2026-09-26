@@ -605,6 +605,31 @@ paths:
                     items: { $ref: '#/components/schemas/Category' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /categories/{categoryId}:
+    put:
+      tags: [Directory]
+      operationId: upsertCategory
+      summary: Create or replace a category (admin, onboarding)
+      description: Idempotent by id. RULE the agent sees the change on its next question (every replica).
+      security: [{ oauth2: [directory.write] }]
+      parameters:
+        - { name: categoryId, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9_]+$', maxLength: 50 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+            example: { code: DERM, name: Dermatology, localizedNames: { kn: "ಚರ್ಮರೋಗ ವಿಭಾಗ" }, offersBookings: true }
+      responses:
+        '200':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /resources:
     get:
       tags: [Directory]
@@ -1565,6 +1590,16 @@ components:
         localizedNames: { $ref: '#/components/schemas/LocalizedText' }
         offersBookings: { type: boolean, description: False means never offer or route. }
         active: { type: boolean }
+
+    CategoryInput:
+      type: object
+      required: [name]
+      properties:
+        code: { type: string, nullable: true }
+        name: { type: string, maxLength: 100 }
+        localizedNames: { $ref: '#/components/schemas/LocalizedText' }
+        offersBookings: { type: boolean, default: true }
+        active: { type: boolean, default: true }
 
     Resource:
       type: object
