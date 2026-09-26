@@ -24,6 +24,18 @@ docker run --rm -e DATABASE_URL=postgresql://OWNER:***@HOST:5432/DB frontdesk-ap
 docker run -e DATABASE_URL=postgresql://APP:***@HOST:5432/DB -e AUTH_TOKENS_JSON='…' -p 8000:8000 frontdesk-api
 ```
 
+### Upgrading an existing database
+
+Revision `0002_domain_neutral_names` renames tables and columns and rewrites stored values. It is
+**not zero-downtime**: stop the API and MCP containers, run `migrate`, then start the new images.
+Take a backup first; `downgrade` reverses it exactly, but only on the same data. Later revisions
+only add objects and can run while the old version serves.
+
+`/ready` is strict: it returns 503 unless the schema is **exactly** the head the image was built
+with. A new image is not ready until `migrate` has run, and an old image stops being ready as soon
+as it has. Deploy in the order migrate, then roll the new images out promptly; `/health` (liveness)
+stays 200 throughout, so orchestrators do not restart the old instances meanwhile.
+
 ### Local PostgreSQL (docker compose)
 
 `make up` starts `postgres:16-alpine`. `deploy/postgres/init/01-roles.sh` creates `APP_DB_USER`

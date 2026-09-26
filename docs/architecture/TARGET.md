@@ -44,7 +44,7 @@ frontdesk-api  (generic core + DOMAIN_PACK) ──▶ PostgreSQL (one database p
 | `search_knowledge` | 50 ms | `tests/perf` benchmark on the seeded pack |
 | `find_availability` | 250 ms | same, plus `Server-Timing` on every response |
 | `manage_booking` write | 400 ms (hard stop 5 s, then `UPSTREAM_TIMEOUT`) | integration tests plus `Server-Timing` |
-| MCP adapter overhead | 15 ms | keep-alive HTTP/2 pool to the API, no per-call client |
+| MCP adapter overhead | 15 ms | one keep-alive `httpx` client per process (HTTP/1.1), no per-call client |
 
 Measured in process against the seeded healthcare pack (`services/api/scripts/bench.py`, local
 PostgreSQL, p50 ms / sequential DB round trips). Round trips are the number that matters on a
@@ -82,6 +82,26 @@ services/mcp/src/frontdesk_mcp/packs/<name>.json
 `healthcare` is complete. `hospitality` is a working sample (spa and restaurant: timed and
 queued services). Multi-night room inventory is **out of scope**: it isn't a per-day session with
 slots, and it belongs to a PMS integration.
+
+## Security and compliance roadmap
+
+Done in this release: bearer tokens with scopes (`agent` for the voice path, staff scopes for the
+desk), identity only from trusted call headers, SQL parameters hidden from logs, request and
+statement deadlines, a body size limit, and `provider` plus `callId` on every log line.
+
+Next, in order:
+
+1. **Signed call context.** The voice agent signs `X-Call-Id` and `X-Caller-Number` (HMAC or a
+   short-lived JWT from the telephony side), and the API verifies it. Today the headers are trusted
+   because only the gateway can reach the API.
+2. **Per-user staff tokens (OIDC).** Staff actions are audited per shared token today; the desk app
+   needs a real sign-in so `actor` is a person.
+3. **Append-only booking history.** Every status change as its own row, never updated.
+4. **Retention and erasure (DPDP Act 2023).** A scheduled job that deletes or anonymises call
+   summaries and customer rows after the provider's retention period, an erasure endpoint for a
+   customer's request, and a consent flag recorded when the agent collects a phone number.
+5. **A maintenance scheduler** for retention, idempotency-key expiry and notification retries,
+   instead of running them inline.
 
 ## Out of scope (still)
 

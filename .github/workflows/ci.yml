@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Every suite, exactly as a developer runs it: lint, unit, contract, integration on a throwaway
+    # PostgreSQL 16 (compose `test` profile), MCP end to end through the adapter, schemathesis.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.21"
+          enable-cache: true
+          cache-dependency-glob: "services/*/uv.lock"
+      - name: Test environment
+        run: cp .env.example .env
+      - name: All suites
+        run: ./scripts/test.sh
+      - name: Provider configs are valid
+        working-directory: services/api
+        run: |
+          for f in ../../deploy/providers/*.env; do
+            env -i PATH="$PATH" HOME="$HOME" bash -c '
+              while IFS= read -r line; do [[ -z "$line" || "$line" == \#* ]] || export "$line"; done < "$0"
+              uv run frontdesk-api check-config >/dev/null' "$f"
+            echo "ok: $f"
+          done
