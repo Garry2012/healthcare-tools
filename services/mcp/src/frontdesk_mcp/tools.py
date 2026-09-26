@@ -8,11 +8,9 @@ from the incoming MCP HTTP request (forwarded by the gateway from the voice plat
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import unicodedata
 from datetime import date
-from importlib import resources
 from typing import Annotated, Any, Literal
 
 import httpx
@@ -22,11 +20,9 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from .config import Settings
+from .packs import Pack
 
 logger = logging.getLogger(__name__)
-DESCRIPTIONS: dict[str, str] = json.loads(
-    resources.files("frontdesk_mcp").joinpath("descriptions.json").read_text(encoding="utf-8")
-)
 
 Action = Literal["BOOK", "LIST", "CANCEL", "RESCHEDULE"]
 DayPart = Literal["MORNING", "AFTERNOON", "EVENING", "ANY"]
@@ -78,7 +74,7 @@ SpokenPhoneArg = Annotated[
 ]
 FromArg = Annotated[date | None, Field(description="LIST: earliest booking date.")]
 ToArg = Annotated[date | None, Field(description="LIST: latest booking date.")]
-BookingIdArg = Annotated[str | None, Field(description="CANCEL/RESCHEDULE: an bookingId from LIST or BOOK.")]
+BookingIdArg = Annotated[str | None, Field(description="CANCEL/RESCHEDULE: a bookingId from LIST or BOOK.")]
 NewSlotIdArg = Annotated[str | None, Field(description="RESCHEDULE: a slotId returned by find_availability.")]
 
 
@@ -179,12 +175,25 @@ class ApiClient:
 # ---------------------------------------------------------------- tools
 
 
-def register(mcp: FastMCP, client: ApiClient) -> None:
+def _apply_pack_text(tool: Any, text: Any) -> None:
+    """Domain wording for the parameters the model reads; the schema itself never changes."""
+    properties = tool.parameters["properties"]
+    unknown = set(text.parameters) - set(properties)
+    if unknown:
+        raise ValueError(f"pack describes unknown parameters of {tool.name}: {sorted(unknown)}")
+    for name, description in text.parameters.items():
+        properties[name]["description"] = description
+
+
+def register(mcp: FastMCP, client: ApiClient, pack: Pack) -> None:
     settings = client.settings
+    missing = {"find_availability", "manage_booking"} - set(pack.tools)
+    if missing:
+        raise ValueError(f"pack {pack.name!r} does not describe {sorted(missing)}")
 
     @mcp.tool(
         name="find_availability",
-        description=DESCRIPTIONS["find_availability"],
+        description=pack.tools["find_availability"].description,
         annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
     )
     async def find_availability(
@@ -207,9 +216,11 @@ def register(mcp: FastMCP, client: ApiClient) -> None:
         return await client.send("POST", "/agent/availability-search", headers=call_context(settings),
                                  json_body=body, write=False)
 
+    _apply_pack_text(find_availability, pack.tools["find_availability"])
+
     @mcp.tool(
         name="manage_booking",
-        description=DESCRIPTIONS["manage_booking"],
+        description=pack.tools["manage_booking"].description,
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True,
                                     openWorldHint=False),
     )
@@ -255,7 +266,7 @@ def register(mcp: FastMCP, client: ApiClient) -> None:
             return await client.send("POST", "/agent/bookings", headers=headers, json_body=body, write=True)
 
         if not bookingId:
-            return _invalid("bookingId", f"{action} needs an bookingId from LIST or BOOK.")
+            return _invalid("bookingId", f"{action} needs a bookingId from LIST or BOOK.")
         if not customerName:
             return _invalid("customerName", f"{action} needs the customer's name.")
         if action == "CANCEL":
@@ -272,6 +283,8 @@ def register(mcp: FastMCP, client: ApiClient) -> None:
         return await client.send("POST", f"/agent/bookings/{bookingId}/reschedule", headers=headers,
                                  json_body={"customerName": customerName, "newSlotId": newSlotId}, write=True)
 
+
+    _apply_pack_text(manage_booking, pack.tools["manage_booking"])
 
 def _keyed(context: dict[str, str], call_id: str, action: str, name: str | None, target: str) -> dict[str, str]:
     """Without a call id there is no safe key; the API then refuses the write (400)."""

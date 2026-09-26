@@ -10,7 +10,7 @@ leaves to the implementation. The spec's gaps and the choices made are in `OPEN-
   code's head; 503 otherwise) sit at the root.
 - `Authorization: Bearer <token>`. Tokens and scopes come from `AUTH_TOKENS_JSON`
   (`{"<token>": ["scope", ...]}`). Scopes are enforced exactly as the spec's `security` blocks.
-  A staff portal needs `appointments.staff`, `schedule.write`, `board.write`, and
+  A staff portal needs `bookings.staff`, `schedule.write`, `board.write`, and
   `directory.write` for admin.
 - Staff mutations require `X-Acting-User` (audit).
 - Agent operations require `X-Call-Id`. `X-Caller-Number` (E.164) is optional. Agent POSTs
@@ -25,30 +25,30 @@ leaves to the implementation. The spec's gaps and the choices made are in `OPEN-
 
 | Screen | Calls |
 |---|---|
-| Today's board | `GET /availability?from=today&to=today&includeSlots=false`, `PUT /board/{doctorId}` (arrived / late / left / full) |
+| Today's board | `GET /availability?from=today&to=today&includeSlots=false`, `PUT /board/{resourceId}` (arrived / late / left / full) |
 | Leave, surgery, extra clinic | `POST /schedule-exceptions` (returns impact counts), `DELETE /schedule-exceptions/{id}` to withdraw |
 | Who must be phoned | `GET /notifications?status=PENDING`, `GET /schedule-exceptions/{id}/impact`, `POST /notifications/{id}/delivered` |
-| Walk-in / phone booking by desk | `GET /availability?doctorId=…`, `POST /appointments` (same slot rules; `DESK_ONLY` doctors allowed) |
-| Register | `GET /appointments?date=…&doctorId=…`, `POST /appointments/{id}/status` (ARRIVED, COMPLETED, NO_SHOW, CANCELLED_BY_HOSPITAL), `POST /appointments/{id}/confirm` |
-| Directory admin | `GET/POST /doctors`, `PUT /doctors/{id}`, `GET/PUT /doctors/{id}/schedule-template`, `GET/POST /lexicon` |
+| Walk-in / phone booking by desk | `GET /availability?resourceId=…`, `POST /bookings` (same slot rules; `DESK_ONLY` resources allowed) |
+| Register | `GET /bookings?date=…&resourceId=…`, `POST /bookings/{id}/status` (ARRIVED, COMPLETED, NO_SHOW, CANCELLED_BY_PROVIDER), `POST /bookings/{id}/confirm` |
+| Directory admin | `GET/POST /resources`, `PUT /resources/{id}`, `GET/PUT /resources/{id}/schedule-template`, `GET/POST /lexicon` |
 
 ## Behaviour worth knowing
 
 - **Availability is computed, never stored.** Sessions and slots come from template ⊕
-  exceptions ⊕ today's board ⊕ bookings on every request. Session id `ses_<doctor>_<date>_<n>`
+  exceptions ⊕ today's board ⊕ bookings on every request. Session id `ses_<resource>_<date>_<n>`
   and slot id `slot_<session>_<NN|HHMM>` are deterministic. Keep them opaque in a UI; don't
   parse them.
 - **Removed sessions stay visible** in `/availability` with `status: CANCELLED`, so the board
   can show why a clinic is gone.
-- **One live appointment per slot** is a database constraint. Two desks clicking the same slot
+- **One live booking per slot** is a database constraint. Two desks clicking the same slot
   get one 201 and one `409 SLOT_UNAVAILABLE` carrying `currentSlots`.
-- **Exceptions move patients.** Creating an exception that removes or shortens a session sets
-  affected appointments to `NEEDS_RESCHEDULE` and queues one notification each, with structured
+- **Exceptions move customers.** Creating an exception that removes or shortens a session sets
+  affected bookings to `NEEDS_RESCHEDULE` and queues one notification each, with structured
   `facts` (old session, new session, up to three suggested slots). Withdrawing the exception
   restores them.
 - **Certainty.** `timingCertainty` is `CONFIRMED` only after `/confirm` or a `TIMING_CONFIRMED`
-  exception or board flag. A doctor with `dataConfirmed=false` is capped at `EXPECTED`. Fees
-  with `confirmed=false` must not be shown to patients as final.
+  exception or board flag. A resource with `dataConfirmed=false` is capped at `EXPECTED`. Prices
+  with `confirmed=false` must not be shown to customers as final.
 - **Board facts** apply to today only and are ignored on other dates. `frontdesk-api
   maintenance` purges old rows and expired idempotency keys.
 

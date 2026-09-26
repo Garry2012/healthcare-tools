@@ -18,17 +18,11 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import tools
+from . import packs, tools
 from .config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
-INSTRUCTIONS = (
-    "Front-desk tools for a hospital voice agent. Call find_availability once per caller question "
-    "with the caller's own words; branch on `outcome` and `routing.action`. Book with "
-    "manage_booking(action=BOOK) using a slotId from that result, one customer per call. "
-    "Never invent ids, dates or prices; never say 'confirmed' unless timingCertainty is CONFIRMED."
-)
 
 
 class JsonFormatter(logging.Formatter):
@@ -71,8 +65,9 @@ class BearerAuth:
 
 
 def build_mcp(client: tools.ApiClient) -> FastMCP:
-    mcp = FastMCP(name="healthcare-frontdesk", instructions=INSTRUCTIONS)
-    tools.register(mcp, client)
+    pack = packs.load(client.settings.domain_pack)
+    mcp = FastMCP(name=f"frontdesk-{pack.name}", instructions=pack.instructions)
+    tools.register(mcp, client, pack)
     return mcp
 
 
@@ -99,7 +94,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        logger.info("service_started", extra={"fields": {"env": settings.env, "tools": 2}})
+        logger.info("service_started", extra={"fields": {"env": settings.env, "pack": settings.domain_pack}})
         try:
             async with mcp_app.lifespan(app):
                 yield

@@ -6,28 +6,28 @@ a `CHECK` constraint with the spec's values.
 
 ```mermaid
 erDiagram
-    departments ||--o{ doctor_departments : has
-    doctors ||--o{ doctor_departments : "belongs to (>=1)"
-    doctors ||--o{ schedule_templates : "plans (effective-dated)"
+    categories ||--o{ resource_categories : has
+    resources ||--o{ resource_categories : "belongs to (>=1)"
+    resources ||--o{ schedule_templates : "plans (effective-dated)"
     schedule_templates ||--|{ template_sessions : contains
-    doctors ||--o{ schedule_exceptions : "deviates by"
-    doctors ||--o{ board_entries : "today, per session"
-    doctors ||--o{ appointments : sees
-    departments ||--o{ appointments : "booked under"
-    appointments ||--o{ appointment_history : "audited by"
-    appointments ||--o{ notifications : "impacted -> notified"
+    resources ||--o{ schedule_exceptions : "deviates by"
+    resources ||--o{ board_entries : "today, per session"
+    resources ||--o{ bookings : sees
+    categories ||--o{ bookings : "booked under"
+    bookings ||--o{ booking_history : "audited by"
+    bookings ||--o{ notifications : "impacted -> notified"
 
-    departments {
-        text id PK "dept_genmed"
+    categories {
+        text id PK "cat_genmed"
         text code
         text name
         jsonb localized_names "kn, hi, ..."
-        bool has_consultant
+        bool offers_bookings
         bool active
         timestamptz created_at
     }
-    doctors {
-        text id PK "doc_garima"
+    resources {
+        text id PK "res_garima"
         text name
         jsonb localized_names
         jsonb name_variants "fed to the phonetic index"
@@ -35,25 +35,25 @@ erDiagram
         text qualification
         int years_of_experience
         jsonb languages_spoken
-        numeric fee_amount
-        text fee_currency
-        bool fee_confirmed "never spoken unless true"
+        numeric price_amount
+        text price_currency
+        bool price_confirmed "never spoken unless true"
         text attendance_type "REGULAR | VISITING | ON_CALL"
-        text booking_policy "BOOKABLE | DESK_ONLY | NO_OPD"
+        text booking_policy "BOOKABLE | DESK_ONLY | NOT_OFFERED"
         bool data_confirmed "false caps certainty at EXPECTED"
         bool active
         timestamptz created_at
         timestamptz updated_at
     }
-    doctor_departments {
-        text doctor_id PK,FK
-        text department_id PK,FK
-        int position "first = primary department"
+    resource_categories {
+        text resource_id PK,FK
+        text category_id PK,FK
+        int position "first = primary category"
     }
     lexicon_entries {
         text id PK "lex_<hash of type|concept|term|lang>"
-        text concept_type "DEPARTMENT | DOCTOR | SYMPTOM_ROUTE | RED_FLAG | DAY_PART | SERVICE_TRANSFER"
-        text concept_id "dept id, doctor id, DayPart, destination, red-flag label"
+        text concept_type "CATEGORY | RESOURCE | NEED_ROUTE | RED_FLAG | DAY_PART | SERVICE_TRANSFER"
+        text concept_id "cat id, doctor id, DayPart, destination, red-flag label"
         text term "as callers say it, any script"
         text term_normalized "NFC, lower, transliterated to Latin"
         text language
@@ -62,17 +62,17 @@ erDiagram
         timestamptz created_at
     }
     schedule_templates {
-        text id PK "tpl_<doctor>_<effectiveFrom>"
-        text doctor_id FK
-        date effective_from "unique with doctor_id"
+        text id PK "tpl_<resource>_<effectiveFrom>"
+        text resource_id FK
+        date effective_from "unique with resource_id"
         date effective_to
         text created_by
         timestamptz created_at
     }
     template_sessions {
         text template_id PK,FK
-        text template_session_id PK "tpl_doc_garima_pm"
-        int ordinal "the n in ses_<doctor>_<date>_<n>"
+        text template_session_id PK "tpl_res_garima_pm"
+        int ordinal "the n in ses_<resource>_<date>_<n>"
         text label
         text_array days_of_week
         time start_time
@@ -87,7 +87,7 @@ erDiagram
     schedule_exceptions {
         bigint seq PK "identity; creation order; e<seq> for extra sessions"
         text id UK "exc_<hex>"
-        text doctor_id FK
+        text resource_id FK
         date date_from
         date date_to "CHECK >= date_from"
         text scope "WHOLE_DAY | SESSION | TIME_RANGE"
@@ -99,15 +99,15 @@ erDiagram
         text reason_category "internal"
         text note "internal"
         text created_by
-        int impact_appointments
+        int impact_bookings
         int impact_notifications
         timestamptz created_at
         timestamptz deleted_at "withdrawn; ignored by the engine"
         text deleted_by
     }
     board_entries {
-        text session_id PK "ses_<doctor>_<date>_<n>"
-        text doctor_id FK
+        text session_id PK "ses_<resource>_<date>_<n>"
+        text resource_id FK
         date date "overlaid only when date = today"
         text presence "NOT_ARRIVED | ARRIVING | PRESENT | LEFT"
         time expected_start
@@ -120,17 +120,17 @@ erDiagram
         timestamptz updated_at
         text updated_by
     }
-    appointments {
-        text id PK "appt_<hex>"
+    bookings {
+        text id PK "bkg_<hex>"
         text confirmation_code "4 digits; a handle, not a secret"
-        text status "BOOKED ... CANCELLED_BY_HOSPITAL"
-        text patient_name
-        text patient_name_normalized "identity comparison form"
+        text status "BOOKED ... CANCELLED_BY_PROVIDER"
+        text customer_name
+        text customer_name_normalized "identity comparison form"
         text phone "contact number, dictated"
         text relation_to_caller
         text caller_number "E.164 network number; staff scope only"
-        text doctor_id FK
-        text department_id FK
+        text resource_id FK
+        text category_id FK
         text session_id
         text slot_id "UNIQUE WHERE status IN live statuses"
         date date
@@ -145,9 +145,9 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
-    appointment_history {
+    booking_history {
         bigint id PK
-        text appointment_id FK
+        text booking_id FK
         timestamptz at
         text by
         text change
@@ -155,13 +155,13 @@ erDiagram
     }
     notifications {
         text id PK "ntf_<hex>"
-        text appointment_id FK
+        text booking_id FK
         text exception_id
         text trigger "SESSION_CANCELLED | SESSION_TIME_CHANGED | TEMPLATE_CHANGED | DESK_MESSAGE"
         text status "PENDING | SENT | FAILED | ACKNOWLEDGED"
         text channel
-        text patient_phone
-        text patient_language
+        text customer_phone
+        text customer_language
         jsonb facts "structured, never prose"
         timestamptz created_at
         timestamptz delivered_at
@@ -186,7 +186,7 @@ erDiagram
         text intent
         text outcome
         text transferred_to
-        text appointment_id
+        text booking_id
         jsonb tool_outcomes
         text summary_text
         timestamptz created_at
@@ -196,16 +196,16 @@ erDiagram
 ## The one constraint that matters most
 
 ```sql
-CREATE UNIQUE INDEX uq_appointments_live_slot ON appointments (slot_id)
+CREATE UNIQUE INDEX uq_bookings_live_slot ON bookings (slot_id)
   WHERE status IN ('BOOKED', 'CONFIRMED_BY_DESK', 'RESCHEDULED', 'ARRIVED');
 ```
 
 Booking is `INSERT … ON CONFLICT (slot_id) WHERE <live> DO NOTHING RETURNING id`: no row back
 means someone else holds the slot → `409 SLOT_UNAVAILABLE`. Rescheduling updates `slot_id`
-inside a savepoint; a unique violation rolls back only the savepoint, so the patient keeps
+inside a savepoint; a unique violation rolls back only the savepoint, so the customer keeps
 the original slot. Nothing about availability is stored: sessions and slots are computed
 per request from `schedule_templates` + `schedule_exceptions` + `board_entries` +
-`appointments`.
+`bookings`.
 
 ## Roles
 

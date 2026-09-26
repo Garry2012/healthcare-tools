@@ -65,5 +65,5 @@ Only `DATABASE_URL` changes. No Supabase SDK or Supabase-only feature is used.
 
 - `frontdesk-api maintenance` (daily): purges idempotency keys older than 24 h and past
   board entries.
-- Logs are JSON on stdout, correlated by `callId`. Phone numbers and patient names are not
+- Logs are JSON on stdout, correlated by `callId`. Phone numbers and customer names are not
   logged.

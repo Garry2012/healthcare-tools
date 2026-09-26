@@ -20,8 +20,8 @@ Spec: `docs/frontdesk-api/openapi.yaml` + `IMPLEMENTATION.md` §2.2–2.5 (uncha
    one transaction, idempotency store, agent facade, call summaries.
 5. FastAPI routers per tag, bearer-token scopes via a `TokenVerifier` interface, JSON logs keyed by
    `X-Call-Id`, `/health`, `/ready` (DB + Alembic head). Validation errors → 400 `Error` envelope.
-6. Seed (`make seed`): 8 departments, 10 synthetic doctors, templates, exceptions, board, ~30
-   appointments, trilingual lexicon — all dates relative to the run date, idempotent.
+6. Seed (`make seed`): 8 categories, 10 synthetic resources, templates, exceptions, board, ~30
+   bookings, trilingual lexicon — all dates relative to the run date, idempotent.
 7. `services/mcp`: FastMCP 2.14.7, two hand-written tools, headers from `get_http_headers()`,
    derived idempotency keys, failure envelopes, one same-key write retry. ContextForge `register.py`.
 8. Tests: unit (hermetic), integration (real Postgres: 25-way race, atomic reschedule, idempotency,

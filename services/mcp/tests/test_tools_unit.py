@@ -11,7 +11,7 @@ import yaml
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-from frontdesk_mcp import tools
+from frontdesk_mcp import packs, tools
 from frontdesk_mcp.server import build_mcp, create_app
 
 from .conftest import serving
@@ -49,12 +49,33 @@ async def test_exactly_two_tools_without_header_parameters(make_settings):
 
 
 @pytest.mark.skipif(not SPEC.is_file(), reason="spec not available")
-async def test_descriptions_come_from_x_mcp_tools(make_settings):
+async def test_tool_set_matches_x_mcp_tools(make_settings):
     spec = yaml.safe_load(SPEC.read_text())["x-mcp-tools"]
     async with Client(mcp_with(make_settings())) as client:
-        listed = {t.name: t.description for t in await client.list_tools()}
-    for name, description in listed.items():
-        assert description == " ".join(spec[name]["description"].split())
+        listed = {t.name for t in await client.list_tools()}
+    assert listed == {name for name, entry in spec.items() if "operations" in entry}
+
+
+@pytest.mark.parametrize("pack", ["healthcare", "hospitality"])
+async def test_domain_pack_sets_the_words_but_not_the_schema(make_settings, pack):
+    """Same tools and parameters in every domain; only descriptions change."""
+    async with Client(mcp_with(make_settings(domain_pack="healthcare"))) as client:
+        base = {t.name: t for t in await client.list_tools()}
+    async with Client(mcp_with(make_settings(domain_pack=pack))) as client:
+        listed = {t.name: t for t in await client.list_tools()}
+        instructions = client.initialize_result.instructions
+    text = packs.load(pack)
+    assert instructions == text.instructions
+    for name, tool in listed.items():
+        assert tool.description == text.tools[name].description
+        assert set(tool.inputSchema["properties"]) == set(base[name].inputSchema["properties"])
+        for param, description in text.tools[name].parameters.items():
+            assert tool.inputSchema["properties"][param]["description"] == description
+
+
+def test_unknown_pack_is_refused(make_settings):
+    with pytest.raises(ValueError, match="Unknown DOMAIN_PACK"):
+        make_settings(domain_pack="nonexistent")
 
 
 async def test_api_down_is_could_not_check_not_an_exception(make_settings):

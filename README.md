@@ -35,7 +35,7 @@ AGENT=$(jq -r 'to_entries[] | select(.value | index("agent")) | .key' <<<"$AUTH_
 curl -s -X POST localhost:8000/api/v1/agent/availability-search \
   -H "Authorization: Bearer $AGENT" -H 'X-Call-Id: try-1' -H 'X-Caller-Number: +919000000101' \
   -H 'Content-Type: application/json' \
-  -d '{"utterance":"lady doctor for thyroid","language":"en","department":"thyroid doctor","preferences":{"gender":"FEMALE"}}' | jq .
+  -d '{"utterance":"lady doctor for thyroid","language":"en","category":"thyroid doctor","preferences":{"gender":"FEMALE"}}' | jq .
 ```
 
 Register the adapter in ContextForge:

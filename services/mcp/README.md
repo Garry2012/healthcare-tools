@@ -5,11 +5,11 @@ FastMCP 2.14.7 adapter exposing two tools over streamable HTTP at `/mcp/` (state
 | Tool | REST |
 |---|---|
 | `find_availability` | `POST /agent/availability-search` |
-| `manage_appointment(action=BOOK\|LIST\|CANCEL\|RESCHEDULE)` | `POST /agent/appointments`, `GET /agent/appointments`, `POST …/cancel`, `POST …/reschedule` |
+| `manage_booking(action=BOOK\|LIST\|CANCEL\|RESCHEDULE)` | `POST /agent/bookings`, `GET /agent/bookings`, `POST …/cancel`, `POST …/reschedule` |
 
 `X-Call-Id` and `X-Caller-Number` are read from the incoming MCP HTTP request, forwarded by
 ContextForge. They are never tool parameters. `Idempotency-Key` is
-`sha256(callId|action|normalised patient name|target)`. The tool result is the REST body
+`sha256(callId|action|normalised customer name|target)`. The tool result is the REST body
 unchanged. Transport failures, 429 and 5xx return
 `{"outcome": "COULD_NOT_CHECK" | "COULD_NOT_RECORD", "retryAfterSeconds": n}`.
 

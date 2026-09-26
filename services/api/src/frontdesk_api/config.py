@@ -16,14 +16,11 @@ from zoneinfo import ZoneInfo
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from . import packs
 from .domain.availability import EngineConfig
 from .domain.resolver import ResolverThresholds
 
 DAY_PART_DEFAULT = '{"MORNING":["06:00","12:00"],"AFTERNOON":["12:00","16:00"],"EVENING":["16:00","23:00"]}'
-TRANSFERS_DEFAULT = (
-    '{"emergency":"Emergency","desk":"Front desk","lab":"Laboratory",'
-    '"pharmacy":"Pharmacy","insurance":"Insurance desk"}'
-)
 
 
 class Settings(BaseSettings):
@@ -41,8 +38,10 @@ class Settings(BaseSettings):
     auth_tokens_json: SecretStr = SecretStr("{}")
     write_timeout_seconds: float = Field(default=5.0, ge=0.5, le=30.0)
 
-    # --- tenant ----------------------------------------------------------
-    tenant_id: str = "default"
+    # --- domain pack (packs/<name>): vocabulary data, escalation, demo seed ---
+    domain_pack: str = "healthcare"
+
+    # --- tenant: this deployment's provider (one deployment per provider) ---
     tenant_timezone: str = "Asia/Kolkata"
     tenant_country_calling_code: str = "91"
     tenant_phone_pattern: str = r"^[0-9]{10}$"
@@ -61,8 +60,15 @@ class Settings(BaseSettings):
     tenant_disclosure_policy: Literal["NAME_REQUIRED"] = "NAME_REQUIRED"
     tenant_cancel_on_spoken_number: bool = False
     tenant_desk_follow_up_list_enabled: bool = True
-    tenant_transfer_destinations_json: str = TRANSFERS_DEFAULT
+    # Empty = the domain pack's defaults.
+    tenant_transfer_destinations_json: str = ""
     tenant_supported_languages: str = "en,kn,hi"
+
+    @field_validator("domain_pack")
+    @classmethod
+    def _pack(cls, value: str) -> str:
+        packs.load(value)
+        return value
 
     @field_validator("tenant_timezone")
     @classmethod
@@ -86,7 +92,13 @@ class Settings(BaseSettings):
         return {k: (time.fromisoformat(v[0]), time.fromisoformat(v[1])) for k, v in raw.items()}
 
     @property
+    def pack(self) -> packs.Pack:
+        return packs.load(self.domain_pack)
+
+    @property
     def transfer_destinations(self) -> dict[str, str]:
+        if not self.tenant_transfer_destinations_json:
+            return dict(self.pack.transfer_destinations)
         return dict(json.loads(self.tenant_transfer_destinations_json))
 
     @property

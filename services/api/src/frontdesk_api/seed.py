@@ -1,23 +1,24 @@
-"""`frontdesk-api seed` — synthetic demo data, idempotent, relative to the run date.
+"""`frontdesk-api seed` — the domain pack's synthetic demo data, idempotent, relative to the run date.
 
-Directory rows (categories, resources, templates, lexicon) are upserted every run.
-Date-specific data (bookings, exceptions, board) is created once; a second run leaves it
-alone. `--reset` empties every table first (destructive) so the demo can be re-dated.
-Bookings and exceptions go through the same services the API uses, so the surgery
-exception really does move its customers to NEEDS_RESCHEDULE and queue notifications.
+Directory rows (categories, resources, templates, lexicon) are upserted every run from
+`DOMAIN_PACK`. Date-specific data (bookings, exceptions, board) comes from the pack's
+`scenario` and is created once; a second run leaves it alone. `--reset` empties every table
+first (destructive) so the demo can be re-dated. The scenario goes through the same services
+the API uses, so an exception really does move its customers to NEEDS_RESCHEDULE and queue
+notifications.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import packs
 from . import schemas as s
-from . import seed_data as data
 from .config import Settings
 from .db import tables as t
 from .db.session import make_engine, make_sessionmaker
@@ -38,29 +39,23 @@ ALL_TABLES = (
 )
 
 
-def _next(today: date, weekday: int, *, include_today: bool) -> date:
-    ahead = (weekday - today.weekday()) % 7
-    if ahead == 0 and not include_today:
-        ahead = 7
-    return today + timedelta(days=ahead)
-
-
 async def _upsert_directory(session: AsyncSession, settings: Settings) -> None:
-    for d in data.CATEGORIES:
+    data = packs.load(settings.domain_pack)
+    for d in data.categories:
         row = await session.get(t.Category, d.id) or t.Category(id=d.id)
-        row.code, row.name, row.localized_names = d.code, d.name, {"kn": d.kn, "hi": d.hi}
-        row.offers_bookings, row.active = True, True
+        row.code, row.name, row.localized_names = d.code, d.name, dict(d.localized)
+        row.offers_bookings, row.active = d.offers_bookings, True
         session.add(row)
     await session.flush()
 
-    for doc in data.RESOURCES:
+    for doc in data.resources:
         row = await session.get(t.Resource, doc.id) or t.Resource(id=doc.id)
         row.name = doc.name
-        row.localized_names = {k: v for k, v in (("kn", doc.kn), ("hi", doc.hi)) if v}
+        row.localized_names = dict(doc.localized)
         row.name_variants = list(doc.variants)
         row.gender = doc.gender
-        row.attributes = {"qualification": doc.qualification} if doc.qualification else {}
-        row.languages_spoken = ["en", "kn", "hi"]
+        row.attributes = dict(doc.attributes)
+        row.languages_spoken = list(doc.languages)
         row.price_amount = Decimal(doc.price) if doc.price is not None else None
         row.price_currency = settings.tenant_currency if doc.price is not None else None
         row.price_confirmed = doc.price_confirmed and doc.price is not None
@@ -99,7 +94,7 @@ async def _upsert_directory(session: AsyncSession, settings: Settings) -> None:
                 ))
     await session.flush()
 
-    for concept_type, concept_id, term, language in data.LEXICON:
+    for concept_type, concept_id, term, language in data.lexicon:
         entry_id = directory.lexicon_id(concept_type, concept_id, term, language)
         row = await session.get(t.LexiconEntry, entry_id) or t.LexiconEntry(
             id=entry_id, concept_type=concept_type, concept_id=concept_id, term=term, language=language,
@@ -109,108 +104,62 @@ async def _upsert_directory(session: AsyncSession, settings: Settings) -> None:
     await session.commit()
 
 
-async def _book(session: AsyncSession, settings: Settings, slot_id: str, customer: data.Customer,
-                *, channel: str = "AGENT") -> bool:
-    body = s.AgentBookRequest(
-        slot_id=slot_id,
-        customer=s.BookCustomer(name=customer.name, phone=customer.phone, relation_to_caller=customer.relation),
-        reason_verbatim=customer.reason,
-        language=customer.language,
-    )
+class Seeder:
+    """What a pack scenario may do: book, add exceptions, mark the board. All through services."""
 
-    async def operation() -> tuple[int, dict]:
-        booked = await bookings.book(
-            session, settings, body, channel=channel, call_id=f"seed-{slot_id}",
-            caller_number=customer.caller if channel == "AGENT" else None, actor=SEED_ACTOR,
-        )
-        return 201, {"id": booked.row.id}
+    def __init__(self, session: AsyncSession, settings: Settings) -> None:
+        self.session = session
+        self.settings = settings
+        self.now: datetime = schedule.now_in(settings)
+        self.today: date = self.now.date()
 
-    await idempotent(session, None, "", operation)
-    return True
+    def next_weekday(self, weekday: int, *, include_today: bool = False) -> date:
+        ahead = (weekday - self.today.weekday()) % 7
+        if ahead == 0 and not include_today:
+            ahead = 7
+        return self.today + timedelta(days=ahead)
 
-
-async def _first_free(session: AsyncSession, settings: Settings, resource_id: str, on: date,
-                      session_n: str | None = None, skip: int = 0) -> list[str]:
-    loaded = await schedule.load(session, settings, schedule.now_in(settings), [resource_id], on, on)
-    slots: list[str] = []
-    for view in loaded.sessions(resource_id, on):
-        if session_n and not view.session_id.endswith(f"_{session_n}"):
-            continue
-        slots += [x.slot_id for x in view.available_slots()]
-    return slots[skip:]
-
-
-async def _seed_dynamic(session: AsyncSession, settings: Settings) -> dict[str, int]:
-    now = schedule.now_in(settings)
-    today = now.date()
-    tomorrow = today + timedelta(days=1)
-    next_thursday = _next(today, 3, include_today=False)
-    next_sunday = _next(today, 6, include_today=False)
-    pool = iter(data.POOL)
-    booked = 0
-
-    # 1. Three customers in Dr. Garima's afternoon on the coming Thursday; the surgery
-    #    exception below removes that session, so these become the impacted customers.
-    for slot in (await _first_free(session, settings, "res_garima", next_thursday, "2"))[:3]:
-        booked += await _book(session, settings, slot, next(pool))
-
-    # 2. Two customers on one phone (mother and child), and a booking made from a
-    #    different number than the customer's own.
-    for customer, resource in ((data.LAKSHMI, "res_arjun_menon"), (data.AARAV, "res_meera_kulkarni")):
-        slots = await _first_free(session, settings, resource, tomorrow)
-        if slots:
-            booked += await _book(session, settings, slots[0], customer)
-    slots = await _first_free(session, settings, "res_anil_sharma", _next(today, 0, include_today=False))
-    if slots:
-        booked += await _book(session, settings, slots[0], data.RAMESH)
-
-    # 3. Spread the rest over the next seven days, a couple per resource-day.
-    spread = ("res_garima", "res_arjun_menon", "res_meera_kulkarni", "res_rohan_shetty", "res_sunita_patil",
-              "res_kiran_hegde", "res_ravi_sharma", "res_priya_nair")
-    for offset in range(7):
-        day = today + timedelta(days=offset)
-        for i, resource in enumerate(spread):
-            if booked >= 30 or (offset + i) % 3:
+    async def first_free(self, resource_id: str, on: date, session_n: str | None = None,
+                         skip: int = 0) -> list[str]:
+        loaded = await schedule.load(self.session, self.settings, self.now, [resource_id], on, on)
+        slots: list[str] = []
+        for view in loaded.sessions(resource_id, on):
+            if session_n and not view.session_id.endswith(f"_{session_n}"):
                 continue
-            for slot in (await _first_free(session, settings, resource, day, skip=1))[:2]:
-                customer = next(pool, None)
-                if customer is None:
-                    break
-                booked += await _book(session, settings, slot, customer)
+            slots += [x.slot_id for x in view.available_slots()]
+        return slots[skip:]
 
-    # 4. Reality differs from the template.
-    exceptions = [
-        s.ScheduleExceptionInput(resource_id="res_garima", date_from=next_thursday, date_to=next_thursday,
-                                 scope="SESSION", template_session_id="tpl_res_garima_pm", effect="UNAVAILABLE",
-                                 reason_category="OTHER_DUTY", note="Two surgeries (synthetic)"),
-        s.ScheduleExceptionInput(resource_id="res_arjun_menon", date_from=today, date_to=today, scope="SESSION",
-                                 template_session_id="tpl_res_arjun_menon_eve", effect="TIME_CHANGE",
-                                 new_start="18:00", new_end="20:00", reason_category="OTHER"),
-        s.ScheduleExceptionInput(resource_id="res_garima", date_from=next_sunday, date_to=next_sunday,
-                                 scope="TIME_RANGE", effect="EXTRA_SESSION", new_start="10:00", new_end="12:00",
-                                 new_capacity=8, reason_category="OTHER"),
-        s.ScheduleExceptionInput(resource_id="res_meera_kulkarni", date_from=tomorrow, date_to=tomorrow,
-                                 scope="SESSION", template_session_id="tpl_res_meera_kulkarni_pm",
-                                 effect="TIMING_PENDING", reason_category="OTHER"),
-    ]
-    for body in exceptions:
-        async def operation(body=body) -> tuple[int, dict]:
-            created = await scheduling.create_exception(session, settings, body, SEED_ACTOR)
+    async def book(self, slot_id: str, customer: packs.CustomerSeed, *, channel: str = "AGENT") -> int:
+        body = s.AgentBookRequest(
+            slot_id=slot_id,
+            customer=s.BookCustomer(name=customer.name, phone=customer.phone, relation_to_caller=customer.relation),
+            reason_verbatim=customer.reason,
+            language=customer.language,
+        )
+
+        async def operation() -> tuple[int, dict]:
+            booked = await bookings.book(
+                self.session, self.settings, body, channel=channel, call_id=f"seed-{slot_id}",
+                caller_number=customer.caller if channel == "AGENT" else None, actor=SEED_ACTOR,
+            )
+            return 201, {"id": booked.row.id}
+
+        await idempotent(self.session, None, "", operation)
+        return 1
+
+    async def exception(self, **fields) -> None:
+        body = s.ScheduleExceptionInput(**fields)
+
+        async def operation() -> tuple[int, dict]:
+            created = await scheduling.create_exception(self.session, self.settings, body, SEED_ACTOR)
             return 201, {"id": created.id}
 
-        await idempotent(session, None, "", operation)
+        await idempotent(self.session, None, "", operation)
 
-    # 5. What the desk has marked on today's board.
-    board = [
-        ("res_arjun_menon", "1", {"presence": "ARRIVING", "delay_minutes": 20, "expected_start": "10:20"}),
-        ("res_meera_kulkarni", "1", {"presence": "PRESENT", "tokens_issued": 7}),
-        ("res_rohan_shetty", "1", {"presence": "LEFT"}),
-    ]
-    for resource_id, n, fields in board:
-        entry = s.BoardEntryInput(date=today, session_id=f"ses_{resource_id}_{today.isoformat()}_{n}", **fields)
-        await scheduling.set_board(session, settings, resource_id, entry, SEED_ACTOR)
-
-    return {"bookings": booked, "exceptions": len(exceptions), "board": len(board)}
+    async def board(self, resource_id: str, n: str, **fields) -> None:
+        entry = s.BoardEntryInput(date=self.today, session_id=f"ses_{resource_id}_{self.today.isoformat()}_{n}",
+                                  **fields)
+        await scheduling.set_board(self.session, self.settings, resource_id, entry, SEED_ACTOR)
 
 
 async def run(settings: Settings, *, reset: bool = False) -> dict[str, int]:
@@ -228,13 +177,14 @@ async def run(settings: Settings, *, reset: bool = False) -> dict[str, int]:
                     t.ScheduleException.created_by == SEED_ACTOR
                 )
             )
-            if already:
+            data = packs.load(settings.domain_pack)
+            if already or data.scenario is None:
                 summary = {"bookings": 0, "exceptions": 0, "board": 0}
-                log_event(logger, logging.INFO, "seed_dynamic_skipped", reason="already seeded")
+                log_event(logger, logging.INFO, "seed_dynamic_skipped", reason="already seeded or no scenario")
             else:
-                summary = await _seed_dynamic(session, settings)
-            log_event(logger, logging.INFO, "seed_complete", **summary,
-                      resources=len(data.RESOURCES), categories=len(data.CATEGORIES), lexicon=len(data.LEXICON))
+                summary = await data.scenario(Seeder(session, settings))
+            log_event(logger, logging.INFO, "seed_complete", pack=data.name, **summary,
+                      resources=len(data.resources), categories=len(data.categories), lexicon=len(data.lexicon))
             return summary
     finally:
         await engine.dispose()

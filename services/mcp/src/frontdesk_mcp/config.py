@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from . import packs
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore", frozen=True)
@@ -16,6 +18,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     host: str = "127.0.0.1"
     port: int = Field(default=8100, ge=1, le=65535)
+
+    # Which words the LLM reads (packs/<name>.json); must match the API's DOMAIN_PACK.
+    domain_pack: str = "healthcare"
 
     api_base_url: str = "http://127.0.0.1:8000/api/v1"
     api_bearer_token: SecretStr = SecretStr("")
@@ -30,6 +35,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _production_guards(self) -> Settings:
+        packs.load(self.domain_pack)
         if self.env == "production":
             if self.mcp_dev_caller_number:
                 raise ValueError("MCP_DEV_CALLER_NUMBER must not be set when ENV=production")

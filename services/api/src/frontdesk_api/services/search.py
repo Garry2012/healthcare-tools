@@ -104,7 +104,7 @@ async def agent_search(
     empty = s.Understood(resources=[], categories=[])
 
     if res.action == "TRANSFER_EMERGENCY":
-        return _response("TRANSFER", now, "TRANSFER_EMERGENCY", empty, destination="emergency")
+        return _response("TRANSFER", now, "TRANSFER_EMERGENCY", empty, destination=settings.pack.escalation_destination)
     if res.action == "TRANSFER_DESK":
         return _response("TRANSFER", now, "TRANSFER_DESK", empty, destination=res.destination)
 

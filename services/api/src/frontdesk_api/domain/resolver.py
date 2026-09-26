@@ -304,7 +304,7 @@ def resolve(
 
     flag = red_flag(everything, directory)
     if flag:
-        return Resolution(action="TRANSFER_EMERGENCY", destination="emergency")
+        return Resolution(action="TRANSFER_EMERGENCY")  # destination: the domain pack's escalation
     service = service_transfer(everything, directory)
     if service:
         return Resolution(action="TRANSFER_DESK", destination=service.concept_id)

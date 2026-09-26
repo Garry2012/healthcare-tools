@@ -43,7 +43,7 @@ curl -s -X POST "$CONTEXTFORGE_URL/v1/gateways" -H "Authorization: Bearer $TOKEN
 {
   "name": "healthcare-frontdesk",
   "url": "$MCP_PUBLIC_URL",
-  "description": "Hospital front-desk tools: find_availability, manage_appointment",
+  "description": "Hospital front-desk tools: find_availability, manage_booking",
   "transport": "STREAMABLEHTTP",
   "auth_type": "bearer",
   "auth_token": "$MCP_BEARER_TOKEN",
