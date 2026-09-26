@@ -83,8 +83,8 @@ class BoardDef:
 
 
 @dataclass(frozen=True, slots=True)
-class DoctorDef:
-    doctor_id: str
+class ResourceDef:
+    resource_id: str
     attendance_type: str = "REGULAR"
     booking_policy: str = "BOOKABLE"
     data_confirmed: bool = True
@@ -117,7 +117,7 @@ class SlotView:
 @dataclass(frozen=True, slots=True)
 class SessionView:
     session_id: str
-    doctor_id: str
+    resource_id: str
     template_session_id: str | None
     date: date
     label: str | None
@@ -181,8 +181,8 @@ def select_template(templates: Iterable[TemplateDef], on: date) -> TemplateDef |
     return max(effective, key=lambda t: t.effective_from) if effective else None
 
 
-def _base_sessions(doctor: DoctorDef, template: TemplateDef | None, on: date) -> list[_Working]:
-    if doctor.attendance_type == "ON_CALL" or template is None:
+def _base_sessions(resource: ResourceDef, template: TemplateDef | None, on: date) -> list[_Working]:
+    if resource.attendance_type == "ON_CALL" or template is None:
         return []
     weekday = DAYS[on.weekday()]
     return [
@@ -275,7 +275,7 @@ def apply_exceptions(
 
 
 def _capacity(s: _Working, cfg: EngineConfig) -> tuple[int, str, float]:
-    """(total, capacitySource, patients per hour) for one session."""
+    """(total, capacitySource, customers per hour) for one session."""
     minutes = max(0, _minutes(s.end) - _minutes(s.start))
     hours = minutes / 60 if minutes else 0.0
     mode, value = s.capacity.mode, s.capacity.value
@@ -303,7 +303,7 @@ def _capacity(s: _Working, cfg: EngineConfig) -> tuple[int, str, float]:
 
 
 def compute_sessions(
-    doctor: DoctorDef,
+    resource: ResourceDef,
     templates: Iterable[TemplateDef],
     exceptions: Iterable[ExceptionDef],
     board: Mapping[str, BoardDef],
@@ -314,16 +314,16 @@ def compute_sessions(
     *,
     channel: str = "AGENT",
 ) -> list[SessionView]:
-    """All session instances for one doctor on one date, including CANCELLED tombstones."""
+    """All session instances for one resource on one date, including CANCELLED tombstones."""
     today = now.date()
     now_min = _minutes(now.time())
     held = set(held_slot_ids)
     working = apply_exceptions(
-        _base_sessions(doctor, select_template(templates, on), on), exceptions, on, cfg
+        _base_sessions(resource, select_template(templates, on), on), exceptions, on, cfg
     )
     views: list[SessionView] = []
     for w in working:
-        sid = ids.session_id(doctor.doctor_id, on, w.n)
+        sid = ids.session_id(resource.resource_id, on, w.n)
         entry = board.get(sid) if on == today else None
         total, source, pph = _capacity(w, cfg)
         reserve = math.ceil(total * w.walk_in_reserve_percent / 100) if total else 0
@@ -332,7 +332,7 @@ def compute_sessions(
         certainty = w.certainty
         if entry and entry.timing_confirmed:
             certainty = "CONFIRMED"
-        if not doctor.data_confirmed and _CERTAINTY_RANK[certainty] > _CERTAINTY_RANK["EXPECTED"]:
+        if not resource.data_confirmed and _CERTAINTY_RANK[certainty] > _CERTAINTY_RANK["EXPECTED"]:
             certainty = "EXPECTED"
 
         delay = entry.delay_minutes if entry else None
@@ -360,8 +360,8 @@ def compute_sessions(
         reason: str | None = None
         if status == CANCELLED_STATUS:
             reason = "CANCELLED"
-        elif doctor.booking_policy == "NO_OPD":
-            reason = "NO_OPD"
+        elif resource.booking_policy == "NOT_OFFERED":
+            reason = "NOT_OFFERED"
         elif entry and entry.presence == "LEFT":
             reason = "LEFT_FOR_DAY"
         elif status == "ENDED":
@@ -370,7 +370,7 @@ def compute_sessions(
             reason = "FULL"
         elif on == today and now_min > arrive_by_min:
             reason = "ARRIVE_BY_PASSED"
-        elif channel == "AGENT" and doctor.booking_policy == "DESK_ONLY":
+        elif channel == "AGENT" and resource.booking_policy == "DESK_ONLY":
             reason = "DESK_ONLY"
         bookable = reason is None
 
@@ -409,7 +409,7 @@ def compute_sessions(
         views.append(
             SessionView(
                 session_id=sid,
-                doctor_id=doctor.doctor_id,
+                resource_id=resource.resource_id,
                 template_session_id=w.template_session_id,
                 date=on,
                 label=w.label,

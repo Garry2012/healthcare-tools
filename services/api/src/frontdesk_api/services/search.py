@@ -36,41 +36,41 @@ def _next_bookable(
 
 
 def _understood(res: r.Resolution, snap: DirectorySnapshot) -> s.Understood:
-    doctors = [
-        s.UnderstoodDoctor(
-            doctor_id=m.doctor_id,
-            name=snap.doctors[m.doctor_id].name,
-            localized_names=snap.doctors[m.doctor_id].localized_names or None,
+    resources = [
+        s.UnderstoodResource(
+            resource_id=m.resource_id,
+            name=snap.resources[m.resource_id].name,
+            localized_names=snap.resources[m.resource_id].localized_names or None,
             confidence=round(m.confidence, 2),
             matched_on=m.matched_on,
         )
-        for m in res.doctors
+        for m in res.resources
     ]
-    departments = [
-        s.UnderstoodDepartment(
-            id=m.department_id,
-            name=snap.departments[m.department_id].name,
-            localized_names=snap.departments[m.department_id].localized_names or None,
+    categories = [
+        s.UnderstoodCategory(
+            id=m.category_id,
+            name=snap.categories[m.category_id].name,
+            localized_names=snap.categories[m.category_id].localized_names or None,
             confidence=round(m.confidence, 2),
             matched_on=m.matched_on,
         )
-        for m in res.departments
+        for m in res.categories
     ]
-    return s.Understood(doctors=doctors, departments=departments)
+    return s.Understood(resources=resources, categories=categories)
 
 
 def _option(kind: str, concept_id: str, snap: DirectorySnapshot) -> s.ClarificationOption:
-    if kind == "doctor":
-        doc = snap.doctors[concept_id]
-        depts = snap.departments_of(concept_id)
+    if kind == "resource":
+        doc = snap.resources[concept_id]
+        cats = snap.categories_of(concept_id)
         return s.ClarificationOption(
             id=doc.id,
             label=doc.name,
             localized_labels=doc.localized_names or None,
-            detail=depts[0].name if depts else None,
+            detail=cats[0].name if cats else None,
         )
-    dept = snap.departments[concept_id]
-    return s.ClarificationOption(id=dept.id, label=dept.name, localized_labels=dept.localized_names or None)
+    cat = snap.categories[concept_id]
+    return s.ClarificationOption(id=cat.id, label=cat.name, localized_labels=cat.localized_names or None)
 
 
 def _response(
@@ -96,12 +96,12 @@ async def agent_search(
     res = r.resolve(
         utterance=body.utterance,
         directory=snap.resolver_directory(),
-        doctor_name=body.doctor_name,
-        department=body.department,
-        symptom_text=body.symptom_text,
+        resource_name=body.resource_name,
+        category=body.category,
+        need_text=body.need_text,
         thresholds=settings.thresholds,
     )
-    empty = s.Understood(doctors=[], departments=[])
+    empty = s.Understood(resources=[], categories=[])
 
     if res.action == "TRANSFER_EMERGENCY":
         return _response("TRANSFER", now, "TRANSFER_EMERGENCY", empty, destination="emergency")
@@ -146,46 +146,46 @@ async def agent_search(
 
     date_from = max(resolved.date_from, today)
     date_to = resolved.date_to
-    named = [m.doctor_id for m in res.doctors]
-    dept_ids = [m.department_id for m in res.departments]
-    anyone = not named and not dept_ids
+    named = [m.resource_id for m in res.resources]
+    cat_ids = [m.category_id for m in res.categories]
+    anyone = not named and not cat_ids
     if anyone and not (when and (when.expression or when.date_from)):
         date_to = date_from  # "anyone available right now?" means today.
 
-    def eligible(doc: t.Doctor) -> bool:
-        return doc.active and doc.booking_policy != "NO_OPD"
+    def eligible(doc: t.Resource) -> bool:
+        return doc.active and doc.booking_policy != "NOT_OFFERED"
 
     if named:
-        candidates = [d for d in named if eligible(snap.doctors[d])]
-    elif dept_ids:
+        candidates = [d for d in named if eligible(snap.resources[d])]
+    elif cat_ids:
         candidates = [
-            d.id for d in snap.doctors.values()
-            if eligible(d) and set(snap.doctor_departments.get(d.id, [])) & set(dept_ids)
+            d.id for d in snap.resources.values()
+            if eligible(d) and set(snap.resource_categories.get(d.id, [])) & set(cat_ids)
         ]
     else:
-        candidates = [d.id for d in snap.doctors.values() if eligible(d)]
+        candidates = [d.id for d in snap.resources.values() if eligible(d)]
 
     notes: list[str] = []
     gender = body.preferences.gender.value if body.preferences and body.preferences.gender else None
     if gender:
-        unknown = [d for d in candidates if snap.doctors[d].gender is None]
-        candidates = [d for d in candidates if snap.doctors[d].gender in (gender, None)]
+        unknown = [d for d in candidates if snap.resources[d].gender is None]
+        candidates = [d for d in candidates if snap.resources[d].gender in (gender, None)]
         if unknown:
-            notes.append("Some doctors have no recorded gender and are included as unknown.")
+            notes.append("Some resources have no recorded gender and are included as unknown.")
     spoken = body.preferences.language if body.preferences and body.preferences.language else None
     if spoken:
-        # A doctor with no recorded languages is kept (unknown), never silently dropped.
-        candidates = [d for d in candidates if not snap.doctors[d].languages_spoken
-                      or spoken in snap.doctors[d].languages_spoken]
+        # A resource with no recorded languages is kept (unknown), never silently dropped.
+        candidates = [d for d in candidates if not snap.resources[d].languages_spoken
+                      or spoken in snap.resources[d].languages_spoken]
 
-    # Same-department alternatives are computed from the same load.
+    # Same-category alternatives are computed from the same load.
     alt_pool: list[str] = []
     if named:
-        alt_depts = {dep for d in named for dep in snap.doctor_departments.get(d, [])}
+        alt_depts = {dep for d in named for dep in snap.resource_categories.get(d, [])}
         alt_pool = [
-            d.id for d in snap.doctors.values()
+            d.id for d in snap.resources.values()
             if eligible(d) and d.id not in named
-            and set(snap.doctor_departments.get(d.id, [])) & alt_depts
+            and set(snap.resource_categories.get(d.id, [])) & alt_depts
             and (not gender or d.gender in (gender, None))
         ]
 
@@ -194,10 +194,10 @@ async def agent_search(
     parts = settings.day_parts
     in_range = schedule.daterange(date_from, date_to)
 
-    def doctor_result(doctor_id: str, *, report_gaps: bool) -> tuple[s.DoctorResult, tuple] | None:
-        doc = snap.doctors[doctor_id]
+    def resource_result(resource_id: str, *, report_gaps: bool) -> tuple[s.ResourceResult, tuple] | None:
+        doc = snap.resources[resource_id]
         by_date = {
-            day: data.sessions(doctor_id, day)
+            day: data.sessions(resource_id, day)
             for day in schedule.daterange(date_from, horizon_end)
         }
         sessions: list[s.SessionInstance] = []
@@ -229,29 +229,29 @@ async def agent_search(
             return None
         if anyone:
             sessions.sort(key=lambda si: _PRESENCE_ORDER.get(si.presence or "", 9))
-        result = s.DoctorResult(
-            doctor=views.result_doctor(doc, snap.departments_of(doctor_id)),
+        result = s.ResourceResult(
+            resource=views.result_resource(doc, snap.categories_of(resource_id)),
             sessions=sessions,
             unavailable=unavailable if report_gaps or not sessions else [],
         )
         presence_rank = min((_PRESENCE_ORDER.get(si.presence or "", 9) for si in sessions), default=9)
         return result, (presence_rank if anyone else 0, soonest, doc.name)
 
-    ranked = [x for d in candidates if (x := doctor_result(d, report_gaps=bool(named)))]
+    ranked = [x for d in candidates if (x := resource_result(d, report_gaps=bool(named)))]
     ranked.sort(key=lambda pair: pair[1])
-    results = [pair[0] for pair in ranked[: body.max_doctors]]
+    results = [pair[0] for pair in ranked[: body.max_resources]]
 
-    def bookable(result: s.DoctorResult) -> bool:
+    def bookable(result: s.ResourceResult) -> bool:
         return any(si.bookable for si in result.sessions)
 
-    alternatives: list[s.DoctorResult] = []
+    alternatives: list[s.ResourceResult] = []
     if named and not any(bookable(x) for x in results):
-        alts = [x for d in alt_pool if (x := doctor_result(d, report_gaps=False))]
+        alts = [x for d in alt_pool if (x := resource_result(d, report_gaps=False))]
         alts.sort(key=lambda pair: pair[1])
-        alternatives = [pair[0] for pair in alts if bookable(pair[0])][: body.max_doctors]
+        alternatives = [pair[0] for pair in alts if bookable(pair[0])][: body.max_resources]
 
     desk_only = bool(results) and all(
-        snap.doctors[x.doctor.doctor_id].booking_policy == "DESK_ONLY" for x in results
+        snap.resources[x.resource.resource_id].booking_policy == "DESK_ONLY" for x in results
     ) and any(x.sessions for x in results)
     if desk_only:
         return _response("TRANSFER", now, "TRANSFER_DESK", understood, destination="desk",
@@ -273,29 +273,29 @@ async def staff_availability(
     session: AsyncSession,
     settings: Settings,
     *,
-    doctor_id: str | None,
-    department: str | None,
+    resource_id: str | None,
+    category: str | None,
     date_from: date,
     date_to: date,
     include_slots: bool,
 ) -> s.AvailabilityList:
     now = schedule.now_in(settings)
     snap = await directory.snapshot(session, approved_lexicon_only=True)
-    if doctor_id:
-        doctor_ids = [doctor_id] if doctor_id in snap.doctors else []
-    elif department:
-        wanted = department.casefold()
-        dept_ids = {
-            d.id for d in snap.departments.values()
+    if resource_id:
+        resource_ids = [resource_id] if resource_id in snap.resources else []
+    elif category:
+        wanted = category.casefold()
+        cat_ids = {
+            d.id for d in snap.categories.values()
             if wanted in {d.id.casefold(), (d.code or "").casefold(), d.name.casefold()}
         }
-        doctor_ids = [d for d, deps in snap.doctor_departments.items() if set(deps) & dept_ids]
+        resource_ids = [d for d, deps in snap.resource_categories.items() if set(deps) & cat_ids]
     else:
-        doctor_ids = [d.id for d in snap.doctors.values() if d.active]
-    data = await schedule.load(session, settings, now, doctor_ids, date_from, date_to)
+        resource_ids = [d.id for d in snap.resources.values() if d.active]
+    data = await schedule.load(session, settings, now, resource_ids, date_from, date_to)
     items = [
         views.session_instance(v, include_slots=include_slots)
-        for d in sorted(doctor_ids)
+        for d in sorted(resource_ids)
         for day in schedule.daterange(date_from, date_to)
         for v in data.sessions(d, day, channel="DESK")
     ]

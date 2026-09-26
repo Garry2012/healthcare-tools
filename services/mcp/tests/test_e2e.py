@@ -26,8 +26,8 @@ CALLER = "+919000000555"
 def slots_of(result: dict) -> list[str]:
     return [
         slot["slotId"]
-        for doctor in result["results"]
-        for session in doctor["sessions"]
+        for resource in result["results"]
+        for session in resource["sessions"]
         for slot in session.get("slots", [])
         if slot["available"]
     ]
@@ -36,7 +36,7 @@ def slots_of(result: dict) -> list[str]:
 async def test_book_list_reschedule_cancel(make_settings):
     app = create_app(make_settings(api_base_url=API_URL, api_bearer_token=API_TOKEN))
     call_id = f"e2e-{uuid.uuid4().hex[:8]}"
-    patient = {"name": f"Test Patient {uuid.uuid4().hex[:6]}", "phone": CALLER[3:]}
+    customer = {"name": f"Test Customer {uuid.uuid4().hex[:6]}", "phone": CALLER[3:]}
     async with serving(app) as base:
         transport = StreamableHttpTransport(f"{base}/mcp/", headers={
             "Authorization": "Bearer mcp-token", "X-Call-Id": call_id, "X-Caller-Number": CALLER})
@@ -49,33 +49,33 @@ async def test_book_list_reschedule_cancel(make_settings):
 
             found = await tool("find_availability", {
                 "utterance": "is Dr Garima there next monday", "language": "en",
-                "doctorName": "Dr Garima", "when": {"expression": "next monday"}})
+                "resourceName": "Dr Garima", "when": {"expression": "next monday"}})
             assert found["outcome"] == "FOUND" and found["routing"]["action"] == "OFFER_SLOTS"
             first, second, *_ = slots_of(found)
 
-            book_args = {"action": "BOOK", "slotId": first, "patient": patient, "language": "en",
+            book_args = {"action": "BOOK", "slotId": first, "customer": customer, "language": "en",
                          "reasonVerbatim": "follow-up"}
-            booked = await tool("manage_appointment", book_args)
+            booked = await tool("manage_booking", book_args)
             assert booked["outcome"] == "BOOKED" and booked["status"] == "BOOKED"
-            appointment_id = booked["appointmentId"]
+            booking_id = booked["bookingId"]
 
-            replay = await tool("manage_appointment", book_args)  # a retry in the same call
-            assert replay["appointmentId"] == appointment_id
+            replay = await tool("manage_booking", book_args)  # a retry in the same call
+            assert replay["bookingId"] == booking_id
 
-            listed = await tool("manage_appointment", {"action": "LIST", "patientName": patient["name"]})
+            listed = await tool("manage_booking", {"action": "LIST", "customerName": customer["name"]})
             assert listed["outcome"] == "FOUND" and listed["identityBasis"] == "CALLER_NUMBER"
-            assert [i["appointmentId"] for i in listed["items"]] == [appointment_id]
+            assert [i["bookingId"] for i in listed["items"]] == [booking_id]
 
-            moved = await tool("manage_appointment", {
-                "action": "RESCHEDULE", "appointmentId": appointment_id, "patientName": patient["name"],
+            moved = await tool("manage_booking", {
+                "action": "RESCHEDULE", "bookingId": booking_id, "customerName": customer["name"],
                 "newSlotId": second})
             assert moved["outcome"] == "RESCHEDULED"
             assert moved["slot"]["slotId"] == second and moved["previousSlot"]["slotId"] == first
 
-            cancelled = await tool("manage_appointment", {
-                "action": "CANCEL", "appointmentId": appointment_id, "patientName": patient["name"]})
-            assert cancelled["outcome"] == "CANCELLED" and cancelled["status"] == "CANCELLED_BY_PATIENT"
+            cancelled = await tool("manage_booking", {
+                "action": "CANCEL", "bookingId": booking_id, "customerName": customer["name"]})
+            assert cancelled["outcome"] == "CANCELLED" and cancelled["status"] == "CANCELLED_BY_CUSTOMER"
 
-            stranger = await tool("manage_appointment", {
-                "action": "CANCEL", "appointmentId": appointment_id, "patientName": "Somebody Else"})
+            stranger = await tool("manage_booking", {
+                "action": "CANCEL", "bookingId": booking_id, "customerName": "Somebody Else"})
             assert stranger["error"]["code"] == "NOT_FOUND"

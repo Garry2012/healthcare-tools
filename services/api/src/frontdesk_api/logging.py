@@ -1,4 +1,4 @@
-"""Structured JSON logs. X-Call-Id is the correlation id; phone numbers and patient
+"""Structured JSON logs. X-Call-Id is the correlation id; phone numbers and customer
 names are never logged at INFO (only ids and outcomes are)."""
 
 from __future__ import annotations

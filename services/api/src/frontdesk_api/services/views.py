@@ -40,7 +40,7 @@ def session_instance(
         slots = [slot(v) for v in chosen]
     return s.SessionInstance(
         session_id=view.session_id,
-        doctor_id=view.doctor_id,
+        resource_id=view.resource_id,
         template_session_id=view.template_session_id,
         date=view.date,
         label=view.label,
@@ -66,39 +66,38 @@ def session_instance(
     )
 
 
-def department(row: t.Department) -> s.Department:
-    return s.Department(
+def category(row: t.Category) -> s.Category:
+    return s.Category(
         id=row.id,
         code=row.code,
         name=row.name,
         localized_names=row.localized_names or None,
-        has_consultant=row.has_consultant,
+        offers_bookings=row.offers_bookings,
         active=row.active,
     )
 
 
-def money(row: t.Doctor) -> s.Money | None:
-    if row.fee_amount is None:
+def money(row: t.Resource) -> s.Money | None:
+    if row.price_amount is None:
         return None
     return s.Money(
-        amount=float(row.fee_amount),
-        currency=row.fee_currency or "",
-        confirmed=row.fee_confirmed,
+        amount=float(row.price_amount),
+        currency=row.price_currency or "",
+        confirmed=row.price_confirmed,
     )
 
 
-def doctor(row: t.Doctor, departments: list[t.Department]) -> s.Doctor:
-    return s.Doctor(
+def resource(row: t.Resource, categories: list[t.Category]) -> s.Resource:
+    return s.Resource(
         id=row.id,
         name=row.name,
         localized_names=row.localized_names or None,
         name_variants=row.name_variants or None,
         gender=row.gender,
-        departments=[department(d) for d in departments],
-        qualification=row.qualification,
-        years_of_experience=row.years_of_experience,
+        categories=[category(d) for d in categories],
+        attributes=row.attributes or None,
         languages_spoken=row.languages_spoken or None,
-        fee=money(row),
+        price=money(row),
         attendance_type=row.attendance_type,
         booking_policy=row.booking_policy,
         data_confirmed=row.data_confirmed,
@@ -106,14 +105,14 @@ def doctor(row: t.Doctor, departments: list[t.Department]) -> s.Doctor:
     )
 
 
-def result_doctor(row: t.Doctor, departments: list[t.Department]) -> s.ResultDoctor:
-    return s.ResultDoctor(
-        doctor_id=row.id,
+def result_resource(row: t.Resource, categories: list[t.Category]) -> s.ResultResource:
+    return s.ResultResource(
+        resource_id=row.id,
         name=row.name,
         localized_names=row.localized_names or None,
-        departments=[department(d) for d in departments],
+        categories=[category(d) for d in categories],
         gender=row.gender,
-        qualification=row.qualification,
-        fee=money(row),
+        attributes=row.attributes or None,
+        price=money(row),
         data_confirmed=row.data_confirmed,
     )

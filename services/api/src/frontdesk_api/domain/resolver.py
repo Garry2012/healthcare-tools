@@ -1,7 +1,7 @@
 """Server-side understanding of the caller's words (IMPLEMENTATION.md §2.3, MVP scope).
 
-Pipeline: red flag → service transfer → doctor (exact / variant / lexicon / Double
-Metaphone) → department (lexicon, approved symptom routes, semantic hook) → decision.
+Pipeline: red flag → service transfer → resource (exact / variant / lexicon / Double
+Metaphone) → category (lexicon, approved need routes, semantic hook) → decision.
 Dates are resolved separately in `dates.py`. Everything is deterministic; below the
 tenant's thresholds the resolver proposes, it never picks.
 """
@@ -44,10 +44,10 @@ class LexiconTerm:
 
 
 @dataclass(frozen=True, slots=True)
-class DoctorEntry:
-    doctor_id: str
+class ResourceEntry:
+    resource_id: str
     name: str
-    department_ids: tuple[str, ...]
+    category_ids: tuple[str, ...]
     name_variants: tuple[str, ...] = ()
     localized_names: tuple[str, ...] = ()
     active: bool = True
@@ -55,74 +55,74 @@ class DoctorEntry:
 
 
 @dataclass(frozen=True, slots=True)
-class DepartmentEntry:
-    department_id: str
+class CategoryEntry:
+    category_id: str
     name: str
     code: str | None = None
     localized_names: tuple[str, ...] = ()
-    has_consultant: bool = True
+    offers_bookings: bool = True
     active: bool = True
 
 
 @dataclass(frozen=True, slots=True)
 class Directory:
-    doctors: tuple[DoctorEntry, ...]
-    departments: tuple[DepartmentEntry, ...]
+    resources: tuple[ResourceEntry, ...]
+    categories: tuple[CategoryEntry, ...]
     lexicon: tuple[LexiconTerm, ...]
 
     def terms(self, concept_type: str) -> list[LexiconTerm]:
         return [t for t in self.lexicon if t.approved and t.concept_type == concept_type]
 
-    def department(self, department_id: str) -> DepartmentEntry | None:
-        return next((d for d in self.departments if d.department_id == department_id), None)
+    def category(self, category_id: str) -> CategoryEntry | None:
+        return next((d for d in self.categories if d.category_id == category_id), None)
 
 
 @dataclass(frozen=True, slots=True)
 class ResolverThresholds:
-    doctor: float = 0.8
-    department: float = 0.8
+    resource: float = 0.8
+    category: float = 0.8
     suggestion: float = 0.7
 
 
 class SemanticMatcher(Protocol):
-    """Step 4 of §2.3: multilingual sentence similarity to department names.
+    """Step 4 of §2.3: multilingual sentence similarity to category names.
 
     TODO(IMPLEMENTATION.md §2.3 step 4): plug in a LaBSE-class model once the lexicon has
     content. Until then `NoSemanticMatcher` keeps the resolver deterministic.
     """
 
-    def match(self, text: str, departments: Sequence[DepartmentEntry]) -> list[tuple[str, float]]:
+    def match(self, text: str, categories: Sequence[CategoryEntry]) -> list[tuple[str, float]]:
         ...
 
 
 class NoSemanticMatcher:
-    def match(self, text: str, departments: Sequence[DepartmentEntry]) -> list[tuple[str, float]]:
+    def match(self, text: str, categories: Sequence[CategoryEntry]) -> list[tuple[str, float]]:
         return []
 
 
 @dataclass(frozen=True, slots=True)
-class DoctorMatch:
-    doctor_id: str
+class ResourceMatch:
+    resource_id: str
     confidence: float
     matched_on: str  # NAME_EXACT | NAME_PHONETIC | NAME_VARIANT | LEXICON
 
 
 @dataclass(frozen=True, slots=True)
-class DepartmentMatch:
-    department_id: str
+class CategoryMatch:
+    category_id: str
     confidence: float
-    matched_on: str  # LEXICON | SYMPTOM_ROUTE | SEMANTIC
+    matched_on: str  # LEXICON | NEED_ROUTE | SEMANTIC
 
 
 @dataclass(slots=True)
 class Resolution:
     action: str  # OFFER_SLOTS | CLARIFY | TRANSFER_EMERGENCY | TRANSFER_DESK | NO_SERVICE
     destination: str | None = None
-    doctors: list[DoctorMatch] = field(default_factory=list)
-    departments: list[DepartmentMatch] = field(default_factory=list)
+    resources: list[ResourceMatch] = field(default_factory=list)
+    categories: list[CategoryMatch] = field(default_factory=list)
     clarification_type: str | None = None
     clarification_options: list[tuple[str, str]] = field(default_factory=list)  # (kind, id)
-    suggestions: list[str] = field(default_factory=list)  # department ids
+    suggestions: list[str] = field(default_factory=list)  # category ids
 
 
 # ---------------------------------------------------------------- matching
@@ -155,31 +155,31 @@ def _name_tokens(name: str) -> list[str]:
     return tokens(normalise(name, strip_honorifics=True))
 
 
-def match_doctors(query: str, directory: Directory, *, allow_phonetic: bool) -> list[DoctorMatch]:
-    """Score every active doctor; keep only the best tier."""
+def match_resources(query: str, directory: Directory, *, allow_phonetic: bool) -> list[ResourceMatch]:
+    """Score every active resource; keep only the best tier."""
     q = _name_tokens(query)
     if not q:
         return []
     q_text = " ".join(q)
-    doctor_terms = directory.terms("DOCTOR")
-    scored: list[DoctorMatch] = []
-    for doc in directory.doctors:
+    resource_terms = directory.terms("RESOURCE")
+    scored: list[ResourceMatch] = []
+    for doc in directory.resources:
         if not doc.active:
             continue
         name = _name_tokens(doc.name)
         localized = [_name_tokens(n) for n in doc.localized_names]
-        best: DoctorMatch | None = None
+        best: ResourceMatch | None = None
         if q == name or any(q == loc for loc in localized):
-            best = DoctorMatch(doc.doctor_id, CONF_EXACT, "NAME_EXACT")
+            best = ResourceMatch(doc.resource_id, CONF_EXACT, "NAME_EXACT")
         elif set(q) <= set(name) or any(loc and set(q) <= set(loc) for loc in localized):
-            best = DoctorMatch(doc.doctor_id, CONF_SUBSET, "NAME_EXACT")
+            best = ResourceMatch(doc.resource_id, CONF_SUBSET, "NAME_EXACT")
         elif any(q_text == " ".join(_name_tokens(v)) for v in doc.name_variants):
-            best = DoctorMatch(doc.doctor_id, CONF_VARIANT, "NAME_VARIANT")
+            best = ResourceMatch(doc.resource_id, CONF_VARIANT, "NAME_VARIANT")
         elif any(
-            t.concept_id == doc.doctor_id and " ".join(_name_tokens(t.term)) == q_text
-            for t in doctor_terms
+            t.concept_id == doc.resource_id and " ".join(_name_tokens(t.term)) == q_text
+            for t in resource_terms
         ):
-            best = DoctorMatch(doc.doctor_id, CONF_LEXICON, "LEXICON")
+            best = ResourceMatch(doc.resource_id, CONF_LEXICON, "LEXICON")
         elif allow_phonetic:
             candidates = [name, *(_name_tokens(v) for v in doc.name_variants)]
             for cand in candidates:
@@ -188,7 +188,7 @@ def match_doctors(query: str, directory: Directory, *, allow_phonetic: bool) -> 
                     and any(phonetic_keys(tok) & phonetic_keys(c) for c in cand if len(c) >= 3)
                     for tok in q
                 ):
-                    best = DoctorMatch(doc.doctor_id, CONF_PHONETIC, "NAME_PHONETIC")
+                    best = ResourceMatch(doc.resource_id, CONF_PHONETIC, "NAME_PHONETIC")
                     break
         if best:
             scored.append(best)
@@ -199,74 +199,74 @@ def match_doctors(query: str, directory: Directory, *, allow_phonetic: bool) -> 
     return sorted((m for m in scored if m.confidence >= tier), key=lambda m: -m.confidence)
 
 
-def _scan_utterance_for_doctors(utterance: str, directory: Directory) -> list[DoctorMatch]:
-    """Without an explicit doctorName, only exact name tokens in the utterance count."""
+def _scan_utterance_for_resources(utterance: str, directory: Directory) -> list[ResourceMatch]:
+    """Without an explicit resourceName, only exact name tokens in the utterance count."""
     words = set(tokens(normalise(utterance, strip_honorifics=True)))
-    hits: list[DoctorMatch] = []
-    for doc in directory.doctors:
+    hits: list[ResourceMatch] = []
+    for doc in directory.resources:
         if not doc.active:
             continue
         name = _name_tokens(doc.name)
         distinctive = [t for t in name if len(t) >= 3]
         if distinctive and set(distinctive) <= words:
-            hits.append(DoctorMatch(doc.doctor_id, CONF_SUBSET, "NAME_EXACT"))
+            hits.append(ResourceMatch(doc.resource_id, CONF_SUBSET, "NAME_EXACT"))
     return hits
 
 
-def match_departments(
+def match_categories(
     texts: Sequence[str],
     directory: Directory,
     semantic: SemanticMatcher,
     threshold: float,
-) -> list[DepartmentMatch]:
+) -> list[CategoryMatch]:
     texts = [t for t in texts if t]
     if not texts:
         return []
-    found: dict[str, DepartmentMatch] = {}
+    found: dict[str, CategoryMatch] = {}
 
-    def keep(match: DepartmentMatch) -> None:
-        dept = directory.department(match.department_id)
-        if dept is None or not dept.active:
+    def keep(match: CategoryMatch) -> None:
+        cat = directory.category(match.category_id)
+        if cat is None or not cat.active:
             return
-        current = found.get(match.department_id)
+        current = found.get(match.category_id)
         if current is None or match.confidence > current.confidence:
-            found[match.department_id] = match
+            found[match.category_id] = match
 
     for text in texts:
         latin, native = _both_forms(text)
-        for dept in directory.departments:
-            names = [dept.name, *(dept.localized_names), *([dept.code] if dept.code else [])]
+        for cat in directory.categories:
+            names = [cat.name, *(cat.localized_names), *([cat.code] if cat.code else [])]
             for n in names:
                 n_latin, n_native = _both_forms(n)
                 if latin == n_latin or native == n_native:
-                    keep(DepartmentMatch(dept.department_id, CONF_DEPT_EXACT, "LEXICON"))
+                    keep(CategoryMatch(cat.category_id, CONF_DEPT_EXACT, "LEXICON"))
                 elif len(n_latin) > 3 and contains_phrase(latin, n_latin):
-                    keep(DepartmentMatch(dept.department_id, CONF_DEPT_CONTAINED, "LEXICON"))
-        for kind, matched_on in (("DEPARTMENT", "LEXICON"), ("SYMPTOM_ROUTE", "SYMPTOM_ROUTE")):
+                    keep(CategoryMatch(cat.category_id, CONF_DEPT_CONTAINED, "LEXICON"))
+        for kind, matched_on in (("CATEGORY", "LEXICON"), ("NEED_ROUTE", "NEED_ROUTE")):
             for term in directory.terms(kind):
                 if latin == term.latin or native == term.native:
-                    keep(DepartmentMatch(term.concept_id, CONF_DEPT_EXACT, matched_on))
+                    keep(CategoryMatch(term.concept_id, CONF_DEPT_EXACT, matched_on))
                 elif contains_phrase(latin, term.latin) or contains_phrase(native, term.native):
-                    keep(DepartmentMatch(term.concept_id, CONF_DEPT_CONTAINED, matched_on))
+                    keep(CategoryMatch(term.concept_id, CONF_DEPT_CONTAINED, matched_on))
     if not found:
         for text in texts:
-            for dept_id, score in semantic.match(text, directory.departments):
+            for cat_id, score in semantic.match(text, directory.categories):
                 if score >= threshold:
-                    keep(DepartmentMatch(dept_id, score, "SEMANTIC"))
+                    keep(CategoryMatch(cat_id, score, "SEMANTIC"))
     return sorted(
         (m for m in found.values() if m.confidence >= threshold), key=lambda m: -m.confidence
     )
 
 
-def suggest_departments(texts: Sequence[str], directory: Directory, cutoff: float) -> list[str]:
+def suggest_categories(texts: Sequence[str], directory: Directory, cutoff: float) -> list[str]:
     """Spelling-level near misses ("zoologist" → urologist). Proposals only."""
     vocabulary: dict[str, str] = {}
-    for dept in directory.departments:
-        if dept.active and dept.has_consultant:
-            for word in tokens(normalise(dept.name)):
+    for cat in directory.categories:
+        if cat.active and cat.offers_bookings:
+            for word in tokens(normalise(cat.name)):
                 if len(word) > 3:
-                    vocabulary.setdefault(word, dept.department_id)
-    for term in directory.terms("DEPARTMENT"):
+                    vocabulary.setdefault(word, cat.category_id)
+    for term in directory.terms("CATEGORY"):
         for word in tokens(term.latin):
             if len(word) > 3:
                 vocabulary.setdefault(word, term.concept_id)
@@ -279,9 +279,9 @@ def suggest_departments(texts: Sequence[str], directory: Directory, cutoff: floa
                 ratio = difflib.SequenceMatcher(None, word, close).ratio()
                 ranked.append((ratio, vocabulary[close]))
     seen: list[str] = []
-    for _, dept_id in sorted(ranked, key=lambda r: -r[0]):
-        if dept_id not in seen:
-            seen.append(dept_id)
+    for _, cat_id in sorted(ranked, key=lambda r: -r[0]):
+        if cat_id not in seen:
+            seen.append(cat_id)
     return seen[:3]
 
 
@@ -292,15 +292,15 @@ def resolve(
     *,
     utterance: str,
     directory: Directory,
-    doctor_name: str | None = None,
-    department: str | None = None,
-    symptom_text: str | None = None,
+    resource_name: str | None = None,
+    category: str | None = None,
+    need_text: str | None = None,
     thresholds: ResolverThresholds | None = None,
     semantic: SemanticMatcher | None = None,
 ) -> Resolution:
     semantic = semantic or NoSemanticMatcher()
     thresholds = thresholds or ResolverThresholds()
-    everything = [utterance, doctor_name or "", department or "", symptom_text or ""]
+    everything = [utterance, resource_name or "", category or "", need_text or ""]
 
     flag = red_flag(everything, directory)
     if flag:
@@ -309,73 +309,73 @@ def resolve(
     if service:
         return Resolution(action="TRANSFER_DESK", destination=service.concept_id)
 
-    if doctor_name:
-        doctors = [
+    if resource_name:
+        resources = [
             m
-            for m in match_doctors(doctor_name, directory, allow_phonetic=True)
-            if m.confidence >= thresholds.doctor
+            for m in match_resources(resource_name, directory, allow_phonetic=True)
+            if m.confidence >= thresholds.resource
         ]
-    elif not department and not symptom_text:
-        doctors = _scan_utterance_for_doctors(utterance, directory)
+    elif not category and not need_text:
+        resources = _scan_utterance_for_resources(utterance, directory)
     else:
-        doctors = []
+        resources = []
 
-    dept_texts = [t for t in (department, symptom_text) if t]
-    if not dept_texts and not doctors:
-        dept_texts = [utterance]
-    departments = match_departments(dept_texts, directory, semantic, thresholds.department)
-    departments = [
-        d for d in departments if (entry := directory.department(d.department_id)) and entry.has_consultant
+    cat_texts = [t for t in (category, need_text) if t]
+    if not cat_texts and not resources:
+        cat_texts = [utterance]
+    categories = match_categories(cat_texts, directory, semantic, thresholds.category)
+    categories = [
+        d for d in categories if (entry := directory.category(d.category_id)) and entry.offers_bookings
     ]
 
-    resolution = Resolution(action="OFFER_SLOTS", doctors=doctors, departments=departments)
+    resolution = Resolution(action="OFFER_SLOTS", resources=resources, categories=categories)
 
-    if len(doctors) > 1:
+    if len(resources) > 1:
         resolution.action = "CLARIFY"
-        resolution.clarification_type = "WHICH_DOCTOR"
-        resolution.clarification_options = [("doctor", m.doctor_id) for m in doctors]
+        resolution.clarification_type = "WHICH_RESOURCE"
+        resolution.clarification_options = [("resource", m.resource_id) for m in resources]
         return resolution
 
-    if len(doctors) == 1 and departments:
-        doctor = next(d for d in directory.doctors if d.doctor_id == doctors[0].doctor_id)
-        if not set(doctor.department_ids) & {d.department_id for d in departments}:
+    if len(resources) == 1 and categories:
+        resource = next(d for d in directory.resources if d.resource_id == resources[0].resource_id)
+        if not set(resource.category_ids) & {d.category_id for d in categories}:
             resolution.action = "CLARIFY"
             resolution.clarification_type = "CONFIRM_INTERPRETATION"
-            resolution.clarification_options = [("doctor", doctor.doctor_id)] + [
-                ("department", d.department_id) for d in departments
+            resolution.clarification_options = [("resource", resource.resource_id)] + [
+                ("category", d.category_id) for d in categories
             ]
         return resolution
 
-    if doctors:
+    if resources:
         return resolution
 
-    if len(departments) > 1:
-        top = departments[0].confidence
-        leaders = [d for d in departments if d.confidence >= top]
+    if len(categories) > 1:
+        top = categories[0].confidence
+        leaders = [d for d in categories if d.confidence >= top]
         if len(leaders) > 1:
             resolution.action = "CLARIFY"
-            resolution.clarification_type = "WHICH_DEPARTMENT"
-            resolution.clarification_options = [("department", d.department_id) for d in leaders]
+            resolution.clarification_type = "WHICH_CATEGORY"
+            resolution.clarification_options = [("category", d.category_id) for d in leaders]
             return resolution
-        resolution.departments = leaders
+        resolution.categories = leaders
         return resolution
 
-    if departments:
+    if categories:
         return resolution
 
-    probe = [t for t in (doctor_name, department, symptom_text, utterance) if t]
-    suggestions = suggest_departments(probe, directory, thresholds.suggestion)
+    probe = [t for t in (resource_name, category, need_text, utterance) if t]
+    suggestions = suggest_categories(probe, directory, thresholds.suggestion)
     if suggestions:
         resolution.action = "CLARIFY"
         resolution.clarification_type = "CONFIRM_INTERPRETATION"
-        resolution.clarification_options = [("department", d) for d in suggestions]
+        resolution.clarification_options = [("category", d) for d in suggestions]
         resolution.suggestions = suggestions
         return resolution
 
-    if doctor_name or department or symptom_text:
+    if resource_name or category or need_text:
         resolution.action = "NO_SERVICE"
         return resolution
 
-    # No name, no department, no problem: "anyone available right now?"
+    # No name, no category, no problem: "anyone available right now?"
     resolution.action = "OFFER_SLOTS"
     return resolution

@@ -1,7 +1,7 @@
 """Service settings and tenant configuration (IMPLEMENTATION.md §2.9).
 
 Every value comes from the process environment; the service never reads a `.env` file
-itself (compose and the Makefile load it). Nothing hospital-specific lives in code.
+itself (compose and the Makefile load it). Nothing provider- or domain-specific lives in code.
 """
 
 from __future__ import annotations
@@ -55,8 +55,8 @@ class Settings(BaseSettings):
     tenant_default_slot_minutes: int = Field(default=15, ge=1)
     tenant_search_default_days: int = Field(default=7, ge=1, le=31)
     tenant_next_bookable_horizon_days: int = Field(default=14, ge=1, le=60)
-    tenant_resolver_doctor_threshold: float = Field(default=0.8, ge=0, le=1)
-    tenant_resolver_department_threshold: float = Field(default=0.8, ge=0, le=1)
+    tenant_resolver_resource_threshold: float = Field(default=0.8, ge=0, le=1)
+    tenant_resolver_category_threshold: float = Field(default=0.8, ge=0, le=1)
     tenant_resolver_suggestion_cutoff: float = Field(default=0.7, ge=0, le=1)
     tenant_disclosure_policy: Literal["NAME_REQUIRED"] = "NAME_REQUIRED"
     tenant_cancel_on_spoken_number: bool = False
@@ -102,8 +102,8 @@ class Settings(BaseSettings):
     @property
     def thresholds(self) -> ResolverThresholds:
         return ResolverThresholds(
-            doctor=self.tenant_resolver_doctor_threshold,
-            department=self.tenant_resolver_department_threshold,
+            resource=self.tenant_resolver_resource_threshold,
+            category=self.tenant_resolver_category_threshold,
             suggestion=self.tenant_resolver_suggestion_cutoff,
         )
 

@@ -18,15 +18,15 @@ MAX_DAYS = 62
 
 
 @router.get("/availability", operation_id="getAvailability",
-            summary="Materialised sessions with slots for a doctor or department over a date range",
+            summary="Materialised sessions with slots for a resource or category over a date range",
             response_model=s.AvailabilityList, responses=errors(400, 401))
 async def get_availability(
     session: Session,
     settings: SettingsDep,
     date_from: Annotated[date, Query(alias="from")],
     date_to: Annotated[date, Query(alias="to")],
-    doctor_id: Annotated[str | None, Query(alias="doctorId")] = None,
-    department: str | None = None,
+    resource_id: Annotated[str | None, Query(alias="resourceId")] = None,
+    category: str | None = None,
     include_slots: Annotated[bool, Query(alias="includeSlots")] = True,
 ):
     if date_to < date_from:
@@ -34,6 +34,6 @@ async def get_availability(
     if (date_to - date_from).days >= MAX_DAYS:
         raise validation(f"A range may span at most {MAX_DAYS} days.", "to")
     return respond(await search.staff_availability(
-        session, settings, doctor_id=doctor_id, department=department,
+        session, settings, resource_id=resource_id, category=category,
         date_from=date_from, date_to=date_to, include_slots=include_slots,
     ))

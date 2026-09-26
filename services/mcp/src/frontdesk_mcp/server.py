@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 INSTRUCTIONS = (
     "Front-desk tools for a hospital voice agent. Call find_availability once per caller question "
     "with the caller's own words; branch on `outcome` and `routing.action`. Book with "
-    "manage_appointment(action=BOOK) using a slotId from that result, one patient per call. "
-    "Never invent ids, dates or fees; never say 'confirmed' unless timingCertainty is CONFIRMED."
+    "manage_booking(action=BOOK) using a slotId from that result, one customer per call. "
+    "Never invent ids, dates or prices; never say 'confirmed' unless timingCertainty is CONFIRMED."
 )
 
 

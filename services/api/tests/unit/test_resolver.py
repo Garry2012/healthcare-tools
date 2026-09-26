@@ -11,97 +11,97 @@ def ask(directory, utterance, **kw):
     return resolve(utterance=utterance, directory=directory, **kw)
 
 
-def test_named_doctor_exact(directory):
-    res = ask(directory, "is Dr Garima in today", doctor_name="Dr Garima")
+def test_named_resource_exact(directory):
+    res = ask(directory, "is Dr Garima in today", resource_name="Dr Garima")
     assert res.action == "OFFER_SLOTS"
-    assert [(m.doctor_id, m.matched_on, m.confidence) for m in res.doctors] == [("doc_garima", "NAME_EXACT", 1.0)]
+    assert [(m.resource_id, m.matched_on, m.confidence) for m in res.resources] == [("res_garima", "NAME_EXACT", 1.0)]
 
 
 def test_lower_case_name_without_title_resolves(directory):
-    res = ask(directory, "garima", doctor_name="garima")
-    assert [m.doctor_id for m in res.doctors] == ["doc_garima"]
+    res = ask(directory, "garima", resource_name="garima")
+    assert [m.resource_id for m in res.resources] == ["res_garima"]
 
 
 @pytest.mark.parametrize("heard", ["gareema", "Garimaa", "Dr. Gaarima"])
 def test_misspelt_name_resolves_phonetically(directory, heard):
-    res = ask(directory, heard, doctor_name=heard)
+    res = ask(directory, heard, resource_name=heard)
     assert res.action == "OFFER_SLOTS"
-    assert [m.doctor_id for m in res.doctors] == ["doc_garima"]
-    assert res.doctors[0].matched_on in {"NAME_PHONETIC", "NAME_VARIANT"}
+    assert [m.resource_id for m in res.resources] == ["res_garima"]
+    assert res.resources[0].matched_on in {"NAME_PHONETIC", "NAME_VARIANT"}
 
 
 def test_phonetic_match_is_below_exact(directory):
-    res = ask(directory, "Garimaa", doctor_name="Garimaa")
-    assert res.doctors[0].matched_on == "NAME_PHONETIC"
-    assert res.doctors[0].confidence < 1.0
+    res = ask(directory, "Garimaa", resource_name="Garimaa")
+    assert res.resources[0].matched_on == "NAME_PHONETIC"
+    assert res.resources[0].confidence < 1.0
 
 
 @pytest.mark.parametrize("heard", ["ಡಾ. ಗರಿಮಾ", "ಗರಿಮಾ", "डॉ. गरिमा"])
-def test_indic_script_name_resolves_to_the_same_doctor(directory, heard):
-    res = ask(directory, f"{heard} ನಾಳೆ ಇದ್ದಾರಾ", doctor_name=heard)
-    assert [m.doctor_id for m in res.doctors] == ["doc_garima"]
+def test_indic_script_name_resolves_to_the_same_resource(directory, heard):
+    res = ask(directory, f"{heard} ನಾಳೆ ಇದ್ದಾರಾ", resource_name=heard)
+    assert [m.resource_id for m in res.resources] == ["res_garima"]
 
 
-def test_name_found_in_kannada_utterance_without_doctor_name(directory):
+def test_name_found_in_kannada_utterance_without_resource_name(directory):
     res = ask(directory, "ನಾಳೆ ಸಂಜೆ ಡಾಕ್ಟರ್ ಗರಿಮಾ ಇರ್ತಾರಾ")
-    assert [m.doctor_id for m in res.doctors] == ["doc_garima"]
+    assert [m.resource_id for m in res.resources] == ["res_garima"]
 
 
-def test_lexicon_doctor_alias(directory):
-    res = ask(directory, "garima madam", doctor_name="garima madam")
-    assert [m.doctor_id for m in res.doctors] == ["doc_garima"]
+def test_lexicon_resource_alias(directory):
+    res = ask(directory, "garima madam", resource_name="garima madam")
+    assert [m.resource_id for m in res.resources] == ["res_garima"]
 
 
-def test_asr_damaged_department_asks_to_confirm_urology(directory):
-    res = ask(directory, "I need a zoologist appointment", department="zoologist")
+def test_asr_damaged_category_asks_to_confirm_urology(directory):
+    res = ask(directory, "I need a zoologist appointment", category="zoologist")
     assert res.action == "CLARIFY"
     assert res.clarification_type == "CONFIRM_INTERPRETATION"
-    assert res.departments == []  # no direct match was accepted
-    assert res.clarification_options[0] == ("department", "dept_uro")
+    assert res.categories == []  # no direct match was accepted
+    assert res.clarification_options[0] == ("category", "cat_uro")
 
 
 def test_shared_surname_is_clarified(directory):
-    res = ask(directory, "Dr Sharma please", doctor_name="Dr Sharma")
+    res = ask(directory, "Dr Sharma please", resource_name="Dr Sharma")
     assert res.action == "CLARIFY"
-    assert res.clarification_type == "WHICH_DOCTOR"
-    assert sorted(cid for _, cid in res.clarification_options) == ["doc_anil_sharma", "doc_ravi_sharma"]
+    assert res.clarification_type == "WHICH_RESOURCE"
+    assert sorted(cid for _, cid in res.clarification_options) == ["res_anil_sharma", "res_ravi_sharma"]
 
 
 def test_shared_surname_is_clarified_regardless_of_availability(directory):
     """Resolution runs over the whole directory before any date filter: Ravi Sharma has no
-    session on Mondays, but the question is still WHICH_DOCTOR."""
-    res = ask(directory, "Dr Sharma on Monday", doctor_name="Sharma")
-    assert res.clarification_type == "WHICH_DOCTOR"
+    session on Mondays, but the question is still WHICH_RESOURCE."""
+    res = ask(directory, "Dr Sharma on Monday", resource_name="Sharma")
+    assert res.clarification_type == "WHICH_RESOURCE"
     assert len(res.clarification_options) == 2
 
 
 def test_full_name_disambiguates(directory):
-    res = ask(directory, "Dr Ravi Sharma", doctor_name="Ravi Sharma")
-    assert [m.doctor_id for m in res.doctors] == ["doc_ravi_sharma"]
+    res = ask(directory, "Dr Ravi Sharma", resource_name="Ravi Sharma")
+    assert [m.resource_id for m in res.resources] == ["res_ravi_sharma"]
 
 
-def test_symptom_route_thyroid_goes_to_general_medicine(directory):
-    res = ask(directory, "I need a thyroid doctor", symptom_text="thyroid doctor")
+def test_need_route_thyroid_goes_to_general_medicine(directory):
+    res = ask(directory, "I need a thyroid doctor", need_text="thyroid doctor")
     assert res.action == "OFFER_SLOTS"
-    assert [(d.department_id, d.matched_on) for d in res.departments] == [("dept_genmed", "SYMPTOM_ROUTE")]
+    assert [(d.category_id, d.matched_on) for d in res.categories] == [("cat_genmed", "NEED_ROUTE")]
 
 
-def test_department_phrase_inside_request(directory):
-    res = ask(directory, "lady doctor for thyroid", department="lady doctor for thyroid")
-    assert [d.department_id for d in res.departments] == ["dept_genmed"]
+def test_category_phrase_inside_request(directory):
+    res = ask(directory, "lady doctor for thyroid", category="lady doctor for thyroid")
+    assert [d.category_id for d in res.categories] == ["cat_genmed"]
 
 
-@pytest.mark.parametrize(("text", "dept"), [
-    ("skin doctor", "dept_derm"),
-    ("ಚರ್ಮ ವೈದ್ಯ", "dept_derm"),
-    ("charm ka doctor", "dept_derm"),
-    ("Dermatology", "dept_derm"),
-    ("ಮಕ್ಕಳ ಡಾಕ್ಟರ್", "dept_paed"),
-    ("दिल का डॉक्टर", "dept_cardio"),
+@pytest.mark.parametrize(("text", "cat"), [
+    ("skin doctor", "cat_derm"),
+    ("ಚರ್ಮ ವೈದ್ಯ", "cat_derm"),
+    ("charm ka doctor", "cat_derm"),
+    ("Dermatology", "cat_derm"),
+    ("ಮಕ್ಕಳ ಡಾಕ್ಟರ್", "cat_paed"),
+    ("दिल का डॉक्टर", "cat_cardio"),
 ])
-def test_multilingual_department_terms(directory, text, dept):
-    res = ask(directory, text, department=text)
-    assert [d.department_id for d in res.departments] == [dept]
+def test_multilingual_category_terms(directory, text, cat):
+    res = ask(directory, text, category=text)
+    assert [d.category_id for d in res.categories] == [cat]
 
 
 @pytest.mark.parametrize("utterance", [
@@ -112,9 +112,9 @@ def test_multilingual_department_terms(directory, text, dept):
     "labour pains started",
 ])
 def test_red_flag_transfers_before_anything_else(directory, utterance):
-    res = ask(directory, utterance, doctor_name="Dr Garima")
+    res = ask(directory, utterance, resource_name="Dr Garima")
     assert res.action == "TRANSFER_EMERGENCY"
-    assert res.doctors == [] and res.departments == []
+    assert res.resources == [] and res.categories == []
 
 
 def test_red_flag_wins_over_service_transfer(directory):
@@ -132,19 +132,19 @@ def test_service_requests_transfer_to_the_desk(directory, utterance, destination
     assert (res.action, res.destination) == ("TRANSFER_DESK", destination)
 
 
-def test_doctor_outside_stated_department_is_confirmed(directory):
-    res = ask(directory, "Dr Garima skin doctor", doctor_name="Dr Garima", department="skin doctor")
+def test_resource_outside_stated_category_is_confirmed(directory):
+    res = ask(directory, "Dr Garima skin doctor", resource_name="Dr Garima", category="skin doctor")
     assert res.action == "CLARIFY" and res.clarification_type == "CONFIRM_INTERPRETATION"
 
 
-def test_unknown_department_is_no_service(directory):
-    res = ask(directory, "I need a veterinarian", department="veterinarian")
+def test_unknown_category_is_no_service(directory):
+    res = ask(directory, "I need a veterinarian", category="veterinarian")
     assert res.action == "NO_SERVICE"
 
 
 def test_anyone_available_has_no_filter(directory):
     res = ask(directory, "anyone available right now?")
-    assert res.action == "OFFER_SLOTS" and res.doctors == [] and res.departments == []
+    assert res.action == "OFFER_SLOTS" and res.resources == [] and res.categories == []
 
 
 def test_unapproved_terms_are_ignored(directory):

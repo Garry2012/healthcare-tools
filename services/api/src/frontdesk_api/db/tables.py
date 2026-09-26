@@ -32,7 +32,7 @@ def _in(column: str, values: tuple[str, ...]) -> str:
     return f"{column} IN ({', '.join(repr(v) for v in values)})"
 
 
-# Statuses in which an appointment holds its slot (openapi getAvailability, step 4).
+# Statuses in which a booking holds its slot (openapi getAvailability, step 4).
 LIVE_STATUSES = ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "ARRIVED")
 LIVE_SQL = _in("status", LIVE_STATUSES)
 
@@ -47,24 +47,24 @@ class _Stamped:
     )
 
 
-class Department(_Stamped, Base):
-    __tablename__ = "departments"
+class Category(_Stamped, Base):
+    __tablename__ = "categories"
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     code: Mapped[str | None] = mapped_column(Text)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     localized_names: Mapped[dict[str, str]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
-    has_consultant: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    offers_bookings: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
 
 
-class Doctor(_Stamped, Base):
-    __tablename__ = "doctors"
+class Resource(_Stamped, Base):
+    __tablename__ = "resources"
     __table_args__ = (
         CheckConstraint(_in("gender", ("FEMALE", "MALE")), name="gender"),
         CheckConstraint(_in("attendance_type", ("REGULAR", "VISITING", "ON_CALL")), name="attendance"),
-        CheckConstraint(_in("booking_policy", ("BOOKABLE", "DESK_ONLY", "NO_OPD")), name="policy"),
+        CheckConstraint(_in("booking_policy", ("BOOKABLE", "DESK_ONLY", "NOT_OFFERED")), name="policy"),
     )
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -75,14 +75,16 @@ class Doctor(_Stamped, Base):
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     gender: Mapped[str | None] = mapped_column(Text)
-    qualification: Mapped[str | None] = mapped_column(Text)
-    years_of_experience: Mapped[int | None] = mapped_column(Integer)
+    # Domain-pack facts the agent may speak (healthcare: qualification, yearsOfExperience).
+    attributes: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
     languages_spoken: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
-    fee_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
-    fee_currency: Mapped[str | None] = mapped_column(Text)
-    fee_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    price_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    price_currency: Mapped[str | None] = mapped_column(Text)
+    price_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     attendance_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="REGULAR")
     booking_policy: Mapped[str] = mapped_column(Text, nullable=False, server_default="BOOKABLE")
     data_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
@@ -92,12 +94,12 @@ class Doctor(_Stamped, Base):
     )
 
 
-class DoctorDepartment(Base):
-    __tablename__ = "doctor_departments"
-    doctor_id: Mapped[str] = mapped_column(
-        ForeignKey("doctors.id", ondelete="CASCADE"), primary_key=True
+class ResourceCategory(Base):
+    __tablename__ = "resource_categories"
+    resource_id: Mapped[str] = mapped_column(
+        ForeignKey("resources.id", ondelete="CASCADE"), primary_key=True
     )
-    department_id: Mapped[str] = mapped_column(ForeignKey("departments.id"), primary_key=True)
+    category_id: Mapped[str] = mapped_column(ForeignKey("categories.id"), primary_key=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
 
@@ -108,12 +110,12 @@ class LexiconEntry(_Stamped, Base):
         CheckConstraint(
             _in(
                 "concept_type",
-                ("DEPARTMENT", "DOCTOR", "SYMPTOM_ROUTE", "RED_FLAG", "DAY_PART", "SERVICE_TRANSFER"),
+                ("CATEGORY", "RESOURCE", "NEED_ROUTE", "RED_FLAG", "DAY_PART", "SERVICE_TRANSFER"),
             ),
             name="concept_type",
         ),
         CheckConstraint(
-            _in("source", ("HOSPITAL", "TRANSCRIPT_MINED", "AUTO_TRANSLITERATION")), name="source"
+            _in("source", ("PROVIDER", "TRANSCRIPT_MINED", "AUTO_TRANSLITERATION")), name="source"
         ),
         Index("ix_lexicon_approved_type", "approved", "concept_type"),
     )
@@ -124,15 +126,15 @@ class LexiconEntry(_Stamped, Base):
     term_normalized: Mapped[str] = mapped_column(Text, nullable=False)
     language: Mapped[str] = mapped_column(Text, nullable=False)
     approved: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="HOSPITAL")
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="PROVIDER")
 
 
 class ScheduleTemplate(_Stamped, Base):
     __tablename__ = "schedule_templates"
-    __table_args__ = (UniqueConstraint("doctor_id", "effective_from", name="template_effective"),)
+    __table_args__ = (UniqueConstraint("resource_id", "effective_from", name="template_effective"),)
     id: Mapped[str] = mapped_column(Text, primary_key=True)
-    doctor_id: Mapped[str] = mapped_column(
-        ForeignKey("doctors.id", ondelete="CASCADE"), nullable=False, index=True
+    resource_id: Mapped[str] = mapped_column(
+        ForeignKey("resources.id", ondelete="CASCADE"), nullable=False, index=True
     )
     effective_from: Mapped[date] = mapped_column(Date, nullable=False)
     effective_to: Mapped[date | None] = mapped_column(Date)
@@ -181,11 +183,11 @@ class ScheduleException(_Stamped, Base):
             ),
             name="effect",
         ),
-        Index("ix_exceptions_doctor_dates", "doctor_id", "date_from", "date_to"),
+        Index("ix_exceptions_resource_dates", "resource_id", "date_from", "date_to"),
     )
     seq: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    doctor_id: Mapped[str] = mapped_column(ForeignKey("doctors.id", ondelete="CASCADE"), nullable=False)
+    resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id", ondelete="CASCADE"), nullable=False)
     date_from: Mapped[date] = mapped_column(Date, nullable=False)
     date_to: Mapped[date] = mapped_column(Date, nullable=False)
     scope: Mapped[str] = mapped_column(Text, nullable=False)
@@ -197,7 +199,7 @@ class ScheduleException(_Stamped, Base):
     reason_category: Mapped[str | None] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str] = mapped_column(Text, nullable=False)
-    impact_appointments: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    impact_bookings: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     impact_notifications: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_by: Mapped[str | None] = mapped_column(Text)
@@ -208,10 +210,10 @@ class BoardEntry(Base):
     __table_args__ = (
         CheckConstraint(_in("presence", ("NOT_ARRIVED", "ARRIVING", "PRESENT", "LEFT")), name="presence"),
         CheckConstraint(_in("capacity_state", ("OPEN", "FULL")), name="capacity_state"),
-        Index("ix_board_doctor_date", "doctor_id", "date"),
+        Index("ix_board_resource_date", "resource_id", "date"),
     )
     session_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    doctor_id: Mapped[str] = mapped_column(ForeignKey("doctors.id", ondelete="CASCADE"), nullable=False)
+    resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id", ondelete="CASCADE"), nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     presence: Mapped[str | None] = mapped_column(Text)
     expected_start: Mapped[time | None] = mapped_column(Time)
@@ -227,40 +229,40 @@ class BoardEntry(Base):
     updated_by: Mapped[str] = mapped_column(Text, nullable=False)
 
 
-APPOINTMENT_STATUSES = (
+BOOKING_STATUSES = (
     "BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "NEEDS_RESCHEDULE", "ARRIVED", "COMPLETED",
-    "NO_SHOW", "CANCELLED_BY_PATIENT", "CANCELLED_BY_HOSPITAL",
+    "NO_SHOW", "CANCELLED_BY_CUSTOMER", "CANCELLED_BY_PROVIDER",
 )
 
 
-class Appointment(_Stamped, Base):
-    __tablename__ = "appointments"
+class Booking(_Stamped, Base):
+    __tablename__ = "bookings"
     __table_args__ = (
-        CheckConstraint(_in("status", APPOINTMENT_STATUSES), name="status"),
+        CheckConstraint(_in("status", BOOKING_STATUSES), name="status"),
         CheckConstraint(_in("created_via", ("AGENT", "DESK", "WEB")), name="created_via"),
         CheckConstraint(_in("follow_up", ("NONE", "DESK_WILL_CONFIRM_TIMING")), name="follow_up"),
-        # One live appointment per slot: uniqueness is a constraint, not application logic.
+        # One live booking per slot: uniqueness is a constraint, not application logic.
         Index(
-            "uq_appointments_live_slot",
+            "uq_bookings_live_slot",
             "slot_id",
             unique=True,
             postgresql_where=text(LIVE_SQL),
         ),
-        Index("ix_appointments_phone", "phone"),
-        Index("ix_appointments_caller_number", "caller_number"),
-        Index("ix_appointments_doctor_date", "doctor_id", "date"),
-        Index("ix_appointments_session", "session_id"),
+        Index("ix_bookings_phone", "phone"),
+        Index("ix_bookings_caller_number", "caller_number"),
+        Index("ix_bookings_resource_date", "resource_id", "date"),
+        Index("ix_bookings_session", "session_id"),
     )
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     confirmation_code: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
-    patient_name: Mapped[str] = mapped_column(Text, nullable=False)
-    patient_name_normalized: Mapped[str] = mapped_column(Text, nullable=False)
+    customer_name: Mapped[str] = mapped_column(Text, nullable=False)
+    customer_name_normalized: Mapped[str] = mapped_column(Text, nullable=False)
     phone: Mapped[str] = mapped_column(Text, nullable=False)
     relation_to_caller: Mapped[str | None] = mapped_column(Text)
     caller_number: Mapped[str | None] = mapped_column(Text)
-    doctor_id: Mapped[str] = mapped_column(ForeignKey("doctors.id"), nullable=False)
-    department_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"))
+    resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), nullable=False)
+    category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id"))
     session_id: Mapped[str] = mapped_column(Text, nullable=False)
     slot_id: Mapped[str] = mapped_column(Text, nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -277,11 +279,11 @@ class Appointment(_Stamped, Base):
     )
 
 
-class AppointmentHistory(Base):
-    __tablename__ = "appointment_history"
+class BookingHistory(Base):
+    __tablename__ = "booking_history"
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    appointment_id: Mapped[str] = mapped_column(
-        ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False, index=True
+    booking_id: Mapped[str] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False, index=True
     )
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     by: Mapped[str] = mapped_column(Text, nullable=False)
@@ -302,15 +304,15 @@ class Notification(_Stamped, Base):
         Index("ix_notifications_status", "status"),
     )
     id: Mapped[str] = mapped_column(Text, primary_key=True)
-    appointment_id: Mapped[str] = mapped_column(
-        ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False, index=True
+    booking_id: Mapped[str] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False, index=True
     )
     exception_id: Mapped[str | None] = mapped_column(Text, index=True)
     trigger: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="PENDING")
     channel: Mapped[str | None] = mapped_column(Text)
-    patient_phone: Mapped[str] = mapped_column(Text, nullable=False)
-    patient_language: Mapped[str | None] = mapped_column(Text)
+    customer_phone: Mapped[str] = mapped_column(Text, nullable=False)
+    customer_language: Mapped[str | None] = mapped_column(Text)
     facts: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
@@ -342,7 +344,7 @@ class CallSummary(_Stamped, Base):
     intent: Mapped[str] = mapped_column(Text, nullable=False)
     outcome: Mapped[str] = mapped_column(Text, nullable=False)
     transferred_to: Mapped[str | None] = mapped_column(Text)
-    appointment_id: Mapped[str | None] = mapped_column(Text)
+    booking_id: Mapped[str | None] = mapped_column(Text)
     tool_outcomes: Mapped[dict[str, str]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )

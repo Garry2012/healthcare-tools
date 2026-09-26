@@ -1,4 +1,4 @@
-"""Doctors, departments and the multilingual lexicon (tag `Directory`)."""
+"""Resources, categories and the multilingual lexicon (tag `Directory`)."""
 
 from __future__ import annotations
 
@@ -16,49 +16,50 @@ Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
 
 
-@router.get("/departments", operation_id="listDepartments", summary="Departments with localized names",
-            response_model=s.DepartmentList, responses=errors(401),
+@router.get("/categories", operation_id="listCategories", summary="Categories with localized names",
+            response_model=s.CategoryList, responses=errors(401),
             dependencies=[Depends(require_scopes())])
-async def list_departments(session: Session):
-    body, etag = await svc.list_departments(session)
+async def list_categories(session: Session):
+    body, etag = await svc.list_categories(session)
     return respond(body, 200, {"ETag": etag})
 
 
-@router.get("/doctors", operation_id="listDoctors",
-            summary="Doctor directory (staff and web; the agent uses availability-search)",
-            response_model=s.DoctorPage, responses=errors(401),
+@router.get("/resources", operation_id="listResources",
+            summary="Resource directory (staff and web; the agent uses availability-search)",
+            response_model=s.ResourcePage, responses=errors(401),
             dependencies=[Depends(require_scopes())])
-async def list_doctors(
+async def list_resources(
     session: Session,
-    department: str | None = None,
+    category: str | None = None,
     active: bool = True,
     limit: Limit = 25,
     offset: Offset = 0,
 ):
-    return respond(await svc.list_doctors(session, department=department, active=active,
+    return respond(await svc.list_resources(session, category=category, active=active,
                                           limit=limit, offset=offset))
 
 
-@router.post("/doctors", operation_id="createDoctor", summary="Add a doctor (admin)", status_code=201,
-             response_model=s.Doctor, responses=errors(400, 403),
+@router.post("/resources", operation_id="createResource", summary="Add a resource (admin)", status_code=201,
+             response_model=s.Resource, responses=errors(400, 403),
              dependencies=[Depends(require_scopes("directory.write"))])
-async def create_doctor(body: s.DoctorInput, session: Session, settings: SettingsDep):
-    return respond(await svc.create_doctor(session, body, settings.tenant_currency), 201)
+async def create_resource(body: s.ResourceInput, session: Session, settings: SettingsDep):
+    return respond(await svc.create_resource(session, body, settings.tenant_currency), 201)
 
 
-@router.get("/doctors/{doctorId}", operation_id="getDoctor", summary="One doctor with schedule template summary",
-            response_model=s.Doctor, responses=errors(404),
+@router.get("/resources/{resourceId}", operation_id="getResource",
+            summary="One resource with schedule template summary",
+            response_model=s.Resource, responses=errors(404),
             dependencies=[Depends(require_scopes())])
-async def get_doctor(doctorId: str, session: Session):  # noqa: N803
-    return respond(await svc.get_doctor(session, doctorId))
+async def get_resource(resourceId: str, session: Session):  # noqa: N803
+    return respond(await svc.get_resource(session, resourceId))
 
 
-@router.put("/doctors/{doctorId}", operation_id="updateDoctor",
-            summary="Update a doctor (admin). Sets dataConfirmed when the hospital signs off.",
-            response_model=s.Doctor, responses=errors(400, 403, 404),
+@router.put("/resources/{resourceId}", operation_id="updateResource",
+            summary="Update a resource (admin). Sets dataConfirmed when the provider signs off.",
+            response_model=s.Resource, responses=errors(400, 403, 404),
             dependencies=[Depends(require_scopes("directory.write"))])
-async def update_doctor(doctorId: str, body: s.DoctorInput, session: Session, settings: SettingsDep):  # noqa: N803
-    return respond(await svc.update_doctor(session, doctorId, body, settings.tenant_currency))
+async def update_resource(resourceId: str, body: s.ResourceInput, session: Session, settings: SettingsDep):  # noqa: N803
+    return respond(await svc.update_resource(session, resourceId, body, settings.tenant_currency))
 
 
 @router.get("/lexicon", operation_id="listLexicon", summary="Multilingual terms the resolver uses",

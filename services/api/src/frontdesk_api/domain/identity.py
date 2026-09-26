@@ -2,7 +2,7 @@
 
 A booking is reachable from a call when the network caller number matches either the
 booking's contact phone or the number the booking was made from, and — for any change —
-the spoken patient name matches. Every failure looks exactly like "not found".
+the spoken customer name matches. Every failure looks exactly like "not found".
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from .text import normalise_person_name
 
 @dataclass(frozen=True, slots=True)
 class BookingIdentity:
-    appointment_id: str
-    patient_name: str
+    booking_id: str
+    customer_name: str
     phone: str
     caller_number: str | None
 
@@ -48,11 +48,11 @@ def name_matches(booking: BookingIdentity, spoken_name: str | None) -> bool:
     if not spoken_name:
         return False
     spoken = normalise_person_name(spoken_name)
-    return bool(spoken) and spoken == normalise_person_name(booking.patient_name)
+    return bool(spoken) and spoken == normalise_person_name(booking.customer_name)
 
 
-def patients_on(bookings: Iterable[BookingIdentity]) -> int:
-    return len({normalise_person_name(b.patient_name) for b in bookings})
+def customers_on(bookings: Iterable[BookingIdentity]) -> int:
+    return len({normalise_person_name(b.customer_name) for b in bookings})
 
 
 def filter_by_name(bookings: Sequence[BookingIdentity], name: str) -> list[BookingIdentity]:

@@ -29,9 +29,9 @@ if not (APP_URL and OWNER_URL):
     pytest.skip("TEST_DATABASE_URL / TEST_DATABASE_OWNER_URL not set (run `make test`)", allow_module_level=True)
 
 TABLES = (
-    "notifications", "appointment_history", "appointments", "schedule_exceptions", "board_entries",
+    "notifications", "booking_history", "bookings", "schedule_exceptions", "board_entries",
     "idempotency_keys", "call_summaries", "lexicon_entries", "template_sessions", "schedule_templates",
-    "doctor_departments", "doctors", "departments",
+    "resource_categories", "resources", "categories",
 )
 
 
@@ -96,8 +96,8 @@ def next_weekday(weekday: int, settings) -> date:
 
 
 def garima_slot(day: date, position: int, n: int = 2) -> str:
-    return f"slot_ses_doc_garima_{day.isoformat()}_{n}_{position:02d}"
+    return f"slot_ses_res_garima_{day.isoformat()}_{n}_{position:02d}"
 
 
 def book_body(slot_id: str, name: str = "Lakshmi Rao", phone: str = "9000000101", **extra) -> dict:
-    return {"slotId": slot_id, "patient": {"name": name, "phone": phone}, "language": "en", **extra}
+    return {"slotId": slot_id, "customer": {"name": name, "phone": phone}, "language": "en", **extra}

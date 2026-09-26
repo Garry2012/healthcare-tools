@@ -16,21 +16,21 @@ from .deps import ActingUser, IdempotencyKey, Session, SettingsDep, errors, resp
 router = APIRouter(tags=["Scheduling"])
 
 
-@router.get("/doctors/{doctorId}/schedule-template", operation_id="getScheduleTemplate",
-            summary="The doctor's recurring sessions", response_model=s.ScheduleTemplate,
+@router.get("/resources/{resourceId}/schedule-template", operation_id="getScheduleTemplate",
+            summary="The resource's recurring sessions", response_model=s.ScheduleTemplate,
             responses=errors(404), dependencies=[Depends(require_scopes())])
-async def get_schedule_template(doctorId: str, session: Session, settings: SettingsDep):  # noqa: N803
-    return respond(await svc.get_template(session, settings, doctorId))
+async def get_schedule_template(resourceId: str, session: Session, settings: SettingsDep):  # noqa: N803
+    return respond(await svc.get_template(session, settings, resourceId))
 
 
-@router.put("/doctors/{doctorId}/schedule-template", operation_id="setScheduleTemplate",
-            summary="Replace the doctor's recurring sessions (admin/desk)", response_model=s.ScheduleTemplate,
+@router.put("/resources/{resourceId}/schedule-template", operation_id="setScheduleTemplate",
+            summary="Replace the resource's recurring sessions (admin/desk)", response_model=s.ScheduleTemplate,
             responses=errors(400, 403, 404), dependencies=[Depends(require_scopes("schedule.write"))])
 async def set_schedule_template(
-    doctorId: str, body: s.ScheduleTemplate, acting_user: ActingUser,  # noqa: N803
+    resourceId: str, body: s.ScheduleTemplate, acting_user: ActingUser,  # noqa: N803
     session: Session, settings: SettingsDep,
 ):
-    return respond(await svc.set_template(session, settings, doctorId, body, acting_user))
+    return respond(await svc.set_template(session, settings, resourceId, body, acting_user))
 
 
 @router.get("/schedule-exceptions", operation_id="listScheduleExceptions",
@@ -39,11 +39,11 @@ async def set_schedule_template(
 async def list_schedule_exceptions(
     session: Session,
     principal: Annotated[Principal, Depends(require_scopes())],
-    doctor_id: Annotated[str | None, Query(alias="doctorId")] = None,
+    resource_id: Annotated[str | None, Query(alias="resourceId")] = None,
     date_from: Annotated[date | None, Query(alias="from")] = None,
     date_to: Annotated[date | None, Query(alias="to")] = None,
 ):
-    return respond(await svc.list_exceptions(session, doctor_id=doctor_id, date_from=date_from,
+    return respond(await svc.list_exceptions(session, resource_id=resource_id, date_from=date_from,
                                              date_to=date_to, staff=principal.is_staff))
 
 
@@ -67,7 +67,7 @@ async def create_schedule_exception(
 
 
 @router.delete("/schedule-exceptions/{exceptionId}", operation_id="deleteScheduleException",
-               summary="Withdraw an exception (the doctor is coming after all)", status_code=204,
+               summary="Withdraw an exception (the resource is coming after all)", status_code=204,
                responses=errors(403, 404), dependencies=[Depends(require_scopes("schedule.write"))])
 async def delete_schedule_exception(
     exceptionId: str, acting_user: ActingUser, session: Session, settings: SettingsDep,  # noqa: N803
@@ -77,32 +77,32 @@ async def delete_schedule_exception(
 
 
 @router.get("/schedule-exceptions/{exceptionId}/impact", operation_id="getScheduleExceptionImpact",
-            summary="Appointments impacted by an exception, with notification state",
+            summary="Bookings impacted by an exception, with notification state",
             response_model=s.ImpactList, responses=errors(403, 404),
-            dependencies=[Depends(require_scopes("appointments.staff"))])
+            dependencies=[Depends(require_scopes("bookings.staff"))])
 async def get_schedule_exception_impact(exceptionId: str, session: Session, settings: SettingsDep):  # noqa: N803
     return respond(await svc.impact_of(session, settings, exceptionId))
 
 
-@router.get("/board/{doctorId}", operation_id="getBoard",
-            summary="Live board for one doctor on a date (right now facts)",
+@router.get("/board/{resourceId}", operation_id="getBoard",
+            summary="Live board for one resource on a date (right now facts)",
             response_model=s.BoardView, responses=errors(404))
 async def get_board(
-    doctorId: str,  # noqa: N803
+    resourceId: str,  # noqa: N803
     session: Session,
     settings: SettingsDep,
     principal: Annotated[Principal, Depends(require_scopes())],
     on: Annotated[date | None, Query(alias="date")] = None,
 ):
-    return respond(await svc.get_board(session, settings, doctorId, on, staff=principal.is_staff))
+    return respond(await svc.get_board(session, settings, resourceId, on, staff=principal.is_staff))
 
 
-@router.put("/board/{doctorId}", operation_id="setBoard",
+@router.put("/board/{resourceId}", operation_id="setBoard",
             summary="Desk marks arrived / late / left / full for a session (today)",
             response_model=s.BoardEntry, responses=errors(400, 403, 404),
             dependencies=[Depends(require_scopes("board.write"))])
 async def set_board(
-    doctorId: str, body: s.BoardEntryInput, acting_user: ActingUser,  # noqa: N803
+    resourceId: str, body: s.BoardEntryInput, acting_user: ActingUser,  # noqa: N803
     session: Session, settings: SettingsDep,
 ):
-    return respond(await svc.set_board(session, settings, doctorId, body, acting_user))
+    return respond(await svc.set_board(session, settings, resourceId, body, acting_user))

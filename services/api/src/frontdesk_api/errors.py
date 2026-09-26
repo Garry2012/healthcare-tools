@@ -23,8 +23,8 @@ _STATUS = {
     "UPSTREAM_TIMEOUT": 504,
 }
 
-# Deliberately identical for "no such appointment" and "not yours" (openapi NotFound).
-NOT_FOUND_MESSAGE = "No matching appointment was found."
+# Deliberately identical for "no such booking" and "not yours" (openapi NotFound).
+NOT_FOUND_MESSAGE = "No matching booking was found."
 
 
 class ApiError(Exception):

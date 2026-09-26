@@ -1,4 +1,4 @@
-"""Doctors, departments and the lexicon."""
+"""Resources, categories and the lexicon."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import schemas as s
 from ..db import tables as t
-from ..domain.resolver import DepartmentEntry, Directory, DoctorEntry, LexiconTerm
+from ..domain.resolver import CategoryEntry, Directory, LexiconTerm, ResourceEntry
 from ..domain.text import normalise
 from ..errors import not_found, validation
 from . import views
@@ -21,39 +21,39 @@ from . import views
 
 @dataclass(slots=True)
 class DirectorySnapshot:
-    doctors: dict[str, t.Doctor]
-    departments: dict[str, t.Department]
-    doctor_departments: dict[str, list[str]]
+    resources: dict[str, t.Resource]
+    categories: dict[str, t.Category]
+    resource_categories: dict[str, list[str]]
     lexicon: list[t.LexiconEntry]
 
-    def departments_of(self, doctor_id: str) -> list[t.Department]:
-        return [self.departments[d] for d in self.doctor_departments.get(doctor_id, [])
-                if d in self.departments]
+    def categories_of(self, resource_id: str) -> list[t.Category]:
+        return [self.categories[d] for d in self.resource_categories.get(resource_id, [])
+                if d in self.categories]
 
     def resolver_directory(self) -> Directory:
         return Directory(
-            doctors=tuple(
-                DoctorEntry(
-                    doctor_id=d.id,
+            resources=tuple(
+                ResourceEntry(
+                    resource_id=d.id,
                     name=d.name,
-                    department_ids=tuple(self.doctor_departments.get(d.id, [])),
+                    category_ids=tuple(self.resource_categories.get(d.id, [])),
                     name_variants=tuple(d.name_variants or ()),
                     localized_names=tuple((d.localized_names or {}).values()),
-                    active=d.active and d.booking_policy != "NO_OPD",
+                    active=d.active and d.booking_policy != "NOT_OFFERED",
                     booking_policy=d.booking_policy,
                 )
-                for d in self.doctors.values()
+                for d in self.resources.values()
             ),
-            departments=tuple(
-                DepartmentEntry(
-                    department_id=d.id,
+            categories=tuple(
+                CategoryEntry(
+                    category_id=d.id,
                     name=d.name,
                     code=d.code,
                     localized_names=tuple((d.localized_names or {}).values()),
-                    has_consultant=d.has_consultant,
+                    offers_bookings=d.offers_bookings,
                     active=d.active,
                 )
-                for d in self.departments.values()
+                for d in self.categories.values()
             ),
             lexicon=tuple(
                 LexiconTerm(e.concept_type, e.concept_id, e.term, e.language, e.approved)
@@ -70,134 +70,133 @@ class DirectorySnapshot:
 
 
 async def snapshot(session: AsyncSession, *, approved_lexicon_only: bool = True) -> DirectorySnapshot:
-    doctors = {d.id: d for d in (await session.scalars(select(t.Doctor))).all()}
-    departments = {d.id: d for d in (await session.scalars(select(t.Department))).all()}
+    resources = {d.id: d for d in (await session.scalars(select(t.Resource))).all()}
+    categories = {d.id: d for d in (await session.scalars(select(t.Category))).all()}
     links: dict[str, list[str]] = {}
     for row in await session.scalars(
-        select(t.DoctorDepartment).order_by(t.DoctorDepartment.doctor_id, t.DoctorDepartment.position)
+        select(t.ResourceCategory).order_by(t.ResourceCategory.resource_id, t.ResourceCategory.position)
     ):
-        links.setdefault(row.doctor_id, []).append(row.department_id)
+        links.setdefault(row.resource_id, []).append(row.category_id)
     query = select(t.LexiconEntry)
     if approved_lexicon_only:
         query = query.where(t.LexiconEntry.approved.is_(True))
     lexicon = list((await session.scalars(query)).all())
-    return DirectorySnapshot(doctors, departments, links, lexicon)
+    return DirectorySnapshot(resources, categories, links, lexicon)
 
 
-# ---------------------------------------------------------------- departments
+# ---------------------------------------------------------------- categories
 
 
-async def list_departments(session: AsyncSession) -> tuple[s.DepartmentList, str]:
-    rows = (await session.scalars(select(t.Department).order_by(t.Department.name))).all()
-    body = s.DepartmentList(items=[views.department(r) for r in rows])
+async def list_categories(session: AsyncSession) -> tuple[s.CategoryList, str]:
+    rows = (await session.scalars(select(t.Category).order_by(t.Category.name))).all()
+    body = s.CategoryList(items=[views.category(r) for r in rows])
     etag = hashlib.sha256(
         json.dumps(body.model_dump(mode="json", by_alias=True), sort_keys=True).encode()
     ).hexdigest()[:32]
     return body, f'"{etag}"'
 
 
-# ---------------------------------------------------------------- doctors
+# ---------------------------------------------------------------- resources
 
 
 def _slug(name: str) -> str:
     base = normalise(name, strip_honorifics=True)
-    return re.sub(r"[^a-z0-9]+", "_", base).strip("_")[:40] or "doctor"
+    return re.sub(r"[^a-z0-9]+", "_", base).strip("_")[:40] or "resource"
 
 
-async def _doctor_departments(session: AsyncSession, doctor_id: str) -> list[t.Department]:
+async def _resource_categories(session: AsyncSession, resource_id: str) -> list[t.Category]:
     rows = await session.execute(
-        select(t.Department)
-        .join(t.DoctorDepartment, t.DoctorDepartment.department_id == t.Department.id)
-        .where(t.DoctorDepartment.doctor_id == doctor_id)
-        .order_by(t.DoctorDepartment.position)
+        select(t.Category)
+        .join(t.ResourceCategory, t.ResourceCategory.category_id == t.Category.id)
+        .where(t.ResourceCategory.resource_id == resource_id)
+        .order_by(t.ResourceCategory.position)
     )
     return list(rows.scalars())
 
 
-async def list_doctors(
-    session: AsyncSession, *, department: str | None, active: bool | None, limit: int, offset: int
-) -> s.DoctorPage:
-    query = select(t.Doctor)
+async def list_resources(
+    session: AsyncSession, *, category: str | None, active: bool | None, limit: int, offset: int
+) -> s.ResourcePage:
+    query = select(t.Resource)
     if active is not None:
-        query = query.where(t.Doctor.active.is_(active))
-    if department:
-        wanted = department.casefold()
-        dept_ids = [
+        query = query.where(t.Resource.active.is_(active))
+    if category:
+        wanted = category.casefold()
+        cat_ids = [
             d.id
-            for d in (await session.scalars(select(t.Department))).all()
+            for d in (await session.scalars(select(t.Category))).all()
             if wanted in {d.id.casefold(), (d.code or "").casefold(), d.name.casefold()}
         ]
         query = query.where(
-            t.Doctor.id.in_(
-                select(t.DoctorDepartment.doctor_id).where(t.DoctorDepartment.department_id.in_(dept_ids))
+            t.Resource.id.in_(
+                select(t.ResourceCategory.resource_id).where(t.ResourceCategory.category_id.in_(cat_ids))
             )
         )
     total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
-    rows = (await session.scalars(query.order_by(t.Doctor.name).limit(limit).offset(offset))).all()
-    items = [views.doctor(r, await _doctor_departments(session, r.id)) for r in rows]
-    return s.DoctorPage(items=items, total=total)
+    rows = (await session.scalars(query.order_by(t.Resource.name).limit(limit).offset(offset))).all()
+    items = [views.resource(r, await _resource_categories(session, r.id)) for r in rows]
+    return s.ResourcePage(items=items, total=total)
 
 
-async def get_doctor(session: AsyncSession, doctor_id: str) -> s.Doctor:
-    row = await session.get(t.Doctor, doctor_id)
+async def get_resource(session: AsyncSession, resource_id: str) -> s.Resource:
+    row = await session.get(t.Resource, resource_id)
     if row is None:
-        raise not_found("No such doctor.")
-    return views.doctor(row, await _doctor_departments(session, doctor_id))
+        raise not_found("No such resource.")
+    return views.resource(row, await _resource_categories(session, resource_id))
 
 
-def _apply_doctor(row: t.Doctor, body: s.DoctorInput, currency: str) -> None:
+def _apply_resource(row: t.Resource, body: s.ResourceInput, currency: str) -> None:
     row.name = body.name
     row.localized_names = body.localized_names or {}
     row.name_variants = body.name_variants or []
     row.gender = body.gender.value if body.gender else None
-    row.qualification = body.qualification
-    row.years_of_experience = body.years_of_experience
+    row.attributes = dict(body.attributes or {})
     row.languages_spoken = body.languages_spoken or []
-    if body.fee is not None:
-        row.fee_amount = Decimal(str(body.fee.amount))
-        row.fee_currency = body.fee.currency or currency
-        row.fee_confirmed = body.fee.confirmed
+    if body.price is not None:
+        row.price_amount = Decimal(str(body.price.amount))
+        row.price_currency = body.price.currency or currency
+        row.price_confirmed = body.price.confirmed
     else:
-        row.fee_amount, row.fee_currency, row.fee_confirmed = None, None, False
+        row.price_amount, row.price_currency, row.price_confirmed = None, None, False
     row.attendance_type = body.attendance_type or "REGULAR"
     row.booking_policy = body.booking_policy or "BOOKABLE"
     row.data_confirmed = bool(body.data_confirmed)
     row.active = True if body.active is None else body.active
 
 
-async def _set_departments(session: AsyncSession, doctor_id: str, department_ids: list[str]) -> None:
-    known = set((await session.scalars(select(t.Department.id).where(t.Department.id.in_(department_ids)))).all())
-    unknown = [d for d in department_ids if d not in known]
+async def _set_categories(session: AsyncSession, resource_id: str, category_ids: list[str]) -> None:
+    known = set((await session.scalars(select(t.Category.id).where(t.Category.id.in_(category_ids)))).all())
+    unknown = [d for d in category_ids if d not in known]
     if unknown:
-        raise validation(f"Unknown department: {', '.join(unknown)}.", "departmentIds")
-    await session.execute(delete(t.DoctorDepartment).where(t.DoctorDepartment.doctor_id == doctor_id))
-    for position, dept_id in enumerate(dict.fromkeys(department_ids)):
-        session.add(t.DoctorDepartment(doctor_id=doctor_id, department_id=dept_id, position=position))
+        raise validation(f"Unknown category: {', '.join(unknown)}.", "categoryIds")
+    await session.execute(delete(t.ResourceCategory).where(t.ResourceCategory.resource_id == resource_id))
+    for position, cat_id in enumerate(dict.fromkeys(category_ids)):
+        session.add(t.ResourceCategory(resource_id=resource_id, category_id=cat_id, position=position))
 
 
-async def create_doctor(session: AsyncSession, body: s.DoctorInput, currency: str) -> s.Doctor:
-    base = f"doc_{_slug(body.name)}"
-    doctor_id, n = base, 1
-    while await session.get(t.Doctor, doctor_id) is not None:
+async def create_resource(session: AsyncSession, body: s.ResourceInput, currency: str) -> s.Resource:
+    base = f"res_{_slug(body.name)}"
+    resource_id, n = base, 1
+    while await session.get(t.Resource, resource_id) is not None:
         n += 1
-        doctor_id = f"{base}_{n}"
-    row = t.Doctor(id=doctor_id)
-    _apply_doctor(row, body, currency)
+        resource_id = f"{base}_{n}"
+    row = t.Resource(id=resource_id)
+    _apply_resource(row, body, currency)
     session.add(row)
     await session.flush()
-    await _set_departments(session, doctor_id, body.department_ids)
+    await _set_categories(session, resource_id, body.category_ids)
     await session.commit()
-    return await get_doctor(session, doctor_id)
+    return await get_resource(session, resource_id)
 
 
-async def update_doctor(session: AsyncSession, doctor_id: str, body: s.DoctorInput, currency: str) -> s.Doctor:
-    row = await session.get(t.Doctor, doctor_id)
+async def update_resource(session: AsyncSession, resource_id: str, body: s.ResourceInput, currency: str) -> s.Resource:
+    row = await session.get(t.Resource, resource_id)
     if row is None:
-        raise not_found("No such doctor.")
-    _apply_doctor(row, body, currency)
-    await _set_departments(session, doctor_id, body.department_ids)
+        raise not_found("No such resource.")
+    _apply_resource(row, body, currency)
+    await _set_categories(session, resource_id, body.category_ids)
     await session.commit()
-    return await get_doctor(session, doctor_id)
+    return await get_resource(session, resource_id)
 
 
 # ---------------------------------------------------------------- lexicon
@@ -239,10 +238,10 @@ _DAY_PARTS = {"MORNING", "AFTERNOON", "EVENING", "ANY"}
 
 
 async def _check_concept(session: AsyncSession, concept_type: str, concept_id: str, transfers: dict[str, str]) -> None:
-    if concept_type in ("DEPARTMENT", "SYMPTOM_ROUTE"):
-        ok = await session.get(t.Department, concept_id) is not None
-    elif concept_type == "DOCTOR":
-        ok = await session.get(t.Doctor, concept_id) is not None
+    if concept_type in ("CATEGORY", "NEED_ROUTE"):
+        ok = await session.get(t.Category, concept_id) is not None
+    elif concept_type == "RESOURCE":
+        ok = await session.get(t.Resource, concept_id) is not None
     elif concept_type == "DAY_PART":
         ok = concept_id in _DAY_PARTS
     elif concept_type == "SERVICE_TRANSFER":
@@ -254,7 +253,7 @@ async def _check_concept(session: AsyncSession, concept_type: str, concept_id: s
 
 
 async def upsert_lexicon(
-    session: AsyncSession, body: s.LexiconEntryInput, transfers: dict[str, str], *, source: str = "HOSPITAL"
+    session: AsyncSession, body: s.LexiconEntryInput, transfers: dict[str, str], *, source: str = "PROVIDER"
 ) -> s.LexiconEntry:
     concept_type = body.concept_type.value
     await _check_concept(session, concept_type, body.concept_id, transfers)

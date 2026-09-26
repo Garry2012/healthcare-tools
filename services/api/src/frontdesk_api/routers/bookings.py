@@ -1,4 +1,4 @@
-"""Staff-side appointment operations (tag `Appointments`)."""
+"""Staff-side booking operations (tag `Bookings`)."""
 
 from __future__ import annotations
 
@@ -9,50 +9,50 @@ from fastapi import APIRouter, Depends, Query
 
 from .. import schemas as s
 from ..auth import require_scopes
-from ..services import appointments as svc
+from ..services import bookings as svc
 from ..services import idempotency as idem
 from ..services import scheduling
 from .deps import ActingUser, IdempotencyKey, Session, SettingsDep, errors, respond
 
-router = APIRouter(tags=["Appointments"], dependencies=[Depends(require_scopes("appointments.staff"))])
+router = APIRouter(tags=["Bookings"], dependencies=[Depends(require_scopes("bookings.staff"))])
 
 
-async def _staff(session, settings, row) -> s.Appointment:
+async def _staff(session, settings, row) -> s.Booking:
     await session.refresh(row)  # server-side updated_at is expired after a write
     ctx = await svc.context_for(session, settings, [row])
     history = await svc.history_of(session, [row.id])
     return svc.staff_view(row, ctx, history[row.id])
 
 
-@router.get("/appointments", operation_id="searchAppointments", summary="Staff search (any filter)",
-            response_model=s.AppointmentPage, responses=errors(403))
-async def search_appointments(
+@router.get("/bookings", operation_id="searchBookings", summary="Staff search (any filter)",
+            response_model=s.BookingPage, responses=errors(403))
+async def search_bookings(
     session: Session,
     settings: SettingsDep,
-    doctor_id: Annotated[str | None, Query(alias="doctorId")] = None,
+    resource_id: Annotated[str | None, Query(alias="resourceId")] = None,
     session_id: Annotated[str | None, Query(alias="sessionId")] = None,
     on: Annotated[date | None, Query(alias="date")] = None,
     phone: Annotated[str | None, Query(pattern=r"^[0-9]{6,15}$")] = None,
-    status: s.AppointmentStatus | None = None,
+    status: s.BookingStatus | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    rows, total = await svc.search(session, doctor_id=doctor_id, session_id=session_id, on=on, phone=phone,
+    rows, total = await svc.search(session, resource_id=resource_id, session_id=session_id, on=on, phone=phone,
                                    status=status.value if status else None, limit=limit, offset=offset)
     ctx = await svc.context_for(session, settings, rows)
     history = await svc.history_of(session, [r.id for r in rows])
-    return respond(s.AppointmentPage(items=[svc.staff_view(r, ctx, history[r.id]) for r in rows], total=total))
+    return respond(s.BookingPage(items=[svc.staff_view(r, ctx, history[r.id]) for r in rows], total=total))
 
 
-@router.post("/appointments", operation_id="deskCreateAppointment",
+@router.post("/bookings", operation_id="deskCreateBooking",
              summary="Desk books on behalf of a walk-in or phone caller", status_code=201,
-             response_model=s.Appointment, responses=errors(400, 403, 409))
-async def desk_create_appointment(
+             response_model=s.Booking, responses=errors(400, 403, 409))
+async def desk_create_booking(
     body: s.AgentBookRequest, acting_user: ActingUser,
     session: Session, settings: SettingsDep,
     idempotency_key: IdempotencyKey = None,
 ):
-    fingerprint = idem.request_hash("POST", "/appointments", body.model_dump(mode="json"), acting_user)
+    fingerprint = idem.request_hash("POST", "/bookings", body.model_dump(mode="json"), acting_user)
 
     async def operation() -> tuple[int, dict]:
         booked = await svc.book(session, settings, body, channel="DESK", call_id=None,
@@ -64,32 +64,32 @@ async def desk_create_appointment(
     return respond(outcome.body, outcome.status, {"Idempotent-Replay": "true"} if outcome.replay else None)
 
 
-@router.get("/appointments/{appointmentId}", operation_id="getAppointment",
-            summary="One appointment, full detail (staff)", response_model=s.Appointment,
+@router.get("/bookings/{bookingId}", operation_id="getBooking",
+            summary="One booking, full detail (staff)", response_model=s.Booking,
             responses=errors(403, 404))
-async def get_appointment(appointmentId: str, session: Session, settings: SettingsDep):  # noqa: N803
-    return respond(await _staff(session, settings, await svc.get(session, appointmentId)))
+async def get_booking(bookingId: str, session: Session, settings: SettingsDep):  # noqa: N803
+    return respond(await _staff(session, settings, await svc.get(session, bookingId)))
 
 
-@router.post("/appointments/{appointmentId}/confirm", operation_id="confirmAppointment",
-             summary="Desk confirms the timing with the doctor", response_model=s.Appointment,
+@router.post("/bookings/{bookingId}/confirm", operation_id="confirmBooking",
+             summary="Desk confirms the timing with the resource", response_model=s.Booking,
              responses=errors(403, 404))
-async def confirm_appointment(
-    appointmentId: str, acting_user: ActingUser, session: Session, settings: SettingsDep,  # noqa: N803
+async def confirm_booking(
+    bookingId: str, acting_user: ActingUser, session: Session, settings: SettingsDep,  # noqa: N803
     body: s.ConfirmRequest | None = None,
 ):
-    row = await scheduling.confirm_appointment(session, settings, appointmentId, body or s.ConfirmRequest(),
+    row = await scheduling.confirm_booking(session, settings, bookingId, body or s.ConfirmRequest(),
                                                f"staff:{acting_user}")
     return respond(await _staff(session, settings, row))
 
 
-@router.post("/appointments/{appointmentId}/status", operation_id="setAppointmentStatus",
-             summary="Desk marks arrived / completed / no-show, or cancels on the hospital's behalf",
-             response_model=s.Appointment, responses=errors(403, 404, 409))
-async def set_appointment_status(
-    appointmentId: str, body: s.StatusRequest, acting_user: ActingUser,  # noqa: N803
+@router.post("/bookings/{bookingId}/status", operation_id="setBookingStatus",
+             summary="Desk marks arrived / completed / no-show, or cancels on the provider's behalf",
+             response_model=s.Booking, responses=errors(403, 404, 409))
+async def set_booking_status(
+    bookingId: str, body: s.StatusRequest, acting_user: ActingUser,  # noqa: N803
     session: Session, settings: SettingsDep,
 ):
-    row = await svc.set_status(session, appointmentId, body, f"staff:{acting_user}")
+    row = await svc.set_status(session, bookingId, body, f"staff:{acting_user}")
     await session.commit()
     return respond(await _staff(session, settings, row))

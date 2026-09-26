@@ -1,10 +1,10 @@
 """Deterministic session and slot identifiers (IMPLEMENTATION.md §2.1).
 
-session id = ses_<doctorId>_<date>_<n>
+session id = ses_<resourceId>_<date>_<n>
 slot id    = slot_<sessionId>_<position as 2+ digits | HHMM>
 
-`n` is the 1-based position of the session in the doctor's template, or `e<seq>` for a
-session added by an EXTRA_SESSION exception. Doctor ids may contain underscores, so ids
+`n` is the 1-based position of the session in the resource's template, or `e<seq>` for a
+session added by an EXTRA_SESSION exception. Resource ids may contain underscores, so ids
 are parsed from the right.
 """
 
@@ -20,13 +20,13 @@ _N = re.compile(r"^(\d+|e\d+)$")
 
 @dataclass(frozen=True, slots=True)
 class SessionRef:
-    doctor_id: str
+    resource_id: str
     date: date
     n: str
 
     @property
     def session_id(self) -> str:
-        return session_id(self.doctor_id, self.date, self.n)
+        return session_id(self.resource_id, self.date, self.n)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,8 +39,8 @@ class SlotRef:
         return f"slot_{self.session.session_id}_{self.suffix}"
 
 
-def session_id(doctor_id: str, on: date, n: str | int) -> str:
-    return f"ses_{doctor_id}_{on.isoformat()}_{n}"
+def session_id(resource_id: str, on: date, n: str | int) -> str:
+    return f"ses_{resource_id}_{on.isoformat()}_{n}"
 
 
 def position_slot_id(sid: str, position: int) -> str:
@@ -57,14 +57,14 @@ def parse_session_id(value: str) -> SessionRef | None:
     parts = value[4:].rsplit("_", 2)
     if len(parts) != 3:
         return None
-    doctor_id, day, n = parts
-    if not doctor_id or not _DATE.match(day) or not _N.match(n):
+    resource_id, day, n = parts
+    if not resource_id or not _DATE.match(day) or not _N.match(n):
         return None
     try:
         on = date.fromisoformat(day)
     except ValueError:
         return None
-    return SessionRef(doctor_id, on, n)
+    return SessionRef(resource_id, on, n)
 
 
 def parse_slot_id(value: str) -> SlotRef | None:

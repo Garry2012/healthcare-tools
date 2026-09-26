@@ -19,8 +19,8 @@ from .logging import call_id_var, configure_logging, log_event
 from .migrations import code_head
 from .routers import (
     agent,
-    appointments,
     availability,
+    bookings,
     calls,
     directory,
     health,
@@ -46,9 +46,9 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
             await engine.dispose()
 
     app = FastAPI(
-        title="Healthcare Front-Desk Operations API",
+        title="Front-Desk Operations API",
         version="1.0.0-draft",
-        description="Domain API for a hospital front-desk voice agent and the front-desk web application.",
+        description="Domain API for a front-desk voice agent and the front-desk web application (any domain pack).",
         servers=[{"url": API_PREFIX}],
         lifespan=lifespan,
         separate_input_output_schemas=False,
@@ -90,7 +90,7 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
                   status=response.status_code, ms=round((time.perf_counter() - started) * 1000, 1))
         return response
 
-    for router in (agent, directory, scheduling, availability, appointments, notifications, calls):
+    for router in (agent, directory, scheduling, availability, bookings, notifications, calls):
         app.include_router(router.router, prefix=API_PREFIX)
     app.include_router(health.router)
     _describe_errors_as_400(app)

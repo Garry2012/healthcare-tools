@@ -23,7 +23,7 @@ import sys
 
 import httpx
 
-TOOLS = ("find_availability", "manage_appointment")
+TOOLS = ("find_availability", "manage_booking")
 # Call identity travels from the voice platform through the gateway to the adapter.
 PASSTHROUGH = ["X-Call-Id", "X-Caller-Number"]
 
@@ -39,7 +39,7 @@ def payload(args: argparse.Namespace) -> dict:
     return {
         "name": args.name,
         "url": env("MCP_PUBLIC_URL"),
-        "description": "Hospital front-desk tools: find_availability, manage_appointment",
+        "description": "Hospital front-desk tools: find_availability, manage_booking",
         "transport": "STREAMABLEHTTP",
         "auth_type": "bearer",
         "auth_token": env("MCP_BEARER_TOKEN"),

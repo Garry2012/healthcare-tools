@@ -1,4 +1,4 @@
-"""Adapter settings. All from the environment; nothing hospital-specific."""
+"""Adapter settings. All from the environment; nothing provider-specific."""
 
 from __future__ import annotations
 

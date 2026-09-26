@@ -1,8 +1,8 @@
-"""Templates, exceptions, the live board, and the impacted-patient loop.
+"""Templates, exceptions, the live board, and the impacted-customer loop.
 
 Creating an exception (or a template) that removes or shortens a session moves the
-appointments that no longer fit to NEEDS_RESCHEDULE and creates one notification per
-appointment carrying structured facts. Withdrawing the exception restores them.
+bookings that no longer fit to NEEDS_RESCHEDULE and creates one notification per
+booking carrying structured facts. Withdrawing the exception restores them.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from ..domain import ids
 from ..domain.availability import CANCELLED_STATUS, SessionView, find_session
 from ..errors import ApiError, not_found, validation
 from . import schedule, views
-from .appointments import context_for, get, history_of, new_id, staff_view
+from .bookings import context_for, get, history_of, new_id, staff_view
 
 MAX_EXCEPTION_DAYS = 366
 IMPACTABLE = ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED")
@@ -38,7 +38,7 @@ def _t(value: str | None) -> time | None:
 
 def _template_model(tpl: t.ScheduleTemplate, sessions: list[t.TemplateSession]) -> s.ScheduleTemplate:
     return s.ScheduleTemplate(
-        doctor_id=tpl.doctor_id,
+        resource_id=tpl.resource_id,
         effective_from=tpl.effective_from,
         effective_to=tpl.effective_to,
         sessions=[
@@ -59,20 +59,20 @@ def _template_model(tpl: t.ScheduleTemplate, sessions: list[t.TemplateSession]) 
     )
 
 
-async def _require_doctor(session: AsyncSession, doctor_id: str) -> t.Doctor:
-    doctor = await session.get(t.Doctor, doctor_id)
-    if doctor is None:
-        raise not_found("No such doctor.")
-    return doctor
+async def _require_resource(session: AsyncSession, resource_id: str) -> t.Resource:
+    resource = await session.get(t.Resource, resource_id)
+    if resource is None:
+        raise not_found("No such resource.")
+    return resource
 
 
-async def get_template(session: AsyncSession, settings: Settings, doctor_id: str) -> s.ScheduleTemplate:
-    await _require_doctor(session, doctor_id)
+async def get_template(session: AsyncSession, settings: Settings, resource_id: str) -> s.ScheduleTemplate:
+    await _require_resource(session, resource_id)
     today = schedule.now_in(settings).date()
     rows = (
         await session.scalars(
             select(t.ScheduleTemplate)
-            .where(t.ScheduleTemplate.doctor_id == doctor_id)
+            .where(t.ScheduleTemplate.resource_id == resource_id)
             .order_by(t.ScheduleTemplate.effective_from.desc())
         )
     ).all()
@@ -81,7 +81,7 @@ async def get_template(session: AsyncSession, settings: Settings, doctor_id: str
         rows[0] if rows else None,
     )
     if current is None:
-        raise not_found("This doctor has no schedule template.")
+        raise not_found("This resource has no schedule template.")
     sessions = (
         await session.scalars(select(t.TemplateSession).where(t.TemplateSession.template_id == current.id))
     ).all()
@@ -106,23 +106,23 @@ def _validate_template(body: s.ScheduleTemplate) -> None:
 
 
 async def set_template(
-    session: AsyncSession, settings: Settings, doctor_id: str, body: s.ScheduleTemplate, actor: str
+    session: AsyncSession, settings: Settings, resource_id: str, body: s.ScheduleTemplate, actor: str
 ) -> s.ScheduleTemplate:
-    doctor = await _require_doctor(session, doctor_id)
+    resource = await _require_resource(session, resource_id)
     _validate_template(body)
     now = schedule.now_in(settings)
     start = max(body.effective_from, now.date())
     last_appt = await session.scalar(
-        select(t.Appointment.date)
-        .where(t.Appointment.doctor_id == doctor_id, t.Appointment.date >= start)
-        .order_by(t.Appointment.date.desc())
+        select(t.Booking.date)
+        .where(t.Booking.resource_id == resource_id, t.Booking.date >= start)
+        .order_by(t.Booking.date.desc())
         .limit(1)
     )
     end = last_appt or start
-    before = await schedule.load(session, settings, now, [doctor_id], start, end)
+    before = await schedule.load(session, settings, now, [resource_id], start, end)
 
     existing = (
-        await session.scalars(select(t.ScheduleTemplate).where(t.ScheduleTemplate.doctor_id == doctor_id))
+        await session.scalars(select(t.ScheduleTemplate).where(t.ScheduleTemplate.resource_id == resource_id))
     ).all()
     for row in existing:
         if row.effective_from == body.effective_from:
@@ -138,8 +138,8 @@ async def set_template(
     await session.flush()
 
     template = t.ScheduleTemplate(
-        id=f"tpl_{doctor_id}_{body.effective_from.isoformat()}",
-        doctor_id=doctor_id,
+        id=f"tpl_{resource_id}_{body.effective_from.isoformat()}",
+        resource_id=resource_id,
         effective_from=body.effective_from,
         effective_to=effective_to,
         created_by=actor,
@@ -167,11 +167,11 @@ async def set_template(
     await session.flush()
 
     horizon = end + timedelta(days=settings.tenant_next_bookable_horizon_days)
-    after = await schedule.load(session, settings, now, [doctor_id], start, horizon)
+    after = await schedule.load(session, settings, now, [resource_id], start, horizon)
     await _impact(
-        session, settings, doctor, schedule.daterange(max(body.effective_from, start), end),
-        before=lambda d: before.sessions(doctor_id, d, channel="DESK"),
-        after=lambda d: after.sessions(doctor_id, d, channel="DESK"),
+        session, settings, resource, schedule.daterange(max(body.effective_from, start), end),
+        before=lambda d: before.sessions(resource_id, d, channel="DESK"),
+        after=lambda d: after.sessions(resource_id, d, channel="DESK"),
         suggest=after,
         exception_id=None,
         template_change=True,
@@ -197,11 +197,11 @@ def _session_facts(view: SessionView | None) -> dict[str, Any] | None:
     }
 
 
-def _suggestions(data: schedule.ScheduleData, doctor_id: str, after_date: date, limit: int = 3) -> list[dict]:
+def _suggestions(data: schedule.ScheduleData, resource_id: str, after_date: date, limit: int = 3) -> list[dict]:
     out: list[dict] = []
     first = max(after_date, data.now.date())
     for day in schedule.daterange(first, first + timedelta(days=data.settings.tenant_next_bookable_horizon_days)):
-        for view in data.sessions(doctor_id, day):
+        for view in data.sessions(resource_id, day):
             for slot in view.available_slots():
                 out.append({
                     "slotId": slot.slot_id,
@@ -219,7 +219,7 @@ def _suggestions(data: schedule.ScheduleData, doctor_id: str, after_date: date, 
 async def _impact(
     session: AsyncSession,
     settings: Settings,
-    doctor: t.Doctor,
+    resource: t.Resource,
     dates: list[date],
     *,
     before: Sessions,
@@ -231,14 +231,14 @@ async def _impact(
 ) -> tuple[int, int]:
     if not dates:
         return 0, 0
-    appts = (
+    bookings = (
         await session.scalars(
-            select(t.Appointment)
+            select(t.Booking)
             .where(
-                t.Appointment.doctor_id == doctor.id,
-                t.Appointment.date >= dates[0],
-                t.Appointment.date <= dates[-1],
-                t.Appointment.status.in_(IMPACTABLE),
+                t.Booking.resource_id == resource.id,
+                t.Booking.date >= dates[0],
+                t.Booking.date <= dates[-1],
+                t.Booking.status.in_(IMPACTABLE),
             )
             .with_for_update()
         )
@@ -246,11 +246,11 @@ async def _impact(
     moved_to_reschedule = notified = 0
     cache_before: dict[date, list[SessionView]] = {}
     cache_after: dict[date, list[SessionView]] = {}
-    for appt in appts:
-        was = find_session(cache_before.setdefault(appt.date, before(appt.date)), appt.session_id)
-        now_view = find_session(cache_after.setdefault(appt.date, after(appt.date)), appt.session_id)
+    for booking in bookings:
+        was = find_session(cache_before.setdefault(booking.date, before(booking.date)), booking.session_id)
+        now_view = find_session(cache_after.setdefault(booking.date, after(booking.date)), booking.session_id)
         removed = now_view is None or now_view.status == CANCELLED_STATUS
-        gone = removed or appt.slot_id not in now_view.offered_slot_ids
+        gone = removed or booking.slot_id not in now_view.offered_slot_ids
         moved = not gone and was is not None and (was.start, was.end) != (now_view.start, now_view.end)
         if not gone and not moved:
             continue
@@ -259,31 +259,31 @@ async def _impact(
         else:
             trigger = "SESSION_CANCELLED" if removed else "SESSION_TIME_CHANGED"
         if gone:
-            previous = appt.status
-            appt.status = "NEEDS_RESCHEDULE"
-            appt.impacted_by_exception_id = exception_id
-            session.add(t.AppointmentHistory(
-                appointment_id=appt.id, by=actor, change="NEEDS_RESCHEDULE",
+            previous = booking.status
+            booking.status = "NEEDS_RESCHEDULE"
+            booking.impacted_by_exception_id = exception_id
+            session.add(t.BookingHistory(
+                booking_id=booking.id, by=actor, change="NEEDS_RESCHEDULE",
                 details={"previous": previous, "exceptionId": exception_id, "trigger": trigger},
             ))
             moved_to_reschedule += 1
         session.add(t.Notification(
             id=new_id("ntf"),
-            appointment_id=appt.id,
+            booking_id=booking.id,
             exception_id=exception_id,
             trigger=trigger,
             status="PENDING",
-            patient_phone=appt.phone,
-            patient_language=appt.language,
+            customer_phone=booking.phone,
+            customer_language=booking.language,
             facts={
-                "doctorId": doctor.id,
-                "doctorName": doctor.name,
-                "appointmentDate": appt.date.isoformat(),
-                "slotId": appt.slot_id,
-                "appointmentStatus": appt.status,
+                "resourceId": resource.id,
+                "resourceName": resource.name,
+                "bookingDate": booking.date.isoformat(),
+                "slotId": booking.slot_id,
+                "bookingStatus": booking.status,
                 "previousSession": _session_facts(was),
                 "currentSession": None if removed else _session_facts(now_view),
-                "suggestedSlots": _suggestions(suggest, doctor.id, appt.date) if gone else [],
+                "suggestedSlots": _suggestions(suggest, resource.id, booking.date) if gone else [],
             },
         ))
         notified += 1
@@ -297,7 +297,7 @@ async def _impact(
 def _exception_model(row: t.ScheduleException, *, staff: bool) -> s.ScheduleException:
     return s.ScheduleException(
         id=row.id,
-        doctor_id=row.doctor_id,
+        resource_id=row.resource_id,
         date_from=row.date_from,
         date_to=row.date_to,
         scope=row.scope,
@@ -312,19 +312,19 @@ def _exception_model(row: t.ScheduleException, *, staff: bool) -> s.ScheduleExce
         created_at=row.created_at,
         created_by=row.created_by if staff else "staff",
         impact=s.ExceptionImpact(
-            appointments_impacted=row.impact_appointments,
+            bookings_impacted=row.impact_bookings,
             notifications_created=row.impact_notifications,
         ),
     )
 
 
 async def list_exceptions(
-    session: AsyncSession, *, doctor_id: str | None, date_from: date | None, date_to: date | None,
+    session: AsyncSession, *, resource_id: str | None, date_from: date | None, date_to: date | None,
     staff: bool,
 ) -> s.ExceptionList:
     query = select(t.ScheduleException).where(t.ScheduleException.deleted_at.is_(None))
-    if doctor_id:
-        query = query.where(t.ScheduleException.doctor_id == doctor_id)
+    if resource_id:
+        query = query.where(t.ScheduleException.resource_id == resource_id)
     if date_from:
         query = query.where(t.ScheduleException.date_to >= date_from)
     if date_to:
@@ -333,11 +333,11 @@ async def list_exceptions(
     return s.ExceptionList(items=[_exception_model(r, staff=staff) for r in rows])
 
 
-async def _template_session_ids(session: AsyncSession, doctor_id: str) -> set[str]:
+async def _template_session_ids(session: AsyncSession, resource_id: str) -> set[str]:
     rows = await session.scalars(
         select(t.TemplateSession.template_session_id)
         .join(t.ScheduleTemplate, t.ScheduleTemplate.id == t.TemplateSession.template_id)
-        .where(t.ScheduleTemplate.doctor_id == doctor_id)
+        .where(t.ScheduleTemplate.resource_id == resource_id)
     )
     return set(rows.all())
 
@@ -355,8 +355,8 @@ async def _validate_exception(session: AsyncSession, body: s.ScheduleExceptionIn
     if body.scope == "SESSION":
         if not body.template_session_id:
             raise validation("SESSION scope needs templateSessionId.", "templateSessionId")
-        if body.template_session_id not in await _template_session_ids(session, body.doctor_id):
-            raise validation("templateSessionId is not in this doctor's template.", "templateSessionId")
+        if body.template_session_id not in await _template_session_ids(session, body.resource_id):
+            raise validation("templateSessionId is not in this resource's template.", "templateSessionId")
     if body.scope == "TIME_RANGE" and start is None:
         raise validation("TIME_RANGE scope needs newStart and newEnd.", "newStart")
     if body.effect == "TIME_CHANGE" and (body.scope != "SESSION" or start is None):
@@ -370,7 +370,7 @@ async def _validate_exception(session: AsyncSession, body: s.ScheduleExceptionIn
 def _insert_exception(session: AsyncSession, body: s.ScheduleExceptionInput, actor: str) -> t.ScheduleException:
     row = t.ScheduleException(
         id=new_id("exc"),
-        doctor_id=body.doctor_id,
+        resource_id=body.resource_id,
         date_from=body.date_from,
         date_to=body.date_to,
         scope=body.scope,
@@ -391,33 +391,33 @@ async def create_exception(
     session: AsyncSession, settings: Settings, body: s.ScheduleExceptionInput, actor: str
 ) -> s.ScheduleException:
     """Does not commit; the caller's idempotency wrapper does."""
-    doctor = await _require_doctor(session, body.doctor_id)
+    resource = await _require_resource(session, body.resource_id)
     await _validate_exception(session, body)
     now = schedule.now_in(settings)
     horizon = body.date_to + timedelta(days=settings.tenant_next_bookable_horizon_days)
-    before = await schedule.load(session, settings, now, [doctor.id], body.date_from, horizon)
+    before = await schedule.load(session, settings, now, [resource.id], body.date_from, horizon)
     dates = schedule.daterange(body.date_from, body.date_to)
 
     if body.effect == "EXTRA_SESSION":
         start, end = _t(body.new_start), _t(body.new_end)
         for day in dates:
-            for view in before.sessions(doctor.id, day, channel="DESK"):
+            for view in before.sessions(resource.id, day, channel="DESK"):
                 if view.status != CANCELLED_STATUS and view.start < end and start < view.end:
                     raise ApiError("CONFLICT", f"The extra session overlaps an existing session on {day}.")
 
     row = _insert_exception(session, body, actor)
     await session.flush()
-    after = await schedule.load(session, settings, now, [doctor.id], body.date_from, horizon)
+    after = await schedule.load(session, settings, now, [resource.id], body.date_from, horizon)
     impacted, notified = await _impact(
-        session, settings, doctor, dates,
-        before=lambda d: before.sessions(doctor.id, d, channel="DESK"),
-        after=lambda d: after.sessions(doctor.id, d, channel="DESK"),
+        session, settings, resource, dates,
+        before=lambda d: before.sessions(resource.id, d, channel="DESK"),
+        after=lambda d: after.sessions(resource.id, d, channel="DESK"),
         suggest=after,
         exception_id=row.id,
         template_change=False,
         actor=actor,
     )
-    row.impact_appointments, row.impact_notifications = impacted, notified
+    row.impact_bookings, row.impact_notifications = impacted, notified
     await session.flush()
     await session.refresh(row)
     return _exception_model(row, staff=True)
@@ -440,65 +440,65 @@ async def delete_exception(
     notices = (
         await session.scalars(select(t.Notification).where(t.Notification.exception_id == exception_id))
     ).all()
-    appt_ids = sorted({n.appointment_id for n in notices})
-    appts = {
+    bkg_ids = sorted({n.booking_id for n in notices})
+    bookings = {
         a.id: a
         for a in (
             await session.scalars(
-                select(t.Appointment).where(t.Appointment.id.in_(appt_ids)).with_for_update()
+                select(t.Booking).where(t.Booking.id.in_(bkg_ids)).with_for_update()
             )
         ).all()
-    } if appt_ids else {}
-    doctor = await session.get(t.Doctor, row.doctor_id)
-    dates = [a.date for a in appts.values()] or [row.date_from]
-    data = await schedule.load(session, settings, now, [row.doctor_id], min(dates), max(dates))
+    } if bkg_ids else {}
+    resource = await session.get(t.Resource, row.resource_id)
+    dates = [a.date for a in bookings.values()] or [row.date_from]
+    data = await schedule.load(session, settings, now, [row.resource_id], min(dates), max(dates))
 
     restored: dict[str, bool] = {}
-    for appt in appts.values():
-        if appt.status != "NEEDS_RESCHEDULE" or appt.impacted_by_exception_id != exception_id:
+    for booking in bookings.values():
+        if booking.status != "NEEDS_RESCHEDULE" or booking.impacted_by_exception_id != exception_id:
             continue
-        view = find_session(data.sessions(appt.doctor_id, appt.date, channel="DESK"), appt.session_id)
-        ok = view is not None and view.status != CANCELLED_STATUS and appt.slot_id in view.offered_slot_ids
+        view = find_session(data.sessions(booking.resource_id, booking.date, channel="DESK"), booking.session_id)
+        ok = view is not None and view.status != CANCELLED_STATUS and booking.slot_id in view.offered_slot_ids
         if ok:
             try:
                 async with session.begin_nested():
-                    appt.status = "BOOKED"
-                    appt.impacted_by_exception_id = None
+                    booking.status = "BOOKED"
+                    booking.impacted_by_exception_id = None
                     await session.flush()
             except IntegrityError:
-                await session.refresh(appt)
+                await session.refresh(booking)
                 ok = False
-        restored[appt.id] = ok
-        session.add(t.AppointmentHistory(
-            appointment_id=appt.id, by=actor, change="RESTORED" if ok else "STILL_NEEDS_RESCHEDULE",
+        restored[booking.id] = ok
+        session.add(t.BookingHistory(
+            booking_id=booking.id, by=actor, change="RESTORED" if ok else "STILL_NEEDS_RESCHEDULE",
             details={"exceptionId": exception_id},
         ))
 
     told: set[str] = set()
     for notice in notices:
         if notice.status == "PENDING":
-            # The patient was never told; there is nothing to take back.
+            # The customer was never told; there is nothing to take back.
             await session.delete(notice)
         else:
-            told.add(notice.appointment_id)
-    for appt_id, appt in appts.items():
-        still_needs = appt.status == "NEEDS_RESCHEDULE" and not restored.get(appt_id, True)
-        if appt_id in told or still_needs:
+            told.add(notice.booking_id)
+    for bkg_id, booking in bookings.items():
+        still_needs = booking.status == "NEEDS_RESCHEDULE" and not restored.get(bkg_id, True)
+        if bkg_id in told or still_needs:
             session.add(t.Notification(
                 id=new_id("ntf"),
-                appointment_id=appt_id,
+                booking_id=bkg_id,
                 exception_id=exception_id,
                 trigger="DESK_MESSAGE",
                 status="PENDING",
-                patient_phone=appt.phone,
-                patient_language=appt.language,
+                customer_phone=booking.phone,
+                customer_language=booking.language,
                 facts={
-                    "doctorId": appt.doctor_id,
-                    "doctorName": doctor.name if doctor else None,
-                    "appointmentDate": appt.date.isoformat(),
-                    "slotId": appt.slot_id,
+                    "resourceId": booking.resource_id,
+                    "resourceName": resource.name if resource else None,
+                    "bookingDate": booking.date.isoformat(),
+                    "slotId": booking.slot_id,
                     "change": "SLOT_NO_LONGER_AVAILABLE" if still_needs else "SESSION_RESTORED",
-                    "appointmentStatus": appt.status,
+                    "bookingStatus": booking.status,
                 },
             ))
     await session.commit()
@@ -515,23 +515,23 @@ async def impact_of(session: AsyncSession, settings: Settings, exception_id: str
             .order_by(t.Notification.created_at)
         )
     ).all()
-    appts = {
+    bookings = {
         a.id: a for a in (
             await session.scalars(
-                select(t.Appointment).where(t.Appointment.id.in_([n.appointment_id for n in notices]))
+                select(t.Booking).where(t.Booking.id.in_([n.booking_id for n in notices]))
             )
         ).all()
     } if notices else {}
-    ctx = await context_for(session, settings, list(appts.values()))
-    history = await history_of(session, list(appts))
+    ctx = await context_for(session, settings, list(bookings.values()))
+    history = await history_of(session, list(bookings))
     return s.ImpactList(
         exception_id=exception_id,
         items=[
-            s.ImpactedAppointment(
-                appointment=staff_view(appts[n.appointment_id], ctx, history[n.appointment_id]),
+            s.ImpactedBooking(
+                booking=staff_view(bookings[n.booking_id], ctx, history[n.booking_id]),
                 notification=notification_model(n),
             )
-            for n in notices if n.appointment_id in appts
+            for n in notices if n.booking_id in bookings
         ],
     )
 
@@ -557,35 +557,35 @@ def _board_model(row: t.BoardEntry, *, staff: bool) -> s.BoardEntry:
 
 
 async def get_board(
-    session: AsyncSession, settings: Settings, doctor_id: str, on: date | None, *, staff: bool
+    session: AsyncSession, settings: Settings, resource_id: str, on: date | None, *, staff: bool
 ) -> s.BoardView:
-    await _require_doctor(session, doctor_id)
+    await _require_resource(session, resource_id)
     day = on or schedule.now_in(settings).date()
     rows = await session.scalars(
         select(t.BoardEntry)
-        .where(t.BoardEntry.doctor_id == doctor_id, t.BoardEntry.date == day)
+        .where(t.BoardEntry.resource_id == resource_id, t.BoardEntry.date == day)
         .order_by(t.BoardEntry.session_id)
     )
-    return s.BoardView(doctor_id=doctor_id, date=day, sessions=[_board_model(r, staff=staff) for r in rows])
+    return s.BoardView(resource_id=resource_id, date=day, sessions=[_board_model(r, staff=staff) for r in rows])
 
 
 async def set_board(
-    session: AsyncSession, settings: Settings, doctor_id: str, body: s.BoardEntryInput, actor: str
+    session: AsyncSession, settings: Settings, resource_id: str, body: s.BoardEntryInput, actor: str
 ) -> s.BoardEntry:
-    await _require_doctor(session, doctor_id)
+    await _require_resource(session, resource_id)
     now = schedule.now_in(settings)
     if body.date != now.date():
         raise validation("The live board is for today only; use a schedule exception for other dates.", "date")
     ref = ids.parse_session_id(body.session_id)
-    if ref is None or ref.doctor_id != doctor_id or ref.date != body.date:
-        raise validation("sessionId does not belong to this doctor and date.", "sessionId")
-    data = await schedule.load(session, settings, now, [doctor_id], body.date, body.date)
-    if find_session(data.sessions(doctor_id, body.date, channel="DESK"), body.session_id) is None:
+    if ref is None or ref.resource_id != resource_id or ref.date != body.date:
+        raise validation("sessionId does not belong to this resource and date.", "sessionId")
+    data = await schedule.load(session, settings, now, [resource_id], body.date, body.date)
+    if find_session(data.sessions(resource_id, body.date, channel="DESK"), body.session_id) is None:
         raise not_found("No such session today.")
 
     row = await session.get(t.BoardEntry, body.session_id, with_for_update=True)
     if row is None:
-        row = t.BoardEntry(session_id=body.session_id, doctor_id=doctor_id, date=body.date, updated_by=actor)
+        row = t.BoardEntry(session_id=body.session_id, resource_id=resource_id, date=body.date, updated_by=actor)
         session.add(row)
     fields = body.model_dump(exclude_unset=True, exclude={"date", "session_id"})
     for name, value in fields.items():
@@ -604,27 +604,27 @@ async def set_board(
 # ---------------------------------------------------------------- confirmation
 
 
-async def confirm_appointment(
-    session: AsyncSession, settings: Settings, appointment_id: str, body: s.ConfirmRequest, actor: str
-) -> t.Appointment:
-    row = await get(session, appointment_id, lock=True)
+async def confirm_booking(
+    session: AsyncSession, settings: Settings, booking_id: str, body: s.ConfirmRequest, actor: str
+) -> t.Booking:
+    row = await get(session, booking_id, lock=True)
     if row.status not in ("BOOKED", "RESCHEDULED", "CONFIRMED_BY_DESK"):
-        raise ApiError("CONFLICT", f"A {row.status} appointment cannot be confirmed.")
+        raise ApiError("CONFLICT", f"A {row.status} booking cannot be confirmed.")
     row.status = "CONFIRMED_BY_DESK"
     row.timing_confirmed = True
     row.confirmed_start = _t(body.confirmed_start)
-    session.add(t.AppointmentHistory(
-        appointment_id=row.id, by=actor, change="CONFIRMED_BY_DESK",
+    session.add(t.BookingHistory(
+        booking_id=row.id, by=actor, change="CONFIRMED_BY_DESK",
         details={"confirmedStart": body.confirmed_start, "applyToSession": body.apply_to_session},
     ))
     if body.apply_to_session:
         now = schedule.now_in(settings)
-        data = await schedule.load(session, settings, now, [row.doctor_id], row.date, row.date)
-        view = find_session(data.sessions(row.doctor_id, row.date, channel="DESK"), row.session_id)
+        data = await schedule.load(session, settings, now, [row.resource_id], row.date, row.date)
+        view = find_session(data.sessions(row.resource_id, row.date, channel="DESK"), row.session_id)
         if view is not None:
             scope = "SESSION" if view.template_session_id else "TIME_RANGE"
             _insert_exception(session, s.ScheduleExceptionInput(
-                doctor_id=row.doctor_id,
+                resource_id=row.resource_id,
                 date_from=row.date,
                 date_to=row.date,
                 scope=scope,
@@ -645,12 +645,12 @@ async def confirm_appointment(
 def notification_model(row: t.Notification) -> s.Notification:
     return s.Notification(
         id=row.id,
-        appointment_id=row.appointment_id,
+        booking_id=row.booking_id,
         trigger=row.trigger,
         status=row.status,
         channel=row.channel,
-        patient_phone=row.patient_phone,
-        patient_language=row.patient_language,
+        customer_phone=row.customer_phone,
+        customer_language=row.customer_language,
         facts=row.facts,
         created_at=row.created_at,
         delivered_at=row.delivered_at,
@@ -659,15 +659,15 @@ def notification_model(row: t.Notification) -> s.Notification:
 
 
 async def list_notifications(
-    session: AsyncSession, *, status: str, doctor_id: str | None, on: date | None
+    session: AsyncSession, *, status: str, resource_id: str | None, on: date | None
 ) -> s.NotificationList:
     query = select(t.Notification).where(t.Notification.status == status)
-    if doctor_id or on:
-        query = query.join(t.Appointment, t.Appointment.id == t.Notification.appointment_id)
-        if doctor_id:
-            query = query.where(t.Appointment.doctor_id == doctor_id)
+    if resource_id or on:
+        query = query.join(t.Booking, t.Booking.id == t.Notification.booking_id)
+        if resource_id:
+            query = query.where(t.Booking.resource_id == resource_id)
         if on:
-            query = query.where(t.Appointment.date == on)
+            query = query.where(t.Booking.date == on)
     rows = await session.scalars(query.order_by(t.Notification.created_at))
     return s.NotificationList(items=[notification_model(r) for r in rows])
 

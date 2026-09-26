@@ -39,7 +39,7 @@ _ANUSVARA = re.compile(r"ṃ(?=[pbm])")
 # \w misses Indic vowel signs and viramas (category M), which would split words apart.
 _WORD = re.compile(r"(?:[^\W_]|[\u0300-\u036f\u0900-\u0dff\u200c\u200d])+")
 
-# Titles callers put in front of a doctor's name, in the scripts we see.
+# Titles callers put in front of a resource's name, in the scripts we see.
 HONORIFICS = frozenset(
     {
         "dr", "doctor", "docter", "doctr", "daktar", "dakter", "sir", "madam", "mam", "ji",
@@ -116,5 +116,5 @@ def contains_phrase(haystack: str, needle: str) -> bool:
 
 
 def normalise_person_name(name: str) -> str:
-    """Identity comparison form of a patient name."""
+    """Identity comparison form of a customer name."""
     return normalise(name, strip_honorifics=True)

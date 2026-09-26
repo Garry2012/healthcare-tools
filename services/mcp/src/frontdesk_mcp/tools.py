@@ -48,7 +48,7 @@ class Preferences(BaseModel):
     language: Annotated[str | None, Field(description="Preferred consultation language (BCP-47).")] = None
 
 
-class Patient(BaseModel):
+class Customer(BaseModel):
     name: Annotated[str, Field(max_length=100, description="As spoken and spelled back.")]
     phone: Annotated[str, Field(pattern=r"^[0-9]{6,15}$", description="Dictated and read back. Never the caller ID.")]
     relationToCaller: Relation | None = None  # noqa: N815
@@ -57,28 +57,28 @@ class Patient(BaseModel):
 # Model-visible parameters, described from the Agent request schemas in openapi.yaml.
 Utterance = Annotated[str, Field(max_length=500, description="The caller's request verbatim, as STT delivered it.")]
 LanguageTag = Annotated[str, Field(description="Language tag reported by STT: en, kn, hi, ta, te, ...")]
-DoctorName = Annotated[str | None, Field(max_length=100, description="If the caller named a doctor. As heard.")]
-DepartmentText = Annotated[
-    str | None, Field(max_length=100, description="If the caller named a speciality or department. As heard.")
+ResourceName = Annotated[str | None, Field(max_length=100, description="If the caller named a resource. As heard.")]
+CategoryText = Annotated[
+    str | None, Field(max_length=100, description="If the caller named a speciality or category. As heard.")
 ]
-SymptomText = Annotated[str | None, Field(max_length=300, description="If the caller described a problem. As heard.")]
+NeedText = Annotated[str | None, Field(max_length=300, description="If the caller described a problem. As heard.")]
 WhenArg = Annotated[When | None, Field(description="When they want to come. Never compute dates yourself.")]
-ActionArg = Annotated[Action, Field(description="BOOK a slot, LIST the caller's appointments, CANCEL or RESCHEDULE.")]
+ActionArg = Annotated[Action, Field(description="BOOK a slot, LIST the caller's bookings, CANCEL or RESCHEDULE.")]
 SlotIdArg = Annotated[str | None, Field(description="BOOK: a slotId returned by find_availability.")]
-PatientArg = Annotated[Patient | None, Field(description="BOOK: the patient. One patient per call.")]
+CustomerArg = Annotated[Customer | None, Field(description="BOOK: the customer. One customer per call.")]
 ReasonArg = Annotated[str | None, Field(max_length=500, description="BOOK/CANCEL: the caller's own words.")]
 BookLanguage = Annotated[str | None, Field(description="BOOK: the caller's language tag.")]
 TimingArg = Annotated[bool, Field(description="BOOK: the caller wants the desk to confirm an unconfirmed timing.")]
-PatientNameArg = Annotated[
-    str | None, Field(max_length=100, description="LIST (optional), CANCEL, RESCHEDULE: the patient's name.")
+CustomerNameArg = Annotated[
+    str | None, Field(max_length=100, description="LIST (optional), CANCEL, RESCHEDULE: the customer's name.")
 ]
 SpokenPhoneArg = Annotated[
     str | None,
     Field(pattern=r"^[0-9]{6,15}$", description="LIST only: a spoken number when caller ID is missing or differs."),
 ]
-FromArg = Annotated[date | None, Field(description="LIST: earliest appointment date.")]
-ToArg = Annotated[date | None, Field(description="LIST: latest appointment date.")]
-AppointmentIdArg = Annotated[str | None, Field(description="CANCEL/RESCHEDULE: an appointmentId from LIST or BOOK.")]
+FromArg = Annotated[date | None, Field(description="LIST: earliest booking date.")]
+ToArg = Annotated[date | None, Field(description="LIST: latest booking date.")]
+BookingIdArg = Annotated[str | None, Field(description="CANCEL/RESCHEDULE: an bookingId from LIST or BOOK.")]
 NewSlotIdArg = Annotated[str | None, Field(description="RESCHEDULE: a slotId returned by find_availability.")]
 
 
@@ -103,9 +103,9 @@ def normalise_name(name: str | None) -> str:
     return " ".join(unicodedata.normalize("NFC", name or "").casefold().split())
 
 
-def idempotency_key(call_id: str, action: str, patient_name: str | None, target: str) -> str:
-    """IMPLEMENTATION.md §2.5: sha256(callId | action | patient name | slotId or appointmentId)."""
-    material = "|".join((call_id, action, normalise_name(patient_name), target))
+def idempotency_key(call_id: str, action: str, customer_name: str | None, target: str) -> str:
+    """IMPLEMENTATION.md §2.5: sha256(callId | action | customer name | slotId or bookingId)."""
+    material = "|".join((call_id, action, normalise_name(customer_name), target))
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
@@ -190,14 +190,14 @@ def register(mcp: FastMCP, client: ApiClient) -> None:
     async def find_availability(
         utterance: Utterance,
         language: LanguageTag,
-        doctorName: DoctorName = None,  # noqa: N803 - parameter names mirror the REST schema
-        department: DepartmentText = None,
-        symptomText: SymptomText = None,  # noqa: N803
+        resourceName: ResourceName = None,  # noqa: N803 - parameter names mirror the REST schema
+        category: CategoryText = None,
+        needText: NeedText = None,  # noqa: N803
         when: WhenArg = None,
         preferences: Preferences | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"utterance": utterance, "language": language}
-        for key, value in (("doctorName", doctorName), ("department", department), ("symptomText", symptomText)):
+        for key, value in (("resourceName", resourceName), ("category", category), ("needText", needText)):
             if value:
                 body[key] = value
         if when is not None:
@@ -208,69 +208,69 @@ def register(mcp: FastMCP, client: ApiClient) -> None:
                                  json_body=body, write=False)
 
     @mcp.tool(
-        name="manage_appointment",
-        description=DESCRIPTIONS["manage_appointment"],
+        name="manage_booking",
+        description=DESCRIPTIONS["manage_booking"],
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True,
                                     openWorldHint=False),
     )
-    async def manage_appointment(  # noqa: N803 - parameter names mirror the REST schemas
+    async def manage_booking(  # noqa: N803 - parameter names mirror the REST schemas
         action: ActionArg,
         slotId: SlotIdArg = None,
-        patient: PatientArg = None,
+        customer: CustomerArg = None,
         reasonVerbatim: ReasonArg = None,
         language: BookLanguage = None,
         requestTimingConfirmation: TimingArg = False,
-        patientName: PatientNameArg = None,
+        customerName: CustomerNameArg = None,
         phone: SpokenPhoneArg = None,
         fromDate: FromArg = None,
         toDate: ToArg = None,
-        appointmentId: AppointmentIdArg = None,
+        bookingId: BookingIdArg = None,
         newSlotId: NewSlotIdArg = None,
     ) -> dict[str, Any]:
         context = call_context(settings)
         call_id = context.get("X-Call-Id", "")
 
         if action == "LIST":
-            params = {k: v for k, v in (("patientName", patientName), ("phone", phone),
+            params = {k: v for k, v in (("customerName", customerName), ("phone", phone),
                                         ("from", fromDate), ("to", toDate)) if v}
-            return await client.send("GET", "/agent/appointments", headers=context,
+            return await client.send("GET", "/agent/bookings", headers=context,
                                      params={k: str(v) for k, v in params.items()}, write=False)
 
         if action == "BOOK":
             if not slotId:
                 return _invalid("slotId", "BOOK needs a slotId from find_availability.")
-            if patient is None:
-                return _invalid("patient", "BOOK needs the patient's name and phone.")
+            if customer is None:
+                return _invalid("customer", "BOOK needs the customer's name and phone.")
             if not language:
                 return _invalid("language", "BOOK needs the caller's language.")
             body: dict[str, Any] = {
                 "slotId": slotId,
-                "patient": patient.model_dump(mode="json", exclude_none=True),
+                "customer": customer.model_dump(mode="json", exclude_none=True),
                 "language": language,
                 "requestTimingConfirmation": requestTimingConfirmation,
             }
             if reasonVerbatim:
                 body["reasonVerbatim"] = reasonVerbatim
-            headers = _keyed(context, call_id, "BOOK", patient.name, slotId)
-            return await client.send("POST", "/agent/appointments", headers=headers, json_body=body, write=True)
+            headers = _keyed(context, call_id, "BOOK", customer.name, slotId)
+            return await client.send("POST", "/agent/bookings", headers=headers, json_body=body, write=True)
 
-        if not appointmentId:
-            return _invalid("appointmentId", f"{action} needs an appointmentId from LIST or BOOK.")
-        if not patientName:
-            return _invalid("patientName", f"{action} needs the patient's name.")
+        if not bookingId:
+            return _invalid("bookingId", f"{action} needs an bookingId from LIST or BOOK.")
+        if not customerName:
+            return _invalid("customerName", f"{action} needs the customer's name.")
         if action == "CANCEL":
-            body = {"patientName": patientName}
+            body = {"customerName": customerName}
             if reasonVerbatim:
                 body["reasonVerbatim"] = reasonVerbatim
-            headers = _keyed(context, call_id, "CANCEL", patientName, appointmentId)
-            return await client.send("POST", f"/agent/appointments/{appointmentId}/cancel", headers=headers,
+            headers = _keyed(context, call_id, "CANCEL", customerName, bookingId)
+            return await client.send("POST", f"/agent/bookings/{bookingId}/cancel", headers=headers,
                                      json_body=body, write=True)
 
         if not newSlotId:
             return _invalid("newSlotId", "RESCHEDULE needs a newSlotId from find_availability.")
-        headers = _keyed(context, call_id, "RESCHEDULE", patientName, f"{appointmentId}|{newSlotId}")
-        return await client.send("POST", f"/agent/appointments/{appointmentId}/reschedule", headers=headers,
-                                 json_body={"patientName": patientName, "newSlotId": newSlotId}, write=True)
+        headers = _keyed(context, call_id, "RESCHEDULE", customerName, f"{bookingId}|{newSlotId}")
+        return await client.send("POST", f"/agent/bookings/{bookingId}/reschedule", headers=headers,
+                                 json_body={"customerName": customerName, "newSlotId": newSlotId}, write=True)
 
 
 def _keyed(context: dict[str, str], call_id: str, action: str, name: str | None, target: str) -> dict[str, str]:

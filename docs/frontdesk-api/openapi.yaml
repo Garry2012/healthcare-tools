@@ -1,5 +1,5 @@
 # =============================================================================
-# Healthcare Front-Desk Operations API — designed from the voice agent inwards
+# Front-Desk Operations API — designed from the voice agent inwards
 # =============================================================================
 #
 # WHO THIS FILE IS FOR
@@ -11,15 +11,21 @@
 #      become tools. Each carries an `x-mcp` block saying how. The mapping
 #      between MCP tools and REST operations is in `x-mcp-tools` at the root.
 #
-# THE DOMAIN IN FOUR SENTENCES
-#   A doctor has a SCHEDULE TEMPLATE (recurring sessions: "Mon/Thu/Fri 09:00-12:00
-#   and 15:00-17:00"). Reality differs from the template through SCHEDULE
-#   EXCEPTIONS (leave, surgery, conference, extra session — known in advance or
-#   on the day) and, on the day itself, the LIVE BOARD (arrived, late, left).
-#   AVAILABILITY is never written: it is computed = template ⊕ exceptions ⊕ board
-#   ⊕ existing bookings, materialised into SESSION INSTANCES that contain SLOTS.
-#   An APPOINTMENT reserves exactly one slot; when a session is cancelled the
-#   appointments in it are the IMPACTED PATIENTS the hospital must notify.
+# THE DOMAIN IN FOUR SENTENCES (domain-neutral; docs/architecture/TARGET.md)
+#   A RESOURCE (a doctor, a therapist, a table) belongs to CATEGORIES (a
+#   department, a service) and has a SCHEDULE TEMPLATE (recurring sessions:
+#   "Mon/Thu/Fri 09:00-12:00 and 15:00-17:00"). Reality differs from the template
+#   through SCHEDULE EXCEPTIONS (leave, other duty, extra session — known in
+#   advance or on the day) and, on the day itself, the LIVE BOARD (arrived, late,
+#   left). AVAILABILITY is never written: it is computed = template ⊕ exceptions ⊕
+#   board ⊕ existing bookings, materialised into SESSION INSTANCES that contain
+#   SLOTS. A BOOKING reserves exactly one slot for one CUSTOMER; when a session is
+#   cancelled the bookings in it are the IMPACTED CUSTOMERS the provider must notify.
+#
+# DOMAIN PACKS
+#   Healthcare is the first pack: resource = doctor, category = department,
+#   customer = patient. Examples below use it. The words the LLM reads (tool
+#   descriptions) come from the pack; this contract does not change per domain.
 #
 # TODAY VS FUTURE
 #   Same endpoint, same shape. The only difference: today's sessions also carry
@@ -34,7 +40,7 @@
 #   LEXICON (approved multilingual terms) with transliteration + phonetic +
 #   semantic matching and answers with candidates and confidence. Aliases alone
 #   are not the solution; they are one input to the resolver. Responses carry
-#   `localizedNames` so the agent can speak the hospital's approved wording in
+#   `localizedNames` so the agent can speak the provider's approved wording in
 #   the caller's language.
 #
 # CONVENTIONS
@@ -48,12 +54,12 @@
 
 openapi: 3.0.3
 info:
-  title: Healthcare Front-Desk Operations API
-  version: 1.0.0-draft
+  title: Front-Desk Operations API
+  version: 2.0.0-draft
   description: >
-    Domain API for a hospital front-desk voice agent and the front-desk web
-    application. Designed so that a conversational LLM needs at most two tools:
-    one to find availability, one to manage an appointment. All business rules
+    Domain API for a front-desk voice agent and the front-desk web application,
+    reusable across domains through domain packs (healthcare first). Designed so that a conversational LLM needs at most two tools:
+    one to find availability, one to manage a booking. All business rules
     live here, never in the MCP layer or the prompt.
   contact:
     name: Healthcare tools workstream
@@ -70,15 +76,15 @@ tags:
       The voice-agent facade. Free text in, computed facts out. These five
       operations are the only ones exposed as MCP tools.
   - name: Directory
-    description: Doctors, departments, and the multilingual lexicon.
+    description: Resources, categories, and the multilingual lexicon.
   - name: Scheduling
     description: Schedule templates (the plan), schedule exceptions (reality), live board (right now).
   - name: Availability
     description: Computed, read-only. Session instances with slots, for staff and web.
-  - name: Appointments
-    description: Staff-side appointment operations and impacted-patient handling.
+  - name: Bookings
+    description: Staff-side booking operations and impacted-customer handling.
   - name: Notifications
-    description: Outbound notification queue for impacted patients (SMS/call later).
+    description: Outbound notification queue for impacted customers (SMS/call later).
   - name: Calls
     description: Call summaries for the admin UI.
 
@@ -95,23 +101,23 @@ security:
 x-mcp-tools:
   find_availability:
     description: >
-      Find which doctors can be seen and when. Give the caller's words for the
-      doctor, department or problem exactly as spoken, and when they want to
-      come. Returns understood meaning, bookable slots with times, fee, and
+      Find which resources can be seen and when. Give the caller's words for the
+      resource, category or problem exactly as spoken, and when they want to
+      come. Returns understood meaning, bookable slots with times, price, and
       what to do next (offer slots, ask a clarifying question, or transfer).
     operations:
       - operationId: agentAvailabilitySearch
     inputs_from_context: [X-Call-Id, X-Caller-Number]
-  manage_appointment:
+  manage_booking:
     description: >
-      Book, list, cancel or reschedule an appointment for the caller. Book uses a
+      Book, list, cancel or reschedule a booking for the caller. Book uses a
       slotId from find_availability. List/cancel/reschedule are checked against
-      the caller's phone number and the patient's name.
+      the caller's phone number and the customer's name.
     operations:
-      - { action: BOOK, operationId: agentBookAppointment }
-      - { action: LIST, operationId: agentListAppointments }
-      - { action: CANCEL, operationId: agentCancelAppointment }
-      - { action: RESCHEDULE, operationId: agentRescheduleAppointment }
+      - { action: BOOK, operationId: agentCreateBooking }
+      - { action: LIST, operationId: agentListBookings }
+      - { action: CANCEL, operationId: agentCancelBooking }
+      - { action: RESCHEDULE, operationId: agentRescheduleBooking }
     inputs_from_context: [X-Call-Id, X-Caller-Number]
   alternative_one_to_one:
     note: >
@@ -129,10 +135,10 @@ paths:
     post:
       tags: [Agent]
       operationId: agentAvailabilitySearch
-      summary: Find doctors, sessions and bookable slots from the caller's own words
+      summary: Find resources, sessions and bookable slots from the caller's own words
       description: >
-        The single discovery call. Accepts any combination of doctor name,
-        department, symptom text and time preference, all as spoken.
+        The single discovery call. Accepts any combination of resource name,
+        category, need text and time preference, all as spoken.
         RULE: run the safety check first (tenant red-flag lexicon); if it fires,
         return routing.action=TRANSFER_EMERGENCY and nothing else.
         RULE: resolve identity over the whole directory before applying any
@@ -153,26 +159,26 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/AvailabilitySearchRequest' }
             examples:
-              namedDoctorTomorrowEvening:
-                summary: Named doctor, relative date, day part, spoken in Kannada
+              namedResourceTomorrowEvening:
+                summary: Named resource, relative date, day part, spoken in Kannada
                 value:
                   utterance: "ನಾಳೆ ಸಂಜೆ ಡಾಕ್ಟರ್ ಗರಿಮಾ ಇರ್ತಾರಾ"
                   language: kn
-                  doctorName: "Dr Garima"
+                  resourceName: "Dr Garima"
                   when: { expression: "tomorrow evening" }
-              symptomFirst:
-                summary: Symptom only, ASR-damaged
+              needFirst:
+                summary: Need only, ASR-damaged
                 value:
-                  utterance: "I need a zoologist appointment for kidney stones scanning"
+                  utterance: "I need a zoologist booking for kidney stones scanning"
                   language: en
-                  symptomText: "kidney stones scanning"
+                  needText: "kidney stones scanning"
                   when: { expression: "today" }
-              departmentGender:
-                summary: Department plus preference
+              categoryGender:
+                summary: Category plus preference
                 value:
-                  utterance: "lady doctor for thyroid"
+                  utterance: "lady resource for thyroid"
                   language: en
-                  department: "thyroid doctor"
+                  category: "thyroid resource"
                   preferences: { gender: FEMALE }
                   when: { expression: "today" }
       responses:
@@ -186,23 +192,23 @@ paths:
                 asOf: "2026-09-25T17:02:11+05:30"
                 routing: { action: OFFER_SLOTS }
                 understood:
-                  doctors:
-                    - { doctorId: doc_garima, name: "Dr. Garima", confidence: 0.94, matchedOn: NAME_PHONETIC }
-                  departments: []
+                  resources:
+                    - { resourceId: res_garima, name: "Dr. Garima", confidence: 0.94, matchedOn: NAME_PHONETIC }
+                  categories: []
                   dates: { from: "2026-09-26", to: "2026-09-26" }
                   dayPart: EVENING
                 clarification: null
                 results:
-                  - doctor:
-                      doctorId: doc_garima
+                  - resource:
+                      resourceId: res_garima
                       name: "Dr. Garima"
                       localizedNames: { kn: "ಡಾ. ಗರಿಮಾ", hi: "डॉ. गरिमा" }
-                      departments: [ { id: dept_genmed, name: "General Medicine", localizedNames: { kn: "ಸಾಮಾನ್ಯ ವೈದ್ಯಕೀಯ", hi: "सामान्य चिकित्सा" } } ]
+                      categories: [ { id: cat_genmed, name: "General Medicine", localizedNames: { kn: "ಸಾಮಾನ್ಯ ವೈದ್ಯಕೀಯ", hi: "सामान्य चिकित्सा" } } ]
                       gender: FEMALE
-                      fee: { amount: 600, currency: INR, confirmed: true }
+                      price: { amount: 600, currency: INR, confirmed: true }
                       dataConfirmed: true
                     sessions:
-                      - sessionId: ses_doc_garima_2026-09-26_2
+                      - sessionId: ses_res_garima_2026-09-26_2
                         date: "2026-09-26"
                         label: Afternoon
                         start: "15:00"
@@ -216,9 +222,9 @@ paths:
                         bookable: true
                         notBookableReason: null
                         slots:
-                          - { slotId: slot_ses_doc_garima_2026-09-26_2_04, kind: SEQUENCE, position: 4, expectedWindow: { from: "15:30", to: "15:50" }, available: true }
-                          - { slotId: slot_ses_doc_garima_2026-09-26_2_05, kind: SEQUENCE, position: 5, expectedWindow: { from: "15:40", to: "16:00" }, available: true }
-                          - { slotId: slot_ses_doc_garima_2026-09-26_2_06, kind: SEQUENCE, position: 6, expectedWindow: { from: "15:50", to: "16:10" }, available: true }
+                          - { slotId: slot_ses_res_garima_2026-09-26_2_04, kind: SEQUENCE, position: 4, expectedWindow: { from: "15:30", to: "15:50" }, available: true }
+                          - { slotId: slot_ses_res_garima_2026-09-26_2_05, kind: SEQUENCE, position: 5, expectedWindow: { from: "15:40", to: "16:00" }, available: true }
+                          - { slotId: slot_ses_res_garima_2026-09-26_2_06, kind: SEQUENCE, position: 6, expectedWindow: { from: "15:50", to: "16:10" }, available: true }
                     unavailable: []
                 alternatives: []
         '400': { $ref: '#/components/responses/ValidationFailed' }
@@ -227,23 +233,23 @@ paths:
         '500': { $ref: '#/components/responses/Internal' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
-  /agent/appointments:
+  /agent/bookings:
     post:
       tags: [Agent]
-      operationId: agentBookAppointment
-      summary: Reserve one slot for one patient
+      operationId: agentCreateBooking
+      summary: Reserve one slot for one customer
       description: >
         Atomically reserves the slot. RULE: if the slot was taken or the session
         changed since it was offered, return 409 SLOT_UNAVAILABLE with the
         session's current bookable slots so the agent can re-offer without a
-        second search. RULE: one call per patient; two patients on one phone are
+        second search. RULE: one call per customer; two customers on one phone are
         two calls with two Idempotency-Keys. RULE: the response contains
-        everything the agent needs to close the call (doctor, date, window,
+        everything the agent needs to close the call (resource, date, window,
         arriveBy, confirmationCode). Status is BOOKED, which means a slot is
         held; timing remains an expectation unless timingCertainty=CONFIRMED.
       x-mcp:
         expose: true
-        tool: manage_appointment
+        tool: manage_booking
         action: BOOK
         inject_headers: [X-Call-Id, X-Caller-Number, Idempotency-Key]
       parameters:
@@ -256,8 +262,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/AgentBookRequest' }
             example:
-              slotId: slot_ses_doc_garima_2026-09-26_2_04
-              patient: { name: "Lakshmi R", phone: "9876543210", relationToCaller: SELF }
+              slotId: slot_ses_res_garima_2026-09-26_2_04
+              customer: { name: "Lakshmi R", phone: "9876543210", relationToCaller: SELF }
               reasonVerbatim: "ಮೊಣಕಾಲು ನೋವು ಎರಡು ವಾರದಿಂದ"
               language: kn
       responses:
@@ -265,29 +271,29 @@ paths:
           description: Slot reserved.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AgentAppointment' }
+              schema: { $ref: '#/components/schemas/AgentBooking' }
               example:
                 outcome: BOOKED
-                appointmentId: appt_0192
+                bookingId: bkg_0192
                 confirmationCode: "4471"
                 status: BOOKED
-                patient: { name: "Lakshmi R", phone: "9876543210" }
-                doctor: { doctorId: doc_garima, name: "Dr. Garima", localizedNames: { kn: "ಡಾ. ಗರಿಮಾ" } }
-                department: { id: dept_genmed, name: "General Medicine" }
+                customer: { name: "Lakshmi R", phone: "9876543210" }
+                resource: { resourceId: res_garima, name: "Dr. Garima", localizedNames: { kn: "ಡಾ. ಗರಿಮಾ" } }
+                category: { id: cat_genmed, name: "General Medicine" }
                 date: "2026-09-26"
-                session: { sessionId: ses_doc_garima_2026-09-26_2, label: Afternoon, start: "15:00", end: "17:00" }
-                slot: { slotId: slot_ses_doc_garima_2026-09-26_2_04, kind: SEQUENCE, position: 4, expectedWindow: { from: "15:30", to: "15:50" } }
+                session: { sessionId: ses_res_garima_2026-09-26_2, label: Afternoon, start: "15:00", end: "17:00" }
+                slot: { slotId: slot_ses_res_garima_2026-09-26_2_04, kind: SEQUENCE, position: 4, expectedWindow: { from: "15:30", to: "15:50" } }
                 arriveBy: "16:45"
                 timingCertainty: EXPECTED
-                fee: { amount: 600, currency: INR, confirmed: true }
-                doctorToday: null
+                price: { amount: 600, currency: INR, confirmed: true }
+                resourceToday: null
         '200':
           description: Idempotent replay.
           headers:
             Idempotent-Replay: { schema: { type: boolean } }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AgentAppointment' }
+              schema: { $ref: '#/components/schemas/AgentBooking' }
         '400': { $ref: '#/components/responses/ValidationFailed' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { $ref: '#/components/responses/SlotConflict' }
@@ -296,24 +302,24 @@ paths:
         '504': { $ref: '#/components/responses/UpstreamTimeout' }
     get:
       tags: [Agent]
-      operationId: agentListAppointments
-      summary: Appointments belonging to the caller's phone number
+      operationId: agentListBookings
+      summary: Bookings belonging to the caller's phone number
       description: >
         Scoped by X-Caller-Number (matches the booking phone or the number the
         booking was made from). RULE (tenant disclosure policy, default
-        NAME_REQUIRED): if more than one patient is registered under the number
-        and patientName is absent, return outcome=NAME_REQUIRED with
-        patientsOnNumber and no names. RULE: each item embeds the doctor's
-        current session state so "is my doctor coming?" is one call.
+        NAME_REQUIRED): if more than one customer is registered under the number
+        and customerName is absent, return outcome=NAME_REQUIRED with
+        customersOnNumber and no names. RULE: each item embeds the resource's
+        current session state so "is my resource coming?" is one call.
       x-mcp:
         expose: true
-        tool: manage_appointment
+        tool: manage_booking
         action: LIST
         inject_headers: [X-Call-Id, X-Caller-Number]
       parameters:
         - $ref: '#/components/parameters/CallId'
         - $ref: '#/components/parameters/CallerNumber'
-        - name: patientName
+        - name: customerName
           in: query
           schema: { type: string, maxLength: 100 }
         - name: phone
@@ -328,31 +334,31 @@ paths:
           schema: { type: string, format: date }
       responses:
         '200':
-          description: Appointments (possibly none).
+          description: Bookings (possibly none).
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AgentAppointmentList' }
+              schema: { $ref: '#/components/schemas/AgentBookingList' }
         '400': { $ref: '#/components/responses/ValidationFailed' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/Internal' }
 
-  /agent/appointments/{appointmentId}/cancel:
+  /agent/bookings/{bookingId}/cancel:
     post:
       tags: [Agent]
-      operationId: agentCancelAppointment
-      summary: Cancel the caller's appointment
+      operationId: agentCancelBooking
+      summary: Cancel the caller's booking
       description: >
         RULE: succeeds only when X-Caller-Number matches the booking phone or the
-        booked-from number AND patientName matches. Any mismatch returns the
-        same neutral 404 as a non-existent appointment. Releases the slot.
+        booked-from number AND customerName matches. Any mismatch returns the
+        same neutral 404 as a non-existent booking. Releases the slot.
       x-mcp:
         expose: true
-        tool: manage_appointment
+        tool: manage_booking
         action: CANCEL
         inject_headers: [X-Call-Id, X-Caller-Number, Idempotency-Key]
       parameters:
-        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/BookingId'
         - $ref: '#/components/parameters/CallId'
         - $ref: '#/components/parameters/CallerNumber'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -362,37 +368,37 @@ paths:
           application/json:
             schema:
               type: object
-              required: [patientName]
+              required: [customerName]
               properties:
-                patientName: { type: string, maxLength: 100 }
+                customerName: { type: string, maxLength: 100 }
                 reasonVerbatim: { type: string, maxLength: 500 }
       responses:
         '200':
           description: Cancelled.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AgentAppointment' }
+              schema: { $ref: '#/components/schemas/AgentBooking' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/Internal' }
 
-  /agent/appointments/{appointmentId}/reschedule:
+  /agent/bookings/{bookingId}/reschedule:
     post:
       tags: [Agent]
-      operationId: agentRescheduleAppointment
-      summary: Move the caller's appointment to another slot
+      operationId: agentRescheduleBooking
+      summary: Move the caller's booking to another slot
       description: >
         Same verification as cancel. newSlotId comes from find_availability and
-        may belong to a different doctor. Atomic: old slot released and new
+        may belong to a different resource. Atomic: old slot released and new
         slot reserved together, or nothing changes (409 SLOT_UNAVAILABLE).
       x-mcp:
         expose: true
-        tool: manage_appointment
+        tool: manage_booking
         action: RESCHEDULE
         inject_headers: [X-Call-Id, X-Caller-Number, Idempotency-Key]
       parameters:
-        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/BookingId'
         - $ref: '#/components/parameters/CallId'
         - $ref: '#/components/parameters/CallerNumber'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -402,16 +408,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [patientName, newSlotId]
+              required: [customerName, newSlotId]
               properties:
-                patientName: { type: string, maxLength: 100 }
+                customerName: { type: string, maxLength: 100 }
                 newSlotId: { type: string }
       responses:
         '200':
           description: Rescheduled. Response includes previous slot.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AgentAppointment' }
+              schema: { $ref: '#/components/schemas/AgentBooking' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/SlotConflict' }
         '429': { $ref: '#/components/responses/RateLimited' }
@@ -421,15 +427,15 @@ paths:
   # DIRECTORY — who exists, in every language the callers use
   # ===========================================================================
 
-  /departments:
+  /categories:
     get:
       tags: [Directory]
-      operationId: listDepartments
-      summary: Departments with localized names
-      description: Tenant-static; cacheable (ETag). hasConsultant=false means never offer or route.
+      operationId: listCategories
+      summary: Categories with localized names
+      description: Tenant-static; cacheable (ETag). offersBookings=false means never offer or route.
       responses:
         '200':
-          description: Departments.
+          description: Categories.
           headers:
             ETag: { schema: { type: string } }
           content:
@@ -440,16 +446,16 @@ paths:
                 properties:
                   items:
                     type: array
-                    items: { $ref: '#/components/schemas/Department' }
+                    items: { $ref: '#/components/schemas/Category' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /doctors:
+  /resources:
     get:
       tags: [Directory]
-      operationId: listDoctors
-      summary: Doctor directory (staff and web; the agent uses availability-search)
+      operationId: listResources
+      summary: Resource directory (staff and web; the agent uses availability-search)
       parameters:
-        - name: department
+        - name: category
           in: query
           schema: { type: string }
         - name: active
@@ -459,7 +465,7 @@ paths:
         - $ref: '#/components/parameters/Offset'
       responses:
         '200':
-          description: Doctors.
+          description: Resources.
           content:
             application/json:
               schema:
@@ -468,62 +474,62 @@ paths:
                 properties:
                   items:
                     type: array
-                    items: { $ref: '#/components/schemas/Doctor' }
+                    items: { $ref: '#/components/schemas/Resource' }
                   total: { type: integer }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [Directory]
-      operationId: createDoctor
-      summary: Add a doctor (admin)
+      operationId: createResource
+      summary: Add a resource (admin)
       security:
         - oauth2: [directory.write]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/DoctorInput' }
+            schema: { $ref: '#/components/schemas/ResourceInput' }
       responses:
         '201':
           description: Created.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Doctor' }
+              schema: { $ref: '#/components/schemas/Resource' }
         '400': { $ref: '#/components/responses/ValidationFailed' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
-  /doctors/{doctorId}:
+  /resources/{resourceId}:
     get:
       tags: [Directory]
-      operationId: getDoctor
-      summary: One doctor with schedule template summary
+      operationId: getResource
+      summary: One resource with schedule template summary
       parameters:
-        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/ResourceId'
       responses:
         '200':
-          description: Doctor.
+          description: Resource.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Doctor' }
+              schema: { $ref: '#/components/schemas/Resource' }
         '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [Directory]
-      operationId: updateDoctor
-      summary: Update a doctor (admin). Sets dataConfirmed when the hospital signs off.
+      operationId: updateResource
+      summary: Update a resource (admin). Sets dataConfirmed when the hospital signs off.
       security:
         - oauth2: [directory.write]
       parameters:
-        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/ResourceId'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/DoctorInput' }
+            schema: { $ref: '#/components/schemas/ResourceInput' }
       responses:
         '200':
           description: Updated.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Doctor' }
+              schema: { $ref: '#/components/schemas/Resource' }
         '400': { $ref: '#/components/responses/ValidationFailed' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -534,8 +540,8 @@ paths:
       operationId: listLexicon
       summary: Multilingual terms the resolver uses
       description: >
-        WHY: callers say "skin doctor", "ಚರ್ಮ ವೈದ್ಯ", "charm ka doctor", "thyroid
-        doctor". The hospital decides what each maps to (e.g. thyroid → General
+        WHY: callers say "skin resource", "ಚರ್ಮ ವೈದ್ಯ", "charm ka resource", "thyroid
+        resource". The hospital decides what each maps to (e.g. thyroid → General
         Medicine, not endocrinology). Entries are approved before use.
         RED_FLAG entries drive the emergency check. Unapproved entries are
         ignored by the resolver.
@@ -576,9 +582,9 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/LexiconEntryInput' }
             example:
-              conceptType: DEPARTMENT
-              conceptId: dept_genmed
-              term: "thyroid doctor"
+              conceptType: CATEGORY
+              conceptId: cat_genmed
+              term: "thyroid resource"
               language: en
               approved: true
       responses:
@@ -594,13 +600,13 @@ paths:
   # SCHEDULING — the plan, the reality, and right now
   # ===========================================================================
 
-  /doctors/{doctorId}/schedule-template:
+  /resources/{resourceId}/schedule-template:
     get:
       tags: [Scheduling]
       operationId: getScheduleTemplate
-      summary: The doctor's recurring sessions
+      summary: The resource's recurring sessions
       parameters:
-        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/ResourceId'
       responses:
         '200':
           description: Template.
@@ -608,11 +614,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ScheduleTemplate' }
               example:
-                doctorId: doc_garima
+                resourceId: res_garima
                 effectiveFrom: "2026-09-01"
                 effectiveTo: null
                 sessions:
-                  - templateSessionId: tpl_doc_garima_am
+                  - templateSessionId: tpl_res_garima_am
                     label: Morning
                     daysOfWeek: [MON, THU, FRI]
                     start: "09:00"
@@ -621,7 +627,7 @@ paths:
                     capacity: { mode: PER_HOUR, value: 4 }
                     walkInReservePercent: 25
                     lastArrivalOffsetMinutes: 15
-                  - templateSessionId: tpl_doc_garima_pm
+                  - templateSessionId: tpl_res_garima_pm
                     label: Afternoon
                     daysOfWeek: [MON, THU, FRI]
                     start: "15:00"
@@ -634,16 +640,16 @@ paths:
     put:
       tags: [Scheduling]
       operationId: setScheduleTemplate
-      summary: Replace the doctor's recurring sessions (admin/desk)
+      summary: Replace the resource's recurring sessions (admin/desk)
       description: >
         RULE: a new template takes effect from effectiveFrom; existing
-        appointments before that date are untouched. Appointments on or after
+        bookings before that date are untouched. Bookings on or after
         effectiveFrom that no longer fit a session become impacted (see
         /schedule-exceptions/{id}/impact semantics) and generate notifications.
       security:
         - oauth2: [schedule.write]
       parameters:
-        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/ResourceId'
         - $ref: '#/components/parameters/ActingUser'
       requestBody:
         required: true
@@ -666,7 +672,7 @@ paths:
       operationId: listScheduleExceptions
       summary: Known deviations from templates (leave, surgery, extra sessions)
       parameters:
-        - name: doctorId
+        - name: resourceId
           in: query
           schema: { type: string }
         - name: from
@@ -695,9 +701,9 @@ paths:
       description: >
         WHY: "Dr. Garima has two surgeries this Thursday" is known on Monday.
         Record it now; availability for Thursday changes immediately and the
-        impacted patients are computed. RULE: creating an exception that removes
-        or shortens a session moves the affected appointments to status
-        NEEDS_RESCHEDULE and creates a Notification per appointment. The reason
+        impacted customers are computed. RULE: creating an exception that removes
+        or shortens a session moves the affected bookings to status
+        NEEDS_RESCHEDULE and creates a Notification per booking. The reason
         category is internal; the agent never receives it.
       security:
         - oauth2: [schedule.write]
@@ -713,21 +719,21 @@ paths:
               surgeryDay:
                 summary: Whole afternoon unavailable on a future date
                 value:
-                  doctorId: doc_garima
+                  resourceId: res_garima
                   dateFrom: "2026-10-01"
                   dateTo: "2026-10-01"
                   scope: SESSION
-                  templateSessionId: tpl_doc_garima_pm
+                  templateSessionId: tpl_res_garima_pm
                   effect: UNAVAILABLE
-                  reasonCategory: SURGERY
+                  reasonCategory: OTHER_DUTY
               startsLate:
                 summary: Same-day time change
                 value:
-                  doctorId: doc_garima
+                  resourceId: res_garima
                   dateFrom: "2026-09-25"
                   dateTo: "2026-09-25"
                   scope: SESSION
-                  templateSessionId: tpl_doc_garima_am
+                  templateSessionId: tpl_res_garima_am
                   effect: TIME_CHANGE
                   newStart: "10:00"
                   newEnd: "12:00"
@@ -735,7 +741,7 @@ paths:
               extraSunday:
                 summary: Extra session on a non-template day
                 value:
-                  doctorId: doc_garima
+                  resourceId: res_garima
                   dateFrom: "2026-09-27"
                   dateTo: "2026-09-27"
                   scope: TIME_RANGE
@@ -758,8 +764,8 @@ paths:
     delete:
       tags: [Scheduling]
       operationId: deleteScheduleException
-      summary: Withdraw an exception (the doctor is coming after all)
-      description: "RULE: appointments moved to NEEDS_RESCHEDULE by this exception return to BOOKED if their slot still fits; otherwise they stay and are re-notified."
+      summary: Withdraw an exception (the resource is coming after all)
+      description: "RULE: bookings moved to NEEDS_RESCHEDULE by this exception return to BOOKED if their slot still fits; otherwise they stay and are re-notified."
       security:
         - oauth2: [schedule.write]
       parameters:
@@ -777,10 +783,10 @@ paths:
     get:
       tags: [Scheduling]
       operationId: getScheduleExceptionImpact
-      summary: Appointments impacted by an exception, with notification state
+      summary: Bookings impacted by an exception, with notification state
       description: "WHY: this is the outbound-call list. Staff today; SMS/voice bot later."
       security:
-        - oauth2: [appointments.staff]
+        - oauth2: [bookings.staff]
       parameters:
         - name: exceptionId
           in: path
@@ -788,7 +794,7 @@ paths:
           schema: { type: string }
       responses:
         '200':
-          description: Impacted appointments.
+          description: Impacted bookings.
           content:
             application/json:
               schema:
@@ -798,17 +804,17 @@ paths:
                   exceptionId: { type: string }
                   items:
                     type: array
-                    items: { $ref: '#/components/schemas/ImpactedAppointment' }
+                    items: { $ref: '#/components/schemas/ImpactedBooking' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /board/{doctorId}:
+  /board/{resourceId}:
     get:
       tags: [Scheduling]
       operationId: getBoard
-      summary: Live board for one doctor on a date (right now facts)
+      summary: Live board for one resource on a date (right now facts)
       parameters:
-        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/ResourceId'
         - name: date
           in: query
           schema: { type: string, format: date }
@@ -819,9 +825,9 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [doctorId, date, sessions]
+                required: [resourceId, date, sessions]
                 properties:
-                  doctorId: { type: string }
+                  resourceId: { type: string }
                   date: { type: string, format: date }
                   sessions:
                     type: array
@@ -832,7 +838,7 @@ paths:
       operationId: setBoard
       summary: Desk marks arrived / late / left / full for a session (today)
       description: >
-        WHY: the board is same-day operational truth: the doctor arrived, is 30
+        WHY: the board is same-day operational truth: the resource arrived, is 30
         minutes late, has left, the list is full. It never changes the template.
         RULE: presence=LEFT or sessionEnded=true makes the session unbookable for
         the rest of the day. RULE: capacityState=FULL closes remaining slots.
@@ -840,7 +846,7 @@ paths:
       security:
         - oauth2: [board.write]
       parameters:
-        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/ResourceId'
         - $ref: '#/components/parameters/ActingUser'
       requestBody:
         required: true
@@ -849,7 +855,7 @@ paths:
             schema: { $ref: '#/components/schemas/BoardEntryInput' }
             example:
               date: "2026-09-25"
-              sessionId: ses_doc_garima_2026-09-25_1
+              sessionId: ses_res_garima_2026-09-25_1
               presence: ARRIVING
               expectedStart: "09:20"
               delayMinutes: 20
@@ -871,7 +877,7 @@ paths:
     get:
       tags: [Availability]
       operationId: getAvailability
-      summary: Materialised sessions with slots for a doctor or department over a date range
+      summary: Materialised sessions with slots for a resource or category over a date range
       description: >
         RULE (the availability algorithm, used by this endpoint and by
         agentAvailabilitySearch):
@@ -884,20 +890,20 @@ paths:
           4. Capacity total = FIXED value, or PER_HOUR value × duration hours, or
              tenant default (capacitySource=DEFAULT). Bookable = total −
              walkInReserve. Slots = bookable positions (SEQUENCE) or fixed-length
-             times (TIMED); mark each slot available/booked from appointments.
+             times (TIMED); mark each slot available/booked from bookings.
           5. arriveBy = min(lastArrivalTime from board, end − lastArrivalOffset).
              bookable=false with a reason when: ended, left, full, cancelled,
              arriveBy passed, or no session.
           6. timingCertainty: CONFIRMED if the desk confirmed this session
              (board or exception marked confirmed), EXPECTED if from template
              only, NOT_CONFIRMED if the desk flagged it pending. dataConfirmed
-             =false on the doctor caps certainty at EXPECTED.
+             =false on the resource caps certainty at EXPECTED.
         Never cached across requests; always computed.
       parameters:
-        - name: doctorId
+        - name: resourceId
           in: query
           schema: { type: string }
-        - name: department
+        - name: category
           in: query
           schema: { type: string }
         - name: from
@@ -928,18 +934,18 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   # ===========================================================================
-  # APPOINTMENTS — staff side
+  # BOOKINGS — staff side
   # ===========================================================================
 
-  /appointments:
+  /bookings:
     get:
-      tags: [Appointments]
-      operationId: searchAppointments
+      tags: [Bookings]
+      operationId: searchBookings
       summary: Staff search (any filter)
       security:
-        - oauth2: [appointments.staff]
+        - oauth2: [bookings.staff]
       parameters:
-        - name: doctorId
+        - name: resourceId
           in: query
           schema: { type: string }
         - name: sessionId
@@ -953,12 +959,12 @@ paths:
           schema: { $ref: '#/components/schemas/Phone' }
         - name: status
           in: query
-          schema: { $ref: '#/components/schemas/AppointmentStatus' }
+          schema: { $ref: '#/components/schemas/BookingStatus' }
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
       responses:
         '200':
-          description: Appointments.
+          description: Bookings.
           content:
             application/json:
               schema:
@@ -967,16 +973,16 @@ paths:
                 properties:
                   items:
                     type: array
-                    items: { $ref: '#/components/schemas/Appointment' }
+                    items: { $ref: '#/components/schemas/Booking' }
                   total: { type: integer }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
-      tags: [Appointments]
-      operationId: deskCreateAppointment
+      tags: [Bookings]
+      operationId: deskCreateBooking
       summary: Desk books on behalf of a walk-in or phone caller
       description: Same slot rules as the agent path; createdVia=DESK; no caller-number check.
       security:
-        - oauth2: [appointments.staff]
+        - oauth2: [bookings.staff]
       parameters:
         - $ref: '#/components/parameters/ActingUser'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -990,39 +996,39 @@ paths:
           description: Created.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Appointment' }
+              schema: { $ref: '#/components/schemas/Booking' }
         '400': { $ref: '#/components/responses/ValidationFailed' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/SlotConflict' }
 
-  /appointments/{appointmentId}:
+  /bookings/{bookingId}:
     get:
-      tags: [Appointments]
-      operationId: getAppointment
-      summary: One appointment, full detail (staff)
+      tags: [Bookings]
+      operationId: getBooking
+      summary: One booking, full detail (staff)
       security:
-        - oauth2: [appointments.staff]
+        - oauth2: [bookings.staff]
       parameters:
-        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/BookingId'
       responses:
         '200':
-          description: Appointment.
+          description: Booking.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Appointment' }
+              schema: { $ref: '#/components/schemas/Booking' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /appointments/{appointmentId}/confirm:
+  /bookings/{bookingId}/confirm:
     post:
-      tags: [Appointments]
-      operationId: confirmAppointment
-      summary: Desk confirms the timing with the doctor
-      description: Sets timingCertainty=CONFIRMED on the appointment (and optionally the session). The only state the agent may voice as "confirmed".
+      tags: [Bookings]
+      operationId: confirmBooking
+      summary: Desk confirms the timing with the resource
+      description: Sets timingCertainty=CONFIRMED on the booking (and optionally the session). The only state the agent may voice as "confirmed".
       security:
-        - oauth2: [appointments.staff]
+        - oauth2: [bookings.staff]
       parameters:
-        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/BookingId'
         - $ref: '#/components/parameters/ActingUser'
       requestBody:
         required: false
@@ -1038,19 +1044,19 @@ paths:
           description: Confirmed.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Appointment' }
+              schema: { $ref: '#/components/schemas/Booking' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /appointments/{appointmentId}/status:
+  /bookings/{bookingId}/status:
     post:
-      tags: [Appointments]
-      operationId: setAppointmentStatus
+      tags: [Bookings]
+      operationId: setBookingStatus
       summary: Desk marks arrived / completed / no-show, or cancels on the hospital's behalf
       security:
-        - oauth2: [appointments.staff]
+        - oauth2: [bookings.staff]
       parameters:
-        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/BookingId'
         - $ref: '#/components/parameters/ActingUser'
       requestBody:
         required: true
@@ -1062,34 +1068,34 @@ paths:
               properties:
                 status:
                   type: string
-                  enum: [ARRIVED, COMPLETED, NO_SHOW, CANCELLED_BY_HOSPITAL]
+                  enum: [ARRIVED, COMPLETED, NO_SHOW, CANCELLED_BY_PROVIDER]
                 note: { type: string, maxLength: 500 }
       responses:
         '200':
           description: Updated.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Appointment' }
+              schema: { $ref: '#/components/schemas/Booking' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
   # ===========================================================================
-  # NOTIFICATIONS — impacted patients (outbound later)
+  # NOTIFICATIONS — impacted customers (outbound later)
   # ===========================================================================
 
   /notifications:
     get:
       tags: [Notifications]
       operationId: listNotifications
-      summary: Pending and sent notifications to impacted patients
+      summary: Pending and sent notifications to impacted customers
       security:
-        - oauth2: [appointments.staff]
+        - oauth2: [bookings.staff]
       parameters:
         - name: status
           in: query
           schema: { type: string, enum: [PENDING, SENT, FAILED, ACKNOWLEDGED], default: PENDING }
-        - name: doctorId
+        - name: resourceId
           in: query
           schema: { type: string }
         - name: date
@@ -1113,9 +1119,9 @@ paths:
     post:
       tags: [Notifications]
       operationId: markNotificationDelivered
-      summary: Record that the patient was informed (by desk today, by SMS/voice bot later)
+      summary: Record that the customer was informed (by desk today, by SMS/voice bot later)
       security:
-        - oauth2: [appointments.staff]
+        - oauth2: [bookings.staff]
       parameters:
         - name: notificationId
           in: path
@@ -1214,10 +1220,10 @@ components:
           tokenUrl: https://auth.example-product.com/oauth2/token
           scopes:
             agent: Voice agent facade (all /agent operations)
-            directory.write: Manage doctors, departments, lexicon
+            directory.write: Manage resources, categories, lexicon
             schedule.write: Manage templates and exceptions
             board.write: Update the live board
-            appointments.staff: Staff appointment operations, impact lists, notifications
+            bookings.staff: Staff booking operations, impact lists, notifications
             calls.write: Store call summaries
             calls.read: Read call summaries
 
@@ -1248,13 +1254,13 @@ components:
       required: true
       description: Staff identity for audit.
       schema: { type: string, maxLength: 64 }
-    DoctorId:
-      name: doctorId
+    ResourceId:
+      name: resourceId
       in: path
       required: true
       schema: { type: string }
-    AppointmentId:
-      name: appointmentId
+    BookingId:
+      name: bookingId
       in: path
       required: true
       schema: { type: string }
@@ -1284,7 +1290,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     NotFound:
-      description: Not found, or on verified operations the caller number or patient name did not match. Indistinguishable on purpose.
+      description: Not found, or on verified operations the caller number or customer name did not match. Indistinguishable on purpose.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -1306,7 +1312,7 @@ components:
               code: SLOT_UNAVAILABLE
               message: "Slot already booked"
               currentSlots:
-                - { slotId: slot_ses_doc_garima_2026-09-26_2_05, kind: SEQUENCE, position: 5, expectedWindow: { from: "15:40", to: "16:00" }, available: true }
+                - { slotId: slot_ses_res_garima_2026-09-26_2_05, kind: SEQUENCE, position: 5, expectedWindow: { from: "15:40", to: "16:00" }, available: true }
     RateLimited:
       description: Too many requests.
       headers:
@@ -1347,6 +1353,15 @@ components:
       additionalProperties: { type: string }
       example: { kn: "ಚರ್ಮರೋಗ ವಿಭಾಗ", hi: "त्वचा विभाग" }
 
+    Attributes:
+      type: object
+      description: >
+        Facts about a resource defined by the domain pack, safe to speak. Healthcare uses
+        qualification and yearsOfExperience; hospitality might use speciality or cuisine.
+      additionalProperties:
+        oneOf: [{ type: string }, { type: number }, { type: boolean }]
+      example: { qualification: "MBBS, MD - General Medicine", yearsOfExperience: 12 }
+
     Phone:
       type: string
       description: Contact number as dictated, digits only, national format for the tenant (10 digits for the first tenant). Distinct from X-Caller-Number.
@@ -1366,7 +1381,7 @@ components:
         currency: { type: string, example: INR }
         confirmed:
           type: boolean
-          description: False until the hospital approves the value. RULE for the agent — never speak an unconfirmed fee.
+          description: False until the hospital approves the value. RULE for the agent — never speak an unconfirmed price.
 
     Gender:
       type: string
@@ -1383,22 +1398,22 @@ components:
 
     # ---------- directory ----------
 
-    Department:
+    Category:
       type: object
-      required: [id, name, hasConsultant, active]
+      required: [id, name, offersBookings, active]
       properties:
-        id: { type: string, example: dept_derm }
+        id: { type: string, example: cat_derm }
         code: { type: string, example: DERM }
         name: { type: string, example: Dermatology }
         localizedNames: { $ref: '#/components/schemas/LocalizedText' }
-        hasConsultant: { type: boolean, description: False means never offer or route. }
+        offersBookings: { type: boolean, description: False means never offer or route. }
         active: { type: boolean }
 
-    Doctor:
+    Resource:
       type: object
-      required: [id, name, departments, active, dataConfirmed]
+      required: [id, name, categories, active, dataConfirmed]
       properties:
-        id: { type: string, example: doc_garima }
+        id: { type: string, example: res_garima }
         name: { type: string, example: "Dr. Garima" }
         localizedNames: { $ref: '#/components/schemas/LocalizedText' }
         nameVariants:
@@ -1408,33 +1423,32 @@ components:
         gender:
           allOf: [{ $ref: '#/components/schemas/Gender' }]
           nullable: true
-        departments:
+        categories:
           type: array
-          items: { $ref: '#/components/schemas/Department' }
-        qualification: { type: string, example: "MBBS, MD - General Medicine" }
-        yearsOfExperience: { type: integer, nullable: true }
+          items: { $ref: '#/components/schemas/Category' }
+        attributes: { $ref: '#/components/schemas/Attributes' }
         languagesSpoken:
           type: array
           items: { $ref: '#/components/schemas/Language' }
-        fee:
+        price:
           allOf: [{ $ref: '#/components/schemas/Money' }]
           nullable: true
         attendanceType:
           type: string
           enum: [REGULAR, VISITING, ON_CALL]
-          description: ON_CALL doctors have no template; availability comes only from exceptions of effect EXTRA_SESSION or the board.
+          description: ON_CALL resources have no template; availability comes only from exceptions of effect EXTRA_SESSION or the board.
         bookingPolicy:
           type: string
-          enum: [BOOKABLE, DESK_ONLY, NO_OPD]
-          description: DESK_ONLY means the agent may show sessions but must transfer to book. NO_OPD means never offer.
+          enum: [BOOKABLE, DESK_ONLY, NOT_OFFERED]
+          description: DESK_ONLY means the agent may show sessions but must transfer to book. NOT_OFFERED means never offer.
         dataConfirmed:
           type: boolean
           description: False while the hospital has not signed off this row. Caps timingCertainty at EXPECTED.
         active: { type: boolean }
 
-    DoctorInput:
+    ResourceInput:
       type: object
-      required: [name, departmentIds]
+      required: [name, categoryIds]
       properties:
         name: { type: string }
         localizedNames: { $ref: '#/components/schemas/LocalizedText' }
@@ -1444,28 +1458,27 @@ components:
         gender:
           allOf: [{ $ref: '#/components/schemas/Gender' }]
           nullable: true
-        departmentIds:
+        categoryIds:
           type: array
           items: { type: string }
-        qualification: { type: string }
-        yearsOfExperience: { type: integer, nullable: true }
+        attributes: { $ref: '#/components/schemas/Attributes' }
         languagesSpoken:
           type: array
           items: { $ref: '#/components/schemas/Language' }
-        fee:
+        price:
           allOf: [{ $ref: '#/components/schemas/Money' }]
           nullable: true
         attendanceType: { type: string, enum: [REGULAR, VISITING, ON_CALL] }
-        bookingPolicy: { type: string, enum: [BOOKABLE, DESK_ONLY, NO_OPD] }
+        bookingPolicy: { type: string, enum: [BOOKABLE, DESK_ONLY, NOT_OFFERED] }
         dataConfirmed: { type: boolean }
         active: { type: boolean }
 
     LexiconConceptType:
       type: string
-      enum: [DEPARTMENT, DOCTOR, SYMPTOM_ROUTE, RED_FLAG, DAY_PART, SERVICE_TRANSFER]
+      enum: [CATEGORY, RESOURCE, NEED_ROUTE, RED_FLAG, DAY_PART, SERVICE_TRANSFER]
       description: >
-        DEPARTMENT: a way callers name a department. DOCTOR: a way callers say a
-        doctor's name. SYMPTOM_ROUTE: hospital-approved symptom phrase → department
+        CATEGORY: a way callers name a category. RESOURCE: a way callers say a
+        resource's name. NEED_ROUTE: hospital-approved need phrase → category
         (thyroid → General Medicine). RED_FLAG: emergency phrase → TRANSFER_EMERGENCY.
         DAY_PART: "evening", "ಸಂಜೆ", "shaam" → EVENING. SERVICE_TRANSFER: lab,
         pharmacy, insurance → TRANSFER_DESK with a destination.
@@ -1478,12 +1491,12 @@ components:
         conceptType: { $ref: '#/components/schemas/LexiconConceptType' }
         conceptId:
           type: string
-          description: Department id, doctor id, DayPart value, or transfer destination code.
+          description: Category id, resource id, DayPart value, or transfer destination code.
         term: { type: string, description: 'The phrase as callers say it, any script.' }
         termNormalized: { type: string, description: 'Server-computed: NFC, lower-case, transliterated to Latin.' }
         language: { $ref: '#/components/schemas/Language' }
         approved: { type: boolean }
-        source: { type: string, enum: [HOSPITAL, TRANSCRIPT_MINED, AUTO_TRANSLITERATION] }
+        source: { type: string, enum: [PROVIDER, TRANSCRIPT_MINED, AUTO_TRANSLITERATION] }
 
     LexiconEntryInput:
       type: object
@@ -1501,7 +1514,7 @@ components:
       type: object
       required: [mode]
       description: >
-        How many patients a session can take. FIXED: value is the total.
+        How many customers a session can take. FIXED: value is the total.
         PER_HOUR: total = value × session hours. DEFAULT: tenant default applies
         (flagged in results as capacitySource=DEFAULT so the hospital knows it
         is a guess to be corrected).
@@ -1513,7 +1526,7 @@ components:
       type: object
       required: [templateSessionId, daysOfWeek, start, end, capacityModel, capacity]
       properties:
-        templateSessionId: { type: string, example: tpl_doc_garima_am }
+        templateSessionId: { type: string, example: tpl_res_garima_am }
         label: { type: string, example: Morning }
         daysOfWeek:
           type: array
@@ -1524,7 +1537,7 @@ components:
           type: string
           enum: [SEQUENCE, TIMED]
           description: >
-            SEQUENCE: patients seen in arrival/booking order; a slot is a
+            SEQUENCE: customers seen in arrival/booking order; a slot is a
             position with an expected window (token OPD). TIMED: a slot is a
             fixed-length reserved time (specialist clinics, scans).
         slotMinutes:
@@ -1546,9 +1559,9 @@ components:
 
     ScheduleTemplate:
       type: object
-      required: [doctorId, effectiveFrom, sessions]
+      required: [resourceId, effectiveFrom, sessions]
       properties:
-        doctorId: { type: string }
+        resourceId: { type: string }
         effectiveFrom: { type: string, format: date }
         effectiveTo: { type: string, format: date, nullable: true }
         sessions:
@@ -1559,9 +1572,9 @@ components:
 
     ScheduleExceptionInput:
       type: object
-      required: [doctorId, dateFrom, dateTo, scope, effect]
+      required: [resourceId, dateFrom, dateTo, scope, effect]
       properties:
-        doctorId: { type: string }
+        resourceId: { type: string }
         dateFrom: { type: string, format: date }
         dateTo: { type: string, format: date }
         scope:
@@ -1576,14 +1589,14 @@ components:
             UNAVAILABLE removes the session(s). TIME_CHANGE moves them to
             newStart–newEnd. CAPACITY_CHANGE sets newCapacity. EXTRA_SESSION
             adds a session on a day the template does not have one.
-            TIMING_PENDING marks the session as not yet confirmed by the doctor
+            TIMING_PENDING marks the session as not yet confirmed by the resource
             (agent hears NOT_CONFIRMED). TIMING_CONFIRMED marks it confirmed.
         newStart: { $ref: '#/components/schemas/ClockTime' }
         newEnd: { $ref: '#/components/schemas/ClockTime' }
         newCapacity: { type: integer, minimum: 0, nullable: true }
         reasonCategory:
           type: string
-          enum: [LEAVE, SURGERY, CONFERENCE, PERSONAL, EMERGENCY_DUTY, OTHER]
+          enum: [LEAVE, OTHER_DUTY, EVENT, PERSONAL, OTHER]
           description: Internal. Never returned on the agent path.
         note: { type: string, maxLength: 500, description: Internal. }
 
@@ -1598,9 +1611,9 @@ components:
             createdBy: { type: string }
             impact:
               type: object
-              required: [appointmentsImpacted, notificationsCreated]
+              required: [bookingsImpacted, notificationsCreated]
               properties:
-                appointmentsImpacted: { type: integer }
+                bookingsImpacted: { type: integer }
                 notificationsCreated: { type: integer }
 
     # ---------- scheduling: right now ----------
@@ -1625,7 +1638,7 @@ components:
           minimum: 0
           description: Walk-in tokens issued so far, if the desk records it. Informational.
         lastArrivalTime: { $ref: '#/components/schemas/ClockTime' }
-        timingConfirmed: { type: boolean, description: Desk has confirmed today's timing with the doctor. }
+        timingConfirmed: { type: boolean, description: Desk has confirmed today's timing with the resource. }
 
     BoardEntry:
       allOf:
@@ -1641,17 +1654,17 @@ components:
     TimingCertainty:
       type: string
       enum: [CONFIRMED, EXPECTED, NOT_CONFIRMED]
-      description: CONFIRMED — desk confirmed with the doctor. EXPECTED — from the template. NOT_CONFIRMED — desk flagged pending.
+      description: CONFIRMED — desk confirmed with the resource. EXPECTED — from the template. NOT_CONFIRMED — desk flagged pending.
 
     NotBookableReason:
       type: string
-      enum: [SESSION_ENDED, LEFT_FOR_DAY, ARRIVE_BY_PASSED, FULL, CANCELLED, NO_SESSION_THAT_DAY, ON_CALL_ONLY, DESK_ONLY, NO_OPD]
+      enum: [SESSION_ENDED, LEFT_FOR_DAY, ARRIVE_BY_PASSED, FULL, CANCELLED, NO_SESSION_THAT_DAY, ON_CALL_ONLY, DESK_ONLY, NOT_OFFERED]
 
     Slot:
       type: object
       required: [slotId, kind, available]
       properties:
-        slotId: { type: string, example: slot_ses_doc_garima_2026-09-26_2_04 }
+        slotId: { type: string, example: slot_ses_res_garima_2026-09-26_2_04 }
         kind: { type: string, enum: [SEQUENCE, TIMED] }
         position: { type: integer, minimum: 1, nullable: true, description: SEQUENCE only. }
         start:
@@ -1673,10 +1686,10 @@ components:
 
     SessionInstance:
       type: object
-      required: [sessionId, doctorId, date, start, end, status, timingCertainty, capacityModel, capacity, bookable]
+      required: [sessionId, resourceId, date, start, end, status, timingCertainty, capacityModel, capacity, bookable]
       properties:
-        sessionId: { type: string, example: ses_doc_garima_2026-09-26_2 }
-        doctorId: { type: string }
+        sessionId: { type: string, example: ses_res_garima_2026-09-26_2 }
+        resourceId: { type: string }
         templateSessionId: { type: string, nullable: true }
         date: { type: string, format: date }
         label: { type: string }
@@ -1731,9 +1744,9 @@ components:
           maxLength: 500
           description: The caller's request verbatim (as STT delivered it).
         language: { $ref: '#/components/schemas/Language' }
-        doctorName: { type: string, maxLength: 100, description: If the caller named a doctor. As heard. }
-        department: { type: string, maxLength: 100, description: If the caller named a speciality or department. As heard. }
-        symptomText: { type: string, maxLength: 300, description: If the caller described a problem. As heard. Server maps via approved SYMPTOM_ROUTE only. }
+        resourceName: { type: string, maxLength: 100, description: If the caller named a resource. As heard. }
+        category: { type: string, maxLength: 100, description: If the caller named a speciality or category. As heard. }
+        needText: { type: string, maxLength: 300, description: If the caller described a problem. As heard. Server maps via approved NEED_ROUTE only. }
         when:
           type: object
           description: Either an expression ("tomorrow evening", "ನಾಳೆ", "kal shaam") or explicit dates. Server resolves in facility time.
@@ -1747,26 +1760,26 @@ components:
           properties:
             gender: { $ref: '#/components/schemas/Gender' }
             language: { $ref: '#/components/schemas/Language' }
-        maxDoctors: { type: integer, minimum: 1, maximum: 5, default: 3 }
+        maxResources: { type: integer, minimum: 1, maximum: 5, default: 3 }
         maxSlotsPerSession: { type: integer, minimum: 1, maximum: 5, default: 3 }
 
     Understood:
       type: object
       description: What the server made of the words. Returned so the agent can confirm ("Dr. Garima, tomorrow evening?").
-      required: [doctors, departments]
+      required: [resources, categories]
       properties:
-        doctors:
+        resources:
           type: array
           items:
             type: object
-            required: [doctorId, name, confidence, matchedOn]
+            required: [resourceId, name, confidence, matchedOn]
             properties:
-              doctorId: { type: string }
+              resourceId: { type: string }
               name: { type: string }
               localizedNames: { $ref: '#/components/schemas/LocalizedText' }
               confidence: { type: number, minimum: 0, maximum: 1 }
               matchedOn: { type: string, enum: [NAME_EXACT, NAME_PHONETIC, NAME_VARIANT, LEXICON] }
-        departments:
+        categories:
           type: array
           items:
             type: object
@@ -1776,7 +1789,7 @@ components:
               name: { type: string }
               localizedNames: { $ref: '#/components/schemas/LocalizedText' }
               confidence: { type: number, minimum: 0, maximum: 1 }
-              matchedOn: { type: string, enum: [LEXICON, SYMPTOM_ROUTE, SEMANTIC] }
+              matchedOn: { type: string, enum: [LEXICON, NEED_ROUTE, SEMANTIC] }
         dates:
           type: object
           nullable: true
@@ -1794,8 +1807,8 @@ components:
         The next thing the agent should do. OFFER_SLOTS — read results.
         CLARIFY — ask the question in clarification. TRANSFER_EMERGENCY — a
         RED_FLAG matched; stop and transfer. TRANSFER_DESK — request is not a
-        consultation (lab, pharmacy, insurance) or the doctor is DESK_ONLY;
-        destination given. NO_SERVICE — the department does not exist or has
+        consultation (lab, pharmacy, insurance) or the resource is DESK_ONLY;
+        destination given. NO_SERVICE — the category does not exist or has
         no consultant; suggestions may be present.
       properties:
         action: { type: string, enum: [OFFER_SLOTS, CLARIFY, TRANSFER_EMERGENCY, TRANSFER_DESK, NO_SERVICE] }
@@ -1808,7 +1821,7 @@ components:
       properties:
         type:
           type: string
-          enum: [WHICH_DOCTOR, WHICH_DEPARTMENT, WHICH_DATE, WHICH_PATIENT, CONFIRM_INTERPRETATION]
+          enum: [WHICH_RESOURCE, WHICH_CATEGORY, WHICH_DATE, WHICH_CUSTOMER, CONFIRM_INTERPRETATION]
         options:
           type: array
           items:
@@ -1818,27 +1831,27 @@ components:
               id: { type: string }
               label: { type: string }
               localizedLabels: { $ref: '#/components/schemas/LocalizedText' }
-              detail: { type: string, nullable: true, description: e.g. department for a doctor option. }
+              detail: { type: string, nullable: true, description: e.g. category for a resource option. }
 
-    DoctorResult:
+    ResourceResult:
       type: object
-      required: [doctor, sessions, unavailable]
+      required: [resource, sessions, unavailable]
       properties:
-        doctor:
+        resource:
           type: object
-          required: [doctorId, name, departments, dataConfirmed]
+          required: [resourceId, name, categories, dataConfirmed]
           properties:
-            doctorId: { type: string }
+            resourceId: { type: string }
             name: { type: string }
             localizedNames: { $ref: '#/components/schemas/LocalizedText' }
-            departments:
+            categories:
               type: array
-              items: { $ref: '#/components/schemas/Department' }
+              items: { $ref: '#/components/schemas/Category' }
             gender:
               allOf: [{ $ref: '#/components/schemas/Gender' }]
               nullable: true
-            qualification: { type: string, nullable: true }
-            fee:
+            attributes: { $ref: '#/components/schemas/Attributes' }
+            price:
               allOf: [{ $ref: '#/components/schemas/Money' }]
               nullable: true
             dataConfirmed: { type: boolean }
@@ -1877,11 +1890,11 @@ components:
         clarification: { $ref: '#/components/schemas/Clarification' }
         results:
           type: array
-          items: { $ref: '#/components/schemas/DoctorResult' }
+          items: { $ref: '#/components/schemas/ResourceResult' }
         alternatives:
           type: array
-          description: Same-department doctors with bookable sessions when the requested doctor has none.
-          items: { $ref: '#/components/schemas/DoctorResult' }
+          description: Same-category resources with bookable sessions when the requested resource has none.
+          items: { $ref: '#/components/schemas/ResourceResult' }
         partial:
           type: boolean
           description: True when part of the data could not be fetched; see notes.
@@ -1891,10 +1904,10 @@ components:
 
     AgentBookRequest:
       type: object
-      required: [slotId, patient, language]
+      required: [slotId, customer, language]
       properties:
         slotId: { type: string }
-        patient:
+        customer:
           type: object
           required: [name, phone]
           properties:
@@ -1913,30 +1926,30 @@ components:
           default: false
           description: Caller wants the desk to confirm timing when the session is NOT_CONFIRMED. Honoured only if the tenant works that list.
 
-    AgentAppointment:
+    AgentBooking:
       type: object
-      required: [outcome, appointmentId, status, patient, doctor, date, session, slot, timingCertainty]
+      required: [outcome, bookingId, status, customer, resource, date, session, slot, timingCertainty]
       properties:
         outcome:
           type: string
           enum: [BOOKED, ALREADY_BOOKED, CANCELLED, RESCHEDULED, FOUND]
-        appointmentId: { type: string }
+        bookingId: { type: string }
         confirmationCode:
           type: string
           description: Short code the agent reads back; lets a caller identify a booking on a later call without exposing ids.
-        status: { $ref: '#/components/schemas/AppointmentStatus' }
-        patient:
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        customer:
           type: object
           properties:
             name: { type: string }
             phone: { $ref: '#/components/schemas/Phone' }
-        doctor:
+        resource:
           type: object
           properties:
-            doctorId: { type: string }
+            resourceId: { type: string }
             name: { type: string }
             localizedNames: { $ref: '#/components/schemas/LocalizedText' }
-        department: { $ref: '#/components/schemas/Department' }
+        category: { $ref: '#/components/schemas/Category' }
         date: { type: string, format: date }
         session:
           type: object
@@ -1953,48 +1966,48 @@ components:
           allOf: [{ $ref: '#/components/schemas/ClockTime' }]
           nullable: true
         timingCertainty: { $ref: '#/components/schemas/TimingCertainty' }
-        fee:
+        price:
           allOf: [{ $ref: '#/components/schemas/Money' }]
           nullable: true
         followUp:
           type: string
           enum: [NONE, DESK_WILL_CONFIRM_TIMING]
           description: The agent may promise a desk call only when this is DESK_WILL_CONFIRM_TIMING.
-        doctorToday:
+        resourceToday:
           allOf: [{ $ref: '#/components/schemas/SessionInstance' }]
           nullable: true
-          description: Present on LIST for same-day appointments — answers "is my doctor coming?".
+          description: Present on LIST for same-day bookings — answers "is my resource coming?".
 
-    AgentAppointmentList:
+    AgentBookingList:
       type: object
-      required: [outcome, items, patientsOnNumber, identityBasis]
+      required: [outcome, items, customersOnNumber, identityBasis]
       properties:
         outcome: { type: string, enum: [FOUND, NONE_FOUND, NAME_REQUIRED, IDENTITY_UNAVAILABLE] }
         items:
           type: array
-          items: { $ref: '#/components/schemas/AgentAppointment' }
-        patientsOnNumber: { type: integer }
+          items: { $ref: '#/components/schemas/AgentBooking' }
+        customersOnNumber: { type: integer }
         identityBasis: { type: string, enum: [CALLER_NUMBER, SPOKEN_NUMBER, NONE] }
 
-    # ---------- appointments: full record ----------
+    # ---------- bookings: full record ----------
 
-    AppointmentStatus:
+    BookingStatus:
       type: string
-      enum: [BOOKED, CONFIRMED_BY_DESK, RESCHEDULED, NEEDS_RESCHEDULE, ARRIVED, COMPLETED, NO_SHOW, CANCELLED_BY_PATIENT, CANCELLED_BY_HOSPITAL]
+      enum: [BOOKED, CONFIRMED_BY_DESK, RESCHEDULED, NEEDS_RESCHEDULE, ARRIVED, COMPLETED, NO_SHOW, CANCELLED_BY_CUSTOMER, CANCELLED_BY_PROVIDER]
       description: >
         BOOKED — slot held. CONFIRMED_BY_DESK — desk confirmed timing.
-        RESCHEDULED — moved by patient. NEEDS_RESCHEDULE — session removed by an
-        exception; patient to be notified. ARRIVED/COMPLETED/NO_SHOW — desk
+        RESCHEDULED — moved by customer. NEEDS_RESCHEDULE — session removed by an
+        exception; customer to be notified. ARRIVED/COMPLETED/NO_SHOW — desk
         outcomes. CANCELLED_BY_* — withdrawn.
 
-    Appointment:
+    Booking:
       type: object
-      required: [id, status, patient, doctorId, sessionId, slotId, date, createdAt, createdVia]
+      required: [id, status, customer, resourceId, sessionId, slotId, date, createdAt, createdVia]
       properties:
         id: { type: string }
         confirmationCode: { type: string }
-        status: { $ref: '#/components/schemas/AppointmentStatus' }
-        patient:
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        customer:
           type: object
           required: [name, phone]
           properties:
@@ -2002,7 +2015,7 @@ components:
             phone: { $ref: '#/components/schemas/Phone' }
             relationToCaller: { type: string, nullable: true }
         callerNumber: { type: string, nullable: true, description: Network number the booking was made from. Staff scope only. }
-        doctorId: { type: string }
+        resourceId: { type: string }
         sessionId: { type: string }
         slotId: { type: string }
         date: { type: string, format: date }
@@ -2029,27 +2042,27 @@ components:
               by: { type: string }
               change: { type: string }
 
-    ImpactedAppointment:
+    ImpactedBooking:
       type: object
-      required: [appointment, notification]
+      required: [booking, notification]
       properties:
-        appointment: { $ref: '#/components/schemas/Appointment' }
+        booking: { $ref: '#/components/schemas/Booking' }
         notification: { $ref: '#/components/schemas/Notification' }
 
     Notification:
       type: object
-      required: [id, appointmentId, trigger, status, createdAt]
+      required: [id, bookingId, trigger, status, createdAt]
       properties:
         id: { type: string }
-        appointmentId: { type: string }
+        bookingId: { type: string }
         trigger: { type: string, enum: [SESSION_CANCELLED, SESSION_TIME_CHANGED, TEMPLATE_CHANGED, DESK_MESSAGE] }
         status: { type: string, enum: [PENDING, SENT, FAILED, ACKNOWLEDGED] }
         channel: { type: string, nullable: true, enum: [PHONE, SMS, WHATSAPP, IN_PERSON, VOICE_BOT] }
-        patientPhone: { $ref: '#/components/schemas/Phone' }
-        patientLanguage: { $ref: '#/components/schemas/Language' }
+        customerPhone: { $ref: '#/components/schemas/Phone' }
+        customerLanguage: { $ref: '#/components/schemas/Language' }
         facts:
           type: object
-          description: "Structured facts for the outbound message (never prose): doctor, old and new session, suggested slots."
+          description: "Structured facts for the outbound message (never prose): resource, old and new session, suggested slots."
           additionalProperties: true
         createdAt: { type: string, format: date-time }
         deliveredAt: { type: string, format: date-time, nullable: true }
@@ -2067,10 +2080,10 @@ components:
         durationSeconds: { type: integer }
         language: { $ref: '#/components/schemas/Language' }
         callerNumber: { type: string, nullable: true }
-        intent: { type: string, enum: [AVAILABILITY, BOOKING, RESCHEDULE, CANCEL, LOOKUP, GENERAL_INFO, LAB, PHARMACY, INSURANCE, EMERGENCY, SYMPTOM_ROUTING, ADMIN, OTHER] }
-        outcome: { type: string, enum: [RESOLVED_BY_AGENT, APPOINTMENT_BOOKED, APPOINTMENT_CANCELLED, APPOINTMENT_RESCHEDULED, TRANSFERRED, EMERGENCY_TRANSFERRED, ABANDONED] }
+        intent: { type: string, enum: [AVAILABILITY, BOOKING, RESCHEDULE, CANCEL, LOOKUP, GENERAL_INFO, SERVICE_TRANSFER, EMERGENCY, NEED_ROUTING, ADMIN, OTHER] }
+        outcome: { type: string, enum: [RESOLVED_BY_AGENT, BOOKING_CREATED, BOOKING_CANCELLED, BOOKING_RESCHEDULED, TRANSFERRED, EMERGENCY_TRANSFERRED, ABANDONED] }
         transferredTo: { type: string, nullable: true }
-        appointmentId: { type: string, nullable: true }
+        bookingId: { type: string, nullable: true }
         toolOutcomes:
           type: object
           additionalProperties: { type: string }
@@ -2089,7 +2102,7 @@ components:
             code:
               type: string
               enum: [VALIDATION_FAILED, NOT_FOUND, UNAUTHORIZED, FORBIDDEN, CONFLICT, IDEMPOTENCY_CONFLICT, SLOT_UNAVAILABLE, RATE_LIMITED, INTERNAL, SERVICE_UNAVAILABLE, UPSTREAM_TIMEOUT]
-            message: { type: string, description: "Safe to log; never contains another patient's data." }
+            message: { type: string, description: "Safe to log; never contains another customer's data." }
             details:
               type: array
               items:

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import schemas as s
 from ..config import Settings
 from ..db import tables as t
-from .appointments import new_id
+from .bookings import new_id
 
 
 def _model(row: t.CallSummary) -> s.CallSummary:
@@ -24,7 +24,7 @@ def _model(row: t.CallSummary) -> s.CallSummary:
         intent=row.intent,
         outcome=row.outcome,
         transferred_to=row.transferred_to,
-        appointment_id=row.appointment_id,
+        booking_id=row.booking_id,
         tool_outcomes=row.tool_outcomes or None,
         summary_text=row.summary_text,
     )
@@ -44,7 +44,7 @@ async def store(session: AsyncSession, body: s.CallSummary) -> tuple[s.CallSumma
         intent=body.intent,
         outcome=body.outcome,
         transferred_to=body.transferred_to,
-        appointment_id=body.appointment_id,
+        booking_id=body.booking_id,
         tool_outcomes=body.tool_outcomes or {},
         summary_text=body.summary_text,
     )

@@ -45,7 +45,7 @@ echo "== api: lint, unit, contract (hermetic), integration (postgres)"
 echo "== starting api on :${API_PORT} with a freshly seeded database"
 (cd services/api && DATABASE_URL="$TEST_DATABASE_URL" LOG_LEVEL=WARNING uv run frontdesk-api seed --reset >/dev/null)
 (cd services/api && exec env ENV=test DATABASE_URL="$TEST_DATABASE_URL" PORT="$API_PORT" LOG_LEVEL=WARNING \
-  AUTH_TOKENS_JSON="{\"${AGENT_TOKEN}\":[\"agent\"],\"${ALL_TOKEN}\":[\"agent\",\"appointments.staff\",\"schedule.write\",\"board.write\",\"directory.write\",\"calls.write\",\"calls.read\"]}" \
+  AUTH_TOKENS_JSON="{\"${AGENT_TOKEN}\":[\"agent\"],\"${ALL_TOKEN}\":[\"agent\",\"bookings.staff\",\"schedule.write\",\"board.write\",\"directory.write\",\"calls.write\",\"calls.read\"]}" \
   uv run frontdesk-api serve) > "$LOG" 2>&1 &
 API_PID=$!
 for _ in $(seq 1 50); do curl -sf "http://127.0.0.1:${API_PORT}/ready" >/dev/null && break; sleep 0.2; done

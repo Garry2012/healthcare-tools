@@ -3,23 +3,23 @@ from __future__ import annotations
 import pytest
 
 from frontdesk_api import seed_data
-from frontdesk_api.domain.resolver import DepartmentEntry, Directory, DoctorEntry, LexiconTerm
+from frontdesk_api.domain.resolver import CategoryEntry, Directory, LexiconTerm, ResourceEntry
 
 
 @pytest.fixture(scope="session")
 def directory() -> Directory:
     """The seed's synthetic directory, as the resolver sees it."""
     return Directory(
-        doctors=tuple(
-            DoctorEntry(
-                doctor_id=d.id, name=d.name, department_ids=d.departments, name_variants=d.variants,
+        resources=tuple(
+            ResourceEntry(
+                resource_id=d.id, name=d.name, category_ids=d.categories, name_variants=d.variants,
                 localized_names=tuple(x for x in (d.kn, d.hi) if x), booking_policy=d.policy,
             )
-            for d in seed_data.DOCTORS
+            for d in seed_data.RESOURCES
         ),
-        departments=tuple(
-            DepartmentEntry(department_id=d.id, name=d.name, code=d.code, localized_names=(d.kn, d.hi))
-            for d in seed_data.DEPARTMENTS
+        categories=tuple(
+            CategoryEntry(category_id=d.id, name=d.name, code=d.code, localized_names=(d.kn, d.hi))
+            for d in seed_data.CATEGORIES
         ),
         lexicon=tuple(LexiconTerm(*row) for row in seed_data.LEXICON),
     )

@@ -1,6 +1,6 @@
 """Booking, lookup, cancel, reschedule — agent and desk paths.
 
-Slot uniqueness is enforced by the partial unique index `uq_appointments_live_slot`:
+Slot uniqueness is enforced by the partial unique index `uq_bookings_live_slot`:
 booking is `INSERT … ON CONFLICT DO NOTHING`, rescheduling is an UPDATE inside a savepoint.
 The availability check before the write is for a good error message, not for safety.
 """
@@ -24,10 +24,10 @@ from ..domain import ids
 from ..domain.availability import SessionView, SlotView, find_session
 from ..domain.identity import (
     BookingIdentity,
+    customers_on,
     name_matches,
     national_number,
     number_matches,
-    patients_on,
 )
 from ..domain.text import normalise_person_name
 from ..errors import ApiError, not_found, validation
@@ -46,12 +46,12 @@ def _code() -> str:
     return f"{secrets.randbelow(10_000):04d}"
 
 
-def _identity(row: t.Appointment) -> BookingIdentity:
-    return BookingIdentity(row.id, row.patient_name, row.phone, row.caller_number)
+def _identity(row: t.Booking) -> BookingIdentity:
+    return BookingIdentity(row.id, row.customer_name, row.phone, row.caller_number)
 
 
-def _history(session: AsyncSession, appointment_id: str, by: str, change: str, **details) -> None:
-    session.add(t.AppointmentHistory(appointment_id=appointment_id, by=by, change=change, details=details))
+def _history(session: AsyncSession, booking_id: str, by: str, change: str, **details) -> None:
+    session.add(t.BookingHistory(booking_id=booking_id, by=by, change=change, details=details))
 
 
 # ---------------------------------------------------------------- views
@@ -78,19 +78,19 @@ def _slot_in(view: SessionView | None, slot_id: str) -> SlotView:
 
 @dataclass(slots=True)
 class Context:
-    """Everything needed to describe appointments without further queries."""
+    """Everything needed to describe bookings without further queries."""
 
     data: schedule.ScheduleData
-    departments: dict[str, t.Department]
+    categories: dict[str, t.Category]
 
-    def session_view(self, row: t.Appointment) -> SessionView | None:
-        if row.doctor_id not in self.data.doctors:
+    def session_view(self, row: t.Booking) -> SessionView | None:
+        if row.resource_id not in self.data.resources:
             return None
-        return find_session(self.data.sessions(row.doctor_id, row.date, channel="DESK"), row.session_id)
+        return find_session(self.data.sessions(row.resource_id, row.date, channel="DESK"), row.session_id)
 
 
 async def context_for(
-    session: AsyncSession, settings: Settings, rows: list[t.Appointment]
+    session: AsyncSession, settings: Settings, rows: list[t.Booking]
 ) -> Context:
     now = schedule.now_in(settings)
     if rows:
@@ -99,37 +99,37 @@ async def context_for(
         last = max(last, now.date())
     else:
         first = last = now.date()
-    data = await schedule.load(session, settings, now, {r.doctor_id for r in rows}, first, last)
-    departments = {d.id: d for d in (await session.scalars(select(t.Department))).all()}
-    return Context(data, departments)
+    data = await schedule.load(session, settings, now, {r.resource_id for r in rows}, first, last)
+    categories = {d.id: d for d in (await session.scalars(select(t.Category))).all()}
+    return Context(data, categories)
 
 
-def _certainty(row: t.Appointment, view: SessionView | None) -> str:
+def _certainty(row: t.Booking, view: SessionView | None) -> str:
     if row.timing_confirmed:
         return "CONFIRMED"
     return view.timing_certainty if view else "EXPECTED"
 
 
 def agent_view(
-    row: t.Appointment, ctx: Context, outcome: str, *, previous_slot: SlotView | None = None,
+    row: t.Booking, ctx: Context, outcome: str, *, previous_slot: SlotView | None = None,
     with_today: bool = False,
-) -> s.AgentAppointment:
+) -> s.AgentBooking:
     view = ctx.session_view(row)
-    doctor = ctx.data.doctors.get(row.doctor_id)
-    dept = ctx.departments.get(row.department_id or "")
+    resource = ctx.data.resources.get(row.resource_id)
+    cat = ctx.categories.get(row.category_id or "")
     today = ctx.data.now.date()
-    return s.AgentAppointment(
+    return s.AgentBooking(
         outcome=outcome,
-        appointment_id=row.id,
+        booking_id=row.id,
         confirmation_code=row.confirmation_code,
         status=row.status,
-        patient=s.PatientSummary(name=row.patient_name, phone=row.phone),
-        doctor=s.DoctorSummary(
-            doctor_id=row.doctor_id,
-            name=doctor.name if doctor else None,
-            localized_names=(doctor.localized_names or None) if doctor else None,
+        customer=s.CustomerSummary(name=row.customer_name, phone=row.phone),
+        resource=s.ResourceSummary(
+            resource_id=row.resource_id,
+            name=resource.name if resource else None,
+            localized_names=(resource.localized_names or None) if resource else None,
         ),
-        department=views.department(dept) if dept else None,
+        category=views.category(cat) if cat else None,
         date=row.date,
         session=s.SessionSummary(
             session_id=row.session_id,
@@ -141,26 +141,26 @@ def agent_view(
         previous_slot=views.slot(previous_slot) if previous_slot else None,
         arrive_by=views.clock(view.arrive_by) if view else None,
         timing_certainty=_certainty(row, view),
-        fee=views.money(doctor) if doctor else None,
+        price=views.money(resource) if resource else None,
         follow_up=row.follow_up,
-        doctor_today=(
+        resource_today=(
             views.session_instance(view, include_slots=False)
             if with_today and view is not None and row.date == today else None
         ),
     )
 
 
-def staff_view(row: t.Appointment, ctx: Context, history: list[t.AppointmentHistory]) -> s.Appointment:
+def staff_view(row: t.Booking, ctx: Context, history: list[t.BookingHistory]) -> s.Booking:
     view = ctx.session_view(row)
-    return s.Appointment(
+    return s.Booking(
         id=row.id,
         confirmation_code=row.confirmation_code,
         status=row.status,
-        patient=s.AppointmentPatient(
-            name=row.patient_name, phone=row.phone, relation_to_caller=row.relation_to_caller
+        customer=s.BookingCustomer(
+            name=row.customer_name, phone=row.phone, relation_to_caller=row.relation_to_caller
         ),
         caller_number=row.caller_number,
-        doctor_id=row.doctor_id,
+        resource_id=row.resource_id,
         session_id=row.session_id,
         slot_id=row.slot_id,
         date=row.date,
@@ -178,16 +178,16 @@ def staff_view(row: t.Appointment, ctx: Context, history: list[t.AppointmentHist
     )
 
 
-async def history_of(session: AsyncSession, appointment_ids: list[str]) -> dict[str, list[t.AppointmentHistory]]:
-    out: dict[str, list[t.AppointmentHistory]] = {a: [] for a in appointment_ids}
-    if appointment_ids:
+async def history_of(session: AsyncSession, booking_ids: list[str]) -> dict[str, list[t.BookingHistory]]:
+    out: dict[str, list[t.BookingHistory]] = {a: [] for a in booking_ids}
+    if booking_ids:
         rows = await session.scalars(
-            select(t.AppointmentHistory)
-            .where(t.AppointmentHistory.appointment_id.in_(appointment_ids))
-            .order_by(t.AppointmentHistory.id)
+            select(t.BookingHistory)
+            .where(t.BookingHistory.booking_id.in_(booking_ids))
+            .order_by(t.BookingHistory.id)
         )
         for h in rows:
-            out[h.appointment_id].append(h)
+            out[h.booking_id].append(h)
     return out
 
 
@@ -209,10 +209,10 @@ async def _check_slot(
     if ref is None:
         raise validation("slotId is not a slot id returned by availability search.", "slotId")
     now = schedule.now_in(settings)
-    data = await schedule.load(session, settings, now, [ref.session.doctor_id], ref.session.date, ref.session.date)
-    if ref.session.doctor_id not in data.doctors:
+    data = await schedule.load(session, settings, now, [ref.session.resource_id], ref.session.date, ref.session.date)
+    if ref.session.resource_id not in data.resources:
         return SlotCheck(ref, data, None, None)
-    view = find_session(data.sessions(ref.session.doctor_id, ref.session.date, channel=channel),
+    view = find_session(data.sessions(ref.session.resource_id, ref.session.date, channel=channel),
                         ref.session.session_id)
     slot = next((x for x in view.slots if x.slot_id == slot_id), None) if view else None
     return SlotCheck(ref, data, view, slot)
@@ -239,7 +239,7 @@ async def _recheck(session: AsyncSession, settings: Settings, slot_id: str, chan
 
 @dataclass(slots=True)
 class Booked:
-    row: t.Appointment
+    row: t.Booking
     created: bool
 
 
@@ -253,19 +253,19 @@ async def book(
     caller_number: str | None,
     actor: str,
 ) -> Booked:
-    if not re.fullmatch(settings.tenant_phone_pattern, body.patient.phone):
-        raise validation("patient.phone does not match the facility's phone format.", "patient.phone")
+    if not re.fullmatch(settings.tenant_phone_pattern, body.customer.phone):
+        raise validation("customer.phone does not match the facility's phone format.", "customer.phone")
     check = await _check_slot(session, settings, body.slot_id, channel)
     if check.view is None or check.slot is None:
         raise _slot_unavailable(check.view, "That slot does not exist in the current schedule.")
 
-    name_key = normalise_person_name(body.patient.name)
+    name_key = normalise_person_name(body.customer.name)
     existing = await session.scalar(
-        select(t.Appointment).where(
-            t.Appointment.session_id == check.view.session_id,
-            t.Appointment.patient_name_normalized == name_key,
-            t.Appointment.phone == body.patient.phone,
-            t.Appointment.status.in_(t.LIVE_STATUSES),
+        select(t.Booking).where(
+            t.Booking.session_id == check.view.session_id,
+            t.Booking.customer_name_normalized == name_key,
+            t.Booking.phone == body.customer.phone,
+            t.Booking.status.in_(t.LIVE_STATUSES),
         )
     )
     if existing is not None:
@@ -274,11 +274,11 @@ async def book(
     if not check.view.bookable or not check.slot.available:
         raise _slot_unavailable(check.view)
 
-    doctor = check.data.doctors[check.ref.session.doctor_id]
-    department_id = await session.scalar(
-        select(t.DoctorDepartment.department_id)
-        .where(t.DoctorDepartment.doctor_id == doctor.id)
-        .order_by(t.DoctorDepartment.position)
+    resource = check.data.resources[check.ref.session.resource_id]
+    category_id = await session.scalar(
+        select(t.ResourceCategory.category_id)
+        .where(t.ResourceCategory.resource_id == resource.id)
+        .order_by(t.ResourceCategory.position)
         .limit(1)
     )
     follow_up = (
@@ -288,20 +288,20 @@ async def book(
         and check.view.timing_certainty == "NOT_CONFIRMED"
         else "NONE"
     )
-    appointment_id = new_id("appt")
+    booking_id = new_id("bkg")
     inserted = await session.scalar(
-        insert(t.Appointment)
+        insert(t.Booking)
         .values(
-            id=appointment_id,
+            id=booking_id,
             confirmation_code=_code(),
             status="BOOKED",
-            patient_name=body.patient.name.strip(),
-            patient_name_normalized=name_key,
-            phone=body.patient.phone,
-            relation_to_caller=body.patient.relation_to_caller,
+            customer_name=body.customer.name.strip(),
+            customer_name_normalized=name_key,
+            phone=body.customer.phone,
+            relation_to_caller=body.customer.relation_to_caller,
             caller_number=caller_number,
-            doctor_id=doctor.id,
-            department_id=department_id,
+            resource_id=resource.id,
+            category_id=category_id,
             session_id=check.view.session_id,
             slot_id=body.slot_id,
             date=check.view.date,
@@ -312,13 +312,13 @@ async def book(
             follow_up=follow_up,
         )
         .on_conflict_do_nothing(index_elements=["slot_id"], index_where=_LIVE_WHERE)
-        .returning(t.Appointment.id)
+        .returning(t.Booking.id)
     )
     if inserted is None:
         raise await _recheck(session, settings, body.slot_id, channel)
-    _history(session, appointment_id, actor, "BOOKED", slotId=body.slot_id)
+    _history(session, booking_id, actor, "BOOKED", slotId=body.slot_id)
     await session.flush()
-    row = await session.get(t.Appointment, appointment_id)
+    row = await session.get(t.Booking, booking_id)
     assert row is not None
     return Booked(row, created=True)
 
@@ -331,14 +331,14 @@ async def agent_list(
     settings: Settings,
     *,
     caller_number: str | None,
-    patient_name: str | None,
+    customer_name: str | None,
     phone: str | None,
     date_from: date | None,
     date_to: date | None,
-) -> s.AgentAppointmentList:
+) -> s.AgentBookingList:
     if not caller_number and not phone:
-        return s.AgentAppointmentList(
-            outcome="IDENTITY_UNAVAILABLE", items=[], patients_on_number=0, identity_basis="NONE"
+        return s.AgentBookingList(
+            outcome="IDENTITY_UNAVAILABLE", items=[], customers_on_number=0, identity_basis="NONE"
         )
     basis = "CALLER_NUMBER" if caller_number else "SPOKEN_NUMBER"
     today = schedule.now_in(settings).date()
@@ -347,86 +347,86 @@ async def agent_list(
         numbers.append(national_number(caller_number, settings.tenant_country_calling_code))
     if phone:
         numbers.append(phone)
-    reachable = [t.Appointment.phone.in_(numbers)]
+    reachable = [t.Booking.phone.in_(numbers)]
     if caller_number:
-        reachable.append(t.Appointment.caller_number == caller_number)
-    query = select(t.Appointment).where(
-        t.Appointment.status.in_(LISTED_STATUSES),
-        t.Appointment.date >= (date_from or today),
+        reachable.append(t.Booking.caller_number == caller_number)
+    query = select(t.Booking).where(
+        t.Booking.status.in_(LISTED_STATUSES),
+        t.Booking.date >= (date_from or today),
         or_(*reachable),
     )
     if date_to:
-        query = query.where(t.Appointment.date <= date_to)
+        query = query.where(t.Booking.date <= date_to)
     rows = [
-        r for r in (await session.scalars(query.order_by(t.Appointment.date, t.Appointment.slot_id))).all()
+        r for r in (await session.scalars(query.order_by(t.Booking.date, t.Booking.slot_id))).all()
         if number_matches(_identity(r), caller_number=caller_number, spoken_phone=phone,
                           country_code=settings.tenant_country_calling_code)
     ]
-    patients = patients_on(_identity(r) for r in rows)
-    if patient_name:
-        rows = [r for r in rows if name_matches(_identity(r), patient_name)]
-    elif patients > 1:
-        return s.AgentAppointmentList(
-            outcome="NAME_REQUIRED", items=[], patients_on_number=patients, identity_basis=basis
+    customers = customers_on(_identity(r) for r in rows)
+    if customer_name:
+        rows = [r for r in rows if name_matches(_identity(r), customer_name)]
+    elif customers > 1:
+        return s.AgentBookingList(
+            outcome="NAME_REQUIRED", items=[], customers_on_number=customers, identity_basis=basis
         )
     ctx = await context_for(session, settings, rows)
     items = [agent_view(r, ctx, "FOUND", with_today=True) for r in rows]
-    return s.AgentAppointmentList(
+    return s.AgentBookingList(
         outcome="FOUND" if items else "NONE_FOUND",
         items=items,
-        patients_on_number=patients,
+        customers_on_number=customers,
         identity_basis=basis,
     )
 
 
 async def _locate(
-    session: AsyncSession, settings: Settings, appointment_id: str, patient_name: str,
+    session: AsyncSession, settings: Settings, booking_id: str, customer_name: str,
     caller_number: str | None,
-) -> t.Appointment:
+) -> t.Booking:
     """Neutral 404 for missing, not-yours and wrong-name alike."""
-    row = await session.get(t.Appointment, appointment_id, with_for_update=True)
+    row = await session.get(t.Booking, booking_id, with_for_update=True)
     if row is None or not caller_number:
         raise not_found()
     identity = _identity(row)
     if not number_matches(identity, caller_number=caller_number, spoken_phone=None,
                           country_code=settings.tenant_country_calling_code):
         raise not_found()
-    if not name_matches(identity, patient_name):
+    if not name_matches(identity, customer_name):
         raise not_found()
     return row
 
 
 async def cancel(
-    session: AsyncSession, settings: Settings, appointment_id: str, body: s.CancelRequest,
+    session: AsyncSession, settings: Settings, booking_id: str, body: s.CancelRequest,
     *, caller_number: str | None, actor: str,
-) -> t.Appointment:
-    row = await _locate(session, settings, appointment_id, body.patient_name, caller_number)
+) -> t.Booking:
+    row = await _locate(session, settings, booking_id, body.customer_name, caller_number)
     if row.status not in CHANGEABLE_STATUSES:
-        raise ApiError("CONFLICT", "This appointment can no longer be cancelled.")
+        raise ApiError("CONFLICT", "This booking can no longer be cancelled.")
     previous = row.status
-    row.status = "CANCELLED_BY_PATIENT"
-    _history(session, row.id, actor, "CANCELLED_BY_PATIENT", previous=previous,
+    row.status = "CANCELLED_BY_CUSTOMER"
+    _history(session, row.id, actor, "CANCELLED_BY_CUSTOMER", previous=previous,
              reasonProvided=bool(body.reason_verbatim))
     await session.flush()
     return row
 
 
 async def _move(
-    session: AsyncSession, settings: Settings, row: t.Appointment, new_slot_id: str, *,
+    session: AsyncSession, settings: Settings, row: t.Booking, new_slot_id: str, *,
     channel: str, actor: str, status: str,
 ) -> SlotView:
     """Release the old slot and take the new one atomically, or change nothing."""
     if new_slot_id == row.slot_id:
-        raise ApiError("CONFLICT", "The appointment already holds that slot.")
+        raise ApiError("CONFLICT", "The booking already holds that slot.")
     old_check = await _check_slot(session, settings, row.slot_id, "DESK")
     previous = _slot_in(old_check.view, row.slot_id)
     check = await _check_slot(session, settings, new_slot_id, channel)
     if check.view is None or check.slot is None or not check.view.bookable or not check.slot.available:
         raise _slot_unavailable(check.view)
-    department_id = await session.scalar(
-        select(t.DoctorDepartment.department_id)
-        .where(t.DoctorDepartment.doctor_id == check.ref.session.doctor_id)
-        .order_by(t.DoctorDepartment.position)
+    category_id = await session.scalar(
+        select(t.ResourceCategory.category_id)
+        .where(t.ResourceCategory.resource_id == check.ref.session.resource_id)
+        .order_by(t.ResourceCategory.position)
         .limit(1)
     )
     old_slot = row.slot_id
@@ -434,8 +434,8 @@ async def _move(
         async with session.begin_nested():
             row.slot_id = new_slot_id
             row.session_id = check.view.session_id
-            row.doctor_id = check.ref.session.doctor_id
-            row.department_id = department_id
+            row.resource_id = check.ref.session.resource_id
+            row.category_id = category_id
             row.date = check.view.date
             row.status = status
             row.timing_confirmed = False
@@ -444,7 +444,7 @@ async def _move(
             row.impacted_by_exception_id = None
             await session.flush()
     except IntegrityError:
-        # The savepoint rolled back; the appointment still holds its original slot.
+        # The savepoint rolled back; the booking still holds its original slot.
         await session.refresh(row)
         raise await _recheck(session, settings, new_slot_id, channel) from None
     _history(session, row.id, actor, "RESCHEDULED", fromSlot=old_slot, toSlot=new_slot_id)
@@ -453,12 +453,12 @@ async def _move(
 
 
 async def reschedule(
-    session: AsyncSession, settings: Settings, appointment_id: str, body: s.RescheduleRequest,
+    session: AsyncSession, settings: Settings, booking_id: str, body: s.RescheduleRequest,
     *, caller_number: str | None, actor: str,
-) -> tuple[t.Appointment, SlotView]:
-    row = await _locate(session, settings, appointment_id, body.patient_name, caller_number)
+) -> tuple[t.Booking, SlotView]:
+    row = await _locate(session, settings, booking_id, body.customer_name, caller_number)
     if row.status not in CHANGEABLE_STATUSES:
-        raise ApiError("CONFLICT", "This appointment can no longer be moved.")
+        raise ApiError("CONFLICT", "This booking can no longer be moved.")
     if ids.parse_slot_id(body.new_slot_id) is None:
         raise validation("newSlotId is not a slot id returned by availability search.", "newSlotId")
     previous = await _move(session, settings, row, body.new_slot_id, channel="AGENT", actor=actor,
@@ -470,33 +470,33 @@ async def reschedule(
 
 
 async def search(
-    session: AsyncSession, *, doctor_id: str | None, session_id: str | None, on: date | None,
+    session: AsyncSession, *, resource_id: str | None, session_id: str | None, on: date | None,
     phone: str | None, status: str | None, limit: int, offset: int,
-) -> tuple[list[t.Appointment], int]:
-    query = select(t.Appointment)
-    if doctor_id:
-        query = query.where(t.Appointment.doctor_id == doctor_id)
+) -> tuple[list[t.Booking], int]:
+    query = select(t.Booking)
+    if resource_id:
+        query = query.where(t.Booking.resource_id == resource_id)
     if session_id:
-        query = query.where(t.Appointment.session_id == session_id)
+        query = query.where(t.Booking.session_id == session_id)
     if on:
-        query = query.where(t.Appointment.date == on)
+        query = query.where(t.Booking.date == on)
     if phone:
-        query = query.where(t.Appointment.phone == phone)
+        query = query.where(t.Booking.phone == phone)
     if status:
-        query = query.where(t.Appointment.status == status)
+        query = query.where(t.Booking.status == status)
     total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = (
         await session.scalars(
-            query.order_by(t.Appointment.date, t.Appointment.slot_id).limit(limit).offset(offset)
+            query.order_by(t.Booking.date, t.Booking.slot_id).limit(limit).offset(offset)
         )
     ).all()
     return list(rows), total
 
 
-async def get(session: AsyncSession, appointment_id: str, *, lock: bool = False) -> t.Appointment:
-    row = await session.get(t.Appointment, appointment_id, with_for_update=lock)
+async def get(session: AsyncSession, booking_id: str, *, lock: bool = False) -> t.Booking:
+    row = await session.get(t.Booking, booking_id, with_for_update=lock)
     if row is None:
-        raise not_found("No such appointment.")
+        raise not_found("No such booking.")
     return row
 
 
@@ -504,16 +504,16 @@ _STAFF_TRANSITIONS = {
     "ARRIVED": ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED"),
     "COMPLETED": ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "ARRIVED"),
     "NO_SHOW": ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED"),
-    "CANCELLED_BY_HOSPITAL": CHANGEABLE_STATUSES,
+    "CANCELLED_BY_PROVIDER": CHANGEABLE_STATUSES,
 }
 
 
 async def set_status(
-    session: AsyncSession, appointment_id: str, body: s.StatusRequest, actor: str
-) -> t.Appointment:
-    row = await get(session, appointment_id, lock=True)
+    session: AsyncSession, booking_id: str, body: s.StatusRequest, actor: str
+) -> t.Booking:
+    row = await get(session, booking_id, lock=True)
     if row.status not in _STAFF_TRANSITIONS[body.status]:
-        raise ApiError("CONFLICT", f"Cannot move an appointment from {row.status} to {body.status}.")
+        raise ApiError("CONFLICT", f"Cannot move a booking from {row.status} to {body.status}.")
     previous = row.status
     row.status = body.status
     _history(session, row.id, actor, body.status, previous=previous, note=body.note)

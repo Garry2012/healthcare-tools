@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from frontdesk_api.domain.identity import (
     BookingIdentity,
+    customers_on,
     filter_by_name,
     name_matches,
     national_number,
     number_matches,
-    patients_on,
 )
 from frontdesk_api.errors import NOT_FOUND_MESSAGE, not_found
 
-LAKSHMI = BookingIdentity("appt_1", "Lakshmi Rao", "9000000101", "+919000000101")
-AARAV = BookingIdentity("appt_2", "Aarav Rao", "9000000101", "+919000000101")
-RAMESH = BookingIdentity("appt_3", "Ramesh Iyer", "9000000202", "+919000000303")
+LAKSHMI = BookingIdentity("bkg_1", "Lakshmi Rao", "9000000101", "+919000000101")
+AARAV = BookingIdentity("bkg_2", "Aarav Rao", "9000000101", "+919000000101")
+RAMESH = BookingIdentity("bkg_3", "Ramesh Iyer", "9000000202", "+919000000303")
 
 
 def match(booking, caller=None, spoken=None):
@@ -58,9 +58,9 @@ def test_name_must_match_after_normalisation():
     assert not name_matches(LAKSHMI, "")
 
 
-def test_two_patients_on_one_number_are_counted_without_names():
-    assert patients_on([LAKSHMI, AARAV]) == 2
-    assert patients_on([LAKSHMI, LAKSHMI]) == 1
+def test_two_customers_on_one_number_are_counted_without_names():
+    assert customers_on([LAKSHMI, AARAV]) == 2
+    assert customers_on([LAKSHMI, LAKSHMI]) == 1
     assert filter_by_name([LAKSHMI, AARAV], "Aarav Rao") == [AARAV]
 
 
