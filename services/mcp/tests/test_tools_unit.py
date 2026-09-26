@@ -228,7 +228,8 @@ def test_idempotency_key_derivation():
 
 def test_dev_caller_number_is_refused_in_production(make_settings):
     with pytest.raises(ValueError, match="MCP_DEV_CALLER_NUMBER"):
-        make_settings(env="production", api_base_url="https://api.internal/api/v1", mcp_dev_caller_number="+919000000101")
+        make_settings(env="production", api_base_url="https://api.internal/api/v1",
+                      mcp_dev_caller_number="+919000000101")
 
 
 async def test_model_supplied_booking_id_cannot_reach_another_path(make_settings):
