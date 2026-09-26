@@ -154,3 +154,88 @@ async def test_capacity_cut_moves_queue_bookings_into_free_positions(client, app
     # the moved caller hears the new position on lookup, and the freed slot 3 stays unoffered
     lookup = (await client.get("/agent/bookings", headers=call(caller="+919000000003"))).json()
     assert lookup["items"][0]["status"] == "BOOKED"
+
+
+async def _deliver(client, booking_id):
+    note = next(n for n in (await client.get("/notifications", headers=STAFF)).json()["items"]
+                if n["bookingId"] == booking_id)
+    r = await client.post(f"/notifications/{note['id']}/delivered", headers=STAFF,
+                          json={"channel": "PHONE", "outcome": "INFORMED"})
+    assert r.status_code == 200
+
+
+async def _desk_messages(client):
+    return [(n["bookingId"], n["facts"].get("change")) for n in
+            (await client.get("/notifications", headers=STAFF)).json()["items"] if n["trigger"] == "DESK_MESSAGE"]
+
+
+async def test_withdrawal_leaves_a_customer_who_already_moved_alone(client, app, app_settings):
+    """QA gap 12: told the session was cancelled, the customer rebooked for next week. Withdrawing
+    the exception must not message them "your session is back" about a slot they no longer hold."""
+    thursday = next_weekday(3, app_settings)
+    first, second, _ = await _book_three(client, thursday)
+    exc = (await client.post("/schedule-exceptions", headers=STAFF, json=_surgery(thursday))).json()
+    await _deliver(client, first)
+
+    later = garima_slot(thursday.fromordinal(thursday.toordinal() + 7), 1)
+    moved = await client.post(f"/agent/bookings/{first}/reschedule", headers=call(caller="+919000000001", key="mv"),
+                              json={"customerName": "Customer 1", "newSlotId": later})
+    assert moved.status_code == 200, moved.text
+
+    assert (await client.delete(f"/schedule-exceptions/{exc['id']}", headers=STAFF)).status_code == 204
+    async with app.state.sessionmaker() as session:
+        rows = {i: await session.get(t.Booking, i) for i in (first, second)}
+    assert (rows[first].status, rows[first].slot_id) == ("RESCHEDULED", later)
+    assert rows[second].status == "BOOKED"
+    assert await _desk_messages(client) == []
+
+
+async def test_withdrawing_a_time_change_tells_the_customer_it_is_back(client, app_settings):
+    thursday = next_weekday(3, app_settings)
+    first, *_ = await _book_three(client, thursday)
+    exc = (await client.post("/schedule-exceptions", headers=STAFF, json={
+        **_surgery(thursday), "effect": "TIME_CHANGE", "newStart": "16:00", "newEnd": "18:00"})).json()
+    assert exc["impact"]["notificationsCreated"] == 3
+    await _deliver(client, first)
+    await client.delete(f"/schedule-exceptions/{exc['id']}", headers=STAFF)
+    assert await _desk_messages(client) == [(first, "SESSION_RESTORED")]
+
+
+async def test_withdrawal_says_nothing_to_a_customer_moved_forward_in_the_queue(client, app_settings):
+    """A capacity cut moved them to a free position that stays theirs; nothing changes back."""
+    thursday = next_weekday(3, app_settings)
+    r = await client.post("/agent/bookings", headers=call(caller="+919000000005", call_id="c5", key="k5"),
+                          json=book_body(garima_slot(thursday, 5), name="Customer 5", phone="9000000005"))
+    booking = r.json()["bookingId"]
+    exc = (await client.post("/schedule-exceptions", headers=STAFF, json={
+        **_surgery(thursday), "effect": "CAPACITY_CHANGE", "newCapacity": 3})).json()
+    await _deliver(client, booking)
+    await client.delete(f"/schedule-exceptions/{exc['id']}", headers=STAFF)
+    assert await _desk_messages(client) == []
+
+
+async def test_stacked_exceptions_and_a_retaken_slot(client, app, app_settings):
+    """QA gap 11: cut capacity (position 3 bumped), raise it again with a second exception, someone
+    else takes position 3, then withdraw the first: the bumped customer cannot have it back, and
+    the desk is told so, without a unique-constraint crash."""
+    thursday = next_weekday(3, app_settings)
+    first, second, third = await _book_three(client, thursday)
+    cut = await client.post("/schedule-exceptions", headers=STAFF, json={
+        **_surgery(thursday), "effect": "CAPACITY_CHANGE", "newCapacity": 3})
+    assert cut.json()["impact"]["bookingsImpacted"] == 1
+    raised = await client.post("/schedule-exceptions", headers=STAFF, json={
+        **_surgery(thursday), "effect": "CAPACITY_CHANGE", "newCapacity": 8})
+    assert raised.status_code == 201, raised.text
+
+    taken = await client.post("/agent/bookings", headers=call(caller="+919000000009", call_id="c9", key="k9"),
+                              json=book_body(garima_slot(thursday, 3), name="Someone Else", phone="9000000009"))
+    assert taken.status_code == 201, taken.text
+
+    r = await client.delete(f"/schedule-exceptions/{cut.json()['id']}", headers=STAFF)
+    assert r.status_code == 204
+    async with app.state.sessionmaker() as session:
+        bumped = await session.get(t.Booking, third)
+        history = [h.change for h in (await session.scalars(
+            select(t.BookingHistory).where(t.BookingHistory.booking_id == third))).all()]
+    assert bumped.status == "NEEDS_RESCHEDULE" and "STILL_NEEDS_RESCHEDULE" in history
+    assert (third, "SLOT_NO_LONGER_AVAILABLE") in await _desk_messages(client)

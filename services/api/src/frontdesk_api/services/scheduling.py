@@ -353,6 +353,15 @@ async def _impact(
     return moved_to_reschedule, notified
 
 
+def _changes_back(booking: t.Booking, told: t.Notification) -> bool:
+    """Withdrawing the exception changes something for this customer only if they still hold the
+    slot they were told about. Not if they moved or cancelled since, and not if a shorter queue
+    moved them forward: that position stays theirs."""
+    facts = told.facts or {}
+    return (booking.status in HOLDS_SLOT and booking.slot_id == facts.get("slotId")
+            and "previousSlotId" not in facts)
+
+
 def _position(slot_id: str) -> int:
     ref = ids.parse_slot_id(slot_id)
     return int(ref.suffix) if ref else 0
@@ -585,16 +594,16 @@ async def delete_exception(
             details={"exceptionId": exception_id},
         ))
 
-    told: set[str] = set()
+    told: dict[str, t.Notification] = {}
     for notice in notices:
         if notice.status == "PENDING":
             # The customer was never told; there is nothing to take back.
             await session.delete(notice)
         else:
-            told.add(notice.booking_id)
+            told[notice.booking_id] = notice
     for bkg_id, booking in bookings.items():
         still_needs = booking.status == "NEEDS_RESCHEDULE" and not restored.get(bkg_id, True)
-        if bkg_id in told or still_needs:
+        if still_needs or (bkg_id in told and _changes_back(booking, told[bkg_id])):
             session.add(t.Notification(
                 id=new_id("ntf"),
                 booking_id=bkg_id,

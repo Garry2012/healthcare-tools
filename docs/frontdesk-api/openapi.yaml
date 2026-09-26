@@ -1378,6 +1378,7 @@ paths:
     get:
       tags: [Calls]
       operationId: listCallSummaries
+      x-rules: ["RULE: from and to are facility-local days; to before from is 400. Newest first, ties by id."]
       summary: Admin UI listing
       security:
         - oauth2: [calls.read]
@@ -1403,6 +1404,7 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/CallSummary' }
                   total: { type: integer }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
 # =============================================================================

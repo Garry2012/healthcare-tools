@@ -26,7 +26,7 @@ async def store_call_summary(body: s.CallSummary, session: Session):
 
 
 @router.get("/call-summaries", operation_id="listCallSummaries", summary="Admin UI listing",
-            response_model=s.CallSummaryPage, responses=errors(403),
+            response_model=s.CallSummaryPage, responses=errors(400, 403),
             dependencies=[Depends(require_scopes("calls.read"))])
 async def list_call_summaries(
     session: Session,

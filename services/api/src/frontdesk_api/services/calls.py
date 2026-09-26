@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import schemas as s
 from ..config import Settings
 from ..db import tables as t
+from ..errors import validation
 from .bookings import new_id
 
 
@@ -60,6 +61,8 @@ async def page(
     session: AsyncSession, settings: Settings, *, date_from: date | None, date_to: date | None,
     limit: int, offset: int,
 ) -> s.CallSummaryPage:
+    if date_from and date_to and date_to < date_from:
+        raise validation("to must not be before from.", "to")
     query = select(t.CallSummary)
     if date_from:
         query = query.where(t.CallSummary.started_at >= datetime.combine(date_from, time.min, settings.tz))
@@ -68,6 +71,6 @@ async def page(
         query = query.where(t.CallSummary.started_at < end)
     total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = await session.scalars(
-        query.order_by(t.CallSummary.started_at.desc()).limit(limit).offset(offset)
+        query.order_by(t.CallSummary.started_at.desc(), t.CallSummary.id).limit(limit).offset(offset)
     )
     return s.CallSummaryPage(items=[_model(r) for r in rows], total=total)
