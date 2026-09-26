@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8100, ge=1, le=65535)
 
+    provider_id: str = ""
     # Which words the LLM reads (packs/<name>.json); must match the API's DOMAIN_PACK.
     domain_pack: str = "healthcare"
 
@@ -37,6 +38,9 @@ class Settings(BaseSettings):
     def _production_guards(self) -> Settings:
         packs.load(self.domain_pack)
         if self.env == "production":
+            if not self.api_base_url.startswith("https://"):
+                # Caller numbers and names cross this hop: never in clear text in production.
+                raise ValueError("API_BASE_URL must use https:// when ENV=production")
             if self.mcp_dev_caller_number:
                 raise ValueError("MCP_DEV_CALLER_NUMBER must not be set when ENV=production")
             if not self.mcp_bearer_token.get_secret_value():

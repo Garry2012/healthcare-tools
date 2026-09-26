@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import httpx
@@ -227,7 +228,7 @@ def test_idempotency_key_derivation():
 
 def test_dev_caller_number_is_refused_in_production(make_settings):
     with pytest.raises(ValueError, match="MCP_DEV_CALLER_NUMBER"):
-        make_settings(env="production", mcp_dev_caller_number="+919000000101")
+        make_settings(env="production", api_base_url="https://api.internal/api/v1", mcp_dev_caller_number="+919000000101")
 
 
 async def test_model_supplied_booking_id_cannot_reach_another_path(make_settings):
@@ -277,3 +278,30 @@ async def test_corrected_phone_is_a_new_booking_request_not_a_conflict(make_sett
         for phone in ("9000000101", "9000000101", "9000000102"):
             await client.call_tool("manage_booking", {**args, "customer": {"name": "Lakshmi Rao", "phone": phone}})
     assert keys[0] == keys[1] != keys[2]
+
+
+def test_production_refuses_a_clear_text_api_url(make_settings):
+    with pytest.raises(ValueError, match="https"):
+        make_settings(env="production", api_base_url="http://api:8000/api/v1")
+    assert make_settings(env="production", api_base_url="https://api.internal/api/v1").env == "production"
+
+
+async def test_adapter_log_lines_carry_the_call_id(make_settings, monkeypatch):
+    from frontdesk_mcp.server import JsonFormatter
+
+    lines: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record):
+            lines.append(JsonFormatter("demo-hospital").format(record))
+
+    handler = Capture()
+    logging.getLogger("frontdesk_mcp").addHandler(handler)
+    monkeypatch.setattr(tools, "get_http_headers", lambda: {"x-call-id": "call-log-1"})
+    try:
+        async with Client(mcp_with(make_settings(api_base_url="http://127.0.0.1:1/api/v1"))) as client:
+            await client.call_tool("find_availability", {"utterance": "x", "language": "en"})
+    finally:
+        logging.getLogger("frontdesk_mcp").removeHandler(handler)
+    parsed = [json.loads(line) for line in lines]
+    assert parsed and all(p["callId"] == "call-log-1" and p["provider"] == "demo-hospital" for p in parsed)

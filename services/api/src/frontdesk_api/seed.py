@@ -180,7 +180,7 @@ class Seeder:
 
 
 async def run(settings: Settings, *, reset: bool = False) -> dict[str, int]:
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.provider_id)
     engine = make_engine(settings)
     try:
         async with make_sessionmaker(engine)() as session:

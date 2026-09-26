@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 
 
 class JsonFormatter(logging.Formatter):
+    """Same shape as the API's log lines: provider and callId correlate the two services."""
+
+    def __init__(self, provider: str = "") -> None:
+        super().__init__()
+        self.provider = provider
+
     def format(self, record: logging.LogRecord) -> str:
         entry = {
             "ts": datetime.fromtimestamp(record.created, UTC).isoformat(),
@@ -33,15 +39,19 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
+        if self.provider:
+            entry["provider"] = self.provider
+        if call_id := tools.call_id_var.get():
+            entry["callId"] = call_id
         fields = getattr(record, "fields", None)
         if isinstance(fields, dict):
             entry.update(fields)
         return json.dumps(entry, default=str)
 
 
-def configure_logging(level: str) -> None:
+def configure_logging(level: str, provider: str = "") -> None:
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
+    handler.setFormatter(JsonFormatter(provider))
     logging.getLogger().handlers[:] = [handler]
     logging.getLogger().setLevel(level.upper())
 
@@ -73,7 +83,7 @@ def build_mcp(client: tools.ApiClient) -> FastMCP:
 
 def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTransport | None = None) -> Starlette:
     settings = settings or get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.provider_id)
     client = tools.ApiClient(settings, transport=transport)
     mcp = build_mcp(client)
     # Stateless: no per-session server state, so any replica can serve any request.

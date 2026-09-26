@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     database_statement_timeout_ms: int = Field(default=5000, ge=100, le=60000)
     max_request_bytes: int = Field(default=65536, ge=1024, le=10_485_760)
 
+    # Which provider this deployment serves (deploy/providers/<provider>.env); on every log line.
+    provider_id: str = ""
+
     # --- domain pack (packs/<name>): vocabulary data, escalation, demo seed ---
     domain_pack: str = "healthcare"
 

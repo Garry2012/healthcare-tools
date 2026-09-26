@@ -11,6 +11,7 @@ import hashlib
 import logging
 import re
 import unicodedata
+from contextvars import ContextVar
 from datetime import date
 from typing import Annotated, Any, Literal
 
@@ -24,6 +25,8 @@ from .config import Settings
 from .packs import Pack
 
 logger = logging.getLogger(__name__)
+# The current tool call's X-Call-Id, for log lines (set per request; tasks copy the context).
+call_id_var: ContextVar[str | None] = ContextVar("mcp_call_id", default=None)
 
 Action = Literal["BOOK", "LIST", "CANCEL", "RESCHEDULE"]
 DayPart = Literal["MORNING", "AFTERNOON", "EVENING", "ANY"]
@@ -90,6 +93,7 @@ def call_context(settings: Settings) -> dict[str, str]:
     headers: dict[str, str] = {}
     if call_id := incoming.get("x-call-id"):
         headers["X-Call-Id"] = call_id
+        call_id_var.set(call_id)
     caller = incoming.get("x-caller-number")
     if not caller and settings.env != "production" and settings.mcp_dev_caller_number:
         caller = settings.mcp_dev_caller_number

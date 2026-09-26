@@ -14,6 +14,12 @@ call_id_var: ContextVar[str | None] = ContextVar("call_id", default=None)
 
 
 class JsonFormatter(logging.Formatter):
+    """One JSON object per line; `provider` tells apart the many deployments in one log store."""
+
+    def __init__(self, provider: str = "") -> None:
+        super().__init__()
+        self.provider = provider
+
     def format(self, record: logging.LogRecord) -> str:
         entry: dict[str, Any] = {
             "ts": datetime.fromtimestamp(record.created, UTC).isoformat(),
@@ -21,6 +27,8 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
+        if self.provider:
+            entry["provider"] = self.provider
         call_id = call_id_var.get()
         if call_id:
             entry["callId"] = call_id
@@ -32,9 +40,9 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, ensure_ascii=False, default=str)
 
 
-def configure_logging(level: str) -> None:
+def configure_logging(level: str, provider: str = "") -> None:
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
+    handler.setFormatter(JsonFormatter(provider))
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level.upper())

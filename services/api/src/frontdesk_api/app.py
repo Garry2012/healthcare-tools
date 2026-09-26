@@ -37,7 +37,7 @@ API_PREFIX = "/api/v1"
 
 def create_app(settings: Settings | None = None, verifier: TokenVerifier | None = None) -> FastAPI:
     settings = settings or get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.provider_id)
     engine = make_engine(settings)
 
     @contextlib.asynccontextmanager
