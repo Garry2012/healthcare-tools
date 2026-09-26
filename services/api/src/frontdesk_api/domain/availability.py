@@ -374,6 +374,9 @@ def compute_sessions(
             reason = "DESK_ONLY"
         bookable = reason is None
 
+        # Today, a slot the caller can no longer reach is not offered: a TIMED slot that has
+        # started, or a queue position whose expected window has closed.
+        clock = now_min if on == today else -1
         slots: list[SlotView] = []
         if status != CANCELLED_STATUS:
             if w.capacity_model == "TIMED":
@@ -385,7 +388,7 @@ def compute_sessions(
                         SlotView(
                             slot_id=slot_id,
                             kind="TIMED",
-                            available=bookable and slot_id not in held,
+                            available=bookable and slot_id not in held and start_m >= clock,
                             start=_clock(start_m),
                             end=_clock(start_m + step),
                         )
@@ -395,16 +398,20 @@ def compute_sessions(
                 for position in range(1, offered + 1):
                     slot_id = ids.position_slot_id(sid, position)
                     at = min(run_from + math.floor((position - 1) * interval), end_min)
+                    window_to = min(at + cfg.sequence_window_minutes, end_min)
                     slots.append(
                         SlotView(
                             slot_id=slot_id,
                             kind="SEQUENCE",
-                            available=bookable and slot_id not in held,
+                            available=bookable and slot_id not in held and window_to > clock,
                             position=position,
                             window_from=_clock(at),
-                            window_to=_clock(min(at + cfg.sequence_window_minutes, end_min)),
+                            window_to=_clock(window_to),
                         )
                     )
+
+        if on == today and bookable:
+            remaining = sum(1 for slot in slots if slot.available)
 
         views.append(
             SessionView(

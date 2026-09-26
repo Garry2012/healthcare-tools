@@ -264,3 +264,31 @@ def test_template_effective_dates_are_respected():
 def test_partial_time_range_block_keeps_the_longer_part():
     [am, _] = run(exceptions=[exc(1, "UNAVAILABLE", scope="TIME_RANGE", new_start=time(11), new_end=time(12))])
     assert (am.start, am.end, am.status) == (time(9), time(11), "CHANGED")
+
+
+def test_timed_slots_that_already_started_today_are_not_offered():
+    timed = TemplateDef(date(2026, 9, 1), None, (
+        TemplateSessionDef("tpl_obg", 1, frozenset({"FRI"}), time(10), time(11), "TIMED",
+                           CapacityRule("DEFAULT"), slot_minutes=15, last_arrival_offset_minutes=0),
+    ))
+    [view] = run(on=FRI, templates=(timed,), now=datetime(2026, 9, 25, 10, 20, tzinfo=IST))
+    assert view.bookable
+    assert [(s.slot_id[-4:], s.available) for s in view.slots] == [
+        ("1000", False), ("1015", False), ("1030", True), ("1045", True),
+    ]
+    assert view.remaining == 2
+
+
+def test_queue_positions_whose_window_has_closed_are_not_offered():
+    # 4 per hour from 09:00, 20-minute windows; at 10:00 positions 1-3 (windows end 09:20, 09:35,
+    # 09:50) are gone, position 4 (09:45-10:05) can still make it.
+    am, _ = run(on=FRI, now=datetime(2026, 9, 25, 10, 0, tzinfo=IST))
+    available = [s.position for s in am.slots if s.available]
+    assert available[0] == 4 and 3 not in available
+    assert am.remaining == len(available)
+    assert am.bookable
+
+
+def test_future_days_are_not_trimmed_by_the_clock():
+    am, _ = run(on=MON, now=datetime(2026, 9, 25, 23, 0, tzinfo=IST))
+    assert all(s.available for s in am.slots)
