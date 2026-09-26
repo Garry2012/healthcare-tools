@@ -2359,7 +2359,7 @@ components:
             properties:
               entryId: { type: string }
               topic: { type: string }
-              label: { type: string, description: The question variant that matched; ask "did you mean …". }
+              label: { type: string, description: "The entry's own approved question in the caller's script (else its first question), not the variant that matched; ask \"did you mean …\"." }
 
     KnowledgeEntryInput:
       type: object

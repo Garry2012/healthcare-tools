@@ -78,7 +78,8 @@ async def agent_search(
     if decision.outcome == "CLARIFICATION_NEEDED":
         return s.KnowledgeSearchResponse(
             outcome="CLARIFICATION_NEEDED", as_of=now, routing=s.KnowledgeRouting(action="CLARIFY"),
-            options=[s.KnowledgeOption(entry_id=h.entry.entry_id, topic=h.entry.topic, label=h.matched_question)
+            options=[s.KnowledgeOption(entry_id=h.entry.entry_id, topic=h.entry.topic,
+                                     label=kb.option_label(h.entry, body.language))
                      for h in decision.options],
         )
     return s.KnowledgeSearchResponse(

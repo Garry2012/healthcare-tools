@@ -92,3 +92,16 @@ def test_a_specific_word_the_answers_do_not_cover_is_confirmed_not_answered(inde
 def test_ordinary_filler_words_still_get_the_answer(index, question, entry_id):
     decision = ask(index, question)
     assert decision.outcome == "ANSWERED" and decision.hit.entry.entry_id == entry_id
+
+
+def test_clarification_label_is_the_entrys_question_in_the_callers_script():
+    """PO review 13: a clarifying option read 'gaadi kahan park karein' to an English caller."""
+    from frontdesk_api.domain.knowledge import option_label
+
+    parking = Entry("kb_parking", "parking",
+                    ("parking", "gaadi kahan park karein", "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", "पार्किंग है क्या"), {"en": "x"})
+    assert option_label(parking, "en") == "parking"
+    assert option_label(parking, "kn") == "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ"
+    assert option_label(parking, "hi") == "पार्किंग है क्या"
+    only_latin = Entry("kb_x", "x", ("visiting hours", "patient se milne ka time"), {"en": "x"})
+    assert option_label(only_latin, "kn") == "visiting hours"

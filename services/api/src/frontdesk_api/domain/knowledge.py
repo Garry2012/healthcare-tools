@@ -140,6 +140,20 @@ def decide(hits: Sequence[Hit], thresholds: Thresholds) -> Decision:
     return Decision("CLARIFICATION_NEEDED", options=close[:3])
 
 
+_SCRIPTS = {"kn": ("\u0c80", "\u0cff"), "hi": ("\u0900", "\u097f")}
+
+
+def option_label(entry: Entry, language: str) -> str:
+    """How a clarifying option is read out: the entry's own (approved) question in the caller's
+    script, else its first question. Never the variant that happened to match."""
+    low, high = _SCRIPTS.get(language.split("-")[0], ("", ""))
+    if low:
+        for question in entry.questions:
+            if any(low <= ch <= high for ch in question):
+                return question
+    return entry.questions[0]
+
+
 def pick_answer(entry: Entry, language: str) -> tuple[str, str]:
     """The approved text in the caller's language, else English, else any; never a translation."""
     for lang in (language, language.split("-")[0], "en"):
