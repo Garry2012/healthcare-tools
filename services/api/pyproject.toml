@@ -1,5 +1,5 @@
 [project]
-name = "healthcare-api"
+name = "frontdesk-api"
 version = "0.1.0"
 description = "Front-desk domain REST service: availability, booking, resolver, notifications"
 requires-python = "==3.13.*"
@@ -27,18 +27,20 @@ dev = [
 ]
 
 [project.scripts]
-healthcare-api = "healthcare_api.cli:main"
+frontdesk-api = "frontdesk_api.cli:main"
 
 [build-system]
 requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/healthcare_api"]
+packages = ["src/frontdesk_api"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+# A hung test dumps every thread's stack instead of stalling CI silently.
+faulthandler_timeout = 60
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
@@ -56,3 +58,4 @@ ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S311", "S603"]
+"alembic/versions/**" = ["E501", "S608"]  # generated DDL; SQL built from module constants only

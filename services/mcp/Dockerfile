@@ -1,4 +1,4 @@
-# healthcare-mcp: FastMCP adapter. No database, no domain logic.
+# frontdesk-mcp: FastMCP adapter. No database, no domain logic.
 FROM python:3.13.13-slim AS build
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_PROJECT_ENVIRONMENT=/app/.venv
@@ -17,4 +17,4 @@ USER 10001:10001
 EXPOSE 8100
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import os,sys,urllib.request as u; sys.exit(0 if u.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/health', timeout=2).status == 200 else 1)"]
-CMD ["healthcare-mcp", "serve"]
+CMD ["frontdesk-mcp", "serve"]

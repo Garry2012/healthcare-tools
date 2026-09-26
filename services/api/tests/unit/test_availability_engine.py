@@ -7,12 +7,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from healthcare_api.domain.availability import (
+from frontdesk_api.domain.availability import (
     BoardDef,
     CapacityRule,
-    DoctorDef,
     EngineConfig,
     ExceptionDef,
+    ResourceDef,
     TemplateDef,
     TemplateSessionDef,
     compute_sessions,
@@ -26,40 +26,40 @@ THU = date(2026, 10, 1)
 NOW = datetime(2026, 9, 25, 8, 0, tzinfo=IST)
 CFG = EngineConfig(default_capacity=10, sequence_window_minutes=20, default_last_arrival_offset_minutes=15)
 
-GARIMA = DoctorDef("doc_garima")
+GARIMA = ResourceDef("res_garima")
 AM = TemplateSessionDef(
-    template_session_id="tpl_doc_garima_am", ordinal=1, days_of_week=frozenset({"MON", "THU", "FRI"}),
+    template_session_id="tpl_res_garima_am", ordinal=1, days_of_week=frozenset({"MON", "THU", "FRI"}),
     start=time(9, 0), end=time(12, 0), capacity_model="SEQUENCE", capacity=CapacityRule("PER_HOUR", 4),
     label="Morning", walk_in_reserve_percent=25, last_arrival_offset_minutes=15,
 )
 PM = TemplateSessionDef(
-    template_session_id="tpl_doc_garima_pm", ordinal=2, days_of_week=frozenset({"MON", "THU", "FRI"}),
+    template_session_id="tpl_res_garima_pm", ordinal=2, days_of_week=frozenset({"MON", "THU", "FRI"}),
     start=time(15, 0), end=time(17, 0), capacity_model="SEQUENCE", capacity=CapacityRule("PER_HOUR", 4),
     label="Afternoon", walk_in_reserve_percent=25, last_arrival_offset_minutes=15,
 )
 TEMPLATE = TemplateDef(date(2026, 9, 1), None, (AM, PM))
 
 
-def run(on=MON, *, doctor=GARIMA, templates=(TEMPLATE,), exceptions=(), board=None, held=(), now=NOW,
+def run(on=MON, *, resource=GARIMA, templates=(TEMPLATE,), exceptions=(), board=None, held=(), now=NOW,
         channel="AGENT"):
-    return compute_sessions(doctor, templates, exceptions, board or {}, held, on, now, CFG, channel=channel)
+    return compute_sessions(resource, templates, exceptions, board or {}, held, on, now, CFG, channel=channel)
 
 
-def exc(seq, effect, *, on=MON, scope="SESSION", tsid="tpl_doc_garima_pm", **kw):
+def exc(seq, effect, *, on=MON, scope="SESSION", tsid="tpl_res_garima_pm", **kw):
     return ExceptionDef(seq=seq, exception_id=f"exc_{seq}", date_from=on, date_to=on, scope=scope,
                         effect=effect, template_session_id=tsid if scope == "SESSION" else None, **kw)
 
 
 def test_template_only_gives_expected_slots():
     am, pm = run()
-    assert (am.session_id, pm.session_id) == ("ses_doc_garima_2026-09-28_1", "ses_doc_garima_2026-09-28_2")
+    assert (am.session_id, pm.session_id) == ("ses_res_garima_2026-09-28_1", "ses_res_garima_2026-09-28_2")
     assert am.status == pm.status == "SCHEDULED"
     assert am.timing_certainty == pm.timing_certainty == "EXPECTED"
     assert am.bookable and pm.bookable
     assert (am.total, am.walk_in_reserve, len(am.slots)) == (12, 3, 9)
     assert (pm.total, pm.walk_in_reserve, len(pm.slots)) == (8, 2, 6)
     assert am.capacity_source == "PER_HOUR"
-    assert am.slots[0].slot_id == "slot_ses_doc_garima_2026-09-28_1_01"
+    assert am.slots[0].slot_id == "slot_ses_res_garima_2026-09-28_1_01"
     assert all(s.available for s in am.slots)
 
 
@@ -81,18 +81,18 @@ def test_whole_day_unavailable_removes_every_session():
 
 
 def test_time_change_moves_the_session_and_recomputes_capacity():
-    am, _ = run(exceptions=[exc(1, "TIME_CHANGE", tsid="tpl_doc_garima_am", new_start=time(10), new_end=time(12))])
+    am, _ = run(exceptions=[exc(1, "TIME_CHANGE", tsid="tpl_res_garima_am", new_start=time(10), new_end=time(12))])
     assert am.status == "CHANGED"
     assert (am.start, am.end) == (time(10), time(12))
     assert (am.total, len(am.slots)) == (8, 6)
     assert am.slots[0].window_from == time(10)
-    assert am.session_id == "ses_doc_garima_2026-09-28_1"  # identity survives the move
+    assert am.session_id == "ses_res_garima_2026-09-28_1"  # identity survives the move
 
 
 def test_extra_session_adds_one_on_a_non_template_day():
     [extra] = run(on=SUN, exceptions=[exc(7, "EXTRA_SESSION", on=SUN, scope="TIME_RANGE",
                                          new_start=time(10), new_end=time(12), new_capacity=8)])
-    assert extra.session_id == "ses_doc_garima_2026-09-27_e7"
+    assert extra.session_id == "ses_res_garima_2026-09-27_e7"
     assert extra.status == "CHANGED" and extra.template_session_id is None
     assert (extra.total, extra.capacity_source, len(extra.slots)) == (8, "FIXED", 8)
 
@@ -103,7 +103,7 @@ def test_capacity_change_sets_total():
 
 
 def test_board_left_makes_session_unbookable():
-    sid = "ses_doc_garima_2026-09-25_1"
+    sid = "ses_res_garima_2026-09-25_1"
     am, pm = run(on=FRI, board={sid: BoardDef(sid, presence="LEFT")})
     assert am.presence == "LEFT"
     assert (am.bookable, am.not_bookable_reason) == (False, "LEFT_FOR_DAY")
@@ -112,13 +112,13 @@ def test_board_left_makes_session_unbookable():
 
 
 def test_board_is_ignored_on_other_days():
-    sid = "ses_doc_garima_2026-09-28_1"
+    sid = "ses_res_garima_2026-09-28_1"
     am, _ = run(on=MON, board={sid: BoardDef(sid, presence="LEFT")})
     assert am.bookable and am.presence is None
 
 
 def test_session_ended_flag_and_clock_both_end_a_session():
-    sid = "ses_doc_garima_2026-09-25_1"
+    sid = "ses_res_garima_2026-09-25_1"
     am, _ = run(on=FRI, board={sid: BoardDef(sid, session_ended=True)})
     assert (am.status, am.not_bookable_reason) == ("ENDED", "SESSION_ENDED")
     late = datetime(2026, 9, 25, 12, 30, tzinfo=IST)
@@ -133,16 +133,16 @@ def test_past_dates_are_ended():
 
 
 def test_full_from_board_and_from_bookings():
-    sid = "ses_doc_garima_2026-09-25_2"
+    sid = "ses_res_garima_2026-09-25_2"
     _, pm = run(on=FRI, board={sid: BoardDef(sid, capacity_state="FULL")})
     assert pm.not_bookable_reason == "FULL"
-    held = [f"slot_ses_doc_garima_2026-09-28_2_{i:02d}" for i in range(1, 7)]
+    held = [f"slot_ses_res_garima_2026-09-28_2_{i:02d}" for i in range(1, 7)]
     _, pm = run(held=held)
     assert (pm.booked, pm.remaining, pm.bookable, pm.not_bookable_reason) == (6, 0, False, "FULL")
 
 
 def test_booked_slot_is_unavailable_and_counted():
-    _, pm = run(held=["slot_ses_doc_garima_2026-09-28_2_04"])
+    _, pm = run(held=["slot_ses_res_garima_2026-09-28_2_04"])
     assert pm.booked == 1 and pm.remaining == 5
     assert [s.position for s in pm.slots if not s.available] == [4]
 
@@ -150,7 +150,7 @@ def test_booked_slot_is_unavailable_and_counted():
 def test_arrive_by_is_min_of_desk_value_and_end_minus_offset():
     _, pm = run()
     assert pm.arrive_by == time(16, 45)
-    sid = "ses_doc_garima_2026-09-25_2"
+    sid = "ses_res_garima_2026-09-25_2"
     _, pm = run(on=FRI, board={sid: BoardDef(sid, last_arrival_time=time(16, 0))})
     assert pm.arrive_by == time(16, 0)
     _, pm = run(on=FRI, board={sid: BoardDef(sid, last_arrival_time=time(16, 55))})
@@ -174,18 +174,18 @@ def test_arrive_by_passed_today():
     ],
 )
 def test_timing_certainty_and_data_confirmed_cap(effect, data_confirmed, expected):
-    doctor = DoctorDef("doc_garima", data_confirmed=data_confirmed)
+    resource = ResourceDef("res_garima", data_confirmed=data_confirmed)
     exceptions = [exc(1, effect)] if effect else []
-    _, pm = run(doctor=doctor, exceptions=exceptions)
+    _, pm = run(resource=resource, exceptions=exceptions)
     assert pm.timing_certainty == expected
 
 
 def test_board_timing_confirmed_is_capped_by_unconfirmed_data():
-    sid = "ses_doc_garima_2026-09-25_2"
+    sid = "ses_res_garima_2026-09-25_2"
     board = {sid: BoardDef(sid, timing_confirmed=True)}
     assert run(on=FRI, board=board)[1].timing_certainty == "CONFIRMED"
-    doctor = DoctorDef("doc_garima", data_confirmed=False)
-    assert run(on=FRI, board=board, doctor=doctor)[1].timing_certainty == "EXPECTED"
+    resource = ResourceDef("res_garima", data_confirmed=False)
+    assert run(on=FRI, board=board, resource=resource)[1].timing_certainty == "EXPECTED"
 
 
 def test_walk_in_reserve_reduces_offered_slots():
@@ -207,7 +207,7 @@ def test_sequence_expected_windows():
 
 
 def test_sequence_windows_follow_a_late_start():
-    sid = "ses_doc_garima_2026-09-25_1"
+    sid = "ses_res_garima_2026-09-25_1"
     am, _ = run(on=FRI, board={sid: BoardDef(sid, presence="ARRIVING", delay_minutes=20)})
     assert am.expected_start == time(9, 20)
     assert am.slots[0].window_from == time(9, 20)
@@ -219,7 +219,7 @@ def test_timed_slot_generation():
         TemplateSessionDef("tpl_obg", 1, frozenset({"MON"}), time(10), time(11), "TIMED",
                            CapacityRule("DEFAULT"), slot_minutes=15),
     ))
-    [view] = run(templates=(timed,), held=["slot_ses_doc_garima_2026-09-28_1_1015"])
+    [view] = run(templates=(timed,), held=["slot_ses_res_garima_2026-09-28_1_1015"])
     assert view.capacity_model == "TIMED" and view.total == 4
     assert [(s.slot_id[-4:], s.start, s.end, s.available) for s in view.slots] == [
         ("1000", time(10, 0), time(10, 15), True),
@@ -239,17 +239,17 @@ def test_default_capacity_is_flagged():
 
 
 def test_desk_only_blocks_the_agent_but_not_the_desk():
-    doctor = DoctorDef("doc_garima", booking_policy="DESK_ONLY")
-    am, _ = run(doctor=doctor)
+    resource = ResourceDef("res_garima", booking_policy="DESK_ONLY")
+    am, _ = run(resource=resource)
     assert (am.bookable, am.not_bookable_reason) == (False, "DESK_ONLY")
-    am, _ = run(doctor=doctor, channel="DESK")
+    am, _ = run(resource=resource, channel="DESK")
     assert am.bookable
 
 
-def test_on_call_doctor_only_has_extra_sessions():
-    doctor = DoctorDef("doc_garima", attendance_type="ON_CALL")
-    assert run(doctor=doctor) == []
-    [extra] = run(doctor=doctor, exceptions=[exc(3, "EXTRA_SESSION", scope="TIME_RANGE",
+def test_on_call_resource_only_has_extra_sessions():
+    resource = ResourceDef("res_garima", attendance_type="ON_CALL")
+    assert run(resource=resource) == []
+    [extra] = run(resource=resource, exceptions=[exc(3, "EXTRA_SESSION", scope="TIME_RANGE",
                                                  new_start=time(18), new_end=time(19))])
     assert extra.bookable and extra.capacity_source == "DEFAULT"
 
@@ -264,3 +264,41 @@ def test_template_effective_dates_are_respected():
 def test_partial_time_range_block_keeps_the_longer_part():
     [am, _] = run(exceptions=[exc(1, "UNAVAILABLE", scope="TIME_RANGE", new_start=time(11), new_end=time(12))])
     assert (am.start, am.end, am.status) == (time(9), time(11), "CHANGED")
+
+
+def test_timed_slots_that_already_started_today_are_not_offered():
+    timed = TemplateDef(date(2026, 9, 1), None, (
+        TemplateSessionDef("tpl_obg", 1, frozenset({"FRI"}), time(10), time(11), "TIMED",
+                           CapacityRule("DEFAULT"), slot_minutes=15, last_arrival_offset_minutes=0),
+    ))
+    [view] = run(on=FRI, templates=(timed,), now=datetime(2026, 9, 25, 10, 20, tzinfo=IST))
+    assert view.bookable
+    assert [(s.slot_id[-4:], s.available) for s in view.slots] == [
+        ("1000", False), ("1015", False), ("1030", True), ("1045", True),
+    ]
+    assert view.remaining == 2
+
+
+def test_queue_positions_whose_window_has_closed_are_not_offered():
+    # 4 per hour from 09:00, 20-minute windows; at 10:00 positions 1-3 (windows end 09:20, 09:35,
+    # 09:50) are gone, position 4 (09:45-10:05) can still make it.
+    am, _ = run(on=FRI, now=datetime(2026, 9, 25, 10, 0, tzinfo=IST))
+    available = [s.position for s in am.slots if s.available]
+    assert available[0] == 4 and 3 not in available
+    assert am.remaining == len(available)
+    assert am.bookable
+
+
+def test_future_days_are_not_trimmed_by_the_clock():
+    am, _ = run(on=MON, now=datetime(2026, 9, 25, 23, 0, tzinfo=IST))
+    assert all(s.available for s in am.slots)
+
+
+def test_a_huge_queue_is_capped_so_slot_ids_stay_unambiguous():
+    big = TemplateDef(date(2026, 9, 1), None, (
+        TemplateSessionDef("tpl_big", 1, frozenset({"MON"}), time(8), time(20), "SEQUENCE",
+                           CapacityRule("FIXED", 1500)),
+    ))
+    [view] = run(templates=(big,))
+    assert view.total == 999
+    assert max(len(s.slot_id.rsplit("_", 1)[1]) for s in view.slots) == 3

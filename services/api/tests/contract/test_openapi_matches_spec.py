@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 import yaml
 
-from healthcare_api.app import API_PREFIX, create_app
+from frontdesk_api.app import API_PREFIX, create_app
 
 SPEC = Path(os.environ.get("SPEC_PATH", Path(__file__).resolve().parents[4] / "docs/frontdesk-api/openapi.yaml"))
 METHODS = {"get", "put", "post", "delete", "patch"}

@@ -14,10 +14,10 @@ migrate: ## Alembic upgrade head as the owner role
 	$(COMPOSE) --profile dev run --rm migrate
 
 seed: ## Load synthetic demo data (idempotent)
-	$(COMPOSE) --profile dev exec api healthcare-api seed
+	$(COMPOSE) --profile dev exec api frontdesk-api seed
 
 seed-reset: ## DESTRUCTIVE: empty every table in the dev database and reload the seed
-	$(COMPOSE) --profile dev exec api healthcare-api seed --reset
+	$(COMPOSE) --profile dev exec api frontdesk-api seed --reset
 
 test: ## Unit + integration + contract + MCP suites against a throwaway postgres
 	./scripts/test.sh
@@ -26,12 +26,12 @@ demo: ## Kannada search → book → list → reschedule → cancel against the 
 	./scripts/demo.sh
 
 lint: ## ruff on both services
-	cd services/api && uv run ruff check src tests
-	cd services/mcp && uv run ruff check src tests
+	cd services/api && uv run ruff check .
+	cd services/mcp && uv run ruff check . ../../deploy
 
 build: ## Build both images
-	docker build -t healthcare-api:dev services/api
-	docker build -t healthcare-mcp:dev services/mcp
+	docker build -t frontdesk-api:dev services/api
+	docker build -t frontdesk-mcp:dev services/mcp
 
 logs:
 	$(COMPOSE) --profile dev logs -f api mcp

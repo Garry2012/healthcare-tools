@@ -8,14 +8,15 @@ import os
 
 import pytest
 
-from healthcare_api.config import Settings
+from frontdesk_api.config import Settings
 
 for _field in Settings.model_fields:
     os.environ.pop(_field.upper(), None)
 
 AGENT_TOKEN = "agent-token-for-tests-only"
 STAFF_TOKEN = "staff-token-for-tests-only"
-STAFF_SCOPES = ["appointments.staff", "schedule.write", "board.write", "directory.write", "calls.write", "calls.read"]
+STAFF_SCOPES = ["bookings.staff", "schedule.write", "board.write", "directory.write", "knowledge.write", "calls.write",
+                "calls.read"]
 TOKENS = json.dumps({AGENT_TOKEN: ["agent"], STAFF_TOKEN: STAFF_SCOPES})
 
 

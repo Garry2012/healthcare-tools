@@ -5,7 +5,7 @@ choices made inside it and every library adopted.
 
 | # | Decision | Why | Alternatives considered |
 |---|---|---|---|
-| D1 | All domain logic in `healthcare-api`; `healthcare-mcp` only maps tools to Agent operations | One place to test and change rules; a second consumer (staff portal) gets the same behaviour | Logic in the MCP layer (duplicated, untestable without the agent); ContextForge REST tools (cannot inject call context) |
+| D1 | All domain logic in `frontdesk-api`; `frontdesk-mcp` only maps tools to Agent operations | One place to test and change rules; a second consumer (staff portal) gets the same behaviour | Logic in the MCP layer (duplicated, untestable without the agent); ContextForge REST tools (cannot inject call context) |
 | D2 | Availability is a pure function (`domain/availability.py`) evaluated per request, never stored | Today and future are the same question; no cache invalidation; golden tests need no DB | Materialised slots table (stale on every exception or board change) |
 | D3 | Slot uniqueness via a partial unique index; `INSERT … ON CONFLICT DO NOTHING`; reschedule as an UPDATE in a savepoint | Correct under concurrency without locks or retries; the 25-way race test proves it | `SELECT … FOR UPDATE` on a session row (serialises all bookings for a session) |
 | D4 | Idempotency row inserted first, in the same transaction as the write | A concurrent duplicate blocks on the key and then replays; a rollback leaves no key behind | Check-then-insert (races); storing failures (replays stale conflicts) |

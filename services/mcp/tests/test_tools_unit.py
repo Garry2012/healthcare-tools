@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import httpx
@@ -11,8 +12,8 @@ import yaml
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-from healthcare_mcp import tools
-from healthcare_mcp.server import build_mcp, create_app
+from frontdesk_mcp import packs, tools
+from frontdesk_mcp.server import build_mcp, create_app
 
 from .conftest import serving
 
@@ -39,35 +40,58 @@ def mcp_with(settings, handler=None, transport=None):
     return build_mcp(tools.ApiClient(settings, transport=transport))
 
 
-async def test_exactly_two_tools_without_header_parameters(make_settings):
+async def test_exactly_three_tools_without_header_parameters(make_settings):
     async with Client(mcp_with(make_settings())) as client:
         listed = await client.list_tools()
-    assert sorted(t.name for t in listed) == ["find_availability", "manage_appointment"]
+    assert sorted(t.name for t in listed) == ["find_availability", "manage_booking", "search_knowledge"]
     for tool in listed:
         leaked = _names(tool.inputSchema) & FORBIDDEN
         assert leaked == set(), f"{tool.name} exposes {leaked}"
 
 
 @pytest.mark.skipif(not SPEC.is_file(), reason="spec not available")
-async def test_descriptions_come_from_x_mcp_tools(make_settings):
+async def test_tool_set_matches_x_mcp_tools(make_settings):
     spec = yaml.safe_load(SPEC.read_text())["x-mcp-tools"]
     async with Client(mcp_with(make_settings())) as client:
-        listed = {t.name: t.description for t in await client.list_tools()}
-    for name, description in listed.items():
-        assert description == " ".join(spec[name]["description"].split())
+        listed = {t.name for t in await client.list_tools()}
+    assert listed == {name for name, entry in spec.items() if "operations" in entry}
+
+
+@pytest.mark.parametrize("pack", ["healthcare", "hospitality"])
+async def test_domain_pack_sets_the_words_but_not_the_schema(make_settings, pack):
+    """Same tools and parameters in every domain; only descriptions change."""
+    async with Client(mcp_with(make_settings(domain_pack="healthcare"))) as client:
+        base = {t.name: t for t in await client.list_tools()}
+    async with Client(mcp_with(make_settings(domain_pack=pack))) as client:
+        listed = {t.name: t for t in await client.list_tools()}
+        instructions = client.initialize_result.instructions
+    text = packs.load(pack)
+    assert instructions == text.instructions
+    for name, tool in listed.items():
+        assert tool.description == text.tools[name].description
+        assert set(tool.inputSchema["properties"]) == set(base[name].inputSchema["properties"])
+        for param, description in text.tools[name].parameters.items():
+            assert tool.inputSchema["properties"][param]["description"] == description
+
+
+def test_unknown_pack_is_refused(make_settings):
+    with pytest.raises(ValueError, match="Unknown DOMAIN_PACK"):
+        make_settings(domain_pack="nonexistent")
 
 
 async def test_api_down_is_could_not_check_not_an_exception(make_settings):
     settings = make_settings(api_base_url="http://127.0.0.1:1/api/v1")
     async with Client(mcp_with(settings)) as client:
         result = await client.call_tool("find_availability", {"utterance": "Dr Garima tomorrow", "language": "en"})
-        booked = await client.call_tool("manage_appointment", {
-            "action": "BOOK", "slotId": "slot_ses_doc_garima_2026-09-28_2_01", "language": "en",
-            "patient": {"name": "Lakshmi Rao", "phone": "9000000101"}})
-        listed = await client.call_tool("manage_appointment", {"action": "LIST"})
+        booked = await client.call_tool("manage_booking", {
+            "action": "BOOK", "slotId": "slot_ses_res_garima_2026-09-28_2_01", "language": "en",
+            "customer": {"name": "Lakshmi Rao", "phone": "9000000101"}})
+        listed = await client.call_tool("manage_booking", {"action": "LIST"})
+        answer = await client.call_tool("search_knowledge", {"question": "parking?", "language": "en"})
     assert result.is_error is False and result.structured_content["outcome"] == "COULD_NOT_CHECK"
     assert booked.structured_content["outcome"] == "COULD_NOT_RECORD"
     assert listed.structured_content["outcome"] == "COULD_NOT_CHECK"
+    assert answer.structured_content["outcome"] == "COULD_NOT_CHECK"
     assert isinstance(result.structured_content["retryAfterSeconds"], int)
 
 
@@ -82,7 +106,7 @@ async def test_5xx_and_429_carry_retry_after(make_settings):
 
 async def test_rest_body_is_returned_unchanged(make_settings):
     body = {"outcome": "FOUND", "asOf": "2026-09-25T10:00:00+05:30", "routing": {"action": "OFFER_SLOTS"},
-            "understood": {"doctors": [], "departments": []}, "results": [], "alternatives": []}
+            "understood": {"resources": [], "categories": []}, "results": [], "alternatives": []}
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -91,11 +115,11 @@ async def test_rest_body_is_returned_unchanged(make_settings):
 
     async with Client(mcp_with(make_settings(), handler)) as client:
         result = await client.call_tool("find_availability", {
-            "utterance": "ನಾಳೆ ಸಂಜೆ ಗರಿಮಾ", "language": "kn", "doctorName": "ಗರಿಮಾ",
+            "utterance": "ನಾಳೆ ಸಂಜೆ ಗರಿಮಾ", "language": "kn", "resourceName": "ಗರಿಮಾ",
             "when": {"expression": "ನಾಳೆ ಸಂಜೆ"}})
     assert result.structured_content == body
     sent = json.loads(seen[0].content)
-    assert sent == {"utterance": "ನಾಳೆ ಸಂಜೆ ಗರಿಮಾ", "language": "kn", "doctorName": "ಗರಿಮಾ",
+    assert sent == {"utterance": "ನಾಳೆ ಸಂಜೆ ಗರಿಮಾ", "language": "kn", "resourceName": "ಗರಿಮಾ",
                     "when": {"expression": "ನಾಳೆ ಸಂಜೆ"}}
     assert seen[0].headers["authorization"] == "Bearer api-token"
 
@@ -107,9 +131,9 @@ async def test_4xx_error_bodies_pass_through(make_settings):
         return httpx.Response(409, json=conflict)
 
     async with Client(mcp_with(make_settings(), handler)) as client:
-        result = await client.call_tool("manage_appointment", {
+        result = await client.call_tool("manage_booking", {
             "action": "BOOK", "slotId": "slot_x", "language": "en",
-            "patient": {"name": "A B", "phone": "9000000101"}})
+            "customer": {"name": "A B", "phone": "9000000101"}})
     assert result.structured_content == conflict
 
 
@@ -127,12 +151,12 @@ async def test_write_timeout_retries_once_with_the_same_key(make_settings):
         transport = StreamableHttpTransport(f"{base}/mcp/", headers={
             "Authorization": "Bearer mcp-token", "X-Call-Id": "call-77", "X-Caller-Number": "+919000000101"})
         async with Client(transport) as client:
-            result = await client.call_tool("manage_appointment", {
+            result = await client.call_tool("manage_booking", {
                 "action": "BOOK", "slotId": "slot_x", "language": "en",
-                "patient": {"name": "Lakshmi Rao", "phone": "9000000101"}})
+                "customer": {"name": "Lakshmi Rao", "phone": "9000000101"}})
     assert result.structured_content == {"outcome": "BOOKED"}
     assert len(seen) == 2
-    expected = tools.idempotency_key("call-77", "BOOK", "Lakshmi Rao", "slot_x")
+    expected = tools.idempotency_key("call-77", "BOOK", "Lakshmi Rao", "slot_x|9000000101")
     assert [r.headers["idempotency-key"] for r in seen] == [expected, expected]
     assert seen[0].headers["x-call-id"] == "call-77" and seen[0].headers["x-caller-number"] == "+919000000101"
 
@@ -161,7 +185,7 @@ async def test_absent_caller_number_is_forwarded_as_absent(make_settings):
             transport = StreamableHttpTransport(f"{base}/mcp/", headers={
                 "Authorization": "Bearer mcp-token", "X-Call-Id": "call-9"})
             async with Client(transport) as client:
-                await client.call_tool("manage_appointment", {"action": "LIST"})
+                await client.call_tool("manage_booking", {"action": "LIST"})
         assert seen[0].headers.get("x-caller-number") == expected
 
 
@@ -174,8 +198,8 @@ async def test_write_that_times_out_twice_is_could_not_record(make_settings):
         raise httpx.ReadTimeout("slow", request=request)
 
     async with Client(mcp_with(make_settings(), handler)) as client:
-        result = await client.call_tool("manage_appointment", {
-            "action": "CANCEL", "appointmentId": "appt_1", "patientName": "A B"})
+        result = await client.call_tool("manage_booking", {
+            "action": "CANCEL", "bookingId": "bkg_1", "customerName": "A B"})
     assert calls == 2
     assert result.structured_content["outcome"] == "COULD_NOT_RECORD"
 
@@ -185,23 +209,100 @@ async def test_missing_action_arguments_are_reported_without_a_call(make_setting
         raise AssertionError("no request expected")
 
     async with Client(mcp_with(make_settings(), handler)) as client:
-        book = await client.call_tool("manage_appointment", {"action": "BOOK"})
-        cancel = await client.call_tool("manage_appointment", {"action": "CANCEL", "appointmentId": "appt_1"})
-        move = await client.call_tool("manage_appointment", {
-            "action": "RESCHEDULE", "appointmentId": "appt_1", "patientName": "A B"})
+        book = await client.call_tool("manage_booking", {"action": "BOOK"})
+        cancel = await client.call_tool("manage_booking", {"action": "CANCEL", "bookingId": "bkg_1"})
+        move = await client.call_tool("manage_booking", {
+            "action": "RESCHEDULE", "bookingId": "bkg_1", "customerName": "A B"})
     assert book.structured_content["error"]["details"][0]["field"] == "slotId"
-    assert cancel.structured_content["error"]["details"][0]["field"] == "patientName"
+    assert cancel.structured_content["error"]["details"][0]["field"] == "customerName"
     assert move.structured_content["error"]["details"][0]["field"] == "newSlotId"
 
 
 def test_idempotency_key_derivation():
     key = tools.idempotency_key("call-1", "BOOK", "Lakshmi Rao", "slot_a")
     assert key == tools.idempotency_key("call-1", "BOOK", "  lakshmi   rao ", "slot_a")  # retry after a drop
-    assert key != tools.idempotency_key("call-1", "BOOK", "Aarav Rao", "slot_a")  # second patient, same call
+    assert key != tools.idempotency_key("call-1", "BOOK", "Aarav Rao", "slot_a")  # second customer, same call
     assert key != tools.idempotency_key("call-2", "BOOK", "Lakshmi Rao", "slot_a")
     assert len(key) == 64
 
 
 def test_dev_caller_number_is_refused_in_production(make_settings):
     with pytest.raises(ValueError, match="MCP_DEV_CALLER_NUMBER"):
-        make_settings(env="production", mcp_dev_caller_number="+919000000101")
+        make_settings(env="production", api_base_url="https://api.internal/api/v1",
+                      mcp_dev_caller_number="+919000000101")
+
+
+async def test_model_supplied_booking_id_cannot_reach_another_path(make_settings):
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.raw_path.decode())
+        return httpx.Response(200, json={"outcome": "CANCELLED"})
+
+    async with Client(mcp_with(make_settings(), handler)) as client:
+        for evil in ("../../resources", "bkg_1?x=1", "bkg_1/../../knowledge", "bkg 1", ""):
+            result = await client.call_tool("manage_booking", {
+                "action": "CANCEL", "bookingId": evil, "customerName": "Lakshmi Rao"})
+            assert result.structured_content["error"]["code"] == "VALIDATION_FAILED", evil
+        ok = await client.call_tool("manage_booking", {
+            "action": "CANCEL", "bookingId": "bkg_0a1b2c3d4e5f", "customerName": "Lakshmi Rao"})
+    assert ok.structured_content == {"outcome": "CANCELLED"}
+    assert seen == ["/api/v1/agent/bookings/bkg_0a1b2c3d4e5f/cancel"]
+
+
+@pytest.mark.parametrize("status", [401, 403])
+async def test_credential_errors_never_reach_the_model(make_settings, status):
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"code": "UNAUTHORIZED", "message": "The bearer token is not valid."}}
+        return httpx.Response(status, json=body)
+
+    async with Client(mcp_with(make_settings(), handler)) as client:
+        read = await client.call_tool("find_availability", {"utterance": "x", "language": "en"})
+        write = await client.call_tool("manage_booking", {
+            "action": "BOOK", "slotId": "slot_ses_res_garima_2026-09-28_2_01", "language": "en",
+            "customer": {"name": "Lakshmi Rao", "phone": "9000000101"}})
+    assert read.structured_content["outcome"] == "COULD_NOT_CHECK"
+    assert write.structured_content["outcome"] == "COULD_NOT_RECORD"
+
+
+async def test_corrected_phone_is_a_new_booking_request_not_a_conflict(make_settings, monkeypatch):
+    keys: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        keys.append(request.headers["idempotency-key"])
+        return httpx.Response(201, json={"outcome": "BOOKED"})
+
+    # In process (no uvicorn): the call context the gateway would forward.
+    monkeypatch.setattr(tools, "get_http_headers", lambda: {"x-call-id": "call-9", "x-caller-number": "+919000000101"})
+    args = {"action": "BOOK", "slotId": "slot_ses_res_garima_2026-09-28_2_01", "language": "en"}
+    async with Client(mcp_with(make_settings(), handler)) as client:
+        for phone in ("9000000101", "9000000101", "9000000102"):
+            await client.call_tool("manage_booking", {**args, "customer": {"name": "Lakshmi Rao", "phone": phone}})
+    assert keys[0] == keys[1] != keys[2]
+
+
+def test_production_refuses_a_clear_text_api_url(make_settings):
+    with pytest.raises(ValueError, match="https"):
+        make_settings(env="production", api_base_url="http://api:8000/api/v1")
+    assert make_settings(env="production", api_base_url="https://api.internal/api/v1").env == "production"
+
+
+async def test_adapter_log_lines_carry_the_call_id(make_settings, monkeypatch):
+    from frontdesk_mcp.server import JsonFormatter
+
+    lines: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record):
+            lines.append(JsonFormatter("demo-hospital").format(record))
+
+    handler = Capture()
+    logging.getLogger("frontdesk_mcp").addHandler(handler)
+    monkeypatch.setattr(tools, "get_http_headers", lambda: {"x-call-id": "call-log-1"})
+    try:
+        async with Client(mcp_with(make_settings(api_base_url="http://127.0.0.1:1/api/v1"))) as client:
+            await client.call_tool("find_availability", {"utterance": "x", "language": "en"})
+    finally:
+        logging.getLogger("frontdesk_mcp").removeHandler(handler)
+    parsed = [json.loads(line) for line in lines]
+    assert parsed and all(p["callId"] == "call-log-1" and p["provider"] == "demo-hospital" for p in parsed)

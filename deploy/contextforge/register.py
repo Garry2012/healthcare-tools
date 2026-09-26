@@ -1,4 +1,4 @@
-"""Register healthcare-mcp with IBM ContextForge as a federated MCP gateway.
+"""Register frontdesk-mcp with IBM ContextForge as a federated MCP gateway.
 
 Idempotent: re-running with the same name and URL is a no-op; a changed
 visibility or passthrough-header list is updated in place; a name that already points at a
@@ -9,6 +9,8 @@ different URL is refused. Credentials come only from the environment.
     CONTEXTFORGE_ADMIN_EMAIL / CONTEXTFORGE_ADMIN_PASSWORD   (POST /v1/auth/login)
     MCP_PUBLIC_URL               URL ContextForge uses to reach the adapter, ending /mcp/
     MCP_BEARER_TOKEN             bearer ContextForge presents to the adapter
+    PROVIDER_ID, DOMAIN_PACK     from deploy/providers/<provider>.env: one gateway per provider,
+                                 named frontdesk-<provider> (the voice agent's tool prefix)
 
     python deploy/contextforge/register.py --dry-run
     python deploy/contextforge/register.py
@@ -23,7 +25,7 @@ import sys
 
 import httpx
 
-TOOLS = ("find_availability", "manage_appointment")
+TOOLS = ("find_availability", "manage_booking", "search_knowledge")
 # Call identity travels from the voice platform through the gateway to the adapter.
 PASSTHROUGH = ["X-Call-Id", "X-Caller-Number"]
 
@@ -39,13 +41,13 @@ def payload(args: argparse.Namespace) -> dict:
     return {
         "name": args.name,
         "url": env("MCP_PUBLIC_URL"),
-        "description": "Hospital front-desk tools: find_availability, manage_appointment",
+        "description": f"Front-desk tools: {', '.join(TOOLS)}",
         "transport": "STREAMABLEHTTP",
         "auth_type": "bearer",
         "auth_token": env("MCP_BEARER_TOKEN"),
         "passthrough_headers": PASSTHROUGH,
         "visibility": args.visibility,
-        "tags": ["healthcare", "front-desk"],
+        "tags": ["front-desk", env("DOMAIN_PACK", required=False) or "healthcare", args.name],
     }
 
 
@@ -71,10 +73,14 @@ def admin_token(client: httpx.Client) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--name", default="healthcare-frontdesk", help="gateway name (tool prefix in ContextForge)")
+    provider = os.environ.get("PROVIDER_ID", "")
+    parser.add_argument("--name", default=f"frontdesk-{provider}" if provider else None,
+                        help="gateway name, the tool prefix in ContextForge (default frontdesk-$PROVIDER_ID)")
     parser.add_argument("--visibility", choices=("private", "team", "public"), default="private")
     parser.add_argument("--dry-run", action="store_true", help="print the registration payload and exit")
     args = parser.parse_args()
+    if not args.name:
+        parser.error("set PROVIDER_ID (or pass --name): each provider is its own gateway")
 
     body = payload(args)
     if args.dry_run:
@@ -89,10 +95,8 @@ def main() -> None:
         if same is not None:
             if str(same.get("url", "")).rstrip("/") != body["url"].rstrip("/"):
                 raise SystemExit(f"gateway {args.name!r} already points at {same.get('url')}; refusing to repoint")
-            changed = (
-                same.get("visibility") != args.visibility
-                or sorted(same.get("passthrough_headers") or same.get("passthroughHeaders") or []) != sorted(PASSTHROUGH)
-            )
+            registered = same.get("passthrough_headers") or same.get("passthroughHeaders") or []
+            changed = same.get("visibility") != args.visibility or sorted(registered) != sorted(PASSTHROUGH)
             if changed:
                 client.put(f"/v1/gateways/{same['id']}", json=body).raise_for_status()
                 print(f"updated: {args.name} ({same['id']})")
