@@ -41,3 +41,17 @@ def test_union_keeps_every_language():
     assert {"monday", "somvar", "ಸೋಮವಾರ"} <= set(monday)
     with pytest.raises(KeyError):
         locales.union("weekdays")
+
+
+def test_number_words_allowed_next_to_a_month_are_not_everyday_words():
+    """Ordinals and tens may stand next to a month; a collision with an ordinary word ("do",
+    "sat", "me") would turn a sentence into a date. Cardinals are read only before "tareekh"."""
+    from frontdesk_api.domain.text import normalise
+
+    everyday = {normalise(w) for name in ("stopwords", "titles", "availability", "today", "tomorrow", "next",
+                                          "this", "week", "history")
+                for w in locales.union(name)}
+    everyday |= {normalise(w) for group in (*locales.calendar("weekdays"), *locales.calendar("months")) for w in group}
+    for table in ("ordinals", "tens"):
+        clashes = {w for w in locales.numbers(table) if normalise(w) in everyday}
+        assert not clashes, f"{table} collide with everyday words: {clashes}"

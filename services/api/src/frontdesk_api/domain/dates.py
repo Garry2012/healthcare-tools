@@ -43,10 +43,16 @@ _DAY_OF_MONTH = _forms(*locales.union("day_of_month"))
 _HISTORY = _forms(*locales.union("history"))
 # Words that are dates only when given as the time: "indu" is Kannada 'today' and a common name.
 _AMBIGUOUS_IN_SPEECH = _forms(*locales.union("ambiguous_in_speech"))
-# 1-31 said as words ("fifth", "पाँच", "ಐದನೇ"); only ever read next to a month or "tareekh".
-_NUMBER_WORDS: dict[str, int] = {normalise(word): n for word, n in locales.numbers().items()}
-_TENS = (20, 30)
-_FILLER = frozenset({"of", "the"})
+# A day of the month said in words (locales/): cardinals only before "tareekh", ordinals also
+# next to a month, tens only as the start of "twenty first". Digits keep their own rules.
+_CARDINAL_WORDS = {normalise(w): n for w, n in locales.numbers("cardinals").items()}
+_ORDINAL_WORDS = {normalise(w): n for w, n in locales.numbers("ordinals").items()}
+_TENS_WORDS = {normalise(w): n for w, n in locales.numbers("tens").items()}
+_DAY_WORDS = {**_CARDINAL_WORDS, **_ORDINAL_WORDS}
+# Month names that are also everyday words ("may", "mai", "me"): never read with a number word.
+_AMBIGUOUS_MONTHS = _forms(*locales.union("ambiguous_months"))
+_FILLERS = _forms(*locales.union("date_fillers"))
+UNCLEAR = -1  # a day was said but which one is not clear: ask, never guess
 _ORDINAL = re.compile(r"^(\d{1,2})(st|nd|rd|th)?$")
 _ISO = re.compile(r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)")
 _NUMERIC = re.compile(r"(?<![\d/.-])(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?(?![\d/.-])")
@@ -67,29 +73,68 @@ def _upcoming(today: date, month: int, day: int) -> date | None:
     return _make(today.year + 1, month, day)
 
 
-def _day_number(word: str) -> int | None:
+def _digit_day(word: str) -> int | None:
+    """ "5" or "5th"."""
     m = _ORDINAL.match(word)
-    return int(m.group(1)) if m else _NUMBER_WORDS.get(word)
+    return int(m.group(1)) if m else None
 
 
-def _number_ending_at(words: list[str], j: int) -> int | None:
-    """The day number whose last word is words[j]: "5", "5th", "fifth", "twenty first"."""
-    if j < 0:
+def _is_number(word: str) -> bool:
+    return _digit_day(word) is not None or word in _DAY_WORDS or word in _TENS_WORDS
+
+
+def _word_day_ending_at(words: list[str], j: int, table: dict[str, int]) -> int | None:
+    """The day said in words ending at words[j] ("fifth", "twenty first", "ಐದು"). UNCLEAR when
+    another number stands right before it ("do teen tareekh": the 2nd or the 3rd?)."""
+    if j < 0 or (n := table.get(words[j])) is None:
         return None
-    n = _day_number(words[j])
-    if n is not None and n < 10 and j > 0 and (tens := _day_number(words[j - 1])) in _TENS:
-        return tens + n
-    return n
+    before = words[j - 1] if j > 0 else ""
+    if before in _TENS_WORDS:
+        return _TENS_WORDS[before] + n if n < 10 and words[j] in _ORDINAL_WORDS else UNCLEAR
+    return UNCLEAR if _is_number(before) else n
 
 
-def _number_starting_at(words: list[str], j: int) -> int | None:
-    """The day number whose first word is words[j]: "5", "fifth", "thirty first"."""
-    if j >= len(words):
-        return None
-    n = _day_number(words[j])
-    if n in _TENS and j + 1 < len(words) and (unit := _day_number(words[j + 1])) is not None and unit < 10:
-        return n + unit
-    return n
+def _ordinal_ending_the_phrase(words: list[str], k: int) -> int | None:
+    """ "October fifth", "October the thirty first": an ordinal that is the last thing said, so
+    "October first week" is not the 1st."""
+    rest = words[k:]
+    if len(rest) == 1 and rest[0] in _ORDINAL_WORDS:
+        return _ORDINAL_WORDS[rest[0]]
+    if len(rest) == 2 and rest[0] in _TENS_WORDS and _ORDINAL_WORDS.get(rest[1], 10) < 10:
+        return _TENS_WORDS[rest[0]] + _ORDINAL_WORDS[rest[1]]
+    return None
+
+
+def _month_day(words: list[str], i: int) -> int | None:
+    """The day given with the month at words[i]: digits exactly as always, then ordinal words."""
+    before = words[i - 2] if i >= 2 and words[i - 1] == "of" else (words[i - 1] if i else "")
+    around = [before, words[i + 1] if i + 1 < len(words) else ""]
+    number = next((n for w in around if (n := _digit_day(w)) is not None), None)
+    if number is not None or words[i] in _AMBIGUOUS_MONTHS:
+        return number
+    j = i - 1
+    while j >= 0 and words[j] in _FILLERS:
+        j -= 1
+    number = _word_day_ending_at(words, j, _ORDINAL_WORDS)
+    if number is None:
+        k = i + 1
+        while k < len(words) and words[k] in _FILLERS:
+            k += 1
+        number = _ordinal_ending_the_phrase(words, k)
+    return number
+
+
+def _tareekh_days(words: list[str]) -> list[int]:
+    """Every day said with a day-of-month word: "5 tareekh", "paanch tareekh", "ಐದನೇ ತಾರೀಖು"."""
+    days = []
+    for i, word in enumerate(words):
+        if word in _DAY_OF_MONTH and i > 0:
+            n = _digit_day(words[i - 1])
+            if n is None:
+                n = _word_day_ending_at(words, i - 1, _DAY_WORDS)
+            if n is not None:
+                days.append(n)
+    return days
 
 
 def _explicit(raw: str, text: str, today: date) -> tuple[bool, date | None]:
@@ -102,30 +147,26 @@ def _explicit(raw: str, text: str, today: date) -> tuple[bool, date | None]:
             return True, _make(int(year) + (2000 if len(year) == 2 else 0), month, day)
         return True, _upcoming(today, month, day) if 1 <= month <= 12 else None
     words = tokens(text)
+    named_month = None
     for i, word in enumerate(words):
         month = next((n for n, forms in enumerate(_MONTHS, start=1) if word in forms), None)
-        if month is not None:
-            # "5 October", "October 5", "5th of October", "the fifth of October", "October the fifth".
-            j = i - 1
-            while j >= 0 and words[j] in _FILLER:
-                j -= 1
-            k = i + 1
-            while k < len(words) and words[k] in _FILLER:
-                k += 1
-            number = _number_ending_at(words, j)
-            if number is None:
-                number = _number_starting_at(words, k)
-            if number is not None:
-                return True, _upcoming(today, month, number)
-        if word in _DAY_OF_MONTH and i > 0 and (number := _number_ending_at(words, i - 1)) is not None:
-            if not 1 <= number <= 31:
-                return True, None
-            for months_ahead in range(0, 3):
-                y, m = divmod(today.month - 1 + months_ahead, 12)
-                candidate = _make(today.year + y, m + 1, number)
-                if candidate is not None and candidate >= today:
-                    return True, candidate
-            return True, None
+        if month is not None and (number := _month_day(words, i)) is not None:
+            # "5 October", "October 5", "5th of October", "the fifth of October", "October fifth".
+            return True, None if number == UNCLEAR else _upcoming(today, month, number)
+        if month is not None and word not in _AMBIGUOUS_MONTHS:
+            named_month = named_month or month
+    days = _tareekh_days(words)
+    if days:
+        if UNCLEAR in days or len(set(days)) > 1 or not 1 <= days[0] <= 31:
+            return True, None  # "ek tareekh nahi, das tareekh", "do teen tareekh", "32 tareekh"
+        if named_month is not None:  # "5 tareekh November"
+            return True, _upcoming(today, named_month, days[0])
+        for months_ahead in range(0, 3):
+            y, m = divmod(today.month - 1 + months_ahead, 12)
+            candidate = _make(today.year + y, m + 1, days[0])
+            if candidate is not None and candidate >= today:
+                return True, candidate
+        return True, None
     return False, None
 
 

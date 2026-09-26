@@ -1,7 +1,8 @@
 # Onboarding a provider (hospital or hotel)
 
 Each provider is its own deployment of the same two images and has its own database
-(docs/architecture/TARGET.md A1). Onboarding is configuration and data; it needs no code change.
+(docs/architecture/TARGET.md A1). Onboarding is configuration and data; it needs no code change,
+except a language module the first time a provider needs a language not yet supported (step 1).
 Rough effort: half a day of setup, plus the provider's time to sign off data and policy.
 
 ## 1. Configure (non-secret, committed)

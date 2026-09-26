@@ -37,7 +37,8 @@ sometimes in English ("I need a children's doctor") even when the caller spoke K
 sometimes in the caller's script. Both work: the demo pack covers English synonyms, and the
 pack instructions tell the model to:
 
-- set `language` to the language the caller speaks, even if it writes the arguments in English;
+- set `language` to the language the caller speaks, and pass the caller's own words untranslated
+  (a translation can lose the exact words of an emergency);
 - put the date in `when.expression` as the caller said it, never as a date it worked out;
 - speak approved answers in the language they come back in, and never translate or paraphrase them.
 
@@ -67,10 +68,15 @@ run these through the real resolver and API:
 | "ಮಕ್ಕಳ ಡಾಕ್ಟರ್", "bacchon ka doctor", "a children's doctor" | Paediatrics |
 | "ಹೊಟ್ಟೆ ನೋವು", "pet mein dard", "पेट में दर्द", "stomach pain", "ತಲೆ ನೋವು", "sir dard", "back pain", "kamar dard" | the approved department |
 | "ಎದೆ ನೋವು", "सीने में दर्द", "seene mein dard", "chest pain", "ಅಪ್ಪನಿಗೆ chest pain" | emergency transfer, immediately |
+| an everyday complaint with a danger sign: "worst headache", "headache and vomiting", "stomach pain and vomiting blood", "khansi mein khoon", "ಕೆಮ್ಮು ರಕ್ತ", "back pain, cannot move legs", "face drooping" | emergency transfer, never a routine slot |
+| severity or a fall: "severe stomach pain", "bahut tez sir dard", "ತುಂಬಾ ತಲೆ ನೋವು", "back pain after a fall", "kamar dard gir gaya" | transfer to the desk, where a person triages |
+| a symptom for a child or in pregnancy: "my child has stomach pain", "pet dard pregnant" | the caller is asked which department |
 | "अस्पताल कहाँ है", "hospital kahan hai", "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ" | the approved answer, in that language |
 
-A date that can't be understood (or doesn't exist, like "32 tareekh") gets a question back,
-never a guessed date.
+A date that isn't clear gets a question back, never a guessed date. That covers a date that
+doesn't exist ("32 tareekh"), two different days ("ek tareekh nahi, das tareekh"), a number that
+isn't the day ("October first week", "book me one appointment"), and "May"/"मई"/"ಮೇ", which are
+also everyday words. Digits keep their plain meaning.
 
 ## Known limits
 

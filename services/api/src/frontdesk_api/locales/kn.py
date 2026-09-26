@@ -11,11 +11,8 @@ _CARDINALS = (
     ("ಇಪ್ಪತ್ತೆಂಟು", "ippattentu"), ("ಇಪ್ಪತ್ತೊಂಬತ್ತು", "ippattombattu"), ("ಮೂವತ್ತು", "moovattu"),
     ("ಮೂವತ್ತೊಂದು", "moovattondu"),
 )
-_NUMBERS = {
-    **{word: n for n, forms in enumerate(_CARDINALS, 1) for word in forms},
-    # ordinal "ಐದನೇ" (fifth): the cardinal without its final ು, plus ನೇ
-    **{forms[0].removesuffix("ು") + "ನೇ": n for n, forms in enumerate(_CARDINALS, 1)},
-}
+# ordinal "ಐದನೇ" (fifth): the cardinal without its final ು, plus ನೇ
+_ORDINALS = {forms[0].removesuffix("ು") + "ನೇ": n for n, forms in enumerate(_CARDINALS, 1)}
 
 WORDS = dict(
     code="kn",
@@ -45,5 +42,9 @@ WORDS = dict(
         "yaradaru", "yaaradaru", "iddara", "iddare", "iddaara", "sigtara", "sigthare", "ಯಾರಾದರೂ", "ಇದ್ದಾರಾ",
         "ಇದ್ದಾರೆ",
     ),
-    numbers=_NUMBERS,
+    cardinals={word: n for n, forms in enumerate(_CARDINALS, 1) for word in forms},
+    ordinals=_ORDINALS,
+    tens={},
+    ambiguous_months=("ಮೇ",),  # "me": also the English and Hindi word
+    date_fillers=(),
 )

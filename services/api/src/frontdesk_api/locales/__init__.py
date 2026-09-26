@@ -31,13 +31,21 @@ class Locale:
     titles: tuple[str, ...]  # put before a person's name ("Dr", "sir", "ji")
     stopwords: tuple[str, ...]  # carry no topic
     availability: tuple[str, ...]  # only ask "is someone free?"
-    numbers: dict[str, int]  # 1-31 said as words (cardinal and ordinal), for dates
+    # A day of the month said in words. Cardinals ("paanch", "ಐದು") count only before a
+    # day-of-month word ("tareekh"); ordinals ("fifth", "ಐದನೇ") may also stand next to a month;
+    # tens ("twenty") only as the first half of "twenty first".
+    cardinals: dict[str, int]
+    ordinals: dict[str, int]
+    tens: dict[str, int]
+    ambiguous_months: tuple[str, ...]  # month names that are everyday words: "may", "मई" (mai), "ಮೇ" (me)
+    date_fillers: tuple[str, ...]  # between a day and its month: "the fifth of October"
 
 
 LOCALES: tuple[Locale, ...] = tuple(Locale(**m.WORDS) for m in (en, hi, kn))
 BY_CODE: dict[str, Locale] = {loc.code: loc for loc in LOCALES}
 
-_WORD_LISTS = {f.name for f in fields(Locale)} - {"code", "script", "weekdays", "months", "numbers"}
+_NUMBER_TABLES = ("cardinals", "ordinals", "tens")
+_WORD_LISTS = {f.name for f in fields(Locale)} - {"code", "script", "weekdays", "months", *_NUMBER_TABLES}
 
 
 def union(name: str) -> tuple[str, ...]:
@@ -47,11 +55,13 @@ def union(name: str) -> tuple[str, ...]:
     return tuple(word for loc in LOCALES for word in getattr(loc, name))
 
 
-def numbers() -> dict[str, int]:
-    """Every registered language's number words, 1-31."""
+def numbers(table: str) -> dict[str, int]:
+    """One number table ("cardinals", "ordinals" or "tens") across every registered language."""
+    if table not in _NUMBER_TABLES:
+        raise KeyError(table)
     merged: dict[str, int] = {}
     for loc in LOCALES:
-        merged.update(loc.numbers)
+        merged.update(getattr(loc, table))
     return merged
 
 

@@ -1,17 +1,10 @@
 """English, including Indian-English forms and common speech-to-text spellings."""
 
-_UNITS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
-_TEENS = ("ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
-          "nineteen")
-_ORD_UNITS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")
-_ORD_TEENS = ("tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth",
-              "seventeenth", "eighteenth", "nineteenth")
-# Single words only; "twenty first" is composed from "twenty" + "first" by the date rules.
-_NUMBERS = {
-    **{w: i for i, w in enumerate(_UNITS, 1)}, **{w: i for i, w in enumerate(_ORD_UNITS, 1)},
-    **{w: i for i, w in enumerate(_TEENS, 10)}, **{w: i for i, w in enumerate(_ORD_TEENS, 10)},
-    "twenty": 20, "twentieth": 20, "thirty": 30, "thirtieth": 30,
-}
+_ORDINALS = (
+    "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
+    "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth",
+    "nineteenth", "twentieth",
+)
 
 WORDS = dict(
     code="en",
@@ -47,5 +40,9 @@ WORDS = dict(
         "present", "open", "see", "consult", "consultation", "appointment", "book", "booking", "slot", "token",
         "time", "timing", "currently",
     ),
-    numbers=_NUMBERS,
+    cardinals={},
+    ordinals={**{w: n for n, w in enumerate(_ORDINALS, 1)}, "thirtieth": 30},
+    tens={"twenty": 20, "thirty": 30},
+    ambiguous_months=("may",),
+    date_fillers=("of", "the"),
 )

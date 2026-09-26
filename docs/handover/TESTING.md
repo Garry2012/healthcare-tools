@@ -42,6 +42,7 @@ ask()  { curl -s -X POST localhost:8000/api/v1/agent/availability-search -H "Aut
            -H "X-Call-Id: try-$RANDOM" -H 'X-Caller-Number: +919000000101' -H 'Content-Type: application/json' -d "$1" | jq "$2"; }
 know() { curl -s -X POST localhost:8000/api/v1/agent/knowledge-search -H "Authorization: Bearer $AGENT" \
            -H "X-Call-Id: try-$RANDOM" -H 'X-Caller-Number: +919000000101' -H 'Content-Type: application/json' -d "$1" | jq "$2"; }
+list() { curl -s "localhost:8000/api/v1/agent/bookings$1" -H "Authorization: Bearer $AGENT" -H "X-Call-Id: try-$RANDOM" | jq "$2"; }
 ```
 
 | Try | Command | Expect |
@@ -57,7 +58,7 @@ know() { curl -s -X POST localhost:8000/api/v1/agent/knowledge-search -H "Author
 | Not understood | `ask '{"utterance":"I want to talk about my bill","language":"en"}' .routing` | `NO_SERVICE` to the desk, never "no one available" |
 | Knowledge, Hindi | `know '{"question":"अस्पताल कहाँ है","language":"hi"}' .answer.text` | the approved Hindi answer |
 | Knowledge, unclear | `know '{"question":"visiting hours for ICU","language":"en"}' .outcome` | `CLARIFICATION_NEEDED` |
-| Spoken number, no name | `curl -s "localhost:8000/api/v1/agent/bookings?phone=9000000777" -H "Authorization: Bearer $AGENT" -H 'X-Call-Id: t' \| jq .outcome` | `NAME_REQUIRED` |
+| Spoken number, no name | `list '?phone=9000000777' .outcome` | `NAME_REQUIRED` |
 
 More scenarios with the seeded data: `SEED.md`. Every response carries `Server-Timing`
 (database time and query count). A search should show 1–6 queries.

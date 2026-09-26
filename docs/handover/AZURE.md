@@ -21,7 +21,7 @@ One stack per provider (hospital or hotel), as everywhere else (TARGET.md A1):
 az login && az extension add -n containerapp --upgrade
 export P=demo-hospital            # provider id: deploy/providers/$P.env
 export RG=rg-frontdesk-$P LOC=centralindia
-export ACR=acrfrontdesk$RANDOM KV=kv-frontdesk-$P ENV_NAME=cae-frontdesk LAW=law-frontdesk
+export ACR=acrfrontdesk$RANDOM KV=kv-fd-${P:0:12}-$RANDOM ENV_NAME=cae-frontdesk LAW=law-frontdesk  # Key Vault: max 24 chars, globally unique
 export PG=pg-frontdesk-$P DB=frontdesk TAG=$(git rev-parse --short HEAD)
 export OWNER_PW=$(openssl rand -base64 24 | tr -d '/+=') APP_PW=$(openssl rand -base64 24 | tr -d '/+=')
 export AGENT_TOKEN=$(openssl rand -hex 24) STAFF_TOKEN=$(openssl rand -hex 24) MCP_TOKEN=$(openssl rand -hex 24)
@@ -58,9 +58,12 @@ az postgres flexible-server db create -g $RG -s $PG -d $DB
 `--public-access 0.0.0.0` lets Azure services reach the server. For production, use VNet
 integration (`--vnet`/`--subnet`) and put the Container Apps environment on the same VNet.
 
-Create the DML-only runtime role once, as the owner. The API never runs DDL:
+Create the DML-only runtime role once, as the owner. The API never runs DDL. The server only
+admits Azure services, so first allow your own IP for this step, and remove the rule afterwards:
 
 ```bash
+az postgres flexible-server firewall-rule create -g $RG -n $PG --rule-name setup \
+  --start-ip-address "$(curl -s https://ifconfig.me)" --end-ip-address "$(curl -s https://ifconfig.me)"
 psql "host=$PG.postgres.database.azure.com port=5432 dbname=$DB user=frontdesk_owner password=$OWNER_PW sslmode=require" <<SQL
 CREATE ROLE frontdesk_app LOGIN PASSWORD '$APP_PW';
 GRANT CONNECT ON DATABASE $DB TO frontdesk_app;
@@ -68,6 +71,7 @@ GRANT USAGE ON SCHEMA public TO frontdesk_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE frontdesk_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO frontdesk_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE frontdesk_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO frontdesk_app;
 SQL
+az postgres flexible-server firewall-rule delete -g $RG -n $PG --rule-name setup --yes
 ```
 
 The connection strings keep Azure's `sslmode=require`. The service translates it for asyncpg

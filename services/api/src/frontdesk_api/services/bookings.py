@@ -124,14 +124,16 @@ async def book(
         raise _slot_unavailable(check.view, "That slot does not exist in the current schedule.")
 
     name_key = normalise_person_name(body.customer.name)
-    existing = await session.scalar(
+    # Names are compared fresh, like every other identity check: a key stored by an older
+    # normaliser must not let the same customer book this session twice.
+    same_number = await session.scalars(
         select(t.Booking).where(
             t.Booking.session_id == check.view.session_id,
-            t.Booking.customer_name_normalized == name_key,
             t.Booking.phone == body.customer.phone,
             t.Booking.status.in_(booking_status.HOLDS_SLOT),
         )
     )
+    existing = next((row for row in same_number if name_matches(_identity(row), body.customer.name)), None)
     if existing is not None:
         # Only the number the booking belongs to (or the desk) may see it; to anyone else a name
         # and a phone are not proof of identity (CLAUDE.md: identity comes only from headers).

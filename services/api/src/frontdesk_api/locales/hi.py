@@ -45,5 +45,9 @@ WORDS = dict(
         "kaise", "koi", "mujhe", "hum", "aap", "ji", "bhi", "tha", "ho",
     ),
     availability=("koi", "milega", "milegi", "milenge", "baithe", "baithi", "कोई", "मिलेगा", "बैठे"),
-    numbers=_NUMBERS,
+    cardinals=_NUMBERS,
+    ordinals={},
+    tens={},
+    ambiguous_months=("मई",),  # "mai": also "I" and "in"
+    date_fillers=(),
 )
