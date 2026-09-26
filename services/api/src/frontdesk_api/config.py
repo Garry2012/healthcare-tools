@@ -23,6 +23,9 @@ from .domain.resolver import ResolverThresholds
 DAY_PART_DEFAULT = '{"MORNING":["06:00","12:00"],"AFTERNOON":["12:00","16:00"],"EVENING":["16:00","23:00"]}'
 
 
+_SSLMODE = re.compile(r"([?&])sslmode=")
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore", frozen=True)
 
@@ -143,6 +146,9 @@ class Settings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         url = self.database_url.get_secret_value()
+        # Managed PostgreSQL (Azure, Supabase) hands out libpq URLs with `sslmode=`; asyncpg
+        # takes the same values as `ssl=` and fails on `sslmode`.
+        url = _SSLMODE.sub(r"\1ssl=", url)
         for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
             if url.startswith(prefix):
                 return "postgresql+asyncpg://" + url[len(prefix):]

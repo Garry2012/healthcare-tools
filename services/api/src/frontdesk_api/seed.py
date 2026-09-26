@@ -39,7 +39,11 @@ ALL_TABLES = (
 )
 
 
-class LegacyDemoData(RuntimeError):
+class SeedRefused(RuntimeError):
+    """The seed would put synthetic data where it must not go."""
+
+
+class LegacyDemoData(SeedRefused):
     """Demo rows from before migration 0002 (doc_*/dept_* ids) would duplicate the pack's directory."""
 
 
@@ -180,6 +184,9 @@ class Seeder:
 
 
 async def run(settings: Settings, *, reset: bool = False) -> dict[str, int]:
+    if settings.env == "production":
+        # A real provider's data is loaded through the staff API (ONBOARDING.md), never seeded.
+        raise SeedRefused("refusing to seed synthetic data with ENV=production")
     configure_logging(settings.log_level, settings.provider_id)
     engine = make_engine(settings)
     try:

@@ -25,11 +25,11 @@ def _migrate(revision: str) -> None:
 
 
 def _seed(reset: bool) -> None:
-    from .seed import LegacyDemoData, run
+    from .seed import SeedRefused, run
 
     try:
         asyncio.run(run(get_settings(), reset=reset))
-    except LegacyDemoData as exc:
+    except SeedRefused as exc:
         raise SystemExit(str(exc)) from None
 
 
