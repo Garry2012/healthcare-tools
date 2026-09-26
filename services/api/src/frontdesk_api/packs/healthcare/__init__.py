@@ -175,6 +175,17 @@ LEXICON: tuple[tuple[str, str, str, str], ...] = (
     ("RED_FLAG", "labour_pain", "labor pain", "en"),
     ("RED_FLAG", "labour_pain", "ಹೆರಿಗೆ ನೋವು", "kn"),
     ("RED_FLAG", "labour_pain", "प्रसव पीड़ा", "hi"),
+    # how callers actually say it (PO review): negations, pregnancy bleeding, convulsions
+    ("RED_FLAG", "breathlessness", "not breathing", "en"),
+    ("RED_FLAG", "breathlessness", "saans nahi", "hi"),
+    ("RED_FLAG", "breathlessness", "सांस नहीं", "hi"),
+    ("RED_FLAG", "breathlessness", "ಉಸಿರಾಡುತ್ತಿಲ್ಲ", "kn"),
+    ("RED_FLAG", "heavy_bleeding", "pregnant bleeding", "en"),
+    ("RED_FLAG", "unconscious", "collapsed", "en"),
+    ("RED_FLAG", "fits", "convulsions", "en"),
+    ("RED_FLAG", "fits", "jhatke", "hi"),
+    ("RED_FLAG", "fits", "झटके", "hi"),
+    ("RED_FLAG", "fits", "ಸೆಳವು", "kn"),
     # day parts
     ("DAY_PART", "MORNING", "morning", "en"),
     ("DAY_PART", "AFTERNOON", "afternoon", "en"),

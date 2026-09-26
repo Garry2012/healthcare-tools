@@ -13,7 +13,15 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from .text import contains_phrase, native_form, normalise, phonetic_keys, tokens
+from .text import (
+    contains_phrase,
+    content_words,
+    loosely_same,
+    native_form,
+    normalise,
+    phonetic_keys,
+    tokens,
+)
 
 # Confidence per match kind. Tiering matters more than the exact numbers: an exact
 # match suppresses phonetic look-alikes ("garima" also sounds like "karima").
@@ -140,9 +148,29 @@ def _lexicon_hit(texts: Iterable[str], term: LexiconTerm) -> bool:
     return False
 
 
+def _loose_hit(texts: Iterable[str], term: LexiconTerm) -> bool:
+    """Every content word of the term appears in one text, in any order and inflection.
+
+    Used only for red flags, where a miss is the dangerous error: "my chest is paining" must
+    meet "chest pain", "seene me dard" must meet "seene mein dard".
+    """
+    wanted = content_words(term.term)
+    if not wanted:
+        return False
+    for text in texts:
+        words = content_words(text)
+        if all(any(loosely_same(w, have) for have in words) for w in wanted):
+            return True
+    return False
+
+
 def red_flag_terms(texts: Iterable[str], terms: Iterable[LexiconTerm]) -> LexiconTerm | None:
     texts = [t for t in texts if t]
-    return next((t for t in terms if t.approved and t.concept_type == "RED_FLAG" and _lexicon_hit(texts, t)), None)
+    return next(
+        (t for t in terms
+         if t.approved and t.concept_type == "RED_FLAG" and (_lexicon_hit(texts, t) or _loose_hit(texts, t))),
+        None,
+    )
 
 
 def red_flag(texts: Iterable[str], directory: Directory) -> LexiconTerm | None:

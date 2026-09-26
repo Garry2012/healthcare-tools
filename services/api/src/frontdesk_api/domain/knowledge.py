@@ -19,26 +19,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from .text import contains_phrase, normalise, tokens
+from .text import STOPWORDS, contains_phrase, normalise, tokens
 
-# Words that carry no topic in the languages callers use (romanised forms included, since
-# Kannada and Devanagari are transliterated before this runs). Question words (when/where,
-# kab/kahan, yavaga/elli) are kept: they separate "opening hours" from "location".
-STOPWORDS = frozenset(
-    {
-        # en
-        "a", "an", "the", "is", "are", "am", "was", "be", "do", "does", "did", "can", "could", "will",
-        "would", "i", "me", "my", "you", "your", "we", "our", "it", "its", "to", "of", "in", "on", "at",
-        "for", "and", "or", "there", "what", "which", "how", "please", "tell", "want",
-        "know", "any", "this", "that", "with", "from", "about", "have", "has", "get", "sir", "madam",
-        # hi (romanised)
-        "kya", "hai", "hain", "ka", "ki", "ke", "ko", "se", "mein", "aur",
-        "kaise", "koi", "mujhe", "hum", "aap", "ji", "bhi", "tha", "ho",
-        # kn (romanised)
-        "ide", "idheya", "ideya", "yenu", "enu", "hege", "nanage", "nimma",
-        "beku", "illa", "hauda", "swalpa",
-    }
-)
 CONF_PHRASE = 1.0
 
 

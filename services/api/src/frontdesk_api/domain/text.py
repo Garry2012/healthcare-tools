@@ -50,6 +50,26 @@ HONORIFICS = frozenset(
 )
 
 
+# Words that carry no topic in the languages callers use (romanised forms included, since
+# Kannada and Devanagari are transliterated before this runs). Question words (when/where,
+# kab/kahan, yavaga/elli) are kept: they separate "opening hours" from "location".
+STOPWORDS = frozenset(
+    {
+        # en
+        "a", "an", "the", "is", "are", "am", "was", "be", "do", "does", "did", "can", "could", "will",
+        "would", "i", "me", "my", "you", "your", "we", "our", "it", "its", "to", "of", "in", "on", "at",
+        "for", "and", "or", "there", "what", "which", "how", "please", "tell", "want",
+        "know", "any", "this", "that", "with", "from", "about", "have", "has", "get", "sir", "madam",
+        # hi (romanised)
+        "kya", "hai", "hain", "ka", "ki", "ke", "ko", "se", "mein", "aur",
+        "kaise", "koi", "mujhe", "hum", "aap", "ji", "bhi", "tha", "ho",
+        # kn (romanised)
+        "ide", "idheya", "ideya", "yenu", "enu", "hege", "nanage", "nimma",
+        "beku", "illa", "hauda", "swalpa",
+    }
+)
+
+
 def _script_of(ch: str) -> str | None:
     code = ord(ch)
     for low, high, scheme in _SCRIPTS:
@@ -124,3 +144,19 @@ def contains_phrase(haystack: str, needle: str) -> bool:
 def normalise_person_name(name: str) -> str:
     """Identity comparison form of a customer name."""
     return normalise(name, strip_honorifics=True)
+
+
+def loosely_same(a: str, b: str) -> bool:
+    """The same word up to inflection: 'pain'/'paining', 'bleed'/'bleeding', 'breathe'/'breathing'.
+    A shared stem is not enough ('breathing' is not 'breathlessness')."""
+    if a == b:
+        return True
+    short, long = sorted((a, b), key=len)
+    if len(short) < 4:
+        return False
+    return long.startswith(short) or (short.endswith("e") and long.startswith(short[:-1]) and len(short) > 4)
+
+
+def content_words(text: str) -> list[str]:
+    """Normalised words that carry meaning (stopwords and 1-letter tokens removed)."""
+    return [w for w in tokens(normalise(text)) if w not in STOPWORDS and len(w) > 1]
