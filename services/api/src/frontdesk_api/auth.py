@@ -19,7 +19,9 @@ from fastapi import Depends, Request
 from .errors import ApiError
 
 # Scopes that make a caller "staff" for field-level redaction (openapi: "Staff scope only").
-STAFF_SCOPES = frozenset({"bookings.staff", "schedule.write", "board.write", "directory.write"})
+STAFF_SCOPES = frozenset(
+    {"bookings.staff", "schedule.write", "board.write", "directory.write", "knowledge.write"}
+)
 
 
 @dataclass(frozen=True, slots=True)

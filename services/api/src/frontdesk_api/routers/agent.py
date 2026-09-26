@@ -6,13 +6,13 @@ import logging
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.exc import InterfaceError, OperationalError
 
 from .. import schemas as s
 from ..auth import require_scopes
 from ..logging import log_event
-from ..services import bookings, schedule, search
+from ..services import bookings, knowledge, schedule, search
 from ..services import idempotency as idem
 from .deps import (
     CallerNumber,
@@ -186,3 +186,29 @@ async def reschedule(
     outcome = await within(settings.write_timeout_seconds, idem.run(session, key, fingerprint, operation))
     log_event(logger, logging.INFO, "booking_rescheduled", bookingId=bookingId, replay=outcome.replay)
     return respond(outcome.body, 200, REPLAY if outcome.replay else None)
+
+
+@router.post(
+    "/agent/knowledge-search",
+    operation_id="agentKnowledgeSearch",
+    summary="Answer a caller's general question from approved answers only",
+    response_model=s.KnowledgeSearchResponse,
+    responses=errors(400, 401, 429, 500, 503),
+)
+async def knowledge_search(
+    body: s.KnowledgeSearchRequest,
+    call_id: CallId,
+    request: Request,
+    session: Session,
+    settings: SettingsDep,
+    caller_number: CallerNumber = None,
+):
+    try:
+        result = await knowledge.agent_search(session, settings, request.app.state.knowledge_cache, body)
+    except (OperationalError, InterfaceError, OSError, TimeoutError) as exc:
+        log_event(logger, logging.ERROR, "knowledge_search_failed", error=type(exc).__name__)
+        result = s.KnowledgeSearchResponse(outcome="COULD_NOT_CHECK", as_of=schedule.now_in(settings),
+                                           routing=s.KnowledgeRouting(action="TRANSFER_DESK", destination="desk"))
+    log_event(logger, logging.INFO, "knowledge_search", outcome=result.outcome, action=result.routing.action,
+              entryId=result.answer.entry_id if result.answer else None)
+    return respond(result)

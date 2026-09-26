@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     tenant_resolver_resource_threshold: float = Field(default=0.8, ge=0, le=1)
     tenant_resolver_category_threshold: float = Field(default=0.8, ge=0, le=1)
     tenant_resolver_suggestion_cutoff: float = Field(default=0.7, ge=0, le=1)
+    tenant_knowledge_answer_threshold: float = Field(default=0.6, ge=0, le=1)
+    tenant_knowledge_clarify_threshold: float = Field(default=0.35, ge=0, le=1)
     tenant_disclosure_policy: Literal["NAME_REQUIRED"] = "NAME_REQUIRED"
     tenant_cancel_on_spoken_number: bool = False
     tenant_desk_follow_up_list_enabled: bool = True

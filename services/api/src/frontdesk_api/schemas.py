@@ -670,3 +670,64 @@ class ErrorBody(ApiModel):
 
 class Error(ApiModel):
     error: ErrorBody
+
+
+# ---------------------------------------------------------------- knowledge base
+
+
+class KnowledgeSearchRequest(ApiModel):
+    question: Annotated[str, StringConstraints(min_length=1, max_length=500)]
+    language: Annotated[str, StringConstraints(min_length=2, max_length=16)]
+    topic: Annotated[str, StringConstraints(min_length=1, max_length=50)] | None = None
+
+
+class KnowledgeRouting(ApiModel):
+    action: Literal["ANSWER", "CLARIFY", "TRANSFER_DESK", "TRANSFER_EMERGENCY"]
+    destination: str | None = None
+
+
+class KnowledgeAnswer(ApiModel):
+    entry_id: str
+    topic: str
+    text: str
+    language: str
+    source: Literal["CURATED", "DOCUMENT"]
+    confidence: float
+    matched_question: str
+
+
+class KnowledgeOption(ApiModel):
+    entry_id: str
+    topic: str
+    label: str
+
+
+class KnowledgeSearchResponse(ApiModel):
+    outcome: Literal["ANSWERED", "CLARIFICATION_NEEDED", "NO_ANSWER", "TRANSFER", "COULD_NOT_CHECK"]
+    as_of: dt.datetime
+    routing: KnowledgeRouting
+    answer: KnowledgeAnswer | None = None
+    options: list[KnowledgeOption] | None = None
+
+
+Question = Annotated[str, StringConstraints(min_length=1, max_length=200)]
+AnswerText = Annotated[str, StringConstraints(min_length=1, max_length=1000)]
+
+
+class KnowledgeEntryInput(ApiModel):
+    topic: Annotated[str, StringConstraints(min_length=1, max_length=50, pattern=r"^[a-z0-9_]+$")]
+    questions: Annotated[list[Question], Field(min_length=1, max_length=50)]
+    answers: Annotated[dict[Language, AnswerText], Field(min_length=1)]
+    action: Literal["ANSWER", "TRANSFER_DESK"] = "ANSWER"
+    destination: str | None = None
+    approved: bool = False
+
+
+class KnowledgeEntry(KnowledgeEntryInput):
+    id: str
+    source: Literal["PROVIDER", "DOCUMENT"]
+    updated_at: dt.datetime
+
+
+class KnowledgeList(ApiModel):
+    items: list[KnowledgeEntry]

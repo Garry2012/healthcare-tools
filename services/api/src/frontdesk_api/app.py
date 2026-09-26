@@ -24,9 +24,11 @@ from .routers import (
     calls,
     directory,
     health,
+    knowledge,
     notifications,
     scheduling,
 )
+from .services import knowledge as knowledge_service
 
 logger = logging.getLogger(__name__)
 API_PREFIX = "/api/v1"
@@ -58,6 +60,7 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
     app.state.sessionmaker = make_sessionmaker(engine)
     app.state.token_verifier = verifier or StaticTokenVerifier(settings.auth_tokens_json.get_secret_value())
     app.state.alembic_head = code_head()
+    app.state.knowledge_cache = knowledge_service.new_cache()
 
     errors.install(app)
 
@@ -90,7 +93,7 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
                   status=response.status_code, ms=round((time.perf_counter() - started) * 1000, 1))
         return response
 
-    for router in (agent, directory, scheduling, availability, bookings, notifications, calls):
+    for router in (agent, directory, scheduling, availability, bookings, notifications, knowledge, calls):
         app.include_router(router.router, prefix=API_PREFIX)
     app.include_router(health.router)
     _describe_errors_as_400(app)

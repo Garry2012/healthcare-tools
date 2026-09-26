@@ -24,7 +24,7 @@ from .db import tables as t
 from .db.session import make_engine, make_sessionmaker
 from .domain.text import normalise
 from .logging import configure_logging, log_event
-from .services import bookings, directory, schedule, scheduling
+from .services import bookings, cache, directory, schedule, scheduling
 from .services.idempotency import run as idempotent
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ SEED_ACTOR = "seed"
 # the seed state, whatever was written through the API in between.
 ALL_TABLES = (
     t.Notification, t.BookingHistory, t.Booking, t.ScheduleException, t.BoardEntry,
-    t.IdempotencyKey, t.CallSummary, t.LexiconEntry, t.TemplateSession, t.ScheduleTemplate,
+    t.IdempotencyKey, t.CallSummary, t.KnowledgeEntry, t.LexiconEntry, t.TemplateSession, t.ScheduleTemplate,
     t.ResourceCategory, t.Resource, t.Category,
 )
 
@@ -101,6 +101,13 @@ async def _upsert_directory(session: AsyncSession, settings: Settings) -> None:
         )
         row.term_normalized, row.approved, row.source = normalise(term), True, "PROVIDER"
         session.add(row)
+
+    for k in data.knowledge:
+        entry = await session.get(t.KnowledgeEntry, k.id) or t.KnowledgeEntry(id=k.id, source="PROVIDER")
+        entry.topic, entry.questions, entry.answers = k.topic, list(k.questions), dict(k.answers)
+        entry.action, entry.destination, entry.approved, entry.updated_by = k.action, k.destination, True, SEED_ACTOR
+        session.add(entry)
+    await cache.bump(session, cache.DIRECTORY, cache.KNOWLEDGE)
     await session.commit()
 
 
@@ -184,7 +191,8 @@ async def run(settings: Settings, *, reset: bool = False) -> dict[str, int]:
             else:
                 summary = await data.scenario(Seeder(session, settings))
             log_event(logger, logging.INFO, "seed_complete", pack=data.name, **summary,
-                      resources=len(data.resources), categories=len(data.categories), lexicon=len(data.lexicon))
+                      resources=len(data.resources), categories=len(data.categories), lexicon=len(data.lexicon),
+                      knowledge=len(data.knowledge))
             return summary
     finally:
         await engine.dispose()

@@ -58,11 +58,13 @@ info:
   version: 2.0.0-draft
   description: >
     Domain API for a front-desk voice agent and the front-desk web application,
-    reusable across domains through domain packs (healthcare first). Designed so that a conversational LLM needs at most two tools:
-    one to find availability, one to manage a booking. All business rules
-    live here, never in the MCP layer or the prompt.
+    reusable across domains through domain packs (healthcare first). Designed
+    so that a conversational LLM needs at most three tools: one to find
+    availability, one to manage a booking, one to answer general questions
+    from approved answers. All business rules live here, never in the MCP
+    layer or the prompt.
   contact:
-    name: Healthcare tools workstream
+    name: Front-desk platform workstream
 
 servers:
   - url: https://{environment}.example-product.com/api/v1
@@ -73,7 +75,7 @@ servers:
 tags:
   - name: Agent
     description: >
-      The voice-agent facade. Free text in, computed facts out. These five
+      The voice-agent facade. Free text in, computed facts out. These six
       operations are the only ones exposed as MCP tools.
   - name: Directory
     description: Resources, categories, and the multilingual lexicon.
@@ -85,6 +87,11 @@ tags:
     description: Staff-side booking operations and impacted-customer handling.
   - name: Notifications
     description: Outbound notification queue for impacted customers (SMS/call later).
+  - name: Knowledge
+    description: >
+      Approved answers to general questions (hours, parking, payment), in any
+      language, maintained by staff. The agent reads them through
+      agentKnowledgeSearch and never speaks unapproved text.
   - name: Calls
     description: Call summaries for the admin UI.
 
@@ -94,7 +101,7 @@ security:
 # -----------------------------------------------------------------------------
 # MCP TOOL MAPPING (read by the MCP builder; ignored by the REST server)
 # -----------------------------------------------------------------------------
-# Two tools. Both are thin wrappers over `Agent` operations. The wrapper adds
+# Three tools. All are thin wrappers over `Agent` operations. The wrapper adds
 # nothing but: header injection from call context, an outcome envelope that is
 # already the REST response, and stripping of the injected headers from the
 # tool's input schema.
@@ -119,11 +126,20 @@ x-mcp-tools:
       - { action: CANCEL, operationId: agentCancelBooking }
       - { action: RESCHEDULE, operationId: agentRescheduleBooking }
     inputs_from_context: [X-Call-Id, X-Caller-Number]
+  search_knowledge:
+    description: >
+      Answer a general question (opening hours, parking, payment, directions)
+      from the provider's approved answers. Give the caller's question as
+      spoken. Speak `answer.text` as given; never add facts. Not for
+      availability, prices of a resource, or bookings.
+    operations:
+      - operationId: agentKnowledgeSearch
+    inputs_from_context: [X-Call-Id, X-Caller-Number]
   alternative_one_to_one:
     note: >
-      FastMCP.from_openapi with a RouteMap selecting tag=Agent yields five tools
+      FastMCP.from_openapi with a RouteMap selecting tag=Agent yields six tools
       (one per Agent operation) with no hand-written code. Acceptable, but the
-      two-tool wrapper above is preferred for a small conversational model.
+      three-tool wrapper above is preferred for a small conversational model.
 
 paths:
 
@@ -169,16 +185,16 @@ paths:
               needFirst:
                 summary: Need only, ASR-damaged
                 value:
-                  utterance: "I need a zoologist booking for kidney stones scanning"
+                  utterance: "I need a zoologist appointment for kidney stones scanning"
                   language: en
                   needText: "kidney stones scanning"
                   when: { expression: "today" }
               categoryGender:
                 summary: Category plus preference
                 value:
-                  utterance: "lady resource for thyroid"
+                  utterance: "lady doctor for thyroid"
                   language: en
-                  category: "thyroid resource"
+                  category: "thyroid doctor"
                   preferences: { gender: FEMALE }
                   when: { expression: "today" }
       responses:
@@ -427,6 +443,146 @@ paths:
   # DIRECTORY — who exists, in every language the callers use
   # ===========================================================================
 
+  /agent/knowledge-search:
+    post:
+      tags: [Agent]
+      operationId: agentKnowledgeSearch
+      summary: Answer a caller's general question from approved answers only
+      description: >
+        Deterministic retrieval over the knowledge base's question variants (any
+        language or script, normalised and transliterated like the resolver).
+        RULE: run the red-flag check first; if it fires, return
+        routing.action=TRANSFER_EMERGENCY and nothing else.
+        RULE: answer only above the tenant's answer threshold and clearly ahead
+        of the runner-up; between the clarify and answer thresholds return
+        CLARIFICATION_NEEDED with up to three options; below, NO_ANSWER. Never
+        compose or translate an answer: `answer.language` says which approved
+        text was returned.
+        RULE: never NO_ANSWER for a failure; set outcome=COULD_NOT_CHECK.
+        WHY: in healthcare an improvised answer is a risk; the provider signs off
+        every sentence the agent may speak.
+      x-mcp:
+        expose: true
+        tool: search_knowledge
+        inject_headers: [X-Call-Id, X-Caller-Number]
+      parameters:
+        - $ref: '#/components/parameters/CallId'
+        - $ref: '#/components/parameters/CallerNumber'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KnowledgeSearchRequest' }
+            example: { question: "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", language: kn }
+      responses:
+        '200':
+          description: An approved answer, a clarification, or no answer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KnowledgeSearchResponse' }
+              example:
+                outcome: ANSWERED
+                asOf: "2026-09-26T10:02:11+05:30"
+                routing: { action: ANSWER }
+                answer:
+                  entryId: kb_parking
+                  topic: parking
+                  text: "ಹೌದು. ನೆಲಮಾಳಿಗೆಯಲ್ಲಿ ಉಚಿತ ಪಾರ್ಕಿಂಗ್ ಇದೆ; ಮುಖ್ಯ ದ್ವಾರದ ಪಕ್ಕದ ರಸ್ತೆಯಿಂದ ಒಳಗೆ ಬನ್ನಿ."
+                  language: kn
+                  source: CURATED
+                  confidence: 1.0
+                  matchedQuestion: "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ"
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /knowledge:
+    get:
+      tags: [Knowledge]
+      operationId: listKnowledge
+      summary: Knowledge entries (approved and drafts)
+      security: [{ oauth2: [knowledge.write] }]
+      parameters:
+        - { name: topic, in: query, schema: { type: string } }
+        - { name: approved, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Entries, by topic.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KnowledgeList' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Knowledge]
+      operationId: createKnowledgeEntry
+      summary: Add an answer (draft unless approved)
+      description: RULE the agent sees only approved entries, from its next question on (every replica).
+      security: [{ oauth2: [knowledge.write] }]
+      parameters:
+        - $ref: '#/components/parameters/ActingUser'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KnowledgeEntryInput' }
+            example:
+              topic: parking
+              questions: ["is there parking", "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", "पार्किंग है क्या"]
+              answers: { en: "Yes. Free parking is in the basement.", kn: "ಹೌದು. ನೆಲಮಾಳಿಗೆಯಲ್ಲಿ ಉಚಿತ ಪಾರ್ಕಿಂಗ್ ಇದೆ." }
+              approved: true
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KnowledgeEntry' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /knowledge/{entryId}:
+    parameters:
+      - { name: entryId, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [Knowledge]
+      operationId: updateKnowledgeEntry
+      summary: Replace an answer; the agent sees the change on its next question
+      security: [{ oauth2: [knowledge.write] }]
+      parameters:
+        - $ref: '#/components/parameters/ActingUser'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KnowledgeEntryInput' }
+      responses:
+        '200':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KnowledgeEntry' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Knowledge]
+      operationId: deleteKnowledgeEntry
+      summary: Remove an answer
+      security: [{ oauth2: [knowledge.write] }]
+      parameters:
+        - $ref: '#/components/parameters/ActingUser'
+      responses:
+        '204': { description: Removed. }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /categories:
     get:
       tags: [Directory]
@@ -584,7 +740,7 @@ paths:
             example:
               conceptType: CATEGORY
               conceptId: cat_genmed
-              term: "thyroid resource"
+              term: "thyroid doctor"
               language: en
               approved: true
       responses:
@@ -1224,6 +1380,7 @@ components:
             schedule.write: Manage templates and exceptions
             board.write: Update the live board
             bookings.staff: Staff booking operations, impact lists, notifications
+            knowledge.write: Manage the knowledge base (approved answers)
             calls.write: Store call summaries
             calls.read: Read call summaries
 
@@ -2090,6 +2247,91 @@ components:
         summaryText: { type: string, maxLength: 500 }
 
     # ---------- errors ----------
+
+    KnowledgeSearchRequest:
+      type: object
+      required: [question, language]
+      properties:
+        question: { type: string, maxLength: 500, description: "The caller's question verbatim, as STT delivered it." }
+        language: { $ref: '#/components/schemas/Language' }
+        topic: { type: string, description: "Optional: restrict to one topic (e.g. after a clarification)." }
+
+    KnowledgeSearchResponse:
+      type: object
+      required: [outcome, asOf, routing]
+      properties:
+        outcome:
+          type: string
+          enum: [ANSWERED, CLARIFICATION_NEEDED, NO_ANSWER, TRANSFER, COULD_NOT_CHECK]
+        asOf: { type: string, format: date-time }
+        routing:
+          type: object
+          required: [action]
+          properties:
+            action:
+              type: string
+              enum: [ANSWER, CLARIFY, TRANSFER_DESK, TRANSFER_EMERGENCY]
+              description: TRANSFER_DESK after an ANSWERED outcome means "say the answer, then transfer".
+            destination: { type: string, nullable: true }
+        answer:
+          type: object
+          nullable: true
+          required: [entryId, topic, text, language, source, confidence, matchedQuestion]
+          properties:
+            entryId: { type: string }
+            topic: { type: string }
+            text: { type: string, description: Approved wording. Speak as given. }
+            language: { $ref: '#/components/schemas/Language' }
+            source: { type: string, enum: [CURATED, DOCUMENT] }
+            confidence: { type: number }
+            matchedQuestion: { type: string }
+        options:
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [entryId, topic, label]
+            properties:
+              entryId: { type: string }
+              topic: { type: string }
+              label: { type: string, description: The question variant that matched; ask "did you mean …". }
+
+    KnowledgeEntryInput:
+      type: object
+      required: [topic, questions, answers]
+      properties:
+        topic: { type: string, pattern: '^[a-z0-9_]+$', maxLength: 50 }
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { type: string, maxLength: 200 }
+          description: Ways callers ask, in any language or script.
+        answers:
+          type: object
+          additionalProperties: { type: string, maxLength: 1000 }
+          description: Approved spoken answer per language.
+        action: { type: string, enum: [ANSWER, TRANSFER_DESK], default: ANSWER }
+        destination: { type: string, nullable: true, description: Required for TRANSFER_DESK; a transfer destination. }
+        approved: { type: boolean, default: false }
+
+    KnowledgeEntry:
+      allOf:
+        - $ref: '#/components/schemas/KnowledgeEntryInput'
+        - type: object
+          required: [id, source, updatedAt]
+          properties:
+            id: { type: string }
+            source: { type: string, enum: [PROVIDER, DOCUMENT] }
+            updatedAt: { type: string, format: date-time }
+
+    KnowledgeList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/KnowledgeEntry' }
 
     Error:
       type: object

@@ -1,4 +1,4 @@
-"""The two tools. Each one is a wrapper over an `Agent` REST operation and adds only:
+"""The three tools. Each one is a wrapper over an `Agent` REST operation and adds only:
 call-context headers, a derived Idempotency-Key, and a failure envelope. No domain rules.
 
 The model never sees or supplies X-Call-Id, X-Caller-Number or Idempotency-Key; they come
@@ -76,6 +76,8 @@ FromArg = Annotated[date | None, Field(description="LIST: earliest booking date.
 ToArg = Annotated[date | None, Field(description="LIST: latest booking date.")]
 BookingIdArg = Annotated[str | None, Field(description="CANCEL/RESCHEDULE: a bookingId from LIST or BOOK.")]
 NewSlotIdArg = Annotated[str | None, Field(description="RESCHEDULE: a slotId returned by find_availability.")]
+Question = Annotated[str, Field(max_length=500, description="The caller's question verbatim, as STT delivered it.")]
+TopicArg = Annotated[str | None, Field(max_length=50, description="Only after a clarification: the chosen topic.")]
 
 
 # ---------------------------------------------------------------- transport
@@ -187,7 +189,7 @@ def _apply_pack_text(tool: Any, text: Any) -> None:
 
 def register(mcp: FastMCP, client: ApiClient, pack: Pack) -> None:
     settings = client.settings
-    missing = {"find_availability", "manage_booking"} - set(pack.tools)
+    missing = {"find_availability", "manage_booking", "search_knowledge"} - set(pack.tools)
     if missing:
         raise ValueError(f"pack {pack.name!r} does not describe {sorted(missing)}")
 
@@ -285,6 +287,20 @@ def register(mcp: FastMCP, client: ApiClient, pack: Pack) -> None:
 
 
     _apply_pack_text(manage_booking, pack.tools["manage_booking"])
+
+    @mcp.tool(
+        name="search_knowledge",
+        description=pack.tools["search_knowledge"].description,
+        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
+    )
+    async def search_knowledge(question: Question, language: LanguageTag, topic: TopicArg = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"question": question, "language": language}
+        if topic:
+            body["topic"] = topic
+        return await client.send("POST", "/agent/knowledge-search", headers=call_context(settings),
+                                 json_body=body, write=False)
+
+    _apply_pack_text(search_knowledge, pack.tools["search_knowledge"])
 
 def _keyed(context: dict[str, str], call_id: str, action: str, name: str | None, target: str) -> dict[str, str]:
     """Without a call id there is no safe key; the API then refuses the write (400)."""

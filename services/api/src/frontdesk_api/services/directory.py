@@ -16,7 +16,7 @@ from ..db import tables as t
 from ..domain.resolver import CategoryEntry, Directory, LexiconTerm, ResourceEntry
 from ..domain.text import normalise
 from ..errors import not_found, validation
-from . import views
+from . import cache, views
 
 
 @dataclass(slots=True)
@@ -185,6 +185,7 @@ async def create_resource(session: AsyncSession, body: s.ResourceInput, currency
     session.add(row)
     await session.flush()
     await _set_categories(session, resource_id, body.category_ids)
+    await cache.bump(session, cache.DIRECTORY)
     await session.commit()
     return await get_resource(session, resource_id)
 
@@ -195,6 +196,7 @@ async def update_resource(session: AsyncSession, resource_id: str, body: s.Resou
         raise not_found("No such resource.")
     _apply_resource(row, body, currency)
     await _set_categories(session, resource_id, body.category_ids)
+    await cache.bump(session, cache.DIRECTORY)
     await session.commit()
     return await get_resource(session, resource_id)
 
@@ -271,6 +273,7 @@ async def upsert_lexicon(
         session.add(row)
     row.term_normalized = normalise(body.term)
     row.approved = body.approved
+    await cache.bump(session, cache.DIRECTORY)
     await session.commit()
     return _lexicon_model(row)
 

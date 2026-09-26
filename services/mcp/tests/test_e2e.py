@@ -79,3 +79,15 @@ async def test_book_list_reschedule_cancel(make_settings):
             stranger = await tool("manage_booking", {
                 "action": "CANCEL", "bookingId": booking_id, "customerName": "Somebody Else"})
             assert stranger["error"]["code"] == "NOT_FOUND"
+
+
+async def test_general_question_through_the_gateway_path(make_settings):
+    app = create_app(make_settings(api_base_url=API_URL, api_bearer_token=API_TOKEN))
+    async with serving(app) as base:
+        transport = StreamableHttpTransport(f"{base}/mcp/", headers={
+            "Authorization": "Bearer mcp-token", "X-Call-Id": f"e2e-{uuid.uuid4().hex[:8]}", "X-Caller-Number": CALLER})
+        async with Client(transport) as client:
+            result = await client.call_tool("search_knowledge", {"question": "पार्किंग है क्या", "language": "hi"})
+    body = result.structured_content
+    assert body["outcome"] == "ANSWERED" and body["answer"]["language"] == "hi"
+    assert body["answer"]["entryId"] == "kb_parking"

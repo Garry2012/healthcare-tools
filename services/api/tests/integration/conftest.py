@@ -30,8 +30,8 @@ if not (APP_URL and OWNER_URL):
 
 TABLES = (
     "notifications", "booking_history", "bookings", "schedule_exceptions", "board_entries",
-    "idempotency_keys", "call_summaries", "lexicon_entries", "template_sessions", "schedule_templates",
-    "resource_categories", "resources", "categories",
+    "idempotency_keys", "call_summaries", "knowledge_entries", "lexicon_entries", "template_sessions",
+    "schedule_templates", "resource_categories", "resources", "categories",
 )
 
 

@@ -39,10 +39,10 @@ def mcp_with(settings, handler=None, transport=None):
     return build_mcp(tools.ApiClient(settings, transport=transport))
 
 
-async def test_exactly_two_tools_without_header_parameters(make_settings):
+async def test_exactly_three_tools_without_header_parameters(make_settings):
     async with Client(mcp_with(make_settings())) as client:
         listed = await client.list_tools()
-    assert sorted(t.name for t in listed) == ["find_availability", "manage_booking"]
+    assert sorted(t.name for t in listed) == ["find_availability", "manage_booking", "search_knowledge"]
     for tool in listed:
         leaked = _names(tool.inputSchema) & FORBIDDEN
         assert leaked == set(), f"{tool.name} exposes {leaked}"
@@ -86,9 +86,11 @@ async def test_api_down_is_could_not_check_not_an_exception(make_settings):
             "action": "BOOK", "slotId": "slot_ses_res_garima_2026-09-28_2_01", "language": "en",
             "customer": {"name": "Lakshmi Rao", "phone": "9000000101"}})
         listed = await client.call_tool("manage_booking", {"action": "LIST"})
+        answer = await client.call_tool("search_knowledge", {"question": "parking?", "language": "en"})
     assert result.is_error is False and result.structured_content["outcome"] == "COULD_NOT_CHECK"
     assert booked.structured_content["outcome"] == "COULD_NOT_RECORD"
     assert listed.structured_content["outcome"] == "COULD_NOT_CHECK"
+    assert answer.structured_content["outcome"] == "COULD_NOT_CHECK"
     assert isinstance(result.structured_content["retryAfterSeconds"], int)
 
 

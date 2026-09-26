@@ -1,5 +1,5 @@
 {
-  "instructions": "Front-desk tools for a hospital voice agent. Call find_availability once per caller question with the caller's own words; branch on `outcome` and `routing.action`. Book with manage_booking(action=BOOK) using a slotId from that result, one patient per call. Never invent ids, dates or fees; never say 'confirmed' unless timingCertainty is CONFIRMED. A red-flag symptom returns TRANSFER_EMERGENCY: transfer at once.",
+  "instructions": "Front-desk tools for a hospital voice agent. Call find_availability once per caller question with the caller's own words; branch on `outcome` and `routing.action`. Book with manage_booking(action=BOOK) using a slotId from that result, one patient per call. Never invent ids, dates or fees; never say 'confirmed' unless timingCertainty is CONFIRMED. A red-flag symptom returns TRANSFER_EMERGENCY: transfer at once. For general questions (hours, parking, directions) call search_knowledge and speak only its approved answer.",
   "tools": {
     "find_availability": {
       "description": "Find which doctors can be seen and when. Give the caller's words for the doctor, department or problem exactly as spoken, and when they want to come. Returns understood meaning, bookable slots with times, fee, and what to do next (offer slots, ask a clarifying question, or transfer).",
@@ -17,6 +17,12 @@
         "customerName": "LIST (optional), CANCEL, RESCHEDULE: the patient's name as they say it.",
         "bookingId": "CANCEL/RESCHEDULE: an appointment's bookingId from LIST or BOOK.",
         "reasonVerbatim": "BOOK/CANCEL: the caller's own words for the reason (e.g. the symptom)."
+      }
+    },
+    "search_knowledge": {
+      "description": "Answer a general question about the hospital (opening hours, visiting hours, parking, payment, reports, directions) from the hospital's approved answers. Give the caller's question as spoken. Speak answer.text as given and add nothing; if routing.action is TRANSFER_DESK, say it and transfer. Not for doctors' availability, fees or appointments: use find_availability.",
+      "parameters": {
+        "question": "The caller's question verbatim, in any language, as STT delivered it."
       }
     }
   }

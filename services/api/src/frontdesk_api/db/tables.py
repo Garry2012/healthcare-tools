@@ -349,3 +349,38 @@ class CallSummary(_Stamped, Base):
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
     summary_text: Mapped[str | None] = mapped_column(Text)
+
+
+class KnowledgeEntry(_Stamped, Base):
+    """An approved answer with the ways callers ask for it (any language, any script)."""
+
+    __tablename__ = "knowledge_entries"
+    __table_args__ = (
+        CheckConstraint(_in("action", ("ANSWER", "TRANSFER_DESK")), name="knowledge_action"),
+        CheckConstraint(_in("source", ("PROVIDER", "DOCUMENT")), name="knowledge_source"),
+        CheckConstraint("action <> 'TRANSFER_DESK' OR destination IS NOT NULL", name="knowledge_destination"),
+        Index("ix_knowledge_approved_topic", "approved", "topic"),
+    )
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    questions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    answers: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    action: Mapped[str] = mapped_column(Text, nullable=False, server_default="ANSWER")
+    destination: Mapped[str | None] = mapped_column(Text)
+    approved: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="PROVIDER")
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class CacheVersion(Base):
+    """Version stamp per cached data set ('directory', 'knowledge'); bumped by every writer."""
+
+    __tablename__ = "cache_versions"
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="1")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

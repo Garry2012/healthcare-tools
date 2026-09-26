@@ -140,9 +140,13 @@ def _lexicon_hit(texts: Iterable[str], term: LexiconTerm) -> bool:
     return False
 
 
-def red_flag(texts: Iterable[str], directory: Directory) -> LexiconTerm | None:
+def red_flag_terms(texts: Iterable[str], terms: Iterable[LexiconTerm]) -> LexiconTerm | None:
     texts = [t for t in texts if t]
-    return next((t for t in directory.terms("RED_FLAG") if _lexicon_hit(texts, t)), None)
+    return next((t for t in terms if t.approved and t.concept_type == "RED_FLAG" and _lexicon_hit(texts, t)), None)
+
+
+def red_flag(texts: Iterable[str], directory: Directory) -> LexiconTerm | None:
+    return red_flag_terms(texts, directory.terms("RED_FLAG"))
 
 
 def service_transfer(texts: Iterable[str], directory: Directory) -> LexiconTerm | None:
