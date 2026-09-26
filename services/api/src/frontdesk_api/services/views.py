@@ -87,6 +87,11 @@ def money(row: t.Resource) -> s.Money | None:
     )
 
 
+def spoken_money(row: t.Resource) -> s.Money | None:
+    """What the voice agent may see: a fee only once the provider has confirmed it."""
+    return money(row) if row.price_confirmed else None
+
+
 def resource(row: t.Resource, categories: list[t.Category]) -> s.Resource:
     return s.Resource(
         id=row.id,
@@ -113,6 +118,6 @@ def result_resource(row: t.Resource, categories: list[t.Category]) -> s.ResultRe
         categories=[category(d) for d in categories],
         gender=row.gender,
         attributes=row.attributes or None,
-        price=money(row),
+        price=spoken_money(row),
         data_confirmed=row.data_confirmed,
     )

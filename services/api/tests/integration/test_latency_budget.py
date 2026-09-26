@@ -16,6 +16,7 @@ SEARCHES = {
     "category": ({"utterance": "I need a skin doctor", "language": "en", "category": "skin doctor"}, 6),
     "anyone": ({"utterance": "is any doctor available right now", "language": "en"}, 6),
     "red_flag": ({"utterance": "my father has chest pain", "language": "en"}, 1),
+    "which_sharma": ({"utterance": "I want to see Dr Sharma", "language": "en", "resourceName": "Dr Sharma"}, 2),
 }
 
 

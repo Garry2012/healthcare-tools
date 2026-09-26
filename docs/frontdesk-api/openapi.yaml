@@ -377,6 +377,9 @@ paths:
         RULE: succeeds only when X-Caller-Number matches the booking phone or the
         booked-from number AND customerName matches. Any mismatch returns the
         same neutral 404 as a non-existent booking. Releases the slot.
+        RULE: a booking that is already cancelled returns 200 unchanged with
+        outcome ALREADY_CANCELLED; its status says whether the customer or the
+        provider cancelled it.
       x-mcp:
         expose: true
         tool: manage_booking
@@ -1583,7 +1586,7 @@ components:
         currency: { type: string, example: INR }
         confirmed:
           type: boolean
-          description: False until the hospital approves the value. RULE for the agent — never speak an unconfirmed price.
+          description: False until the hospital approves the value. RULE — agent responses (search results, bookings) carry a price only when confirmed; staff responses show the draft.
 
     Gender:
       type: string
@@ -1870,7 +1873,8 @@ components:
 
     NotBookableReason:
       type: string
-      enum: [SESSION_ENDED, LEFT_FOR_DAY, ARRIVE_BY_PASSED, FULL, CANCELLED, NO_SESSION_THAT_DAY, ON_CALL_ONLY, DESK_ONLY, NOT_OFFERED]
+      enum: [SESSION_ENDED, LEFT_FOR_DAY, ARRIVE_BY_PASSED, FULL, CANCELLED, NO_SESSION_THAT_DAY, NO_SESSION_IN_DAY_PART, ON_CALL_ONLY, DESK_ONLY, NOT_OFFERED]
+      description: NO_SESSION_IN_DAY_PART — the resource sits that day, but not in the part of the day asked for (nextBookable may be the same day).
 
     Slot:
       type: object
@@ -2045,7 +2049,7 @@ components:
               id: { type: string }
               label: { type: string }
               localizedLabels: { $ref: '#/components/schemas/LocalizedText' }
-              detail: { type: string, nullable: true, description: e.g. category for a resource option. }
+              detail: { type: string, nullable: true, description: "The category for a resource option. When two options would read the same, the usual days and hours of each (\"Cardiology, MON WED FRI 10:00-13:00\") from the template in force on the first requested date, only for resources whose data is confirmed. It tells the options apart; it is not availability." }
 
     ResourceResult:
       type: object
@@ -2146,7 +2150,8 @@ components:
       properties:
         outcome:
           type: string
-          enum: [BOOKED, ALREADY_BOOKED, CANCELLED, RESCHEDULED, FOUND]
+          enum: [BOOKED, ALREADY_BOOKED, CANCELLED, ALREADY_CANCELLED, RESCHEDULED, FOUND]
+          description: ALREADY_CANCELLED — the booking was cancelled before this request; status says whether by the customer or the provider.
         bookingId: { type: string }
         confirmationCode:
           type: string

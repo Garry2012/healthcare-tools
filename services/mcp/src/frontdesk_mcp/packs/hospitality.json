@@ -11,7 +11,7 @@
       }
     },
     "manage_booking": {
-      "description": "Book, list, cancel or reschedule a spa, dining or other hotel reservation for the guest. Book uses a slotId from find_availability. List/cancel/reschedule are checked against the caller's phone number and the guest's name.",
+      "description": "Book, list, cancel or reschedule a spa, dining or other hotel reservation for the guest. Book uses a slotId from find_availability. List/cancel/reschedule are checked against the caller's phone number and the guest's name. ALREADY_CANCELLED means it was cancelled before this call; if status is CANCELLED_BY_PROVIDER, say the hotel cancelled it and offer a new reservation.",
       "parameters": {
         "customer": "BOOK: the guest (name spelled back, phone read back). One guest per call.",
         "customerName": "LIST (optional), CANCEL, RESCHEDULE: the guest's name.",

@@ -226,3 +226,30 @@ async def test_reschedule_there_and_back_and_there_again(client, app_settings):
     assert third.status_code == 200 and third.json()["slot"]["slotId"] == b
     listed = await client.get("/agent/bookings", headers=call(), params={"customerName": "Lakshmi Rao"})
     assert listed.json()["items"][0]["slot"]["slotId"] == b
+
+
+async def test_cancelling_twice_says_it_is_cancelled_not_that_it_cannot_be(client, app, app_settings):
+    """PO review: a caller who cancels again (or whose booking the hospital already cancelled)
+    must hear 'it is cancelled', not 'it can no longer be cancelled'."""
+    monday = next_weekday(0, app_settings)
+    booked = (await client.post("/agent/bookings", headers=call(key="c2-book"),
+                                json=book_body(garima_slot(monday, 2)))).json()["bookingId"]
+    body = {"customerName": "Lakshmi Rao"}
+    first = await client.post(f"/agent/bookings/{booked}/cancel", headers=call(key="c2-a"), json=body)
+    again = await client.post(f"/agent/bookings/{booked}/cancel", headers=call(call_id="call-2", key="c2-b"),
+                              json=body)
+    assert first.status_code == 200 and again.status_code == 200, again.text
+    assert first.json()["outcome"] == "CANCELLED"
+    assert again.json()["outcome"] == "ALREADY_CANCELLED" and again.json()["status"] == "CANCELLED_BY_CUSTOMER"
+    async with app.state.sessionmaker() as session:
+        changes = [h.change for h in (await session.scalars(
+            select(t.BookingHistory).where(t.BookingHistory.booking_id == booked))).all()]
+    assert changes.count("CANCELLED_BY_CUSTOMER") == 1
+
+    # the hospital's own cancellation is reported as it is
+    other = (await client.post("/agent/bookings", headers=call(key="c2-book2"),
+                               json=book_body(garima_slot(monday, 3)))).json()["bookingId"]
+    await client.post(f"/bookings/{other}/status", headers=STAFF, json={"status": "CANCELLED_BY_PROVIDER"})
+    r = await client.post(f"/agent/bookings/{other}/cancel", headers=call(key="c2-c"), json=body)
+    assert r.status_code == 200 and r.json()["outcome"] == "ALREADY_CANCELLED"
+    assert r.json()["status"] == "CANCELLED_BY_PROVIDER"

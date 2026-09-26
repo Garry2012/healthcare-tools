@@ -163,10 +163,10 @@ async def cancel(
                                     body.model_dump(mode="json"), caller_number)
 
     async def operation() -> tuple[int, dict]:
-        row = await bookings.cancel(session, settings, bookingId, body, caller_number=caller_number,
-                                 actor=f"agent:{call_id}")
+        row, cancelled_now = await bookings.cancel(session, settings, bookingId, body,
+                                                   caller_number=caller_number, actor=f"agent:{call_id}")
         ctx = await bookings.context_for(session, settings, [row])
-        return 200, _dump(bookings.agent_view(row, ctx, "CANCELLED"))
+        return 200, _dump(bookings.agent_view(row, ctx, "CANCELLED" if cancelled_now else "ALREADY_CANCELLED"))
 
     outcome = await within(settings.write_timeout_seconds, idem.run(session, key, fingerprint, operation))
     log_event(logger, logging.INFO, "booking_cancelled", bookingId=bookingId, replay=outcome.replay)

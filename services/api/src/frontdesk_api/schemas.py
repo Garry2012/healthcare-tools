@@ -123,6 +123,7 @@ class NotBookableReason(StrEnum):
     FULL = "FULL"
     CANCELLED = "CANCELLED"
     NO_SESSION_THAT_DAY = "NO_SESSION_THAT_DAY"
+    NO_SESSION_IN_DAY_PART = "NO_SESSION_IN_DAY_PART"
     ON_CALL_ONLY = "ON_CALL_ONLY"
     DESK_ONLY = "DESK_ONLY"
     NOT_OFFERED = "NOT_OFFERED"
@@ -511,7 +512,7 @@ class SessionSummary(ApiModel):
 
 
 class AgentBooking(ApiModel):
-    outcome: Literal["BOOKED", "ALREADY_BOOKED", "CANCELLED", "RESCHEDULED", "FOUND"]
+    outcome: Literal["BOOKED", "ALREADY_BOOKED", "CANCELLED", "ALREADY_CANCELLED", "RESCHEDULED", "FOUND"]
     booking_id: str
     confirmation_code: str | None = None
     status: BookingStatus

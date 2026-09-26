@@ -11,7 +11,7 @@
       }
     },
     "manage_booking": {
-      "description": "Book, list, cancel or reschedule a doctor's appointment for the caller. Book uses a slotId from find_availability. List/cancel/reschedule are checked against the caller's phone number and the patient's name.",
+      "description": "Book, list, cancel or reschedule a doctor's appointment for the caller. Book uses a slotId from find_availability. List/cancel/reschedule are checked against the caller's phone number and the patient's name. ALREADY_CANCELLED means it was cancelled before this call; if status is CANCELLED_BY_PROVIDER, say the hospital cancelled it and offer a new appointment.",
       "parameters": {
         "customer": "BOOK: the patient (name spelled back, phone read back). One patient per call.",
         "customerName": "LIST (optional), CANCEL, RESCHEDULE: the patient's name as they say it.",

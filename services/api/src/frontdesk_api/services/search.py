@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import schemas as s
 from ..config import Settings
 from ..db import tables as t
 from ..domain import resolver as r
-from ..domain.availability import SessionView
+from ..domain.availability import CANCELLED_STATUS, DAYS, SessionView
 from ..domain.dates import resolve_when
 from . import schedule, views
 from .cache import VersionedCache
@@ -90,6 +91,40 @@ def _option(kind: str, concept_id: str, snap: DirectorySnapshot) -> s.Clarificat
     return s.ClarificationOption(id=cat.id, label=cat.name, localized_labels=cat.localized_names or None)
 
 
+async def _tell_apart(
+    session: AsyncSession, snap: DirectorySnapshot, today: date, options: list[s.ClarificationOption],
+    kinds: list[tuple[str, str]],
+) -> None:
+    """Two doctors in one department read the same ("Cardiology"): add their usual days and hours
+    from the template in force on the first asked-for day, so the caller can tell them apart. Only
+    for confirmed data, and never presented as availability. One query, only on this path."""
+    details = [o.detail for o in options]
+    same = {o.id for o in options if o.detail and details.count(o.detail) > 1}
+    resource_ids = [cid for kind, cid in kinds
+                    if kind == "resource" and cid in same and snap.resources[cid].data_confirmed]
+    if not resource_ids:
+        return
+    rows = (await session.execute(
+        select(t.ScheduleTemplate.resource_id, t.ScheduleTemplate.effective_from, t.TemplateSession.days_of_week,
+               t.TemplateSession.start_time, t.TemplateSession.end_time)
+        .join(t.TemplateSession, t.TemplateSession.template_id == t.ScheduleTemplate.id)
+        .where(t.ScheduleTemplate.resource_id.in_(resource_ids), t.ScheduleTemplate.effective_from <= today,
+               or_(t.ScheduleTemplate.effective_to.is_(None), t.ScheduleTemplate.effective_to >= today))
+        .order_by(t.TemplateSession.start_time)
+    )).all()
+    latest = {row.resource_id: row.effective_from for row in rows}
+    for row in rows:
+        latest[row.resource_id] = max(latest[row.resource_id], row.effective_from)
+    sits: dict[str, list[str]] = {}
+    for row in rows:
+        if row.effective_from == latest[row.resource_id]:
+            days = " ".join(d for d in DAYS if d in row.days_of_week)
+            sits.setdefault(row.resource_id, []).append(f"{days} {row.start_time:%H:%M}-{row.end_time:%H:%M}")
+    for option in options:
+        if option.id in sits:
+            option.detail = f"{option.detail}, {'; '.join(sits[option.id])}"
+
+
 def _response(
     outcome: str, now: datetime, action: str, understood: s.Understood, **extra
 ) -> s.AvailabilitySearchResponse:
@@ -143,6 +178,8 @@ async def agent_search(
 
     if res.action == "CLARIFY":
         options = [_option(kind, cid, snap) for kind, cid in res.clarification_options]
+        on = max(resolved.date_from or now.date(), now.date())
+        await _tell_apart(session, snap, on, options, res.clarification_options)
         return _response(
             "CLARIFICATION_NEEDED", now, "CLARIFY", understood,
             clarification=s.Clarification(type=res.clarification_type, options=options),
@@ -233,7 +270,12 @@ async def agent_search(
         for day in in_range:
             day_views = [v for v in by_date[day] if _overlaps(v, resolved.day_part, parts)]
             if not day_views and report_gaps:
-                reason = "ON_CALL_ONLY" if doc.attendance_type == "ON_CALL" else "NO_SESSION_THAT_DAY"
+                if doc.attendance_type == "ON_CALL":
+                    reason = "ON_CALL_ONLY"
+                elif any(v.status != CANCELLED_STATUS for v in by_date[day]):
+                    reason = "NO_SESSION_IN_DAY_PART"  # sits that day, only not then
+                else:
+                    reason = "NO_SESSION_THAT_DAY"
                 unavailable.append(s.UnavailableSession(
                     date=day, reason=reason, next_bookable=_next_bookable(by_date, (day, time.min))
                 ))

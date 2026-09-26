@@ -14,12 +14,11 @@ KNOWLEDGE: tuple[KnowledgeSeed, ...] = (
         "kb_opd_hours", "hours",
         ("opd timings", "what time does the hospital open", "hospital timings", "opd kab khulta hai",
          "ಆಸ್ಪತ್ರೆ ಎಷ್ಟು ಗಂಟೆಗೆ ತೆರೆಯುತ್ತದೆ", "aspatre timing", "अस्पताल कितने बजे खुलता है"),
-        {"en": "The outpatient department is open Monday to Saturday, 9 AM to 8 PM. On Sunday it is open "
-               "from 10 AM to 1 PM. Emergency is open all day, every day.",
-         "kn": "ಹೊರರೋಗಿ ವಿಭಾಗ ಸೋಮವಾರದಿಂದ ಶನಿವಾರ ಬೆಳಿಗ್ಗೆ 9 ರಿಂದ ರಾತ್ರಿ 8 ರವರೆಗೆ ತೆರೆದಿರುತ್ತದೆ. ಭಾನುವಾರ ಬೆಳಿಗ್ಗೆ 10 ರಿಂದ "
-               "ಮಧ್ಯಾಹ್ನ 1 ರವರೆಗೆ. ತುರ್ತು ವಿಭಾಗ ದಿನದ 24 ಗಂಟೆಯೂ ತೆರೆದಿರುತ್ತದೆ.",
-         "hi": "ओपीडी सोमवार से शनिवार सुबह 9 बजे से रात 8 बजे तक खुली रहती है। रविवार को सुबह 10 से दोपहर 1 बजे तक। "
-               "इमरजेंसी चौबीसों घंटे खुली रहती है।"},
+        {"en": "The outpatient department is open every day, 9 AM to 8 PM. Emergency is open all day, "
+               "every day.",
+         "kn": "ಹೊರರೋಗಿ ವಿಭಾಗ ಪ್ರತಿದಿನ ಬೆಳಿಗ್ಗೆ 9 ರಿಂದ ರಾತ್ರಿ 8 ರವರೆಗೆ ತೆರೆದಿರುತ್ತದೆ. ತುರ್ತು ವಿಭಾಗ ದಿನದ 24 ಗಂಟೆಯೂ "
+               "ತೆರೆದಿರುತ್ತದೆ.",
+         "hi": "ओपीडी हर दिन सुबह 9 बजे से रात 8 बजे तक खुली रहती है। इमरजेंसी चौबीसों घंटे खुली रहती है।"},
     ),
     KnowledgeSeed(
         "kb_visiting_hours", "visiting",

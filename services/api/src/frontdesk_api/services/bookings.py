@@ -141,7 +141,7 @@ def agent_view(
         previous_slot=views.slot(previous_slot) if previous_slot else None,
         arrive_by=views.clock(view.arrive_by) if view else None,
         timing_certainty=_certainty(row, view),
-        price=views.money(resource) if resource else None,
+        price=views.spoken_money(resource) if resource else None,
         follow_up=row.follow_up,
         resource_today=(
             views.session_instance(view, include_slots=False)
@@ -417,8 +417,11 @@ async def _locate(
 async def cancel(
     session: AsyncSession, settings: Settings, booking_id: str, body: s.CancelRequest,
     *, caller_number: str | None, actor: str,
-) -> t.Booking:
+) -> tuple[t.Booking, bool]:
+    """Returns the booking and whether this request cancelled it."""
     row = await _locate(session, settings, booking_id, body.customer_name, caller_number)
+    if row.status in ("CANCELLED_BY_CUSTOMER", "CANCELLED_BY_PROVIDER"):
+        return row, False  # already what the caller wants; the status says who cancelled it
     if row.status not in CHANGEABLE_STATUSES:
         raise ApiError("CONFLICT", "This booking can no longer be cancelled.")
     previous = row.status
@@ -426,7 +429,7 @@ async def cancel(
     _history(session, row.id, actor, "CANCELLED_BY_CUSTOMER", previous=previous,
              reasonProvided=bool(body.reason_verbatim))
     await session.flush()
-    return row
+    return row, True
 
 
 async def _move(

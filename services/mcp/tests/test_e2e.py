@@ -120,3 +120,47 @@ async def test_book_cancel_book_again_in_one_call_is_really_booked(make_settings
                                           "customerName": customer["name"]})
     assert again["outcome"] == "BOOKED" and again["bookingId"] != first["bookingId"]
     assert [i["bookingId"] for i in listed["items"]] == [again["bookingId"]]
+
+
+async def test_losing_a_slot_race_offers_the_live_alternatives(make_settings):
+    """Two callers pick the same slot. The second must hear 'that one just went' plus slots that
+    are really free now, and booking one of those must work (QA gap 15)."""
+    app = create_app(make_settings(api_base_url=API_URL, api_bearer_token=API_TOKEN))
+    tag = uuid.uuid4().hex[:6]
+    callers = [("+919000000661", f"Race One {tag}"), ("+919000000662", f"Race Two {tag}")]
+    async with serving(app) as base:
+        clients = [Client(StreamableHttpTransport(f"{base}/mcp/", headers={
+            "Authorization": "Bearer mcp-token", "X-Call-Id": f"e2e-{uuid.uuid4().hex[:8]}",
+            "X-Caller-Number": number})) for number, _ in callers]
+        async with clients[0] as one, clients[1] as two:
+
+            async def tool(client, name: str, args: dict) -> dict:
+                return (await client.call_tool(name, args)).structured_content
+
+            found = await tool(one, "find_availability", {
+                "utterance": "Dr Garima next monday", "language": "en", "resourceName": "Dr Garima",
+                "when": {"expression": "next monday"}})
+            slot = slots_of(found)[0]
+
+            def book(i: int, slot_id: str) -> dict:
+                number, name = callers[i]
+                return {"action": "BOOK", "slotId": slot_id, "language": "en",
+                        "customer": {"name": name, "phone": number[3:]}}
+
+            won = await tool(one, "manage_booking", book(0, slot))
+            lost = await tool(two, "manage_booking", book(1, slot))
+            assert won["outcome"] == "BOOKED"
+            assert lost["error"]["code"] == "SLOT_UNAVAILABLE"
+            offered = [s["slotId"] for s in lost["error"]["currentSlots"]]
+            assert offered and slot not in offered
+
+            second_try = await tool(two, "manage_booking", book(1, offered[0]))
+            assert second_try["outcome"] == "BOOKED" and second_try["slot"]["slotId"] == offered[0]
+
+            # a number someone says aloud, without a name, discloses nothing
+            probe = await tool(two, "manage_booking", {"action": "LIST", "phone": callers[0][0][3:]})
+            assert probe["outcome"] == "NAME_REQUIRED" and probe["items"] == [] and probe["customersOnNumber"] == 0
+
+            for client, (_, name), booking in ((one, callers[0], won), (two, callers[1], second_try)):
+                await tool(client, "manage_booking", {"action": "CANCEL", "bookingId": booking["bookingId"],
+                                                      "customerName": name})
