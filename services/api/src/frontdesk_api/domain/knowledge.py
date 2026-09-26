@@ -40,6 +40,9 @@ class Hit:
     entry: Entry
     score: float
     matched_question: str
+    # Content words of the question that no approved question contains ("ICU" in "visiting hours
+    # for ICU"): the answer may be about something else, so it is confirmed, not spoken.
+    uncovered: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +97,7 @@ class LexicalIndex:
         q_terms = frozenset(_terms(query))
         if not phrase:
             return []
+        uncovered = tuple(sorted(t for t in q_terms if t not in self.idf))
         best: dict[str, Hit] = {}
         for v in self.variants:
             if v.phrase and contains_phrase(phrase, v.phrase):
@@ -109,7 +113,7 @@ class LexicalIndex:
                 continue
             current = best.get(v.entry.entry_id)
             if current is None or score > current.score:
-                best[v.entry.entry_id] = Hit(v.entry, round(score, 3), v.text)
+                best[v.entry.entry_id] = Hit(v.entry, round(score, 3), v.text, uncovered)
         return sorted(best.values(), key=lambda h: (-h.score, h.entry.entry_id))[:limit]
 
 
@@ -124,6 +128,9 @@ def decide(hits: Sequence[Hit], thresholds: Thresholds) -> Decision:
     if not hits or hits[0].score < thresholds.clarify:
         return Decision("NO_ANSWER")
     top = hits[0]
+    if top.uncovered:
+        # The caller asked about something no approved question mentions: confirm first.
+        return Decision("CLARIFICATION_NEEDED", options=tuple(h for h in hits if h.score >= thresholds.clarify)[:3])
     runner_up = hits[1].score if len(hits) > 1 else 0.0
     if top.score >= thresholds.answer and top.score - runner_up >= thresholds.margin:
         return Decision("ANSWERED", hit=top)

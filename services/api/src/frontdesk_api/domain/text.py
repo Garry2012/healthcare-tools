@@ -60,6 +60,7 @@ STOPWORDS = frozenset(
         "would", "i", "me", "my", "you", "your", "we", "our", "it", "its", "to", "of", "in", "on", "at",
         "for", "and", "or", "there", "what", "which", "how", "please", "tell", "want",
         "know", "any", "this", "that", "with", "from", "about", "have", "has", "get", "sir", "madam",
+        "near", "nearby", "here", "also", "just", "some", "like",
         # hi (romanised)
         "kya", "hai", "hain", "ka", "ki", "ke", "ko", "se", "mein", "aur",
         "kaise", "koi", "mujhe", "hum", "aap", "ji", "bhi", "tha", "ho",

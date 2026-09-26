@@ -56,6 +56,7 @@ KNOWLEDGE: tuple[KnowledgeSeed, ...] = (
     KnowledgeSeed(
         "kb_lab_reports", "lab",
         ("when will my report come", "report collection", "lab report time", "report kab milega",
+         "blood test report", "when will my blood report come",
          "ವರದಿ ಯಾವಾಗ ಸಿಗುತ್ತದೆ", "रिपोर्ट कब मिलेगी"),
         {"en": "Most blood test reports are ready the same evening after 6 PM, and are also sent by SMS. "
                "For a specific report I will connect you to the laboratory.",
@@ -65,6 +66,7 @@ KNOWLEDGE: tuple[KnowledgeSeed, ...] = (
     KnowledgeSeed(
         "kb_pharmacy_hours", "pharmacy",
         ("is the pharmacy open", "pharmacy timings", "medical shop open", "medical store khula hai",
+         "pharmacy open at night", "medical shop open at night",
          "ಔಷಧಿ ಅಂಗಡಿ ತೆರೆದಿದೆಯಾ", "दवाई की दुकान खुली है"),
         {"en": "The hospital pharmacy is open 24 hours, every day, on the ground floor.",
          "kn": "ಆಸ್ಪತ್ರೆಯ ಔಷಧಿ ಅಂಗಡಿ ನೆಲಮಹಡಿಯಲ್ಲಿ ದಿನದ 24 ಗಂಟೆಯೂ ತೆರೆದಿರುತ್ತದೆ.",
@@ -94,5 +96,13 @@ KNOWLEDGE: tuple[KnowledgeSeed, ...] = (
         {"en": "There is no charge to cancel or move an appointment. Please let us know as early as you can.",
          "kn": "ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ರದ್ದು ಮಾಡಲು ಅಥವಾ ಬದಲಿಸಲು ಯಾವುದೇ ಶುಲ್ಕ ಇಲ್ಲ.",
          "hi": "अपॉइंटमेंट कैंसल करने या बदलने का कोई चार्ज नहीं है। कृपया जितनी जल्दी हो सके बताइए।"},
+    ),
+    KnowledgeSeed(
+        "kb_consultation_fee", "fees",
+        ("consultation fee", "how much is the consultation fee", "doctor fee", "how much does it cost",
+         "fees kitna hai", "ಫೀಸ್ ಎಷ್ಟು", "फीस कितनी है"),
+        {"en": "The consultation fee depends on the doctor. Tell me which doctor or department, and I will check it.",
+         "kn": "ಸಮಾಲೋಚನಾ ಶುಲ್ಕ ವೈದ್ಯರನ್ನು ಅವಲಂಬಿಸಿದೆ. ಯಾವ ವೈದ್ಯರು ಅಥವಾ ವಿಭಾಗ ಎಂದು ಹೇಳಿ, ನಾನು ನೋಡುತ್ತೇನೆ.",
+         "hi": "परामर्श शुल्क डॉक्टर पर निर्भर करता है। बताइए कौन से डॉक्टर या विभाग, मैं देख लेता हूँ।"},
     ),
 )

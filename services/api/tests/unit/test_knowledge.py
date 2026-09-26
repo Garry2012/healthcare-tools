@@ -29,6 +29,8 @@ def ask(index: LexicalIndex, question: str):
     ("मरीज़ से मिलने का समय क्या है", "kb_visiting_hours"),
     ("when will my blood report come", "kb_lab_reports"),
     ("is the medical shop open at night", "kb_pharmacy_hours"),
+    ("how much is the consultation fee", "kb_consultation_fee"),
+    ("फीस कितनी है", "kb_consultation_fee"),
 ])
 def test_answers_across_languages_and_scripts(index, question, entry_id):
     decision = ask(index, question)
@@ -68,3 +70,25 @@ def test_answer_language_falls_back_to_english_never_translates():
 
 def test_empty_index_never_raises():
     assert LexicalIndex.build([]).search("anything") == []
+
+
+@pytest.mark.parametrize(("question", "not_this"), [
+    ("is there a cancellation fee for surgery", "kb_cancel_policy"),
+    ("send the report to my email address", "kb_location"),
+    ("what is the blood bank address", "kb_location"),
+    ("visiting hours for ICU", "kb_visiting_hours"),
+])
+def test_a_specific_word_the_answers_do_not_cover_is_confirmed_not_answered(index, question, not_this):
+    """A stored phrase inside a longer question is not proof: 'visiting hours for ICU' may not be
+    the ward's hours. Confirm instead of speaking an approved answer to a different question."""
+    decision = ask(index, question)
+    assert decision.outcome != "ANSWERED" or decision.hit.entry.entry_id != not_this
+
+
+@pytest.mark.parametrize(("question", "entry_id"), [
+    ("is there parking near the hospital", "kb_parking"),
+    ("please tell me the visiting hours", "kb_visiting_hours"),
+])
+def test_ordinary_filler_words_still_get_the_answer(index, question, entry_id):
+    decision = ask(index, question)
+    assert decision.outcome == "ANSWERED" and decision.hit.entry.entry_id == entry_id
