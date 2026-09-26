@@ -11,13 +11,16 @@ LiveKit agent ──MCP──▶ ContextForge ──▶ frontdesk-mcp (FastMCP, 
 - **Architecture and decisions:** `docs/architecture/TARGET.md` (tenancy, domain packs,
   knowledge base, latency budgets).
 - **Spec (source of truth):** `docs/frontdesk-api/openapi.yaml`; the healthcare domain guide
-  is `IMPLEMENTATION.md` (written in healthcare terms; the core names are neutral).
+  is `IMPLEMENTATION.md` (historical v1 rationale, with a name-mapping table at the top).
 - **Handover:** `docs/handover/`:
-  - `ONBOARDING.md`, adding a hospital or hotel
+  - `TESTING.md`, testing locally and what to expect
+  - `AZURE.md`, deploying and testing on Azure
+  - `LIVEKIT.md`, connecting a LiveKit agent (cascade or speech-to-speech), languages
+  - `ONBOARDING.md`, adding a hospital or hotel (and a new language)
   - `README-API.md`, the API for the staff-portal team
   - `ER.md`, the data model
   - `SEED.md`, the demo data
-  - `DEPLOY.md`, local Postgres or Supabase
+  - `DEPLOY.md`, local Postgres or Supabase, database roles and upgrades
   - `CONTEXTFORGE.md`, gateway registration
   - `OPEN-QUESTIONS.md`, spec defects and the policy questions still open
 - All business logic lives in `services/api`. `services/mcp` only adds call-context headers,

@@ -1,5 +1,8 @@
 # Build plan — front-desk MVP
 
+> **Status: completed (the MVP build plan, kept for history).** Current architecture and
+> decisions: `docs/architecture/TARGET.md`; current contract: `docs/frontdesk-api/openapi.yaml`.
+
 Spec: `docs/frontdesk-api/openapi.yaml` + `IMPLEMENTATION.md` §2.2–2.5 (unchanged, normative).
 
 **Assumptions** (flagged in `OPEN-QUESTIONS.md` where the spec is silent)

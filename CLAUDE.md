@@ -4,7 +4,8 @@ Reusable front-desk API + MCP tools for a LiveKit voice agent; healthcare first,
 Architecture and decisions: `docs/architecture/TARGET.md`. Contract: `docs/frontdesk-api/openapi.yaml`.
 
 ## Commands
-- Everything (lint, unit, integration, MCP e2e, schemathesis): `./scripts/test.sh`
+- Fast, no database (run after every change): `make test-fast`
+- Everything (lint, unit, integration, MCP e2e, schemathesis): `./scripts/test.sh` (before a PR; CI runs it)
 - No Docker daemon (web sessions): `eval "$(scripts/local-pg.sh start)"` exports `TEST_DATABASE_URL` / `TEST_DATABASE_OWNER_URL`
 - API tests: `cd services/api && uv run pytest tests/unit tests/contract/test_openapi_matches_spec.py tests/integration -q`
 - MCP tests: `cd services/mcp && uv run pytest tests -q -m "not e2e"`
