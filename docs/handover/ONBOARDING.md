@@ -51,7 +51,7 @@ Edits reach every replica on the next request (version-stamped caches); nothing 
 ## 5. Register the gateway
 
 ```bash
-set -a; . deploy/providers/<provider>.env; set +a   # PROVIDER_ID, DOMAIN_PACK
+export PROVIDER_ID=<provider> DOMAIN_PACK=<pack>   # don't `source` the file: it strips JSON quotes
 MCP_PUBLIC_URL=https://<adapter-host>/mcp/ MCP_BEARER_TOKEN=… \
   uv run --project services/mcp python deploy/contextforge/register.py --dry-run   # then without
 ```

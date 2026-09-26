@@ -3,7 +3,11 @@
 doctor → resource, department → category, appointment → booking, patient → customer,
 fee → price, symptom route → need route. Data is kept: tables and columns are renamed in
 place, enum values and JSON keys are rewritten, lexicon ids are recomputed from the new
-concept types, and doctor-only columns move into `resources.attributes`.
+concept types, and doctor-only columns move into `resources.attributes`. Healthcare-only enum
+values that merge into one neutral value keep the original (call intent in
+`tool_outcomes.legacyIntent`, exception reason as a `[was X]` note prefix), so downgrade
+restores them exactly. Stored ids (`doc_*`, `dept_*`) are unchanged; a demo database needs
+`seed --reset` afterwards (the seed refuses to mix old and new demo ids).
 
 Revision ID: 0002
 Revises: 0001
@@ -156,7 +160,16 @@ def upgrade() -> None:
     )
     op.execute("ALTER TABLE resources DROP COLUMN qualification, DROP COLUMN years_of_experience")
 
+    op.execute(
+        "UPDATE call_summaries SET tool_outcomes = tool_outcomes || jsonb_build_object('legacyIntent', intent) "
+        "WHERE intent IN ('LAB', 'PHARMACY', 'INSURANCE')"
+    )
+    op.execute(
+        "UPDATE schedule_exceptions SET note = '[was ' || reason_category || '] ' || coalesce(note, '') "
+        "WHERE reason_category IN ('SURGERY', 'EMERGENCY_DUTY')"
+    )
     _swap_checks(CHECKS_OLD)
+    op.execute("ALTER TABLE lexicon_entries ALTER COLUMN source SET DEFAULT 'PROVIDER'")
     for table, column, old, new in VALUES:
         op.execute(f"UPDATE {table} SET {column} = '{new}' WHERE {column} = '{old}'")
     _add_checks(CHECKS_NEW)
@@ -186,13 +199,22 @@ def downgrade() -> None:
         "'CANCELLED_BY_PROVIDER', 'CANCELLED_BY_HOSPITAL'))) WHERE facts ? 'appointmentStatus'"
     )
     _swap_checks(CHECKS_NEW)
-    # Merged values (e.g. LAB/PHARMACY → SERVICE_TRANSFER) cannot be split again; they map to the first.
+    # Merged values map to the first here; the exact originals are restored from what upgrade kept, below.
     seen: set[tuple[str, str, str]] = set()
     for table, column, old, new in VALUES:
         if (table, column, new) in seen:
             continue
         seen.add((table, column, new))
         op.execute(f"UPDATE {table} SET {column} = '{old}' WHERE {column} = '{new}'")
+    op.execute(
+        "UPDATE call_summaries SET intent = tool_outcomes ->> 'legacyIntent', tool_outcomes = tool_outcomes - "
+        "'legacyIntent' WHERE tool_outcomes ? 'legacyIntent'"
+    )
+    op.execute(
+        "UPDATE schedule_exceptions SET reason_category = substring(note from '^\\[was ([A-Z_]+)\\] '), "
+        "note = nullif(regexp_replace(note, '^\\[was [A-Z_]+\\] ', ''), '') WHERE note ~ '^\\[was [A-Z_]+\\] '"
+    )
+    op.execute("ALTER TABLE lexicon_entries ALTER COLUMN source SET DEFAULT 'HOSPITAL'")
     _add_checks(CHECKS_OLD)
     op.execute(LEXICON_ID)
 

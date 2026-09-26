@@ -326,7 +326,7 @@ paths:
         NAME_REQUIRED): if more than one customer is registered under the number
         and customerName is absent, return outcome=NAME_REQUIRED with
         customersOnNumber and no names. RULE: each item embeds the resource's
-        current session state so "is my resource coming?" is one call.
+        current session state so "is my doctor coming?" is one call.
       x-mcp:
         expose: true
         tool: manage_booking
@@ -721,8 +721,8 @@ paths:
       operationId: listLexicon
       summary: Multilingual terms the resolver uses
       description: >
-        WHY: callers say "skin resource", "ಚರ್ಮ ವೈದ್ಯ", "charm ka resource", "thyroid
-        resource". The hospital decides what each maps to (e.g. thyroid → General
+        WHY: callers say "skin doctor", "ಚರ್ಮ ವೈದ್ಯ", "charm ka doctor", "thyroid
+        doctor". The hospital decides what each maps to (e.g. thyroid → General
         Medicine, not endocrinology). Entries are approved before use.
         RED_FLAG entries drive the emergency check. Unapproved entries are
         ignored by the resolver.
@@ -2168,7 +2168,7 @@ components:
         resourceToday:
           allOf: [{ $ref: '#/components/schemas/SessionInstance' }]
           nullable: true
-          description: Present on LIST for same-day bookings — answers "is my resource coming?".
+          description: Present on LIST for same-day bookings — answers "is my doctor coming?".
 
     AgentBookingList:
       type: object

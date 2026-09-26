@@ -39,8 +39,18 @@ ALL_TABLES = (
 )
 
 
+class LegacyDemoData(RuntimeError):
+    """Demo rows from before migration 0002 (doc_*/dept_* ids) would duplicate the pack's directory."""
+
+
 async def _upsert_directory(session: AsyncSession, settings: Settings) -> None:
     data = packs.load(settings.domain_pack)
+    legacy = await session.scalar(select(func.count()).select_from(t.Resource).where(
+        t.Resource.id.like("doc\\_%"), t.Resource.id.notin_([r.id for r in data.resources])))
+    if legacy:
+        raise LegacyDemoData(
+            f"{legacy} demo resources use pre-0002 ids (doc_*); run `frontdesk-api seed --reset` to re-date the demo"
+        )
     for d in data.categories:
         row = await session.get(t.Category, d.id) or t.Category(id=d.id)
         row.code, row.name, row.localized_names = d.code, d.name, dict(d.localized)

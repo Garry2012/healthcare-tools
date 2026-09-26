@@ -1,11 +1,19 @@
-# Hospital front-desk scheduling — REST service, MCP adapter, PostgreSQL
+# Front-desk platform — voice-agent tools, REST service, PostgreSQL
+
+Reusable front desk for voice agents: healthcare first (hospitals), hospitality next, with the
+same code. One deployment per provider; domain words come from domain packs.
 
 ```
-ContextForge (external) ──MCP──▶ frontdesk-mcp (FastMCP, 2 tools) ──HTTPS──▶ frontdesk-api (FastAPI) ──▶ PostgreSQL 16
+LiveKit agent ──MCP──▶ ContextForge ──▶ frontdesk-mcp (FastMCP, 3 tools) ──HTTPS──▶ frontdesk-api (FastAPI) ──▶ PostgreSQL 16
+                                        find_availability · manage_booking · search_knowledge
 ```
 
-- **Spec (source of truth):** `docs/frontdesk-api/openapi.yaml` and `IMPLEMENTATION.md`.
+- **Architecture and decisions:** `docs/architecture/TARGET.md` (tenancy, domain packs,
+  knowledge base, latency budgets).
+- **Spec (source of truth):** `docs/frontdesk-api/openapi.yaml`; the healthcare domain guide
+  is `IMPLEMENTATION.md` (written in healthcare terms; the core names are neutral).
 - **Handover:** `docs/handover/`:
+  - `ONBOARDING.md`, adding a hospital or hotel
   - `README-API.md`, the API for the staff-portal team
   - `ER.md`, the data model
   - `SEED.md`, the demo data
@@ -17,7 +25,8 @@ ContextForge (external) ──MCP──▶ frontdesk-mcp (FastMCP, 2 tools) ─�
 
 ## Five-minute start
 
-Needs Docker, [uv](https://docs.astral.sh/uv/) 0.11+, `jq`.
+Needs Docker, [uv](https://docs.astral.sh/uv/) 0.11+, `jq`. With no Docker daemon, `./scripts/test.sh`
+uses a local PostgreSQL 16 (`scripts/local-pg.sh`).
 
 ```bash
 cp .env.example .env             # then replace every change-me value
@@ -61,4 +70,16 @@ services/api/   FastAPI service: domain/ (pure engine, resolver, dates, identity
 services/mcp/   FastMCP adapter: tools.py (2 tools), server.py, tests/
 deploy/         docker-compose.yml (profiles dev, test), postgres/init, contextforge/register.py
 docs/           frontdesk-api/ (spec), handover/, archive/ (research; git-ignored)
+```
+
+## Upgrading an existing checkout (v1 → v2 names)
+
+The core now uses domain-neutral names (`docs/architecture/TARGET.md`). Migration `0002`
+renames tables and data in place. Two local steps apply:
+
+```bash
+docker compose -p healthcare-frontdesk -f deploy/docker-compose.yml --env-file .env --profile dev down
+# The stack is now frontdesk-$PROVIDER_ID with its own volume; to keep old dev data, migrate it
+# before switching. Otherwise start fresh:
+make up && make migrate && make seed-reset   # demo ids changed (doc_* → res_*); plain `seed` refuses to mix them
 ```
