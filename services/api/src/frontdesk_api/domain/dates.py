@@ -142,6 +142,7 @@ class WhenResult:
     date_to: date
     day_part: str | None
     resolved: bool  # False: an expression was given and nothing in it was understood
+    stated: bool = True  # False: no date was said at all; the range is the default
 
 
 def _day_part(text: str, day_parts: Iterable[tuple[str, str]]) -> str | None:
@@ -227,7 +228,7 @@ def resolve_when(
             return WhenResult(today, today, part, True)
         if strict:
             return WhenResult(today, today + timedelta(days=default_days - 1), None, False)
-    return WhenResult(today, today + timedelta(days=default_days - 1), part, True)
+    return WhenResult(today, today + timedelta(days=default_days - 1), part, True, stated=part is not None)
 
 
 def time_words() -> frozenset[str]:

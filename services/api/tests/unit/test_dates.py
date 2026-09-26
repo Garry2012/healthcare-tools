@@ -116,3 +116,8 @@ def test_history_and_names_in_the_sentence_are_not_the_visit_date(day_parts, utt
 
 def test_indu_still_means_today_when_given_as_the_time(day_parts):
     assert when("indu", day_parts=day_parts).date_to == FRI
+
+
+def test_the_default_range_is_marked_as_not_stated(day_parts):
+    assert resolve_when(today=FRI, utterance="any doctor", day_parts=day_parts).stated is False
+    assert resolve_when(today=FRI, utterance="any doctor next week", day_parts=day_parts).stated is True

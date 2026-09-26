@@ -177,8 +177,8 @@ async def agent_search(
     named = [m.resource_id for m in res.resources]
     cat_ids = [m.category_id for m in res.categories]
     anyone = not named and not cat_ids
-    if anyone and not (when and (when.expression or when.date_from)):
-        date_to = date_from  # "anyone available right now?" means today.
+    if anyone and not resolved.stated:
+        date_to = date_from  # "anyone available right now?" means today; "…next week?" does not.
 
     def eligible(doc: t.Resource) -> bool:
         return doc.active and doc.booking_policy != "NOT_OFFERED"
@@ -214,6 +214,7 @@ async def agent_search(
             if eligible(d) and d.id not in named
             and set(snap.resource_categories.get(d.id, [])) & alt_depts
             and (not gender or d.gender in (gender, None))
+            and (not spoken or not d.languages_spoken or spoken in d.languages_spoken)
         ]
 
     horizon_end = date_to + timedelta(days=settings.tenant_next_bookable_horizon_days)
@@ -276,14 +277,37 @@ async def agent_search(
         alts.sort(key=lambda pair: pair[1])
         alternatives = [pair[0] for pair in alts if bookable(pair[0])][: body.max_resources]
 
+    found = any(bookable(x) for x in results)
     desk_only = bool(results) and all(
         snap.resources[x.resource.resource_id].booking_policy == "DESK_ONLY" for x in results
     ) and any(x.sessions for x in results)
-    if desk_only:
+    # Nothing the agent can book, and everyone asked for is booked by the desk (e.g. an on-call
+    # specialist with no fixed sessions): the desk arranges it; the agent must not say "no one".
+    only_desk = not found and bool(candidates) and all(
+        snap.resources[c].booking_policy == "DESK_ONLY" for c in candidates)
+    if desk_only or only_desk:
         return _response("TRANSFER", now, "TRANSFER_DESK", understood, destination="desk",
                          results=results, notes=notes or None)
 
-    found = any(bookable(x) for x in results)
+    if not found and not named and candidates:
+        # A department with nothing in the asked-for days: say when each of its people is next free.
+        shown = {x.resource.resource_id for x in results}
+        upcoming: list[tuple[s.NextBookable, str]] = []
+        for resource_id in candidates:
+            if resource_id in shown:
+                continue
+            days = _LazyDays(lambda day, r=resource_id: data.sessions(r, day),
+                             schedule.daterange(date_from, horizon_end))
+            nxt = _next_bookable(days, (date_to, time.max))
+            if nxt is not None:
+                upcoming.append((nxt, resource_id))
+        upcoming.sort(key=lambda pair: (pair[0].date, pair[0].start))
+        for nxt, resource_id in upcoming[: max(0, body.max_resources - len(results))]:
+            results.append(s.ResourceResult(
+                resource=views.result_resource(snap.resources[resource_id], snap.categories_of(resource_id)),
+                sessions=[],
+                unavailable=[s.UnavailableSession(date=date_from, reason="NO_SESSION_THAT_DAY", next_bookable=nxt)],
+            ))
     return _response(
         "FOUND" if found else "NONE_AVAILABLE",
         now,
