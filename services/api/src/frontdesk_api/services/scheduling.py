@@ -128,6 +128,22 @@ async def set_template(
     existing = (
         await session.scalars(select(t.ScheduleTemplate).where(t.ScheduleTemplate.resource_id == resource_id))
     ).all()
+    # Session ids (ses_<resource>_<date>_<n>) are held by bookings: a session keeps its n across
+    # template versions, and a new session never reuses one (tech-lead TL2).
+    known = dict((await session.execute(
+        select(t.TemplateSession.template_session_id, t.TemplateSession.ordinal)
+        .join(t.ScheduleTemplate, t.ScheduleTemplate.id == t.TemplateSession.template_id)
+        .where(t.ScheduleTemplate.resource_id == resource_id)
+        .order_by(t.ScheduleTemplate.effective_from)
+    )).all())
+    next_ordinal = max(known.values(), default=0) + 1
+    ordinals: dict[str, int] = {}
+    for sess in body.sessions:
+        if sess.template_session_id in known:
+            ordinals[sess.template_session_id] = known[sess.template_session_id]
+        else:
+            ordinals[sess.template_session_id] = next_ordinal
+            next_ordinal += 1
     for row in existing:
         if row.effective_from == body.effective_from:
             await session.delete(row)
@@ -153,7 +169,7 @@ async def set_template(
         t.TemplateSession(
             template_id=template.id,
             template_session_id=sess.template_session_id,
-            ordinal=i + 1,
+            ordinal=ordinals[sess.template_session_id],
             label=sess.label,
             days_of_week=[d.value for d in sess.days_of_week],
             start_time=time.fromisoformat(sess.start),
@@ -165,7 +181,7 @@ async def set_template(
             walk_in_reserve_percent=sess.walk_in_reserve_percent,
             last_arrival_offset_minutes=sess.last_arrival_offset_minutes,
         )
-        for i, sess in enumerate(body.sessions)
+        for sess in body.sessions
     ]
     session.add_all(rows)
     await session.flush()
