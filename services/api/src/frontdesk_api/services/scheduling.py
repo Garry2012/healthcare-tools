@@ -311,6 +311,29 @@ async def _impact(
     return moved_to_reschedule, notified
 
 
+async def withdraw_resource(session: AsyncSession, settings: Settings, resource: t.Resource, actor: str) -> int:
+    """The resource no longer offers anything (left, deactivated, NOT_OFFERED): every future live
+    booking is impacted like a cancelled session, so the desk phones each customer. No commit."""
+    await schedule.lock_resource(session, resource.id, exclusive=True)
+    now = schedule.now_in(settings)
+    last = await session.scalar(
+        select(t.Booking.date).where(t.Booking.resource_id == resource.id, t.Booking.date >= now.date(),
+                                     t.Booking.status.in_(IMPACTABLE)).order_by(t.Booking.date.desc()).limit(1))
+    if last is None:
+        return 0
+    before = await schedule.load(session, settings, now, [resource.id], now.date(), last)
+    impacted, _ = await _impact(
+        session, settings, resource, schedule.daterange(now.date(), last),
+        before=lambda d: before.sessions(resource.id, d, channel="DESK"),
+        after=lambda d: [],
+        suggest=before,
+        exception_id=None,
+        template_change=False,
+        actor=actor,
+    )
+    return impacted
+
+
 # ---------------------------------------------------------------- exceptions
 
 

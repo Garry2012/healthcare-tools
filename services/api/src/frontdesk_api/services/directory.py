@@ -13,11 +13,12 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import schemas as s
+from ..config import Settings
 from ..db import tables as t
 from ..domain.resolver import CategoryEntry, Directory, LexiconTerm, ResourceEntry
 from ..domain.text import normalise
 from ..errors import not_found, validation
-from . import cache, views
+from . import cache, scheduling, views
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,11 +249,17 @@ async def create_resource(session: AsyncSession, body: s.ResourceInput, currency
     return await get_resource(session, resource_id)
 
 
-async def update_resource(session: AsyncSession, resource_id: str, body: s.ResourceInput, currency: str) -> s.Resource:
+async def update_resource(
+    session: AsyncSession, settings: Settings, resource_id: str, body: s.ResourceInput, actor: str
+) -> s.Resource:
     row = await session.get(t.Resource, resource_id)
     if row is None:
         raise not_found("No such resource.")
-    _apply_resource(row, body, currency)
+    offered_before = row.active and row.booking_policy != "NOT_OFFERED"
+    _apply_resource(row, body, settings.tenant_currency)
+    if offered_before and not (row.active and row.booking_policy != "NOT_OFFERED"):
+        await session.flush()
+        await scheduling.withdraw_resource(session, settings, row, actor)
     await _set_categories(session, resource_id, body.category_ids)
     await cache.bump(session, cache.DIRECTORY)
     await session.commit()

@@ -706,6 +706,7 @@ paths:
     put:
       tags: [Directory]
       operationId: updateResource
+      x-rules: ["When a resource stops being offered (active=false or bookingPolicy=NOT_OFFERED), its future live bookings become NEEDS_RESCHEDULE with a SESSION_CANCELLED notification each."]
       summary: Update a resource (admin). Sets dataConfirmed when the hospital signs off.
       security:
         - oauth2: [directory.write]

@@ -70,7 +70,7 @@ async def get_resource(resourceId: str, session: Session):  # noqa: N803
             response_model=s.Resource, responses=errors(400, 403, 404),
             dependencies=[Depends(require_scopes("directory.write"))])
 async def update_resource(resourceId: str, body: s.ResourceInput, session: Session, settings: SettingsDep):  # noqa: N803
-    return respond(await svc.update_resource(session, resourceId, body, settings.tenant_currency))
+    return respond(await svc.update_resource(session, settings, resourceId, body, "staff"))
 
 
 @router.get("/lexicon", operation_id="listLexicon", summary="Multilingual terms the resolver uses",

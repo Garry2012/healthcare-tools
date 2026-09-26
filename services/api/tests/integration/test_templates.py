@@ -44,3 +44,22 @@ async def test_adding_a_session_before_others_keeps_existing_session_ids(client,
         "resourceId": "res_garima", "from": str(monday), "to": str(monday), "includeSlots": "false"})
     by_id = {s["sessionId"]: s for s in view.json()["items"]}
     assert by_id[session_id]["start"] == "15:00"
+
+
+async def test_deactivating_a_resource_moves_its_future_bookings_and_queues_notices(client, app, app_settings):
+    """PO review: a doctor who leaves must not keep patients BOOKED for sessions that will not happen."""
+    monday = next_weekday(0, app_settings)
+    booked = await client.post("/agent/bookings", headers=call(key="leave-1"), json=book_body(garima_slot(monday, 2)))
+    assert booked.status_code == 201
+    current = (await client.get("/resources/res_garima", headers=STAFF)).json()
+    update = {k: current[k] for k in ("name", "localizedNames", "nameVariants", "gender", "languagesSpoken",
+                                      "price", "attendanceType", "bookingPolicy", "dataConfirmed") if k in current}
+    update |= {"categoryIds": [c["id"] for c in current["categories"]], "active": False}
+    r = await client.put("/resources/res_garima", headers=STAFF, json=update)
+    assert r.status_code == 200, r.text
+    async with app.state.sessionmaker() as session:
+        row = await session.get(t.Booking, booked.json()["bookingId"])
+    assert row.status == "NEEDS_RESCHEDULE"
+    notices = [n for n in (await client.get("/notifications", headers=STAFF)).json()["items"]
+               if n["bookingId"] == row.id]
+    assert len(notices) == 1 and notices[0]["trigger"] == "SESSION_CANCELLED"
