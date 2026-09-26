@@ -2006,8 +2006,10 @@ components:
         CLARIFY — ask the question in clarification. TRANSFER_EMERGENCY — a
         RED_FLAG matched; stop and transfer. TRANSFER_DESK — request is not a
         consultation (lab, pharmacy, insurance) or the resource is DESK_ONLY;
-        destination given. NO_SERVICE — the category does not exist or has
-        no consultant; suggestions may be present.
+        destination given. NO_SERVICE — not understood, or not offered here
+        (no such category, no consultant); outcome is TRANSFER with
+        destination desk: ask the caller to rephrase once or transfer, and
+        never say that nobody is available.
       properties:
         action: { type: string, enum: [OFFER_SLOTS, CLARIFY, TRANSFER_EMERGENCY, TRANSFER_DESK, NO_SERVICE] }
         destination: { type: string, nullable: true, description: Transfer destination code from tenant telephony config. }

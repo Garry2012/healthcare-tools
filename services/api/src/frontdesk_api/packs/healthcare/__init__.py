@@ -212,6 +212,7 @@ LEXICON: tuple[tuple[str, str, str, str], ...] = (
     ("SERVICE_TRANSFER", "pharmacy", "medical shop", "en"),
     ("SERVICE_TRANSFER", "pharmacy", "ಔಷಧಿ ಅಂಗಡಿ", "kn"),
     ("SERVICE_TRANSFER", "pharmacy", "दवाई की दुकान", "hi"),
+    ("SERVICE_TRANSFER", "pharmacy", "dawai ki dukan", "hi"),
     ("SERVICE_TRANSFER", "insurance", "insurance", "en"),
     ("SERVICE_TRANSFER", "insurance", "cashless", "en"),
     ("SERVICE_TRANSFER", "insurance", "ವಿಮೆ", "kn"),

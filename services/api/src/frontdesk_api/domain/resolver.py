@@ -13,7 +13,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from .dates import time_words
 from .text import (
+    HONORIFICS,
     contains_phrase,
     content_words,
     loosely_same,
@@ -131,6 +133,17 @@ class Resolution:
     clarification_type: str | None = None
     clarification_options: list[tuple[str, str]] = field(default_factory=list)  # (kind, id)
     suggestions: list[str] = field(default_factory=list)  # category ids
+
+
+# Words that only ask "is someone free?" (en, hi and kn, romanised as the normaliser does).
+AVAILABILITY_WORDS = frozenset(normalise(w) for w in (
+    "any", "anyone", "anybody", "someone", "somebody", "available", "availability", "free", "sitting",
+    "present", "open", "see", "consult", "consultation", "appointment", "book", "booking", "slot", "token",
+    "time", "timing", "currently", "koi", "milega", "milegi", "milenge", "baithe", "baithi", "yaradaru",
+    "yaaradaru", "iddara", "iddare", "iddaara", "sigtara", "sigthare", "ಯಾರಾದರೂ", "ಇದ್ದಾರಾ", "ಇದ್ದಾರೆ",
+    "कोई", "मिलेगा", "बैठे",
+))
+HONORIFICS_LATIN = frozenset(normalise(h) for h in HONORIFICS)
 
 
 # ---------------------------------------------------------------- matching
@@ -353,7 +366,9 @@ def resolve(
         resources = []
 
     cat_texts = [t for t in (category, need_text) if t]
-    if not cat_texts and not resources:
+    if not cat_texts and (not resources or not resource_name):
+        # A name found only by scanning the sentence ("I am Garima, need a skin doctor") must not
+        # hide the department the caller asked for: match categories too, so a mismatch is asked.
         cat_texts = [utterance]
     categories = match_categories(cat_texts, directory, semantic, thresholds.category)
     categories = [
@@ -408,6 +423,13 @@ def resolve(
         resolution.action = "NO_SERVICE"
         return resolution
 
-    # No name, no category, no problem: "anyone available right now?"
-    resolution.action = "OFFER_SLOTS"
+    # "Anyone available right now?" only when every word is about availability or time; words we
+    # did not understand never get a doctor offered in their place.
+    day_part_words = {w for t in directory.terms("DAY_PART") for w in t.latin.split()}
+    unexplained = [
+        w for w in content_words(utterance)
+        if w not in AVAILABILITY_WORDS and w not in HONORIFICS_LATIN and w not in time_words()
+        and w not in day_part_words
+    ]
+    resolution.action = "NO_SERVICE" if unexplained else "OFFER_SLOTS"
     return resolution

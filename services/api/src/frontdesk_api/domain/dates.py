@@ -132,3 +132,9 @@ def resolve_when(
         if strict:
             return WhenResult(today, today + timedelta(days=default_days - 1), None, False)
     return WhenResult(today, today + timedelta(days=default_days - 1), part, True)
+
+
+def time_words() -> frozenset[str]:
+    """Every word the date rules understand (so the resolver can tell a time from a topic)."""
+    groups = (_TODAY, _TOMORROW, _DAY_AFTER, _NEXT, _THIS, _WEEK, *_WEEKDAYS)
+    return frozenset(word for group in groups for form in group for word in form.split())

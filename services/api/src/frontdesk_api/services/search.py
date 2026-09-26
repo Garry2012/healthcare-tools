@@ -157,7 +157,11 @@ async def agent_search(
             clarification=s.Clarification(type="WHICH_DATE", options=options),
         )
     if res.action == "NO_SERVICE":
-        return _response("NONE_AVAILABLE", now, "NO_SERVICE", understood)
+        # Not "none available": we did not understand, or do not offer, what was asked. The agent
+        # asks the caller to rephrase once, or hands over to the desk; it never says "no doctor".
+        return _response("TRANSFER", now, "NO_SERVICE", understood, destination="desk",
+                         notes=["Not understood or not offered here: ask the caller to rephrase, "
+                                "or transfer to the desk. Do not say that no one is available."])
     if resolved.date_to < today:
         return _response("NONE_AVAILABLE", now, "OFFER_SLOTS", understood,
                          notes=["Requested dates are in the past."])

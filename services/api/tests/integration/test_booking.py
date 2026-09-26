@@ -174,3 +174,12 @@ async def test_reschedule_into_a_taken_slot_changes_nothing(client, app, app_set
     async with app.state.sessionmaker() as session:
         row = await session.get(t.Booking, mine["bookingId"])
     assert (row.slot_id, row.status) == (garima_slot(monday, 1), "BOOKED")
+
+
+async def test_words_not_understood_are_a_desk_handover_not_no_doctor(client):
+    r = await client.post("/agent/availability-search", headers=call(),
+                          json={"utterance": "ರಿಪೋರ್ಟ್ ಬೇಕು", "language": "kn"})
+    body = r.json()
+    assert body["outcome"] == "TRANSFER"
+    assert body["routing"] == {"action": "NO_SERVICE", "destination": "desk"}
+    assert body["results"] == [] and "no one is available" in body["notes"][0]
