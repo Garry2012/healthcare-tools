@@ -10,11 +10,9 @@ from __future__ import annotations
 import importlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import date
 from functools import cache
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from ..seed import Seeder
+from typing import Any, Protocol
 
 ALL_DAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 
@@ -83,7 +81,27 @@ class KnowledgeSeed:
 
 
 LexiconRow = tuple[str, str, str, str]  # (concept_type, concept_id, term, language)
-Scenario = Callable[["Seeder"], Awaitable[dict[str, int]]]
+
+
+class ScenarioBuilder(Protocol):
+    """What a pack's demo scenario may do. Owned here so packs stay data and never import the
+    seeder (or the database behind it); `seed.Seeder` provides it."""
+
+    today: date
+
+    def next_weekday(self, weekday: int, *, include_today: bool = False) -> date: ...
+
+    async def first_free(self, resource_id: str, on: date, session_n: str | None = None,
+                         skip: int = 0) -> list[str]: ...
+
+    async def book(self, slot_id: str, customer: CustomerSeed, *, channel: str = "AGENT") -> int: ...
+
+    async def exception(self, **fields: Any) -> None: ...
+
+    async def board(self, resource_id: str, n: str, **fields: Any) -> None: ...
+
+
+Scenario = Callable[[ScenarioBuilder], Awaitable[dict[str, int]]]
 
 
 @dataclass(frozen=True)

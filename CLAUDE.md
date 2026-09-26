@@ -9,6 +9,7 @@ Architecture and decisions: `docs/architecture/TARGET.md`. Contract: `docs/front
 - API tests: `cd services/api && uv run pytest tests/unit tests/contract/test_openapi_matches_spec.py tests/integration -q`
 - MCP tests: `cd services/mcp && uv run pytest tests -q -m "not e2e"`
 - Lint: `uv run ruff check .` in each service (a hook also lints every edited file)
+- Architecture: `cd services/api && uv run lint-imports` (layer contracts in `pyproject.toml`; CI fails on a violation)
 - Latency: `cd services/api && DATABASE_URL=$TEST_DATABASE_URL uv run python scripts/bench.py`
 - Provider config check: `uv run frontdesk-api check-config` (reads `deploy/providers/<provider>.env` values from env)
 

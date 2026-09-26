@@ -19,6 +19,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx==0.28.1",
+    "import-linter==2.15",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pyyaml==6.0.3",
@@ -59,3 +60,46 @@ ignore = ["S101"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S311", "S603"]
 "alembic/versions/**" = ["E501", "S608"]  # generated DDL; SQL built from module constants only
+
+# Architecture rules as a build check (CLAUDE.md "rules that the code will not tell you").
+[tool.importlinter]
+root_package = "frontdesk_api"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "HTTP layer on top: routers -> services -> db"
+type = "layers"
+layers = ["frontdesk_api.routers", "frontdesk_api.services", "frontdesk_api.db"]
+
+[[tool.importlinter.contracts]]
+name = "Domain logic is pure: no IO, framework or configuration"
+type = "forbidden"
+source_modules = ["frontdesk_api.domain"]
+forbidden_modules = [
+    "frontdesk_api.db", "frontdesk_api.services", "frontdesk_api.routers", "frontdesk_api.app",
+    "frontdesk_api.config", "frontdesk_api.schemas",
+    "fastapi", "starlette", "sqlalchemy", "asyncpg", "httpx",
+]
+
+[[tool.importlinter.contracts]]
+name = "Core never names a domain pack (packs are loaded by name from configuration)"
+type = "forbidden"
+source_modules = [
+    "frontdesk_api.domain", "frontdesk_api.services", "frontdesk_api.routers", "frontdesk_api.db",
+    "frontdesk_api.app", "frontdesk_api.schemas", "frontdesk_api.config",
+]
+forbidden_modules = ["frontdesk_api.packs.healthcare", "frontdesk_api.packs.hospitality"]
+
+[[tool.importlinter.contracts]]
+name = "Packs are data: no IO, services or HTTP"
+type = "forbidden"
+source_modules = ["frontdesk_api.packs"]
+forbidden_modules = [
+    "frontdesk_api.db", "frontdesk_api.services", "frontdesk_api.routers", "frontdesk_api.app",
+    "fastapi", "sqlalchemy", "asyncpg", "httpx",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain packs are independent of each other"
+type = "independence"
+modules = ["frontdesk_api.packs.healthcare", "frontdesk_api.packs.hospitality"]

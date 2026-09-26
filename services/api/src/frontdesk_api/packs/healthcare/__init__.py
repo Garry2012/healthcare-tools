@@ -8,13 +8,9 @@ weekly templates; everything date-specific (bookings, exceptions, the board) is 
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
 
-from .. import ALL_DAYS, CategorySeed, CustomerSeed, Pack, ResourceSeed, SessionSeed
+from .. import ALL_DAYS, CategorySeed, CustomerSeed, Pack, ResourceSeed, ScenarioBuilder, SessionSeed
 from .knowledge import KNOWLEDGE
-
-if TYPE_CHECKING:
-    from ...seed import Seeder
 
 LANGUAGES = ("en", "kn", "hi")
 
@@ -246,7 +242,7 @@ POOL = tuple(
 )
 
 
-async def scenario(seed: Seeder) -> dict[str, int]:
+async def scenario(seed: ScenarioBuilder) -> dict[str, int]:
     """Dated demo data: every case in docs/handover/SEED.md, relative to the run date."""
     today = seed.today
     tomorrow = today + timedelta(days=1)

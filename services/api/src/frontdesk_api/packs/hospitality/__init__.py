@@ -8,12 +8,8 @@ walk-ins fit; multi-night room inventory does not (docs/architecture/TARGET.md).
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
 
-from .. import ALL_DAYS, CategorySeed, CustomerSeed, KnowledgeSeed, Pack, ResourceSeed, SessionSeed
-
-if TYPE_CHECKING:
-    from ...seed import Seeder
+from .. import ALL_DAYS, CategorySeed, CustomerSeed, KnowledgeSeed, Pack, ResourceSeed, ScenarioBuilder, SessionSeed
 
 LANGUAGES = ("en", "hi")
 
@@ -97,7 +93,7 @@ GUESTS = tuple(
 )
 
 
-async def scenario(seed: Seeder) -> dict[str, int]:
+async def scenario(seed: ScenarioBuilder) -> dict[str, int]:
     tomorrow = seed.today + timedelta(days=1)
     booked = 0
     guests = iter(GUESTS)
