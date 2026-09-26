@@ -12,6 +12,7 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 
 from .. import schemas as s
 from ..auth import require_scopes
+from ..db import tables as t
 from ..logging import log_event
 from ..services import bookings, knowledge, schedule, search
 from ..services import idempotency as idem
@@ -30,6 +31,17 @@ from .deps import (
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Agent"], dependencies=[Depends(require_scopes("agent"))])
 REPLAY = {"Idempotent-Replay": "true"}
+
+
+def _still_holds(session):
+    """A stored book/reschedule answer is only replayed while the booking still holds that slot."""
+
+    async def check(stored: dict) -> bool:
+        booking_id, slot = stored.get("bookingId"), (stored.get("slot") or {}).get("slotId")
+        row = await session.get(t.Booking, booking_id, populate_existing=True) if booking_id else None
+        return row is not None and row.status in t.LIVE_STATUSES and row.slot_id == slot
+
+    return check
 
 
 def _dump(model: s.ApiModel) -> dict:
@@ -98,7 +110,8 @@ async def book(
         view = bookings.agent_view(booked.row, ctx, "BOOKED" if booked.created else "ALREADY_BOOKED")
         return (201 if booked.created else 200), _dump(view)
 
-    outcome = await within(settings.write_timeout_seconds, idem.run(session, key, fingerprint, operation))
+    outcome = await within(settings.write_timeout_seconds,
+                           idem.run(session, key, fingerprint, operation, still_current=_still_holds(session)))
     log_event(logger, logging.INFO, "booking_booked", status=outcome.status,
               bookingId=outcome.body.get("bookingId"), replay=outcome.replay)
     return respond(outcome.body, outcome.status, REPLAY if outcome.replay else None)
@@ -186,7 +199,8 @@ async def reschedule(
         ctx = await bookings.context_for(session, settings, [row])
         return 200, _dump(bookings.agent_view(row, ctx, "RESCHEDULED", previous_slot=previous))
 
-    outcome = await within(settings.write_timeout_seconds, idem.run(session, key, fingerprint, operation))
+    outcome = await within(settings.write_timeout_seconds,
+                           idem.run(session, key, fingerprint, operation, still_current=_still_holds(session)))
     log_event(logger, logging.INFO, "booking_rescheduled", bookingId=bookingId, replay=outcome.replay)
     return respond(outcome.body, 200, REPLAY if outcome.replay else None)
 

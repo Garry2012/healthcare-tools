@@ -44,8 +44,15 @@ async def run(
     key: str | None,
     fingerprint: str,
     operation: Callable[[], Awaitable[tuple[int, dict[str, Any]]]],
+    still_current: Callable[[dict[str, Any]], Awaitable[bool]] | None = None,
 ) -> Outcome:
-    """Run `operation` exactly once per key. The caller's session must be unused."""
+    """Run `operation` exactly once per key. The caller's session must be unused.
+
+    `still_current(stored_body)` guards replays whose key can legitimately recur: the adapter
+    derives the same key for "book this slot for this patient" in one call, so after a cancel
+    (or a move away and back) a replay would confirm something that is no longer true. A stale
+    stored answer is discarded and the request runs as new.
+    """
     if key is None:
         status, body = await operation()
         await session.commit()
@@ -66,14 +73,21 @@ async def run(
         stored = await session.get(t.IdempotencyKey, key)
         # Read before rollback: rollback expires the instance.
         stored_hash, stored_body = (stored.request_hash, stored.body) if stored else (None, None)
-        await session.rollback()
         if stored_body is None:
+            await session.rollback()
             raise ApiError("CONFLICT", "A request with this Idempotency-Key is still in progress.")
         if stored_hash != fingerprint:
+            await session.rollback()
             raise ApiError(
                 "IDEMPOTENCY_CONFLICT",
                 "This Idempotency-Key was already used with a different request.",
             )
+        if still_current is not None and not await still_current(stored_body):
+            await session.execute(delete(t.IdempotencyKey).where(
+                t.IdempotencyKey.key == key, t.IdempotencyKey.request_hash == fingerprint))
+            await session.commit()
+            return await run(session, key, fingerprint, operation)
+        await session.rollback()
         return Outcome(200, stored_body, replay=True)
 
     try:

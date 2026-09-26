@@ -91,3 +91,32 @@ async def test_general_question_through_the_gateway_path(make_settings):
     body = result.structured_content
     assert body["outcome"] == "ANSWERED" and body["answer"]["language"] == "hi"
     assert body["answer"]["entryId"] == "kb_parking"
+
+
+async def test_book_cancel_book_again_in_one_call_is_really_booked(make_settings):
+    """The same patient and slot in one call derive the same key; the caller must never be told
+    'booked' about a booking that was cancelled a moment ago (QA/tech-lead N1)."""
+    app = create_app(make_settings(api_base_url=API_URL, api_bearer_token=API_TOKEN))
+    customer = {"name": f"Test Customer {uuid.uuid4().hex[:6]}", "phone": CALLER[3:]}
+    async with serving(app) as base:
+        transport = StreamableHttpTransport(f"{base}/mcp/", headers={
+            "Authorization": "Bearer mcp-token", "X-Call-Id": f"e2e-{uuid.uuid4().hex[:8]}", "X-Caller-Number": CALLER})
+        async with Client(transport) as client:
+
+            async def tool(name: str, args: dict) -> dict:
+                return (await client.call_tool(name, args)).structured_content
+
+            found = await tool("find_availability", {
+                "utterance": "Dr Garima next monday", "language": "en", "resourceName": "Dr Garima",
+                "when": {"expression": "next monday"}})
+            slot = slots_of(found)[-1]
+            book = {"action": "BOOK", "slotId": slot, "customer": customer, "language": "en"}
+            first = await tool("manage_booking", book)
+            await tool("manage_booking", {"action": "CANCEL", "bookingId": first["bookingId"],
+                                          "customerName": customer["name"]})
+            again = await tool("manage_booking", book)
+            listed = await tool("manage_booking", {"action": "LIST", "customerName": customer["name"]})
+            await tool("manage_booking", {"action": "CANCEL", "bookingId": again["bookingId"],
+                                          "customerName": customer["name"]})
+    assert again["outcome"] == "BOOKED" and again["bookingId"] != first["bookingId"]
+    assert [i["bookingId"] for i in listed["items"]] == [again["bookingId"]]

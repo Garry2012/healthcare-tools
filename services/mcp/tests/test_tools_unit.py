@@ -155,7 +155,7 @@ async def test_write_timeout_retries_once_with_the_same_key(make_settings):
                 "customer": {"name": "Lakshmi Rao", "phone": "9000000101"}})
     assert result.structured_content == {"outcome": "BOOKED"}
     assert len(seen) == 2
-    expected = tools.idempotency_key("call-77", "BOOK", "Lakshmi Rao", "slot_x")
+    expected = tools.idempotency_key("call-77", "BOOK", "Lakshmi Rao", "slot_x|9000000101")
     assert [r.headers["idempotency-key"] for r in seen] == [expected, expected]
     assert seen[0].headers["x-call-id"] == "call-77" and seen[0].headers["x-caller-number"] == "+919000000101"
 
@@ -261,3 +261,21 @@ async def test_credential_errors_never_reach_the_model(make_settings, status):
             "customer": {"name": "Lakshmi Rao", "phone": "9000000101"}})
     assert read.structured_content["outcome"] == "COULD_NOT_CHECK"
     assert write.structured_content["outcome"] == "COULD_NOT_RECORD"
+
+
+async def test_corrected_phone_is_a_new_booking_request_not_a_conflict(make_settings):
+    keys: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        keys.append(request.headers["idempotency-key"])
+        return httpx.Response(201, json={"outcome": "BOOKED"})
+
+    args = {"action": "BOOK", "slotId": "slot_ses_res_garima_2026-09-28_2_01", "language": "en"}
+    app = create_app(make_settings(), transport=httpx.MockTransport(handler))
+    async with serving(app) as base:
+        transport = StreamableHttpTransport(f"{base}/mcp/", headers={
+            "Authorization": "Bearer mcp-token", "X-Call-Id": "call-9", "X-Caller-Number": "+919000000101"})
+        async with Client(transport) as client:
+            for phone in ("9000000101", "9000000101", "9000000102"):
+                await client.call_tool("manage_booking", {**args, "customer": {"name": "Lakshmi Rao", "phone": phone}})
+    assert keys[0] == keys[1] != keys[2]

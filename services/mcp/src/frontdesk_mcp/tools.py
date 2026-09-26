@@ -273,7 +273,8 @@ def register(mcp: FastMCP, client: ApiClient, pack: Pack) -> None:
             }
             if reasonVerbatim:
                 body["reasonVerbatim"] = reasonVerbatim
-            headers = _keyed(context, call_id, "BOOK", customer.name, slotId)
+            # The phone is part of the request: a corrected number is a new request, not a replay.
+            headers = _keyed(context, call_id, "BOOK", customer.name, f"{slotId}|{customer.phone}")
             return await client.send("POST", "/agent/bookings", headers=headers, json_body=body, write=True)
 
         if not bookingId:

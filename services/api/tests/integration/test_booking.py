@@ -183,3 +183,46 @@ async def test_words_not_understood_are_a_desk_handover_not_no_doctor(client):
     assert body["outcome"] == "TRANSFER"
     assert body["routing"] == {"action": "NO_SERVICE", "destination": "desk"}
     assert body["results"] == [] and "no one is available" in body["notes"][0]
+
+
+async def test_same_call_book_cancel_book_again_is_really_booked(client, app_settings):
+    """The adapter derives the same key for the same patient and slot within one call; a replay
+    must never tell the caller 'booked' about a booking that has since been cancelled."""
+    monday = next_weekday(0, app_settings)
+    slot = garima_slot(monday, 5)
+    first = await client.post("/agent/bookings", headers=call(key="same-key"), json=book_body(slot))
+    assert first.status_code == 201
+    old_id = first.json()["bookingId"]
+    r = await client.post(f"/agent/bookings/{old_id}/cancel", headers=call(key="cancel-key"),
+                          json={"customerName": "Lakshmi Rao"})
+    assert r.status_code == 200
+    again = await client.post("/agent/bookings", headers=call(key="same-key"), json=book_body(slot))
+    assert again.status_code in (200, 201) and again.headers.get("Idempotent-Replay") != "true"
+    assert again.json()["outcome"] == "BOOKED" and again.json()["bookingId"] != old_id
+    listed = await client.get("/agent/bookings", headers=call(), params={"customerName": "Lakshmi Rao"})
+    assert [i["bookingId"] for i in listed.json()["items"]] == [again.json()["bookingId"]]
+
+
+async def test_a_genuine_retry_still_replays(client, app_settings):
+    slot = garima_slot(next_weekday(0, app_settings), 6)
+    first = await client.post("/agent/bookings", headers=call(key="retry-key"), json=book_body(slot))
+    retry = await client.post("/agent/bookings", headers=call(key="retry-key"), json=book_body(slot))
+    assert retry.headers.get("Idempotent-Replay") == "true"
+    assert retry.json()["bookingId"] == first.json()["bookingId"]
+
+
+async def test_reschedule_there_and_back_and_there_again(client, app_settings):
+    monday = next_weekday(0, app_settings)
+    a, b = garima_slot(monday, 7, n=1), garima_slot(monday, 8, n=1)
+    booking = (await client.post("/agent/bookings", headers=call(key="bk"), json=book_body(a))).json()["bookingId"]
+
+    async def move(to: str, key: str):
+        return await client.post(f"/agent/bookings/{booking}/reschedule", headers=call(key=key),
+                                 json={"customerName": "Lakshmi Rao", "newSlotId": to})
+
+    assert (await move(b, "k-to-b")).json()["slot"]["slotId"] == b
+    assert (await move(a, "k-to-a")).json()["slot"]["slotId"] == a
+    third = await move(b, "k-to-b")  # same key as the first move
+    assert third.status_code == 200 and third.json()["slot"]["slotId"] == b
+    listed = await client.get("/agent/bookings", headers=call(), params={"customerName": "Lakshmi Rao"})
+    assert listed.json()["items"][0]["slot"]["slotId"] == b
