@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from healthcare_api.app import create_app
+from frontdesk_api.app import create_app
 
 from .conftest import OWNER_URL, alembic, async_url
 

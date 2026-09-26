@@ -1,4 +1,4 @@
-"""End to end through the running adapter and a running, seeded healthcare-api:
+"""End to end through the running adapter and a running, seeded frontdesk-api:
 find_availability → BOOK → LIST → RESCHEDULE → CANCEL, with identity from HTTP headers."""
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-from healthcare_mcp.server import create_app
+from frontdesk_mcp.server import create_app
 
 from .conftest import serving
 

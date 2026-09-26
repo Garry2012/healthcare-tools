@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from healthcare_api.db import tables as t
+from frontdesk_api.db import tables as t
 
 from .conftest import STAFF, book_body, call, garima_slot, next_weekday
 

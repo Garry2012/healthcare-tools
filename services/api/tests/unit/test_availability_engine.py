@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from healthcare_api.domain.availability import (
+from frontdesk_api.domain.availability import (
     BoardDef,
     CapacityRule,
     DoctorDef,

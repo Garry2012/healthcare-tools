@@ -1,4 +1,4 @@
-"""`healthcare-api seed` — synthetic demo data, idempotent, relative to the run date.
+"""`frontdesk-api seed` — synthetic demo data, idempotent, relative to the run date.
 
 Directory rows (departments, doctors, templates, lexicon) are upserted every run.
 Date-specific data (bookings, exceptions, board) is created once; a second run leaves it

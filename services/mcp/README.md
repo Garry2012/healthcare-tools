@@ -1,4 +1,4 @@
-# healthcare-mcp
+# frontdesk-mcp
 
 FastMCP 2.14.7 adapter exposing two tools over streamable HTTP at `/mcp/` (stateless):
 
@@ -15,5 +15,5 @@ unchanged. Transport failures, 429 and 5xx return
 
 ```bash
 uv sync && uv run pytest tests      # set MCP_E2E_API_URL / MCP_E2E_API_TOKEN for the end-to-end test
-uv run healthcare-mcp serve
+uv run frontdesk-mcp serve
 ```

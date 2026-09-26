@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from healthcare_api.config import Settings
+from frontdesk_api.config import Settings
 
 for _field in Settings.model_fields:
     os.environ.pop(_field.upper(), None)

@@ -8,7 +8,7 @@ import socket
 import pytest
 import uvicorn
 
-from healthcare_mcp.config import Settings
+from frontdesk_mcp.config import Settings
 
 for _field in Settings.model_fields:
     os.environ.pop(_field.upper(), None)

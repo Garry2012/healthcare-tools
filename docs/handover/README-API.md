@@ -1,4 +1,4 @@
-# healthcare-api — for the team building on it
+# frontdesk-api — for the team building on it
 
 The contract is `docs/frontdesk-api/openapi.yaml`; this service implements every operation in
 it. The domain guide is `docs/frontdesk-api/IMPLEMENTATION.md`. This page covers what the spec
@@ -49,7 +49,7 @@ leaves to the implementation. The spec's gaps and the choices made are in `OPEN-
 - **Certainty.** `timingCertainty` is `CONFIRMED` only after `/confirm` or a `TIMING_CONFIRMED`
   exception or board flag. A doctor with `dataConfirmed=false` is capped at `EXPECTED`. Fees
   with `confirmed=false` must not be shown to patients as final.
-- **Board facts** apply to today only and are ignored on other dates. `healthcare-api
+- **Board facts** apply to today only and are ignored on other dates. `frontdesk-api
   maintenance` purges old rows and expired idempotency keys.
 
 ## Run it

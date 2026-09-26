@@ -1,4 +1,4 @@
-"""Register healthcare-mcp with IBM ContextForge as a federated MCP gateway.
+"""Register frontdesk-mcp with IBM ContextForge as a federated MCP gateway.
 
 Idempotent: re-running with the same name and URL is a no-op; a changed
 visibility or passthrough-header list is updated in place; a name that already points at a

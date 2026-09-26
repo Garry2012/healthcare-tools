@@ -211,5 +211,5 @@ per request from `schedule_templates` + `schedule_exceptions` + `board_entries` 
 
 | Role | Privileges | Used by |
 |---|---|---|
-| owner (`POSTGRES_OWNER_USER`) | owns every table; runs DDL | `healthcare-api migrate` only |
+| owner (`POSTGRES_OWNER_USER`) | owns every table; runs DDL | `frontdesk-api migrate` only |
 | runtime (`APP_DB_USER`) | `SELECT, INSERT, UPDATE, DELETE` via default privileges; no `CREATE` on `public` | the API process, `seed` |

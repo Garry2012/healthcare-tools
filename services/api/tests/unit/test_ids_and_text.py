@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from healthcare_api.domain import ids
-from healthcare_api.domain.text import contains_phrase, normalise, transliterate
+from frontdesk_api.domain import ids
+from frontdesk_api.domain.text import contains_phrase, normalise, transliterate
 
 
 def test_session_and_slot_ids_round_trip():

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from healthcare_api.domain.resolver import resolve
+from frontdesk_api.domain.resolver import resolve
 
 
 def ask(directory, utterance, **kw):
@@ -150,7 +150,7 @@ def test_anyone_available_has_no_filter(directory):
 def test_unapproved_terms_are_ignored(directory):
     from dataclasses import replace
 
-    from healthcare_api.domain.resolver import LexiconTerm
+    from frontdesk_api.domain.resolver import LexiconTerm
 
     unapproved = replace(directory, lexicon=(LexiconTerm("RED_FLAG", "x", "hiccups", "en", approved=False),))
     assert resolve(utterance="I have hiccups", directory=unapproved).action != "TRANSFER_EMERGENCY"

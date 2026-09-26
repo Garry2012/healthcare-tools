@@ -102,7 +102,7 @@ async def test_staff_sees_staff_fields_and_agent_does_not(client, app_settings):
 
 
 async def test_board_and_exception_internals_are_redacted_for_the_agent(client, app_settings):
-    from healthcare_api.services import schedule
+    from frontdesk_api.services import schedule
 
     today = schedule.now_in(app_settings).date()
     sid = f"ses_doc_arjun_menon_{today}_2"
@@ -124,7 +124,7 @@ async def test_board_and_exception_internals_are_redacted_for_the_agent(client, 
 
 
 async def test_preferences_filter_by_gender_and_language(client, app, app_settings):
-    from healthcare_api.db import tables as t
+    from frontdesk_api.db import tables as t
 
     async with app.state.sessionmaker() as session:
         (await session.get(t.Doctor, "doc_arjun_menon")).languages_spoken = ["en", "ml"]

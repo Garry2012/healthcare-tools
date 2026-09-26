@@ -15,9 +15,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from healthcare_api.app import create_app
-from healthcare_api.seed import _upsert_directory
-from healthcare_api.services import schedule
+from frontdesk_api.app import create_app
+from frontdesk_api.seed import _upsert_directory
+from frontdesk_api.services import schedule
 from tests.conftest import AGENT_TOKEN, STAFF_TOKEN
 
 APP_URL = os.environ.get("TEST_DATABASE_URL")

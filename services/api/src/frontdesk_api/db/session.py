@@ -16,7 +16,7 @@ from ..config import Settings
 
 
 def make_engine(settings: Settings) -> AsyncEngine:
-    connect_args: dict[str, object] = {"server_settings": {"application_name": "healthcare-api"}}
+    connect_args: dict[str, object] = {"server_settings": {"application_name": "frontdesk-api"}}
     if settings.database_disable_prepared_statements:
         connect_args["statement_cache_size"] = 0
     return create_async_engine(

@@ -12,7 +12,7 @@ Spec: `docs/frontdesk-api/openapi.yaml` + `IMPLEMENTATION.md` §2.2–2.5 (uncha
 1. Archive research into `docs/archive/`; scaffold `services/api`, `services/mcp`, `deploy/`, Makefile.
 2. Postgres 16 in compose (`dev`, `test` profiles). Owner role runs Alembic; runtime role gets DML
    through default privileges and cannot run DDL. Alembic `0001` creates all 13 tables.
-3. Pure domain core in `healthcare_api.domain`: ids, availability engine (§2.2), text normalisation
+3. Pure domain core in `frontdesk_api.domain`: ids, availability engine (§2.2), text normalisation
    (NFC, honorifics, `indic-transliteration`, Double Metaphone via `metaphone`), date rules, resolver
    (§2.3 without embeddings, `SemanticMatcher` no-op), identity matching (§2.4). Golden unit tests.
 4. Services over SQLAlchemy 2 async: directory, scheduling (exceptions → impact → notifications),

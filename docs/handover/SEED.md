@@ -1,6 +1,6 @@
 # Seed data
 
-`make seed` (or `healthcare-api seed`) loads **synthetic** data. Every name and number is
+`make seed` (or `frontdesk-api seed`) loads **synthetic** data. Every name and number is
 invented; nothing comes from the archived hospital documents. Dates are computed from the run
 date, so the demo works on any day.
 
@@ -42,4 +42,4 @@ date, so the demo works on any day.
   Medicine), red flags (chest pain, breathlessness, unconscious, heavy bleeding, fits, labour
   pains), day parts ("ಸಂಜೆ", "shaam"), and service transfers (lab, pharmacy, insurance, desk).
 
-Source: `services/api/src/healthcare_api/seed_data.py` (data) and `seed.py` (dates and loading).
+Source: `services/api/src/frontdesk_api/seed_data.py` (data) and `seed.py` (dates and loading).

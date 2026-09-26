@@ -1,7 +1,7 @@
 # Hospital front-desk scheduling — REST service, MCP adapter, PostgreSQL
 
 ```
-ContextForge (external) ──MCP──▶ healthcare-mcp (FastMCP, 2 tools) ──HTTPS──▶ healthcare-api (FastAPI) ──▶ PostgreSQL 16
+ContextForge (external) ──MCP──▶ frontdesk-mcp (FastMCP, 2 tools) ──HTTPS──▶ frontdesk-api (FastAPI) ──▶ PostgreSQL 16
 ```
 
 - **Spec (source of truth):** `docs/frontdesk-api/openapi.yaml` and `IMPLEMENTATION.md`.

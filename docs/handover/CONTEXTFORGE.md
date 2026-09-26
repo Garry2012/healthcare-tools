@@ -1,11 +1,11 @@
 # ContextForge registration
 
-ContextForge is infrastructure: it federates `healthcare-mcp` as an MCP gateway
+ContextForge is infrastructure: it federates `frontdesk-mcp` as an MCP gateway
 (`integration_type: MCP`, streamable HTTP) and adds auth, observability and rate limits.
 Nothing is built or changed in the ContextForge fork.
 
 ```
-voice agent ──MCP + X-Call-Id, X-Caller-Number──▶ ContextForge ──passthrough──▶ healthcare-mcp ──▶ healthcare-api
+voice agent ──MCP + X-Call-Id, X-Caller-Number──▶ ContextForge ──passthrough──▶ frontdesk-mcp ──▶ frontdesk-api
 ```
 
 ## Prerequisites on the gateway

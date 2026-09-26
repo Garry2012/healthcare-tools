@@ -1,4 +1,4 @@
-"""`healthcare-api serve | migrate | seed | maintenance`."""
+"""`frontdesk-api serve | migrate | seed | maintenance`."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ def _serve() -> None:
     import uvicorn
 
     settings = get_settings()
-    uvicorn.run("healthcare_api.app:create_app", factory=True, host=settings.host, port=settings.port,
+    uvicorn.run("frontdesk_api.app:create_app", factory=True, host=settings.host, port=settings.port,
                 log_config=None, proxy_headers=False)
 
 
@@ -47,7 +47,7 @@ def _maintenance() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="healthcare-api")
+    parser = argparse.ArgumentParser(prog="frontdesk-api")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("serve")
     migrate = sub.add_parser("migrate", help="alembic upgrade (owner role only)")

@@ -41,7 +41,7 @@ services:
   migrate:
     profiles: [dev]
     build: ../services/api
-    command: ["healthcare-api", "migrate"]
+    command: ["frontdesk-api", "migrate"]
     environment:
       <<: *api-env
       # The owner role: the only credential that may run DDL.

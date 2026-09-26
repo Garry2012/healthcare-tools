@@ -5,8 +5,8 @@ variable. No secret is baked into an image.
 
 | Image | Build | Listens | Health |
 |---|---|---|---|
-| `healthcare-api` | `docker build services/api` | `PORT` (8000) | `/health`, `/ready` (DB + Alembic head) |
-| `healthcare-mcp` | `docker build services/mcp` | `PORT` (8100), MCP at `/mcp/` | `/health`, `/ready` (API ready) |
+| `frontdesk-api` | `docker build services/api` | `PORT` (8000) | `/health`, `/ready` (DB + Alembic head) |
+| `frontdesk-mcp` | `docker build services/mcp` | `PORT` (8100), MCP at `/mcp/` | `/health`, `/ready` (API ready) |
 
 Both run as UID 10001 and install exact versions from `uv.lock`.
 
@@ -16,9 +16,9 @@ Migrations run as the **owner**; the API runs as a **DML-only** role and never r
 
 ```bash
 # one-shot, owner credentials
-docker run --rm -e DATABASE_URL=postgresql://OWNER:***@HOST:5432/DB healthcare-api healthcare-api migrate
+docker run --rm -e DATABASE_URL=postgresql://OWNER:***@HOST:5432/DB frontdesk-api frontdesk-api migrate
 # service, runtime credentials
-docker run -e DATABASE_URL=postgresql://APP:***@HOST:5432/DB -e AUTH_TOKENS_JSON='…' -p 8000:8000 healthcare-api
+docker run -e DATABASE_URL=postgresql://APP:***@HOST:5432/DB -e AUTH_TOKENS_JSON='…' -p 8000:8000 frontdesk-api
 ```
 
 ### Local PostgreSQL (docker compose)
@@ -43,7 +43,7 @@ Only `DATABASE_URL` changes. No Supabase SDK or Supabase-only feature is used.
    ```
 
 2. Migrate with the owner connection string (direct connection, port 5432):
-   `DATABASE_URL=postgresql://postgres:***@db.<ref>.supabase.co:5432/postgres?ssl=require healthcare-api migrate`
+   `DATABASE_URL=postgresql://postgres:***@db.<ref>.supabase.co:5432/postgres?ssl=require frontdesk-api migrate`
 3. Run the API with the runtime role. With the **transaction pooler** (port 6543), also set
    `DATABASE_DISABLE_PREPARED_STATEMENTS=true`, because pgbouncer can't hold prepared
    statements. Append `?ssl=require` to the URL.
@@ -63,7 +63,7 @@ Only `DATABASE_URL` changes. No Supabase SDK or Supabase-only feature is used.
 
 ## Operations
 
-- `healthcare-api maintenance` (daily): purges idempotency keys older than 24 h and past
+- `frontdesk-api maintenance` (daily): purges idempotency keys older than 24 h and past
   board entries.
 - Logs are JSON on stdout, correlated by `callId`. Phone numbers and patient names are not
   logged.

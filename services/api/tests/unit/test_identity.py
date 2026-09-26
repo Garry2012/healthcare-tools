@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from healthcare_api.domain.identity import (
+from frontdesk_api.domain.identity import (
     BookingIdentity,
     filter_by_name,
     name_matches,
@@ -10,7 +10,7 @@ from healthcare_api.domain.identity import (
     number_matches,
     patients_on,
 )
-from healthcare_api.errors import NOT_FOUND_MESSAGE, not_found
+from frontdesk_api.errors import NOT_FOUND_MESSAGE, not_found
 
 LAKSHMI = BookingIdentity("appt_1", "Lakshmi Rao", "9000000101", "+919000000101")
 AARAV = BookingIdentity("appt_2", "Aarav Rao", "9000000101", "+919000000101")

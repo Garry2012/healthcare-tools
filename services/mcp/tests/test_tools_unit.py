@@ -11,8 +11,8 @@ import yaml
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-from healthcare_mcp import tools
-from healthcare_mcp.server import build_mcp, create_app
+from frontdesk_mcp import tools
+from frontdesk_mcp.server import build_mcp, create_app
 
 from .conftest import serving
 

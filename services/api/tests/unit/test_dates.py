@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from healthcare_api.domain.dates import resolve_when
+from frontdesk_api.domain.dates import resolve_when
 
 FRI = date(2026, 9, 25)
 

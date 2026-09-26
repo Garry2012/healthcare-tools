@@ -25,7 +25,7 @@ from .config import Settings
 
 logger = logging.getLogger(__name__)
 DESCRIPTIONS: dict[str, str] = json.loads(
-    resources.files("healthcare_mcp").joinpath("descriptions.json").read_text(encoding="utf-8")
+    resources.files("frontdesk_mcp").joinpath("descriptions.json").read_text(encoding="utf-8")
 )
 
 Action = Literal["BOOK", "LIST", "CANCEL", "RESCHEDULE"]

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from healthcare_api import seed_data
-from healthcare_api.domain.resolver import DepartmentEntry, Directory, DoctorEntry, LexiconTerm
+from frontdesk_api import seed_data
+from frontdesk_api.domain.resolver import DepartmentEntry, Directory, DoctorEntry, LexiconTerm
 
 
 @pytest.fixture(scope="session")
@@ -27,6 +27,6 @@ def directory() -> Directory:
 
 @pytest.fixture(scope="session")
 def day_parts(directory):
-    from healthcare_api.domain.text import normalise
+    from frontdesk_api.domain.text import normalise
 
     return [(normalise(t.term), t.concept_id) for t in directory.terms("DAY_PART")]
