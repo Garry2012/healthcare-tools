@@ -46,6 +46,24 @@ frontdesk-api  (generic core + DOMAIN_PACK) ──▶ PostgreSQL (one database p
 | `manage_booking` write | 400 ms (hard stop 5 s, then `UPSTREAM_TIMEOUT`) | integration tests plus `Server-Timing` |
 | MCP adapter overhead | 15 ms | keep-alive HTTP/2 pool to the API, no per-call client |
 
+Measured in process against the seeded healthcare pack (`services/api/scripts/bench.py`, local
+PostgreSQL, p50 ms / sequential DB round trips). Round trips are the number that matters on a
+networked database, and `tests/integration/test_latency_budget.py` gates them:
+
+| Call | Before | After |
+|---|---|---|
+| search: named resource, tomorrow evening (kn) | 24.0 / 9 | 7.5 / 5 |
+| search: category, next 7 days | 22.2 / 10 | 8.3 / 6 |
+| search: anyone available now | 29.6 / 10 | 10.4 / 6 |
+| search: red flag | 7.8 / 4 | 3.4 / 1 |
+| knowledge search | — | 3.7 / 1 |
+
+What changed: a versioned directory cache (plain rows plus a precomputed resolver view),
+memoised normalisation, transliteration and phonetic keys (the resolver was re-transliterating
+the whole lexicon on every call), reuse of cached resource rows in the schedule loader, and a
+lazy next-bookable horizon. Every response carries `Server-Timing: db;dur=…;desc="N queries",
+app;dur=…, total;dur=…`, and the request log has `db_ms` and `queries`.
+
 The voice agent should say a short filler phrase before any tool call expected to exceed ~300 ms
 end to end. The `routing`/`outcome` envelope lets it answer follow-ups with no further call
 (IMPLEMENTATION.md §2.7).

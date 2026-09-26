@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,69 +20,114 @@ from ..errors import not_found, validation
 from . import cache, views
 
 
-@dataclass(slots=True)
-class DirectorySnapshot:
-    resources: dict[str, t.Resource]
-    categories: dict[str, t.Category]
-    resource_categories: dict[str, list[str]]
-    lexicon: list[t.LexiconEntry]
+@dataclass(frozen=True, slots=True)
+class CategoryRow:
+    """Plain copy of a category row: safe to share across requests (never an ORM instance)."""
 
-    def categories_of(self, resource_id: str) -> list[t.Category]:
+    id: str
+    code: str | None
+    name: str
+    localized_names: dict[str, str]
+    offers_bookings: bool
+    active: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceRow:
+    id: str
+    name: str
+    localized_names: dict[str, str]
+    name_variants: list[str]
+    gender: str | None
+    attributes: dict[str, Any]
+    languages_spoken: list[str]
+    price_amount: Decimal | None
+    price_currency: str | None
+    price_confirmed: bool
+    attendance_type: str
+    booking_policy: str
+    data_confirmed: bool
+    active: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DirectorySnapshot:
+    """Directory + approved lexicon, with the resolver's view precomputed once per version."""
+
+    resources: dict[str, ResourceRow]
+    categories: dict[str, CategoryRow]
+    resource_categories: dict[str, list[str]]
+    resolver: Directory
+    day_part_terms: tuple[tuple[str, str], ...]
+
+    def categories_of(self, resource_id: str) -> list[CategoryRow]:
         return [self.categories[d] for d in self.resource_categories.get(resource_id, [])
                 if d in self.categories]
 
     def resolver_directory(self) -> Directory:
-        return Directory(
-            resources=tuple(
-                ResourceEntry(
-                    resource_id=d.id,
-                    name=d.name,
-                    category_ids=tuple(self.resource_categories.get(d.id, [])),
-                    name_variants=tuple(d.name_variants or ()),
-                    localized_names=tuple((d.localized_names or {}).values()),
-                    active=d.active and d.booking_policy != "NOT_OFFERED",
-                    booking_policy=d.booking_policy,
-                )
-                for d in self.resources.values()
-            ),
-            categories=tuple(
-                CategoryEntry(
-                    category_id=d.id,
-                    name=d.name,
-                    code=d.code,
-                    localized_names=tuple((d.localized_names or {}).values()),
-                    offers_bookings=d.offers_bookings,
-                    active=d.active,
-                )
-                for d in self.categories.values()
-            ),
-            lexicon=tuple(
-                LexiconTerm(e.concept_type, e.concept_id, e.term, e.language, e.approved)
-                for e in self.lexicon
-            ),
-        )
+        return self.resolver
 
     def day_parts(self) -> list[tuple[str, str]]:
-        return [
-            (normalise(e.term), e.concept_id)
-            for e in self.lexicon
-            if e.approved and e.concept_type == "DAY_PART"
-        ]
+        return list(self.day_part_terms)
 
 
-async def snapshot(session: AsyncSession, *, approved_lexicon_only: bool = True) -> DirectorySnapshot:
-    resources = {d.id: d for d in (await session.scalars(select(t.Resource))).all()}
-    categories = {d.id: d for d in (await session.scalars(select(t.Category))).all()}
+def _resolver_directory(resources: dict[str, ResourceRow], categories: dict[str, CategoryRow],
+                        links: dict[str, list[str]], lexicon: list[t.LexiconEntry]) -> Directory:
+    return Directory(
+        resources=tuple(
+            ResourceEntry(
+                resource_id=d.id,
+                name=d.name,
+                category_ids=tuple(links.get(d.id, [])),
+                name_variants=tuple(d.name_variants or ()),
+                localized_names=tuple((d.localized_names or {}).values()),
+                active=d.active and d.booking_policy != "NOT_OFFERED",
+                booking_policy=d.booking_policy,
+            )
+            for d in resources.values()
+        ),
+        categories=tuple(
+            CategoryEntry(
+                category_id=d.id,
+                name=d.name,
+                code=d.code,
+                localized_names=tuple((d.localized_names or {}).values()),
+                offers_bookings=d.offers_bookings,
+                active=d.active,
+            )
+            for d in categories.values()
+        ),
+        lexicon=tuple(LexiconTerm(e.concept_type, e.concept_id, e.term, e.language, e.approved) for e in lexicon),
+    )
+
+
+async def snapshot(session: AsyncSession) -> DirectorySnapshot:
+    """Four reads; call through the versioned cache (`new_cache`) on the hot path."""
+    resources = {
+        d.id: ResourceRow(
+            d.id, d.name, dict(d.localized_names or {}), list(d.name_variants or []), d.gender,
+            dict(d.attributes or {}), list(d.languages_spoken or []), d.price_amount, d.price_currency,
+            d.price_confirmed, d.attendance_type, d.booking_policy, d.data_confirmed, d.active,
+        )
+        for d in (await session.scalars(select(t.Resource))).all()
+    }
+    categories = {
+        d.id: CategoryRow(d.id, d.code, d.name, dict(d.localized_names or {}), d.offers_bookings, d.active)
+        for d in (await session.scalars(select(t.Category))).all()
+    }
     links: dict[str, list[str]] = {}
     for row in await session.scalars(
         select(t.ResourceCategory).order_by(t.ResourceCategory.resource_id, t.ResourceCategory.position)
     ):
         links.setdefault(row.resource_id, []).append(row.category_id)
-    query = select(t.LexiconEntry)
-    if approved_lexicon_only:
-        query = query.where(t.LexiconEntry.approved.is_(True))
-    lexicon = list((await session.scalars(query)).all())
-    return DirectorySnapshot(resources, categories, links, lexicon)
+    lexicon = list((await session.scalars(select(t.LexiconEntry).where(t.LexiconEntry.approved.is_(True)))).all())
+    day_parts = tuple((normalise(e.term), e.concept_id) for e in lexicon if e.concept_type == "DAY_PART")
+    return DirectorySnapshot(resources, categories, links, _resolver_directory(resources, categories, links, lexicon),
+                             day_parts)
+
+
+def new_cache() -> cache.VersionedCache[DirectorySnapshot]:
+    return cache.VersionedCache((cache.DIRECTORY,), snapshot)
 
 
 # ---------------------------------------------------------------- categories

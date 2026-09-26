@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +13,8 @@ from ..db import tables as t
 from ..domain import resolver as r
 from ..domain.availability import SessionView
 from ..domain.dates import resolve_when
-from . import directory, schedule, views
+from . import schedule, views
+from .cache import VersionedCache
 from .directory import DirectorySnapshot
 
 _PRESENCE_ORDER = {"PRESENT": 0, "ARRIVING": 1}
@@ -25,10 +27,25 @@ def _overlaps(view: SessionView, part: str | None, ranges: dict[str, tuple[time,
     return view.start < hi and lo < view.end
 
 
-def _next_bookable(
-    views_by_date: dict[date, list[SessionView]], after: tuple[date, time]
-) -> s.NextBookable | None:
-    for day in sorted(views_by_date):
+class _LazyDays:
+    """Sessions per day, computed on first use: the horizon beyond the requested range is only
+    evaluated when an unavailable session needs a `nextBookable` (most searches never do)."""
+
+    __slots__ = ("_compute", "_seen", "days")
+
+    def __init__(self, compute: Callable[[date], list[SessionView]], days: list[date]) -> None:
+        self._compute, self.days, self._seen = compute, days, {}
+
+    def __getitem__(self, day: date) -> list[SessionView]:
+        if day not in self._seen:
+            self._seen[day] = self._compute(day)
+        return self._seen[day]
+
+
+def _next_bookable(views_by_date: _LazyDays, after: tuple[date, time]) -> s.NextBookable | None:
+    for day in views_by_date.days:
+        if day < after[0]:
+            continue
         for v in views_by_date[day]:
             if v.bookable and (v.date, v.start) > after and v.available_slots():
                 return s.NextBookable(date=v.date, start=views.clock(v.start), end=views.clock(v.end))
@@ -88,11 +105,12 @@ def _response(
 
 
 async def agent_search(
-    session: AsyncSession, settings: Settings, body: s.AvailabilitySearchRequest
+    session: AsyncSession, settings: Settings, body: s.AvailabilitySearchRequest,
+    directory_cache: VersionedCache[DirectorySnapshot],
 ) -> s.AvailabilitySearchResponse:
     now = schedule.now_in(settings)
     today = now.date()
-    snap = await directory.snapshot(session)
+    snap = await directory_cache.get(session)
     res = r.resolve(
         utterance=body.utterance,
         directory=snap.resolver_directory(),
@@ -190,16 +208,15 @@ async def agent_search(
         ]
 
     horizon_end = date_to + timedelta(days=settings.tenant_next_bookable_horizon_days)
-    data = await schedule.load(session, settings, now, candidates + alt_pool, date_from, horizon_end)
+    data = await schedule.load(session, settings, now, candidates + alt_pool, date_from, horizon_end,
+                               known=snap.resources)
     parts = settings.day_parts
     in_range = schedule.daterange(date_from, date_to)
 
     def resource_result(resource_id: str, *, report_gaps: bool) -> tuple[s.ResourceResult, tuple] | None:
         doc = snap.resources[resource_id]
-        by_date = {
-            day: data.sessions(resource_id, day)
-            for day in schedule.daterange(date_from, horizon_end)
-        }
+        by_date = _LazyDays(lambda day: data.sessions(resource_id, day),
+                            schedule.daterange(date_from, horizon_end))
         sessions: list[s.SessionInstance] = []
         unavailable: list[s.UnavailableSession] = []
         soonest: tuple = (date.max, time.max)
@@ -278,9 +295,10 @@ async def staff_availability(
     date_from: date,
     date_to: date,
     include_slots: bool,
+    directory_cache: VersionedCache[DirectorySnapshot],
 ) -> s.AvailabilityList:
     now = schedule.now_in(settings)
-    snap = await directory.snapshot(session, approved_lexicon_only=True)
+    snap = await directory_cache.get(session)
     if resource_id:
         resource_ids = [resource_id] if resource_id in snap.resources else []
     elif category:
@@ -292,7 +310,7 @@ async def staff_availability(
         resource_ids = [d for d, deps in snap.resource_categories.items() if set(deps) & cat_ids]
     else:
         resource_ids = [d.id for d in snap.resources.values() if d.active]
-    data = await schedule.load(session, settings, now, resource_ids, date_from, date_to)
+    data = await schedule.load(session, settings, now, resource_ids, date_from, date_to, known=snap.resources)
     items = [
         views.session_instance(v, include_slots=include_slots)
         for d in sorted(resource_ids)

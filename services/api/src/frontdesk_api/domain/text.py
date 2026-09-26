@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 
 from indic_transliteration import sanscript
 from metaphone import doublemetaphone
@@ -89,11 +90,15 @@ def tokens(text: str) -> list[str]:
     return _WORD.findall(text)
 
 
+# Pure functions of their input, called for every directory term on every search: memoised
+# (bounded) so the resolver pays for transliteration once per distinct string, not per request.
+@lru_cache(maxsize=16384)
 def native_form(text: str) -> str:
     """NFC + lower-case + punctuation removed, script preserved."""
     return " ".join(tokens(unicodedata.normalize("NFC", text).casefold()))
 
 
+@lru_cache(maxsize=16384)
 def normalise(text: str, *, strip_honorifics: bool = False) -> str:
     """NFC → lower → (honorifics) → transliterate → strip accents → single spaces."""
     words = tokens(unicodedata.normalize("NFC", text).casefold())
@@ -103,9 +108,10 @@ def normalise(text: str, *, strip_honorifics: bool = False) -> str:
     return " ".join(tokens(latin.lower()))
 
 
-def phonetic_keys(token: str) -> set[str]:
+@lru_cache(maxsize=16384)
+def phonetic_keys(token: str) -> frozenset[str]:
     primary, secondary = doublemetaphone(token)
-    return {k for k in (primary, secondary) if k}
+    return frozenset(k for k in (primary, secondary) if k)
 
 
 def contains_phrase(haystack: str, needle: str) -> bool:

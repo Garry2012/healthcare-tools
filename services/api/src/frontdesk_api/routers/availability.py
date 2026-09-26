@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from .. import schemas as s
 from ..auth import require_scopes
@@ -21,6 +21,7 @@ MAX_DAYS = 62
             summary="Materialised sessions with slots for a resource or category over a date range",
             response_model=s.AvailabilityList, responses=errors(400, 401))
 async def get_availability(
+    request: Request,
     session: Session,
     settings: SettingsDep,
     date_from: Annotated[date, Query(alias="from")],
@@ -36,4 +37,5 @@ async def get_availability(
     return respond(await search.staff_availability(
         session, settings, resource_id=resource_id, category=category,
         date_from=date_from, date_to=date_to, include_slots=include_slots,
+        directory_cache=request.app.state.directory_cache,
     ))

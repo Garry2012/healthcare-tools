@@ -14,7 +14,7 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from . import errors
 from .auth import StaticTokenVerifier, TokenVerifier
 from .config import Settings, get_settings
-from .db.session import make_engine, make_sessionmaker
+from .db.session import DbStats, db_stats_var, make_engine, make_sessionmaker
 from .logging import call_id_var, configure_logging, log_event
 from .migrations import code_head
 from .routers import (
@@ -28,6 +28,7 @@ from .routers import (
     notifications,
     scheduling,
 )
+from .services import directory as directory_service
 from .services import knowledge as knowledge_service
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
     app.state.token_verifier = verifier or StaticTokenVerifier(settings.auth_tokens_json.get_secret_value())
     app.state.alembic_head = code_head()
     app.state.knowledge_cache = knowledge_service.new_cache()
+    app.state.directory_cache = directory_service.new_cache()
 
     errors.install(app)
 
@@ -84,13 +86,22 @@ def create_app(settings: Settings | None = None, verifier: TokenVerifier | None 
             error = errors.ApiError("VALIDATION_FAILED", "Parameters must not contain NUL characters.")
             return JSONResponse(error.body(), status_code=400)
         token = call_id_var.set(request.headers.get("x-call-id"))
+        stats_token = db_stats_var.set(stats := DbStats())
         started = time.perf_counter()
         try:
             response = await call_next(request)
         finally:
             call_id_var.reset(token)
+            db_stats_var.reset(stats_token)
+        total_ms = (time.perf_counter() - started) * 1000
+        db_ms = stats.seconds * 1000
+        # Voice latency is the product: every response says where its time went.
+        response.headers["Server-Timing"] = (
+            f'db;dur={db_ms:.1f};desc="{stats.queries} queries", app;dur={total_ms - db_ms:.1f}, '
+            f'total;dur={total_ms:.1f}'
+        )
         log_event(logger, logging.INFO, "request", method=request.method, path=request.url.path,
-                  status=response.status_code, ms=round((time.perf_counter() - started) * 1000, 1))
+                  status=response.status_code, ms=round(total_ms, 1), db_ms=round(db_ms, 1), queries=stats.queries)
         return response
 
     for router in (agent, directory, scheduling, availability, bookings, notifications, knowledge, calls):

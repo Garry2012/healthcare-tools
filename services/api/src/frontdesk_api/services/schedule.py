@@ -4,9 +4,10 @@ evaluates the engine. One indexed query per table, never cached across requests.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,11 +115,16 @@ async def load(
     resource_ids: Iterable[str],
     date_from: date,
     date_to: date,
+    known: Mapping[str, Any] | None = None,
 ) -> ScheduleData:
+    """`known`: resource rows the caller already holds (the cached directory), saving a read."""
     ids = sorted(set(resource_ids))
-    resources = {
-        d.id: d for d in (await session.scalars(select(t.Resource).where(t.Resource.id.in_(ids)))).all()
-    }
+    if known is not None:
+        resources = {i: known[i] for i in ids if i in known}
+    else:
+        resources = {
+            d.id: d for d in (await session.scalars(select(t.Resource).where(t.Resource.id.in_(ids)))).all()
+        }
     data = ScheduleData(now=now, settings=settings, resources=resources)
     if not resources:
         return data

@@ -45,12 +45,13 @@ def _dump(model: s.ApiModel) -> dict:
 async def availability_search(
     body: s.AvailabilitySearchRequest,
     call_id: CallId,
+    request: Request,
     session: Session,
     settings: SettingsDep,
     caller_number: CallerNumber = None,
 ):
     try:
-        result = await search.agent_search(session, settings, body)
+        result = await search.agent_search(session, settings, body, request.app.state.directory_cache)
     except (OperationalError, InterfaceError, OSError, TimeoutError) as exc:
         # RULE: never an empty list for a failure.
         log_event(logger, logging.ERROR, "availability_search_failed", error=type(exc).__name__)
