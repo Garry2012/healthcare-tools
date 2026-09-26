@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import Settings
 from ..db import tables as t
 from ..domain import availability as engine
+from ..domain import booking_status
 
 
 def template_session_def(row: t.TemplateSession) -> engine.TemplateSessionDef:
@@ -175,7 +176,7 @@ async def load(
             t.Booking.resource_id.in_(ids),
             t.Booking.date >= date_from,
             t.Booking.date <= date_to,
-            t.Booking.status.in_(t.LIVE_STATUSES),
+            t.Booking.status.in_(booking_status.HOLDS_SLOT),
         )
     )
     for resource_id, slot_id in held:

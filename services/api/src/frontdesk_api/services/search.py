@@ -196,7 +196,7 @@ async def agent_search(
     if res.action == "NO_SERVICE":
         # Not "none available": we did not understand, or do not offer, what was asked. The agent
         # asks the caller to rephrase once, or hands over to the desk; it never says "no doctor".
-        return _response("TRANSFER", now, "NO_SERVICE", understood, destination="desk",
+        return _response("TRANSFER", now, "NO_SERVICE", understood, destination=settings.pack.desk_destination,
                          notes=["Not understood or not offered here: ask the caller to rephrase, "
                                 "or transfer to the desk. Do not say that no one is available."])
     if resolved.date_to < today:
@@ -234,7 +234,8 @@ async def agent_search(
         candidates = [d.id for d in snap.resources.values() if eligible(d)]
 
     if res.departed and (not cat_ids or not candidates):
-        return _response("TRANSFER", now, "TRANSFER_DESK", understood, destination="desk", notes=notes)
+        return _response("TRANSFER", now, "TRANSFER_DESK", understood, destination=settings.pack.desk_destination,
+                         notes=notes)
 
     gender = body.preferences.gender.value if body.preferences and body.preferences.gender else None
     if gender:
@@ -336,7 +337,7 @@ async def agent_search(
     only_desk = not found and bool(candidates) and all(
         snap.resources[c].booking_policy == "DESK_ONLY" for c in candidates)
     if desk_only or only_desk:
-        return _response("TRANSFER", now, "TRANSFER_DESK", understood, destination="desk",
+        return _response("TRANSFER", now, "TRANSFER_DESK", understood, destination=settings.pack.desk_destination,
                          results=results, notes=notes or None)
 
     if not found and not named and candidates:

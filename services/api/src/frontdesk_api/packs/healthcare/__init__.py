@@ -304,6 +304,7 @@ async def scenario(seed: ScenarioBuilder) -> dict[str, int]:
 PACK = Pack(
     name="healthcare",
     escalation_destination="emergency",
+    desk_destination="desk",
     transfer_destinations={"emergency": "Emergency", "desk": "Front desk", "lab": "Laboratory",
                            "pharmacy": "Pharmacy", "insurance": "Insurance desk"},
     categories=CATEGORIES,

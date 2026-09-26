@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import schemas as s
 from ..config import Settings
 from ..db import tables as t
-from ..domain import ids
+from ..domain import booking_status, ids
 from ..domain.availability import SessionView, SlotView, find_session
 from ..domain.identity import (
     BookingIdentity,
@@ -33,8 +33,6 @@ from ..domain.text import normalise_person_name
 from ..errors import ApiError, not_found, validation
 from . import schedule, views
 
-LISTED_STATUSES = ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "NEEDS_RESCHEDULE", "ARRIVED")
-CHANGEABLE_STATUSES = ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "NEEDS_RESCHEDULE")
 _LIVE_WHERE = text(t.LIVE_SQL)
 
 
@@ -271,7 +269,7 @@ async def book(
             t.Booking.session_id == check.view.session_id,
             t.Booking.customer_name_normalized == name_key,
             t.Booking.phone == body.customer.phone,
-            t.Booking.status.in_(t.LIVE_STATUSES),
+            t.Booking.status.in_(booking_status.HOLDS_SLOT),
         )
     )
     if existing is not None:
@@ -369,7 +367,7 @@ async def agent_list(
     if caller_number:
         reachable.append(t.Booking.caller_number == caller_number)
     query = select(t.Booking).where(
-        t.Booking.status.in_(LISTED_STATUSES),
+        t.Booking.status.in_(booking_status.LISTED),
         t.Booking.date >= (date_from or today),
         or_(*reachable),
     )
@@ -420,9 +418,9 @@ async def cancel(
 ) -> tuple[t.Booking, bool]:
     """Returns the booking and whether this request cancelled it."""
     row = await _locate(session, settings, booking_id, body.customer_name, caller_number)
-    if row.status in ("CANCELLED_BY_CUSTOMER", "CANCELLED_BY_PROVIDER"):
+    if row.status in booking_status.CANCELLED:
         return row, False  # already what the caller wants; the status says who cancelled it
-    if row.status not in CHANGEABLE_STATUSES:
+    if row.status not in booking_status.CHANGEABLE:
         raise ApiError("CONFLICT", "This booking can no longer be cancelled.")
     previous = row.status
     row.status = "CANCELLED_BY_CUSTOMER"
@@ -486,7 +484,7 @@ async def reschedule(
     for resource_id in sorted({r for r in (current, target.session.resource_id) if r}):
         await schedule.lock_resource(session, resource_id, exclusive=False)
     row = await _locate(session, settings, booking_id, body.customer_name, caller_number)
-    if row.status not in CHANGEABLE_STATUSES:
+    if row.status not in booking_status.CHANGEABLE:
         raise ApiError("CONFLICT", "This booking can no longer be moved.")
     previous = await _move(session, settings, row, body.new_slot_id, channel="AGENT", actor=actor,
                            status="RESCHEDULED")
@@ -527,19 +525,11 @@ async def get(session: AsyncSession, booking_id: str, *, lock: bool = False) -> 
     return row
 
 
-_STAFF_TRANSITIONS = {
-    "ARRIVED": ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED"),
-    "COMPLETED": ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED", "ARRIVED"),
-    "NO_SHOW": ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED"),
-    "CANCELLED_BY_PROVIDER": CHANGEABLE_STATUSES,
-}
-
-
 async def set_status(
     session: AsyncSession, settings: Settings, booking_id: str, body: s.StatusRequest, actor: str
 ) -> t.Booking:
     row = await get(session, booking_id, lock=True)
-    if row.status not in _STAFF_TRANSITIONS[body.status]:
+    if row.status not in booking_status.STAFF_TRANSITIONS[body.status]:
         raise ApiError("CONFLICT", f"Cannot move a booking from {row.status} to {body.status}.")
     today = schedule.now_in(settings).date()
     if body.status == "ARRIVED" and row.date != today:

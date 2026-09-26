@@ -19,15 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import schemas as s
 from ..config import Settings
 from ..db import tables as t
-from ..domain import ids
+from ..domain import booking_status, ids
 from ..domain.availability import CANCELLED_STATUS, SessionView, find_session
+from ..domain.intervals import overlaps, weekly_clash
 from ..errors import ApiError, not_found, validation
 from . import schedule, views
 from .bookings import context_for, get, history_of, new_id, staff_view
 
 MAX_EXCEPTION_DAYS = 366
-IMPACTABLE = ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED")
-HOLDS_SLOT = (*IMPACTABLE, "ARRIVED")
 Sessions = Callable[[date], list[SessionView]]
 
 
@@ -107,7 +106,7 @@ def _validate_template(body: s.ScheduleTemplate) -> None:
         raise validation("effectiveTo must not be before effectiveFrom.", "effectiveTo")
     for i, sess in enumerate(body.sessions):
         for other in body.sessions[:i]:
-            if set(sess.days_of_week) & set(other.days_of_week) and sess.start < other.end and other.start < sess.end:
+            if weekly_clash(sess.days_of_week, sess.start, sess.end, other.days_of_week, other.start, other.end):
                 raise validation(f"Overlaps {other.template_session_id} on the same day.", f"sessions[{i}]")
 
 
@@ -266,7 +265,7 @@ async def _impact(
                 t.Booking.resource_id == resource.id,
                 t.Booking.date >= dates[0],
                 t.Booking.date <= dates[-1],
-                t.Booking.status.in_(IMPACTABLE),
+                t.Booking.status.in_(booking_status.BEFORE_VISIT),
             )
             .with_for_update()
         )
@@ -280,7 +279,7 @@ async def _impact(
                     t.Booking.resource_id == resource.id,
                     t.Booking.date >= dates[0],
                     t.Booking.date <= dates[-1],
-                    t.Booking.status.in_(HOLDS_SLOT),
+                    t.Booking.status.in_(booking_status.HOLDS_SLOT),
                 )
             )
         ).all()
@@ -297,7 +296,7 @@ async def _impact(
         previous_slot: str | None = None
         if gone and not removed and now_view.capacity_model == "SEQUENCE":
             # The queue got shorter but has free places: move forward instead of bumping.
-            free = _free_position(now_view, held, now)
+            free = _free_position(now_view, held, now, timedelta(minutes=settings.tenant_move_lead_minutes))
             if free is not None:
                 previous_slot, previous_status = booking.slot_id, booking.status
                 booking.slot_id = free
@@ -365,7 +364,7 @@ def _changes_back(booking: t.Booking, told: t.Notification) -> bool:
     slot they were told about. Not if they moved or cancelled since, and not if a shorter queue
     moved them forward: that position stays theirs."""
     facts = told.facts or {}
-    return (booking.status in HOLDS_SLOT and booking.slot_id == facts.get("slotId")
+    return (booking.status in booking_status.HOLDS_SLOT and booking.slot_id == facts.get("slotId")
             and "previousSlotId" not in facts)
 
 
@@ -374,16 +373,15 @@ def _position(slot_id: str) -> int:
     return int(ref.suffix) if ref else 0
 
 
-# Today, a position is only worth moving someone to if they can still get there.
-MOVE_LEAD = timedelta(minutes=15)
 _STILL_ADMITS = (None, "FULL", "DESK_ONLY")  # FULL: the cut itself over-fills the session
 
 
-def _free_position(view: SessionView, held: set[str], now: datetime) -> str | None:
+def _free_position(view: SessionView, held: set[str], now: datetime, lead: timedelta) -> str | None:
     """The first queue position in `view` nobody holds and the caller can still reach."""
     if view.not_bookable_reason not in _STILL_ADMITS:
         return None  # ended, doctor left, arrive-by passed, not offered
-    reachable_from = (now + MOVE_LEAD).time() if view.date == now.date() else None
+    # Today, a position is only worth moving someone to if they can still get there.
+    reachable_from = (now + lead).time() if view.date == now.date() else None
     for slot in view.slots:
         if slot.slot_id in held:
             continue
@@ -400,7 +398,7 @@ async def withdraw_resource(session: AsyncSession, settings: Settings, resource:
     now = schedule.now_in(settings)
     last = await session.scalar(
         select(t.Booking.date).where(t.Booking.resource_id == resource.id, t.Booking.date >= now.date(),
-                                     t.Booking.status.in_(IMPACTABLE)).order_by(t.Booking.date.desc()).limit(1))
+                                     t.Booking.status.in_(booking_status.BEFORE_VISIT)).order_by(t.Booking.date.desc()).limit(1))
     if last is None:
         return 0
     before = await schedule.load(session, settings, now, [resource.id], now.date(), last)
@@ -531,7 +529,7 @@ async def create_exception(
         start, end = _t(body.new_start), _t(body.new_end)
         for day in dates:
             for view in before.sessions(resource.id, day, channel="DESK"):
-                if view.status != CANCELLED_STATUS and view.start < end and start < view.end:
+                if view.status != CANCELLED_STATUS and overlaps(view.start, view.end, start, end):
                     raise ApiError("CONFLICT", f"The extra session overlaps an existing session on {day}.")
 
     row = _insert_exception(session, body, actor)
@@ -666,7 +664,8 @@ async def _status_before(session: AsyncSession, booking_ids: list[str], exceptio
     )
     found: dict[str, str] = {}
     for booking_id, details in rows:
-        if (details or {}).get("exceptionId") == exception_id and (details or {}).get("previous") in IMPACTABLE:
+        details = details or {}
+        if details.get("exceptionId") == exception_id and details.get("previous") in booking_status.BEFORE_VISIT:
             found[booking_id] = details["previous"]
     return found
 

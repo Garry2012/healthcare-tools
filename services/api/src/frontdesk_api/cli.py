@@ -70,7 +70,8 @@ def check_config() -> int:
         if escalation not in destinations:
             problems.append(f"transfer destinations lack the pack's escalation {escalation!r}")
         # Every destination the running system can route to must exist for this provider.
-        needed = {"desk"} | {cid for ctype, cid, _, _ in settings.pack.lexicon if ctype == "SERVICE_TRANSFER"}
+        needed = {settings.pack.desk_destination}
+        needed |= {cid for ctype, cid, _, _ in settings.pack.lexicon if ctype == "SERVICE_TRANSFER"}
         needed |= {k.destination for k in settings.pack.knowledge if k.destination}
         problems += [f"transfer destinations lack {d!r}" for d in sorted(needed - set(destinations))]
         if settings.tenant_knowledge_clarify_threshold > settings.tenant_knowledge_answer_threshold:

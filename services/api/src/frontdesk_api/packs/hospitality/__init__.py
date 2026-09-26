@@ -110,6 +110,7 @@ async def scenario(seed: ScenarioBuilder) -> dict[str, int]:
 PACK = Pack(
     name="hospitality",
     escalation_destination="security",
+    desk_destination="desk",
     transfer_destinations={"security": "Security / duty manager", "front_desk": "Front desk",
                            "concierge": "Concierge", "housekeeping": "Housekeeping",
                            "room_service": "Room service", "desk": "Front desk"},

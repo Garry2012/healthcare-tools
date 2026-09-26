@@ -34,3 +34,15 @@ def test_transliteration_and_normalisation():
 def test_phrase_containment_is_whole_word():
     assert contains_phrase("i have chest pain", "chest pain")
     assert not contains_phrase("benefits", "fits")
+
+
+def test_periods_overlap_only_when_they_share_time():
+    from datetime import time
+
+    from frontdesk_api.domain.intervals import overlaps, weekly_clash
+
+    assert overlaps(time(9), time(12), time(11), time(13))
+    assert not overlaps(time(9), time(12), time(12), time(15))  # touching ends is not a clash
+    assert overlaps("09:00", "12:00", "10:00", "11:00")  # HH:MM strings order the same way
+    assert weekly_clash(["MON", "TUE"], "09:00", "12:00", ["TUE"], "11:00", "13:00")
+    assert not weekly_clash(["MON"], "09:00", "12:00", ["TUE"], "09:00", "12:00")

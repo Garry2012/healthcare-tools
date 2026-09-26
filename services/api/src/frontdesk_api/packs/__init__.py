@@ -14,6 +14,8 @@ from datetime import date
 from functools import cache
 from typing import Any, Protocol
 
+from ..domain.intervals import weekly_clash
+
 ALL_DAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 
 
@@ -114,6 +116,8 @@ class Pack:
     lexicon: tuple[LexiconRow, ...]
     knowledge: tuple[KnowledgeSeed, ...] = ()
     scenario: Scenario | None = None
+    # Where the core sends a caller it cannot help (not understood, desk-only, no answer).
+    desk_destination: str = "desk"
 
 
 @cache
@@ -138,13 +142,15 @@ def validate(pack: Pack) -> list[str]:
     destinations = set(pack.transfer_destinations)
     if pack.escalation_destination not in destinations:
         problems.append(f"escalation {pack.escalation_destination!r} is not a transfer destination")
+    if pack.desk_destination not in destinations:
+        problems.append(f"desk {pack.desk_destination!r} is not a transfer destination")
     for r in pack.resources:
         problems += [f"{r.id}: unknown category {c!r}" for c in r.categories if c not in categories]
         if not r.categories:
             problems.append(f"{r.id}: needs at least one category")
         for i, a in enumerate(r.sessions):  # the same rule PUT /schedule-template enforces
             for b in r.sessions[:i]:
-                if set(a.days) & set(b.days) and a.start < b.end and b.start < a.end:
+                if weekly_clash(a.days, a.start, a.end, b.days, b.start, b.end):
                     problems.append(f"{r.id}: sessions {b.key!r} and {a.key!r} overlap")
     targets = {"CATEGORY": categories, "NEED_ROUTE": categories, "RESOURCE": resources,
                "SERVICE_TRANSFER": destinations, "DAY_PART": {"MORNING", "AFTERNOON", "EVENING", "ANY"}}
