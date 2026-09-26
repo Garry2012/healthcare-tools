@@ -292,3 +292,13 @@ def test_queue_positions_whose_window_has_closed_are_not_offered():
 def test_future_days_are_not_trimmed_by_the_clock():
     am, _ = run(on=MON, now=datetime(2026, 9, 25, 23, 0, tzinfo=IST))
     assert all(s.available for s in am.slots)
+
+
+def test_a_huge_queue_is_capped_so_slot_ids_stay_unambiguous():
+    big = TemplateDef(date(2026, 9, 1), None, (
+        TemplateSessionDef("tpl_big", 1, frozenset({"MON"}), time(8), time(20), "SEQUENCE",
+                           CapacityRule("FIXED", 1500)),
+    ))
+    [view] = run(templates=(big,))
+    assert view.total == 999
+    assert max(len(s.slot_id.rsplit("_", 1)[1]) for s in view.slots) == 3

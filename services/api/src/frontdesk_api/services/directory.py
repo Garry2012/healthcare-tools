@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import schemas as s
@@ -232,6 +232,8 @@ async def _set_categories(session: AsyncSession, resource_id: str, category_ids:
 
 async def create_resource(session: AsyncSession, body: s.ResourceInput, currency: str) -> s.Resource:
     base = f"res_{_slug(body.name)}"
+    # Two desks adding "Dr Sharma" at once must get res_sharma and res_sharma_2, not a 500.
+    await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"resource-id:{base}"})
     resource_id, n = base, 1
     while await session.get(t.Resource, resource_id) is not None:
         n += 1

@@ -532,11 +532,16 @@ _STAFF_TRANSITIONS = {
 
 
 async def set_status(
-    session: AsyncSession, booking_id: str, body: s.StatusRequest, actor: str
+    session: AsyncSession, settings: Settings, booking_id: str, body: s.StatusRequest, actor: str
 ) -> t.Booking:
     row = await get(session, booking_id, lock=True)
     if row.status not in _STAFF_TRANSITIONS[body.status]:
         raise ApiError("CONFLICT", f"Cannot move a booking from {row.status} to {body.status}.")
+    today = schedule.now_in(settings).date()
+    if body.status == "ARRIVED" and row.date != today:
+        raise ApiError("CONFLICT", "A customer can only arrive on the day of the booking.")
+    if body.status in ("COMPLETED", "NO_SHOW") and row.date > today:
+        raise ApiError("CONFLICT", f"A booking on {row.date} cannot be {body.status} yet.")
     previous = row.status
     row.status = body.status
     _history(session, row.id, actor, body.status, previous=previous, note=body.note)

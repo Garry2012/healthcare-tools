@@ -724,6 +724,9 @@ async def mark_delivered(
     row = await session.get(t.Notification, notification_id, with_for_update=True)
     if row is None:
         raise not_found("No such notification.")
+    if row.status == "ACKNOWLEDGED":
+        # The customer's answer is on record; a later attempt must not overwrite or erase it.
+        raise ApiError("CONFLICT", "This notification was already acknowledged by the customer.")
     if body.outcome == "NO_ANSWER":
         row.status = "FAILED"
     elif body.outcome is None:

@@ -15,6 +15,7 @@ from . import ids
 
 DAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 CANCELLED_STATUS = "CANCELLED"
+MAX_QUEUE = 999
 _CERTAINTY_RANK = {"NOT_CONFIRMED": 0, "EXPECTED": 1, "CONFIRMED": 2}
 
 
@@ -295,6 +296,8 @@ def _capacity(s: _Working, cfg: EngineConfig) -> tuple[int, str, float]:
         total, source = math.floor(value * hours), "PER_HOUR"
     else:
         total, source = cfg.default_capacity, "DEFAULT"
+    # Queue positions are written with at most three digits, so an id can never read as HH:MM.
+    total = min(total, MAX_QUEUE)
     if mode == "PER_HOUR" and value:
         pph = float(value)
     else:

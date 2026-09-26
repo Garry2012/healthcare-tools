@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import schemas as s
@@ -31,10 +32,7 @@ def _model(row: t.CallSummary) -> s.CallSummary:
 
 
 async def store(session: AsyncSession, body: s.CallSummary) -> tuple[s.CallSummary, bool]:
-    existing = await session.scalar(select(t.CallSummary).where(t.CallSummary.call_id == body.call_id))
-    if existing is not None:
-        return _model(existing), False
-    row = t.CallSummary(
+    values = dict(
         id=new_id("call"),
         call_id=body.call_id,
         started_at=body.started_at,
@@ -48,9 +46,14 @@ async def store(session: AsyncSession, body: s.CallSummary) -> tuple[s.CallSumma
         tool_outcomes=body.tool_outcomes or {},
         summary_text=body.summary_text,
     )
-    session.add(row)
+    # One summary per call even when the agent retries concurrently: the unique call_id decides.
+    created = await session.scalar(
+        insert(t.CallSummary).values(**values).on_conflict_do_nothing(index_elements=["call_id"])
+        .returning(t.CallSummary.id)
+    )
     await session.commit()
-    return _model(row), True
+    row = await session.scalar(select(t.CallSummary).where(t.CallSummary.call_id == body.call_id))
+    return _model(row), created is not None
 
 
 async def page(

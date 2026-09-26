@@ -89,6 +89,6 @@ async def set_booking_status(
     bookingId: str, body: s.StatusRequest, acting_user: ActingUser,  # noqa: N803
     session: Session, settings: SettingsDep,
 ):
-    row = await svc.set_status(session, bookingId, body, f"staff:{acting_user}")
+    row = await svc.set_status(session, settings, bookingId, body, f"staff:{acting_user}")
     await session.commit()
     return respond(await _staff(session, settings, row))
