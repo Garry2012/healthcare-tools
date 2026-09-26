@@ -2,7 +2,8 @@
 
 Creating an exception (or a template) that removes or shortens a session moves the
 bookings that no longer fit to NEEDS_RESCHEDULE and creates one notification per
-booking carrying structured facts. Withdrawing the exception restores them.
+booking carrying structured facts. A shorter queue first moves bookings forward into free
+positions. Withdrawing the exception restores them.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from .bookings import context_for, get, history_of, new_id, staff_view
 
 MAX_EXCEPTION_DAYS = 366
 IMPACTABLE = ("BOOKED", "CONFIRMED_BY_DESK", "RESCHEDULED")
+HOLDS_SLOT = (*IMPACTABLE, "ARRIVED")
 Sessions = Callable[[date], list[SessionView]]
 
 
@@ -263,6 +265,21 @@ async def _impact(
             .with_for_update()
         )
     ).all()
+    # Earliest in the queue first, so a capacity cut keeps the people who booked first.
+    bookings = sorted(bookings, key=lambda b: (b.date, b.session_id, _position(b.slot_id)))
+    held = set(
+        (
+            await session.scalars(
+                select(t.Booking.slot_id).where(
+                    t.Booking.resource_id == resource.id,
+                    t.Booking.date >= dates[0],
+                    t.Booking.date <= dates[-1],
+                    t.Booking.status.in_(HOLDS_SLOT),
+                )
+            )
+        ).all()
+    )
+    now = schedule.now_in(settings)
     moved_to_reschedule = notified = 0
     cache_before: dict[date, list[SessionView]] = {}
     cache_after: dict[date, list[SessionView]] = {}
@@ -271,7 +288,22 @@ async def _impact(
         now_view = find_session(cache_after.setdefault(booking.date, after(booking.date)), booking.session_id)
         removed = now_view is None or now_view.status == CANCELLED_STATUS
         gone = removed or booking.slot_id not in now_view.offered_slot_ids
-        moved = not gone and was is not None and (was.start, was.end) != (now_view.start, now_view.end)
+        previous_slot: str | None = None
+        if gone and not removed and now_view.capacity_model == "SEQUENCE":
+            # The queue got shorter but has free places: move forward instead of bumping.
+            free = _free_position(now_view, held, now)
+            if free is not None:
+                previous_slot, booking.slot_id = booking.slot_id, free
+                held.add(free)
+                held.discard(previous_slot)
+                session.add(t.BookingHistory(
+                    booking_id=booking.id, by=actor, change="SLOT_MOVED",
+                    details={"previousSlotId": previous_slot, "slotId": free, "exceptionId": exception_id},
+                ))
+                gone = False
+        moved = not gone and was is not None and (
+            previous_slot is not None or (was.start, was.end) != (now_view.start, now_view.end)
+        )
         if not gone and not moved:
             continue
         if template_change:
@@ -304,11 +336,29 @@ async def _impact(
                 "previousSession": _session_facts(was),
                 "currentSession": None if removed else _session_facts(now_view),
                 "suggestedSlots": _suggestions(suggest, resource.id, booking.date) if gone else [],
+                **({"previousSlotId": previous_slot} if previous_slot else {}),
             },
         ))
         notified += 1
     await session.flush()
     return moved_to_reschedule, notified
+
+
+def _position(slot_id: str) -> int:
+    ref = ids.parse_slot_id(slot_id)
+    return int(ref.suffix) if ref else 0
+
+
+def _free_position(view: SessionView, held: set[str], now: datetime) -> str | None:
+    """The first queue position in `view` nobody holds and the caller can still reach."""
+    clock = now.time() if view.date == now.date() else None
+    for slot in view.slots:
+        if slot.slot_id in held:
+            continue
+        if clock is not None and slot.window_to is not None and slot.window_to <= clock:
+            continue
+        return slot.slot_id
+    return None
 
 
 async def withdraw_resource(session: AsyncSession, settings: Settings, resource: t.Resource, actor: str) -> int:

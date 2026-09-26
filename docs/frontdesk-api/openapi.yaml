@@ -898,7 +898,11 @@ paths:
         Record it now; availability for Thursday changes immediately and the
         impacted customers are computed. RULE: creating an exception that removes
         or shortens a session moves the affected bookings to status
-        NEEDS_RESCHEDULE and creates a Notification per booking. The reason
+        NEEDS_RESCHEDULE and creates a Notification per booking. When a queue
+        (SEQUENCE) session only gets shorter, bookings whose position no longer
+        exists first move, earliest in the queue first, to a free position the
+        caller can still reach (SESSION_TIME_CHANGED notification with
+        previousSlotId); only those left over become NEEDS_RESCHEDULE. The reason
         category is internal; the agent never receives it.
       security:
         - oauth2: [schedule.write]

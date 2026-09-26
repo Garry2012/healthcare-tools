@@ -111,3 +111,43 @@ async def test_exception_validation(client, app_settings):
     overlap = {"resourceId": "res_garima", "dateFrom": str(thursday), "dateTo": str(thursday),
                "scope": "TIME_RANGE", "effect": "EXTRA_SESSION", "newStart": "16:00", "newEnd": "18:00"}
     assert (await client.post("/schedule-exceptions", headers=STAFF, json=overlap)).status_code == 409
+
+
+async def test_capacity_cut_moves_queue_bookings_into_free_positions(client, app, app_settings):
+    """Positions 1-2 are free, 3-5 booked. Cutting to 2 phone positions keeps the two earliest
+    in the queue by moving them forward (and telling them); only the last one is bumped."""
+    thursday = next_weekday(3, app_settings)
+    ids = []
+    for i in (3, 4, 5):
+        r = await client.post("/agent/bookings",
+                              headers=call(caller=f"+91900000{i:04d}", call_id=f"c{i}", key=f"k{i}"),
+                              json=book_body(garima_slot(thursday, i), name=f"Customer {i}", phone=f"900000{i:04d}"))
+        assert r.status_code == 201
+        ids.append(r.json()["bookingId"])
+    r = await client.post("/schedule-exceptions", headers=STAFF, json={
+        "resourceId": "res_garima", "dateFrom": str(thursday), "dateTo": str(thursday), "scope": "SESSION",
+        "templateSessionId": "tpl_res_garima_pm", "effect": "CAPACITY_CHANGE", "newCapacity": 3})
+    assert r.status_code == 201
+    assert r.json()["impact"] == {"bookingsImpacted": 1, "notificationsCreated": 3}
+    async with app.state.sessionmaker() as session:
+        rows = [await session.get(t.Booking, i) for i in ids]
+        history = (await session.scalars(select(t.BookingHistory).where(
+            t.BookingHistory.booking_id == ids[0], t.BookingHistory.change == "SLOT_MOVED"))).all()
+    assert [(b.status, b.slot_id) for b in rows] == [
+        ("BOOKED", garima_slot(thursday, 1)),
+        ("BOOKED", garima_slot(thursday, 2)),
+        ("NEEDS_RESCHEDULE", garima_slot(thursday, 5)),
+    ]
+    assert history and history[0].details["previousSlotId"] == garima_slot(thursday, 3)
+
+    notes = {n["bookingId"]: n for n in (await client.get("/notifications", headers=STAFF)).json()["items"]}
+    moved = notes[ids[0]]
+    assert moved["trigger"] == "SESSION_TIME_CHANGED"
+    assert moved["facts"]["previousSlotId"] == garima_slot(thursday, 3)
+    assert moved["facts"]["slotId"] == garima_slot(thursday, 1) and moved["facts"]["suggestedSlots"] == []
+    assert notes[ids[2]]["facts"]["bookingStatus"] == "NEEDS_RESCHEDULE"
+    assert "previousSlotId" not in notes[ids[2]]["facts"]
+
+    # the moved caller hears the new position on lookup, and the freed slot 3 stays unoffered
+    lookup = (await client.get("/agent/bookings", headers=call(caller="+919000000003"))).json()
+    assert lookup["items"][0]["status"] == "BOOKED"
