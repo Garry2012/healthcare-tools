@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import unicodedata
 from datetime import date
 from typing import Annotated, Any, Literal
@@ -107,6 +108,9 @@ def idempotency_key(call_id: str, action: str, customer_name: str | None, target
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+BOOKING_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
 def _failure(write: bool, retry_after: int) -> dict[str, Any]:
     return {"outcome": "COULD_NOT_RECORD" if write else "COULD_NOT_CHECK", "retryAfterSeconds": retry_after}
 
@@ -165,6 +169,11 @@ class ApiClient:
                 return _failure(write, default_wait)
             if response.status_code == 504 and not last:
                 continue  # UPSTREAM_TIMEOUT: the API asks for exactly this retry
+            if response.status_code in (401, 403):
+                # Our own credentials are wrong: an operator problem, never something to read to a caller.
+                logger.error("api_rejected_adapter_credentials", extra={"fields": {"path": path,
+                                                                                    "status": response.status_code}})
+                return _failure(write, default_wait)
             if response.status_code == 429 or response.status_code >= 500:
                 return _failure(write, _retry_after(response, default_wait))
             try:
@@ -269,6 +278,9 @@ def register(mcp: FastMCP, client: ApiClient, pack: Pack) -> None:
 
         if not bookingId:
             return _invalid("bookingId", f"{action} needs a bookingId from LIST or BOOK.")
+        if not BOOKING_ID.fullmatch(bookingId):
+            # The id goes into the URL path: never let model text choose another endpoint.
+            return _invalid("bookingId", "bookingId must be an id returned by LIST or BOOK.")
         if not customerName:
             return _invalid("customerName", f"{action} needs the customer's name.")
         if action == "CANCEL":

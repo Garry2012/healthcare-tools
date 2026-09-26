@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     database_disable_prepared_statements: bool = False
     auth_tokens_json: SecretStr = SecretStr("{}")
     write_timeout_seconds: float = Field(default=5.0, ge=0.5, le=30.0)
+    # Voice reads answer COULD_NOT_CHECK rather than keep a caller waiting.
+    read_timeout_seconds: float = Field(default=2.0, ge=0.1, le=30.0)
+    # Waiting for a pooled connection counts against the same budget.
+    database_pool_timeout_seconds: float = Field(default=2.0, ge=0.1, le=30.0)
+    # Server-side cap per statement; not sent through a transaction pooler (pgbouncer rejects it).
+    database_statement_timeout_ms: int = Field(default=5000, ge=100, le=60000)
+    max_request_bytes: int = Field(default=65536, ge=1024, le=10_485_760)
 
     # --- domain pack (packs/<name>): vocabulary data, escalation, demo seed ---
     domain_pack: str = "healthcare"

@@ -47,11 +47,16 @@ def make_engine(settings: Settings) -> AsyncEngine:
     connect_args: dict[str, object] = {"server_settings": {"application_name": "frontdesk-api"}}
     if settings.database_disable_prepared_statements:
         connect_args["statement_cache_size"] = 0
+    else:
+        connect_args["server_settings"]["statement_timeout"] = str(settings.database_statement_timeout_ms)
     engine = create_async_engine(
         settings.async_database_url,
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_pool_size,
         pool_pre_ping=True,
+        pool_timeout=settings.database_pool_timeout_seconds,
+        # Statement parameters carry names, phones and symptoms: never in error messages or logs.
+        hide_parameters=True,
         connect_args=connect_args,
     )
     _instrument(engine)

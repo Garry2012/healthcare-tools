@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
 from typing import Annotated
@@ -51,7 +52,8 @@ async def availability_search(
     caller_number: CallerNumber = None,
 ):
     try:
-        result = await search.agent_search(session, settings, body, request.app.state.directory_cache)
+        async with asyncio.timeout(settings.read_timeout_seconds):
+            result = await search.agent_search(session, settings, body, request.app.state.directory_cache)
     except (OperationalError, InterfaceError, OSError, TimeoutError) as exc:
         # RULE: never an empty list for a failure.
         log_event(logger, logging.ERROR, "availability_search_failed", error=type(exc).__name__)
@@ -205,7 +207,8 @@ async def knowledge_search(
     caller_number: CallerNumber = None,
 ):
     try:
-        result = await knowledge.agent_search(session, settings, request.app.state.knowledge_cache, body)
+        async with asyncio.timeout(settings.read_timeout_seconds):
+            result = await knowledge.agent_search(session, settings, request.app.state.knowledge_cache, body)
     except (OperationalError, InterfaceError, OSError, TimeoutError) as exc:
         log_event(logger, logging.ERROR, "knowledge_search_failed", error=type(exc).__name__)
         result = s.KnowledgeSearchResponse(outcome="COULD_NOT_CHECK", as_of=schedule.now_in(settings),

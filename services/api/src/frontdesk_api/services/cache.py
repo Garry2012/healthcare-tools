@@ -33,10 +33,13 @@ async def versions(session: AsyncSession, names: tuple[str, ...]) -> tuple[int, 
 
 async def bump(session: AsyncSession, *names: str) -> None:
     """Call inside the writer's transaction, before its commit."""
-    await session.execute(
+    result = await session.execute(
         update(t.CacheVersion).where(t.CacheVersion.name.in_(names))
         .values(version=t.CacheVersion.version + 1, updated_at=func.now())
     )
+    if result.rowcount != len(set(names)):
+        # A missing row would leave every replica serving stale data forever.
+        raise RuntimeError(f"cache_versions is missing a row for one of {sorted(set(names))}")
 
 
 @dataclass(slots=True)

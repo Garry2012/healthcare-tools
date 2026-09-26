@@ -228,3 +228,36 @@ def test_idempotency_key_derivation():
 def test_dev_caller_number_is_refused_in_production(make_settings):
     with pytest.raises(ValueError, match="MCP_DEV_CALLER_NUMBER"):
         make_settings(env="production", mcp_dev_caller_number="+919000000101")
+
+
+async def test_model_supplied_booking_id_cannot_reach_another_path(make_settings):
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.raw_path.decode())
+        return httpx.Response(200, json={"outcome": "CANCELLED"})
+
+    async with Client(mcp_with(make_settings(), handler)) as client:
+        for evil in ("../../resources", "bkg_1?x=1", "bkg_1/../../knowledge", "bkg 1", ""):
+            result = await client.call_tool("manage_booking", {
+                "action": "CANCEL", "bookingId": evil, "customerName": "Lakshmi Rao"})
+            assert result.structured_content["error"]["code"] == "VALIDATION_FAILED", evil
+        ok = await client.call_tool("manage_booking", {
+            "action": "CANCEL", "bookingId": "bkg_0a1b2c3d4e5f", "customerName": "Lakshmi Rao"})
+    assert ok.structured_content == {"outcome": "CANCELLED"}
+    assert seen == ["/api/v1/agent/bookings/bkg_0a1b2c3d4e5f/cancel"]
+
+
+@pytest.mark.parametrize("status", [401, 403])
+async def test_credential_errors_never_reach_the_model(make_settings, status):
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"code": "UNAUTHORIZED", "message": "The bearer token is not valid."}}
+        return httpx.Response(status, json=body)
+
+    async with Client(mcp_with(make_settings(), handler)) as client:
+        read = await client.call_tool("find_availability", {"utterance": "x", "language": "en"})
+        write = await client.call_tool("manage_booking", {
+            "action": "BOOK", "slotId": "slot_ses_res_garima_2026-09-28_2_01", "language": "en",
+            "customer": {"name": "Lakshmi Rao", "phone": "9000000101"}})
+    assert read.structured_content["outcome"] == "COULD_NOT_CHECK"
+    assert write.structured_content["outcome"] == "COULD_NOT_RECORD"
