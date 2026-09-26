@@ -18,7 +18,7 @@ from ..db import tables as t
 from ..domain.resolver import CategoryEntry, Directory, LexiconTerm, ResourceEntry
 from ..domain.text import normalise
 from ..errors import not_found, validation
-from . import cache, scheduling, views
+from . import cache, impact, views
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,7 +259,7 @@ async def update_resource(
     _apply_resource(row, body, settings.tenant_currency)
     if offered_before and not (row.active and row.booking_policy != "NOT_OFFERED"):
         await session.flush()
-        await scheduling.withdraw_resource(session, settings, row, actor)
+        await impact.withdraw_resource(session, settings, row, actor)
     await _set_categories(session, resource_id, body.category_ids)
     await cache.bump(session, cache.DIRECTORY)
     await session.commit()
@@ -342,3 +342,9 @@ async def upsert_lexicon(
     await session.commit()
     return _lexicon_model(row)
 
+
+async def require_resource(session: AsyncSession, resource_id: str) -> t.Resource:
+    resource = await session.get(t.Resource, resource_id)
+    if resource is None:
+        raise not_found("No such resource.")
+    return resource

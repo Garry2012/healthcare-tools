@@ -11,6 +11,7 @@ are parsed from the right.
 from __future__ import annotations
 
 import re
+import secrets
 from dataclasses import dataclass
 from datetime import date
 
@@ -75,3 +76,8 @@ def parse_slot_id(value: str) -> SlotRef | None:
         return None
     ref = parse_session_id(sid)
     return SlotRef(ref, suffix) if ref else None
+
+
+def new_id(prefix: str) -> str:
+    """A fresh opaque id such as `bkg_3f9a1c2b7d4e`."""
+    return f"{prefix}_{secrets.token_hex(6)}"

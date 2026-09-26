@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import schemas as s
 from ..config import Settings
 from ..db import tables as t
+from ..domain import ids
 from ..errors import validation
-from .bookings import new_id
 
 
 def _model(row: t.CallSummary) -> s.CallSummary:
@@ -34,7 +34,7 @@ def _model(row: t.CallSummary) -> s.CallSummary:
 
 async def store(session: AsyncSession, body: s.CallSummary) -> tuple[s.CallSummary, bool]:
     values = dict(
-        id=new_id("call"),
+        id=ids.new_id("call"),
         call_id=body.call_id,
         started_at=body.started_at,
         duration_seconds=body.duration_seconds,

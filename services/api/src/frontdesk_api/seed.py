@@ -24,7 +24,7 @@ from .db import tables as t
 from .db.session import make_engine, make_sessionmaker
 from .domain.text import normalise
 from .logging import configure_logging, log_event
-from .services import bookings, cache, directory, schedule, scheduling
+from .services import board, bookings, cache, directory, schedule, schedule_exceptions
 from .services.idempotency import run as idempotent
 
 logger = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ class Seeder:
         body = s.ScheduleExceptionInput(**fields)
 
         async def operation() -> tuple[int, dict]:
-            created = await scheduling.create_exception(self.session, self.settings, body, SEED_ACTOR)
+            created = await schedule_exceptions.create_exception(self.session, self.settings, body, SEED_ACTOR)
             return 201, {"id": created.id}
 
         await idempotent(self.session, None, "", operation)
@@ -176,7 +176,7 @@ class Seeder:
     async def board(self, resource_id: str, n: str, **fields) -> None:
         entry = s.BoardEntryInput(date=self.today, session_id=f"ses_{resource_id}_{self.today.isoformat()}_{n}",
                                   **fields)
-        await scheduling.set_board(self.session, self.settings, resource_id, entry, SEED_ACTOR)
+        await board.set_board(self.session, self.settings, resource_id, entry, SEED_ACTOR)
 
 
 async def run(settings: Settings, *, reset: bool = False) -> dict[str, int]:

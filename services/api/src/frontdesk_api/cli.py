@@ -35,16 +35,16 @@ def _seed(reset: bool) -> None:
 
 def _maintenance() -> None:
     from .db.session import make_engine, make_sessionmaker
-    from .services import idempotency, schedule, scheduling
+    from .services import board, idempotency, schedule
 
     async def work() -> None:
         settings = get_settings()
         engine = make_engine(settings)
         async with make_sessionmaker(engine)() as session:
             keys = await idempotency.purge_expired(session)
-            board = await scheduling.purge_board_before(session, schedule.now_in(settings).date())
+            entries = await board.purge_board_before(session, schedule.now_in(settings).date())
         await engine.dispose()
-        print(f"purged {keys} idempotency keys, {board} expired board entries")
+        print(f"purged {keys} idempotency keys, {entries} expired board entries")
 
     asyncio.run(work())
 

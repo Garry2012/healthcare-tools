@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from .. import schemas as s
 from ..auth import require_scopes
-from ..services import scheduling as svc
+from ..services import notifications as svc
 from .deps import ActingUser, ApiDate, Session, SettingsDep, errors, respond
 
 router = APIRouter(tags=["Notifications"], dependencies=[Depends(require_scopes("bookings.staff"))])

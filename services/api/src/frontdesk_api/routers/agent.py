@@ -14,7 +14,7 @@ from ..auth import require_scopes
 from ..db import tables as t
 from ..domain import booking_status
 from ..logging import log_event
-from ..services import bookings, knowledge, schedule, search
+from ..services import booking_views, bookings, knowledge, schedule, search
 from ..services import idempotency as idem
 from .deps import (
     ApiDate,
@@ -107,8 +107,8 @@ async def book(
     async def operation() -> tuple[int, dict]:
         booked = await bookings.book(session, settings, body, channel="AGENT", call_id=call_id,
                                   caller_number=caller_number, actor=f"agent:{call_id}")
-        ctx = await bookings.context_for(session, settings, [booked.row])
-        view = bookings.agent_view(booked.row, ctx, "BOOKED" if booked.created else "ALREADY_BOOKED")
+        ctx = await booking_views.context_for(session, settings, [booked.row])
+        view = booking_views.agent_view(booked.row, ctx, "BOOKED" if booked.created else "ALREADY_BOOKED")
         return (201 if booked.created else 200), _dump(view)
 
     outcome = await within(settings.write_timeout_seconds,
@@ -166,8 +166,8 @@ async def cancel(
     async def operation() -> tuple[int, dict]:
         row, cancelled_now = await bookings.cancel(session, settings, bookingId, body,
                                                    caller_number=caller_number, actor=f"agent:{call_id}")
-        ctx = await bookings.context_for(session, settings, [row])
-        return 200, _dump(bookings.agent_view(row, ctx, "CANCELLED" if cancelled_now else "ALREADY_CANCELLED"))
+        ctx = await booking_views.context_for(session, settings, [row])
+        return 200, _dump(booking_views.agent_view(row, ctx, "CANCELLED" if cancelled_now else "ALREADY_CANCELLED"))
 
     outcome = await within(settings.write_timeout_seconds, idem.run(session, key, fingerprint, operation))
     log_event(logger, logging.INFO, "booking_cancelled", bookingId=bookingId, replay=outcome.replay)
@@ -197,8 +197,8 @@ async def reschedule(
     async def operation() -> tuple[int, dict]:
         row, previous = await bookings.reschedule(session, settings, bookingId, body,
                                                caller_number=caller_number, actor=f"agent:{call_id}")
-        ctx = await bookings.context_for(session, settings, [row])
-        return 200, _dump(bookings.agent_view(row, ctx, "RESCHEDULED", previous_slot=previous))
+        ctx = await booking_views.context_for(session, settings, [row])
+        return 200, _dump(booking_views.agent_view(row, ctx, "RESCHEDULED", previous_slot=previous))
 
     outcome = await within(settings.write_timeout_seconds,
                            idem.run(session, key, fingerprint, operation, still_current=_still_holds(session)))

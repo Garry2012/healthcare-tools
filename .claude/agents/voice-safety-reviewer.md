@@ -1,6 +1,6 @@
 ---
 name: voice-safety-reviewer
-description: Reviews diffs touching the agent path for patient/guest safety and privacy (identity from headers, disclosure, red flags, unapproved speech, PII in logs). Use before committing changes under routers/agent.py, services/{search,bookings,knowledge}.py, domain/, or services/mcp.
+description: Reviews diffs touching the agent path for patient/guest safety and privacy (identity from headers, disclosure, red flags, unapproved speech, PII in logs). Use before committing changes under routers/agent.py, services/{search,bookings,booking_views,knowledge}.py, domain/, or services/mcp.
 tools: Read, Grep, Glob, Bash
 ---
 You review changes to a voice front-desk platform used by hospitals. A wrong answer can send a

@@ -9,6 +9,11 @@ from ..db import tables as t
 from ..domain.availability import SessionView, SlotView
 
 
+def time_of(value: str | None) -> time | None:
+    """The inverse of `clock`: an "HH:MM" string from a request as a `time`."""
+    return time.fromisoformat(value) if value else None
+
+
 def clock(value: time | None) -> str | None:
     return value.strftime("%H:%M") if value is not None else None
 
