@@ -14,6 +14,8 @@ from frontdesk_api.domain.resolver import resolve
     "koi doctor abhi hai kya",
     "anyone free tomorrow evening",
     "ಈಗ ಯಾರಾದರೂ ಡಾಕ್ಟರ್ ಇದ್ದಾರಾ",
+    "anyone free on 10/5",
+    "koi doctor 5 tareekh ko milega",
 ])
 def test_anyone_available_is_offered(directory, utterance):
     assert resolve(utterance=utterance, directory=directory).action == "OFFER_SLOTS"

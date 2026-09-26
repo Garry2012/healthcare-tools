@@ -16,6 +16,7 @@ Rules:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -48,6 +49,91 @@ _WEEKDAYS: tuple[frozenset[str], ...] = (
     _forms("saturday", "sat", "shanivar", "shanivara", "ಶನಿವಾರ", "शनिवार"),
     _forms("sunday", "sun", "ravivar", "bhanuvar", "bhanuvara", "ಭಾನುವಾರ", "रविवार"),
 )
+
+
+_MONTHS: tuple[frozenset[str], ...] = (
+    _forms("january", "jan", "जनवरी", "ಜನವರಿ"),
+    _forms("february", "feb", "फरवरी", "फ़रवरी", "ಫೆಬ್ರವರಿ"),
+    _forms("march", "mar", "मार्च", "ಮಾರ್ಚ್"),
+    _forms("april", "apr", "अप्रैल", "ಏಪ್ರಿಲ್"),
+    _forms("may", "मई", "ಮೇ"),
+    _forms("june", "jun", "जून", "ಜೂನ್"),
+    _forms("july", "jul", "जुलाई", "ಜುಲೈ"),
+    _forms("august", "aug", "अगस्त", "ಆಗಸ್ಟ್"),
+    _forms("september", "sep", "sept", "सितंबर", "सितम्बर", "ಸೆಪ್ಟೆಂಬರ್"),
+    _forms("october", "oct", "अक्टूबर", "ಅಕ್ಟೋಬರ್"),
+    _forms("november", "nov", "नवंबर", "नवम्बर", "ನವೆಂಬರ್"),
+    _forms("december", "dec", "दिसंबर", "दिसम्बर", "ಡಿಸೆಂಬರ್"),
+)
+# "5 tareekh": the 5th, whichever month it next falls in.
+_DAY_OF_MONTH = _forms("tareekh", "tarikh", "taarikh", "tarik", "tareek", "तारीख", "तारीख़", "ತಾರೀಖು",
+                       "ತಾರೀಕು")
+# In a sentence these start history, not the visit: "fever since monday", "pain last night".
+_HISTORY = _forms("since", "last", "from", "pichle", "pichhle", "pichla", "se")
+# Words that are dates only when given as the time: "indu" is Kannada 'today' and a common name.
+_AMBIGUOUS_IN_SPEECH = _forms("indu")
+_ORDINAL = re.compile(r"^(\d{1,2})(st|nd|rd|th)?$")
+_ISO = re.compile(r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)")
+_NUMERIC = re.compile(r"(?<![\d/.-])(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?(?![\d/.-])")
+
+
+def _make(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _upcoming(today: date, month: int, day: int) -> date | None:
+    """The next such date on or after today (no year said)."""
+    this_year = _make(today.year, month, day)
+    if this_year is not None and this_year >= today:
+        return this_year
+    return _make(today.year + 1, month, day)
+
+
+def _day_number(word: str) -> int | None:
+    m = _ORDINAL.match(word)
+    return int(m.group(1)) if m else None
+
+
+def _explicit(raw: str, text: str, today: date) -> tuple[bool, date | None]:
+    """(a date was stated, the date or None if impossible). Day first, as callers in India say it."""
+    if m := _ISO.search(raw):
+        return True, _make(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    if m := _NUMERIC.search(raw):
+        day, month, year = int(m.group(1)), int(m.group(2)), m.group(3)
+        if year:
+            return True, _make(int(year) + (2000 if len(year) == 2 else 0), month, day)
+        return True, _upcoming(today, month, day) if 1 <= month <= 12 else None
+    words = tokens(text)
+    for i, word in enumerate(words):
+        month = next((n for n, forms in enumerate(_MONTHS, start=1) if word in forms), None)
+        if month is not None:
+            # "5 October", "October 5", "5th of October".
+            before = words[i - 2] if i >= 2 and words[i - 1] == "of" else (words[i - 1] if i else "")
+            around = [before, words[i + 1] if i + 1 < len(words) else ""]
+            number = next((n for w in around if (n := _day_number(w)) is not None), None)
+            if number is not None:
+                return True, _upcoming(today, month, number)
+        if word in _DAY_OF_MONTH and i > 0 and (number := _day_number(words[i - 1])) is not None:
+            if not 1 <= number <= 31:
+                return True, None
+            for months_ahead in range(0, 3):
+                y, m = divmod(today.month - 1 + months_ahead, 12)
+                candidate = _make(today.year + y, m + 1, number)
+                if candidate is not None and candidate >= today:
+                    return True, candidate
+            return True, None
+    return False, None
+
+
+def _without_history(text: str) -> str:
+    """Speech mode: drop words that are history or names, not the time of the visit."""
+    words = tokens(text)
+    kept = [w for i, w in enumerate(words)
+            if w not in _AMBIGUOUS_IN_SPEECH and not (i > 0 and words[i - 1] in _HISTORY)]
+    return " ".join(kept)
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +209,16 @@ def resolve_when(
         if not source:
             continue
         text = normalise(source)
+        if not strict:
+            text = _without_history(text)
+        stated, explicit = _explicit(source.casefold(), text, today)
+        if stated:
+            if explicit is None:
+                if strict:
+                    return WhenResult(today, today + timedelta(days=default_days - 1), None, False)
+                continue
+            part = part or _day_part(text, day_parts)
+            return WhenResult(explicit, explicit, part, True)
         found = _dates(text, today)
         part = part or _day_part(text, day_parts)
         if found:
@@ -136,5 +232,5 @@ def resolve_when(
 
 def time_words() -> frozenset[str]:
     """Every word the date rules understand (so the resolver can tell a time from a topic)."""
-    groups = (_TODAY, _TOMORROW, _DAY_AFTER, _NEXT, _THIS, _WEEK, *_WEEKDAYS)
+    groups = (_TODAY, _TOMORROW, _DAY_AFTER, _NEXT, _THIS, _WEEK, _DAY_OF_MONTH, *_WEEKDAYS, *_MONTHS)
     return frozenset(word for group in groups for form in group for word in form.split())

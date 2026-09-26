@@ -9,6 +9,7 @@ tenant's thresholds the resolver proposes, it never picks.
 from __future__ import annotations
 
 import difflib
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -144,6 +145,7 @@ AVAILABILITY_WORDS = frozenset(normalise(w) for w in (
     "कोई", "मिलेगा", "बैठे",
 ))
 HONORIFICS_LATIN = frozenset(normalise(h) for h in HONORIFICS)
+_NUMBER = re.compile(r"\d+(st|nd|rd|th)?")
 
 
 # ---------------------------------------------------------------- matching
@@ -429,7 +431,7 @@ def resolve(
     unexplained = [
         w for w in content_words(utterance)
         if w not in AVAILABILITY_WORDS and w not in HONORIFICS_LATIN and w not in time_words()
-        and w not in day_part_words
+        and w not in day_part_words and not _NUMBER.fullmatch(w)
     ]
     resolution.action = "NO_SERVICE" if unexplained else "OFFER_SLOTS"
     return resolution
