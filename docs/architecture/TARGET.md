@@ -10,7 +10,8 @@ domain-neutral names.
    server-side p95 at the API, excluding the gateway and network.
 2. **Reusable across domains.** Healthcare first, hospitality next, with the same code. A new
    domain is a *domain pack* (data and wording), not a fork.
-3. **Many hospitals.** Each hospital is its own deployment of the same images.
+3. **Many hospitals.** Each hospital is a *rollout*: its own files and its own deployment of the
+   same images. Adding one means writing down its differences, never changing a pack or the core.
 4. **Safe by construction.** Identity comes only from trusted call context, writes are
    idempotent, and a failure is never reported as "nothing available".
 
@@ -32,13 +33,14 @@ frontdesk-api  (generic core + DOMAIN_PACK) ──▶ PostgreSQL (one database p
 |---|---|---|---|
 | A1 | **One deployment per hospital**: api + mcp + database per hospital, same images, configuration from environment only. ContextForge registers one gateway entry per hospital (`frontdesk-<hospital>`). | Hard isolation of patient data with no tenant code paths to get wrong; per-hospital upgrades and data residency; the code stays simple. | Shared database with `tenant_id` + row-level security (cheaper at scale, more code and risk); schema per tenant. Revisit when the hospital count makes per-deployment ops the bottleneck. |
 | A2 | **Domain-neutral core.** Resource (doctor, therapist, table), category (department, service), booking (appointment), customer (patient, guest). REST, MCP, database and code use these names. | Hospitality reuses the engine, the resolver, booking and notifications unchanged. | Keep healthcare names and alias them per domain (two vocabularies in one codebase). |
-| A3 | **Domain packs** (`DOMAIN_PACK=healthcare`): the MCP server instructions and tool descriptions (the words the LLM sees), the escalation destination for red flags, and the synthetic seed data (directory, lexicon, knowledge base). | The LLM needs domain words ("doctor", "department"), but the code doesn't. Hospital-specific wording stays data. | Domain logic in `if domain ==` branches. |
+| A3 | **Domain packs** (`DOMAIN_PACK=healthcare`): the MCP server instructions and tool descriptions (the words the LLM sees), the escalation destination for red flags, and the domain's baseline words. (Demo data is a rollout, `rollouts/demo-*`, since A10.) | The LLM needs domain words ("doctor", "department"), but the code doesn't. Hospital-specific wording stays data. | Domain logic in `if domain ==` branches. |
 | A4 | **Knowledge base = curated, approved answers first.** Each entry has question variants in any language and script and an approved spoken answer per language. Retrieval is deterministic and in memory (normalise → token and phrase scoring). A `Retriever` protocol leaves room for a document/embedding source later. | Voice latency (no model call on the hot path); nothing unapproved is ever spoken in a healthcare setting; the same normaliser as the resolver handles Kannada/Hindi script and romanisation. | Document RAG first (slower; answers are not pre-approved). |
 | A5 | **Read-mostly data is cached per process and versioned.** The directory, lexicon, resolver index and knowledge base are rebuilt only when a write bumps the version (checked with one indexed read per request), never on a timer. Schedules, the board and bookings are always read fresh. | The resolver index (transliteration and phonetic keys) is the main CPU cost of a search. A version check stays correct across replicas. | A TTL cache (serves stale answers after an edit); no cache. |
 | A6 | Everything in the MVP decisions D1–D8 (`docs/DECISIONS.md`) stands, with names updated. | — | — |
 | A7 | **Architecture rules are a build check** (`import-linter`, contracts in `services/api/pyproject.toml`): routers → services → db; `domain/` is pure; the core never names a pack; packs and locales are data. | A rule only written in CLAUDE.md erodes one plausible import at a time. | Code review alone. |
 | A8 | **Language data is separate from domain packs** (`frontdesk_api/locales/<lang>.py`). Words for today/tomorrow, weekdays, months, titles and filler words are per language, shared by every pack; a pack holds only its domain's words. | Language cuts across domains (a hotel in Bangalore needs Kannada too) and across providers. A new language is a data module. | Language words inside the core's matching code (what we had), or inside each pack (duplicated per domain). |
 | A9 | **Each business rule is defined once**: the booking lifecycle in `domain/booking_status.py` (tested against the database's unique index and check constraint), period overlap in `domain/intervals.py`. | A status added to one copy but not another would allow double booking. | — |
+| A10 | **Three layers: core → domain → rollout** (below). A rollout is files only (`rollouts/<id>/`); a domain is a pack; neither copies the layer beneath it. Settings resolve core default → domain default → rollout value; identity settings have no default. | "Hospital B" must be Hospital B's differences, and a new domain what it adds. Copy-and-modify had already drifted: the hotel prompt listed the hospital's languages, the hotel lexicon had lost English day parts. | Class inheritance per domain or tenant (behaviour hidden in overrides); one config file per provider copied from the closest one (what we had). |
 
 ## Latency budgets (server-side p95, API)
 
@@ -71,16 +73,46 @@ The voice agent should say a short filler phrase before any tool call expected t
 end to end. The `routing`/`outcome` envelope lets it answer follow-ups with no further call
 (IMPLEMENTATION.md §2.7).
 
-## What a domain pack contains
+## Core → domain → rollout (A10)
 
-```
-services/api/src/frontdesk_api/packs/<name>/
-  pack.json        vocabulary (resource/category/customer words), escalation destination,
-                   transfer destinations, supported languages
-  seed.py          synthetic directory, templates, lexicon, knowledge entries
-services/mcp/src/frontdesk_mcp/packs/<name>.json
-                   server instructions + tool descriptions (what the LLM reads)
-```
+Composition, not inheritance: the core defines the contracts, a domain pack is data the core
+reads, a rollout is files that instantiate one domain. `frontdesk-api rollout validate` checks all
+three together; import-linter keeps the dependencies pointing down.
+
+| Layer | Holds | Where | Created by |
+|---|---|---|---|
+| **Core** | Booking engine and lifecycle, resolver, date rules, knowledge search, identity and idempotency, caching, observability, the three MCP tools and the rules every agent follows, every language module (`locales/`), deployment | `services/*/src/` (not `packs/`), `deploy/` | engineering (`add-agent-tool` for a new tool) |
+| **Domain** | Category codes; a versioned baseline of words in every language it knows: department and symptom words, danger signs, severity and service phrases; default destinations; defaults for core settings; the words the LLM reads (`role`, its own rules, tool descriptions) | `packs/<domain>/__init__.py`, `frontdesk_mcp/packs/<domain>.json` | `/new-domain-pack` |
+| **Rollout** | Identity (provider, timezone, phone numbering, currency, languages), the settings it changes, its categories (each with a domain code), resources, schedules, local words, approved answers, acceptance dialogues, Azure names and sizes | `rollouts/<id>/` (or a private repository) | `/new-rollout` |
+
+**The core → domain contract** (`packs.Pack`, `frontdesk_mcp.packs.Pack`): `name`, `version`,
+`categories` (code → name), `baseline` rows `(type, target, term, language)` whose CATEGORY and
+NEED_ROUTE targets are codes, `transfer_destinations`, `escalation_destination`,
+`desk_destination`, `settings` (defaults for `tenant_*` fields, never identity), and in the MCP
+pack `role`, `instructions` (its own rules only: a test fails if it repeats a core rule) and
+`tools`. `packs.validate` checks it.
+
+**The domain → rollout contract** (`rollouts.model`): `rollout.env` (PROVIDER_ID, DOMAIN_PACK,
+TENANT_SUPPORTED_LANGUAGES and the other identity fields, then only changed settings; a test
+fails if a value equals its default), `data.yaml` (`categories`, `resources`, `terms`,
+`knowledge`), `dialogues.yaml` (acceptance lines), optional `azure.env`. `rollouts.validate`
+checks references, schedules, languages, destinations and runs the dialogues.
+
+**Composition rules** (`rollouts.compose`):
+- The baseline is loaded only in the rollout's languages; its codes attach to the rollout's
+  categories with that code (a code with no category is a note, not an error).
+- A rollout term re-points a baseline route with the same words (thyroid → Endocrinology).
+  Danger signs are add-only: never replaced, and the staff API refuses to switch a baseline
+  one off.
+- Baseline rows are stored as `DOMAIN_BASELINE`: a new pack version replaces them on the next
+  `rollout apply` without touching the provider's own rows.
+- Language words (dates, titles, day parts) come from the locales the rollout switches on,
+  never from a pack.
+
+**What is not a layer yet.** A domain adds no code today: the booking models it needs
+(queue positions, timed slots) are core. The first domain that needs behaviour the core lacks
+(hospitality's multi-night rooms) adds a named extension point to the core, not an override.
+Integrations (HIS, SMS) are the same: one port per capability when the first real one arrives.
 
 `healthcare` is complete. `hospitality` is a working sample (spa and restaurant: timed and
 queued services). Multi-night room inventory is **out of scope**: it isn't a per-day session with

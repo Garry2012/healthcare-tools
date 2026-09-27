@@ -6,8 +6,9 @@ For testing in Azure, see `AZURE.md` §8. For wiring a LiveKit agent, see `LIVEK
 
 | Command | What runs | Time | Needs |
 |---|---|---|---|
-| `make test-fast` | ruff, the architecture contracts (`lint-imports`), API unit and spec tests, MCP unit tests | ~10 s | uv |
-| `make test` (= `./scripts/test.sh`) | everything: plus API integration on PostgreSQL 16, MCP end to end through a real `frontdesk-mcp serve`, schemathesis against the running API | ~2–3 min | uv, and Docker or a local PostgreSQL (`scripts/local-pg.sh`) |
+| `make test-fast` | ruff, the architecture contracts (`lint-imports`), API unit and spec tests (every committed rollout validated with its dialogues, the Azure script in `--dry-run`), MCP unit tests | ~15 s | uv |
+| `make rollout-validate ROLLOUT=<dir>` | one rollout, offline: its settings with the layer each came from, its data, its dialogues | ~2 s | uv |
+| `make test` (= `./scripts/test.sh`) | everything: plus API integration on PostgreSQL 16, every rollout validated, MCP end to end through a real `frontdesk-mcp serve`, schemathesis against the running API | ~2–3 min | uv, and Docker or a local PostgreSQL (`scripts/local-pg.sh`) |
 
 Expect `== all suites passed`. CI runs `./scripts/test.sh` on every pull request and on `main`.
 
@@ -26,10 +27,13 @@ Needs Docker, uv 0.11+ and jq.
 ```bash
 git checkout main && git pull
 cp .env.example .env        # the change-me tokens are fine for a local run
-make up                     # postgres + migrate + api (:8000) + mcp (:8100)
-make seed-reset             # the synthetic hospital, dated from today
+make up                     # postgres + migrate + api (:8000) + mcp (:8100), as rollouts/demo-hospital
+make seed-reset             # the demo rollout + its dated scenario, from today
 make demo                   # Kannada caller: search → book → list → reschedule → cancel
 ```
+
+The demo hotel is the same platform with another domain and rollout:
+`make down && PROVIDER_ID=demo-hotel make up && PROVIDER_ID=demo-hotel make seed-reset`.
 
 `make demo` should end with the booking `CANCELLED_BY_CUSTOMER`. "Tomorrow" is tomorrow in
 India time, so late at night in India it can already be the day after.
@@ -62,6 +66,25 @@ list() { curl -s "localhost:8000/api/v1/agent/bookings$1" -H "Authorization: Bea
 
 More scenarios with the seeded data: `SEED.md`. Every response carries `Server-Timing`
 (database time and query count). A search should show 1–6 queries.
+
+## A second hospital is its own files only
+
+The three layers (TARGET.md A10) in five commands, no code or pack change. Hospital B serves
+English and Hindi, not Kannada:
+
+```bash
+cp -r rollouts/demo-hospital /tmp/hospital-b
+sed -i 's/^PROVIDER_ID=.*/PROVIDER_ID=hospital-b/; s/^TENANT_SUPPORTED_LANGUAGES=.*/TENANT_SUPPORTED_LANGUAGES=en,hi/' /tmp/hospital-b/rollout.env
+make rollout-validate ROLLOUT=/tmp/hospital-b
+```
+
+Expect one problem: `term 'ಗರಿಮಾ ಮೇಡಂ' is in 'kn', which this rollout does not switch on`. Remove
+that line (`sed -i '/language: kn}/d' /tmp/hospital-b/data.yaml`) and validate again. Now the
+Kannada dialogues fail: `say 'ಎದೆ ನೋವು ಜಾಸ್ತಿ ಇದೆ': expected TRANSFER_EMERGENCY, got NO_SERVICE`.
+With Kannada off, Kannada words are no longer understood. `"ಅಪ್ಪನಿಗೆ chest pain"` still
+transfers, on its English words. Drop the Kannada dialogues
+(`grep -v "language: kn" … dialogues.yaml`) and it validates: `"problems": []`, 152 terms instead
+of 196, and `tenant_supported_languages: en,hi [rollout]`. Nothing under `services/` changed.
 
 ## What you can't test yet
 

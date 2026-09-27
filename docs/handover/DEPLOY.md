@@ -1,7 +1,8 @@
 # Deploy
 
-One deployment per provider (hospital or hotel). Provider settings live in
-`deploy/providers/<provider>.env`; `ONBOARDING.md` is the runbook for adding one.
+One deployment per rollout (a hospital's or hotel's instance of its domain). A rollout's
+settings and data live in its directory (`rollouts/<id>/` for demos); `ONBOARDING.md` is the
+runbook for adding one, and `AZURE.md` deploys one with `deploy/azure/deploy.sh`.
 
 Two images, one database. Configuration is environment only; `.env.example` lists every
 variable. No secret is baked into an image.
@@ -71,7 +72,8 @@ Only `DATABASE_URL` changes. No Supabase SDK or Supabase-only feature is used.
 |---|---|---|
 | `DATABASE_URL` | api | owner for `migrate`, runtime role for `serve` |
 | `AUTH_TOKENS_JSON` | api | `{"token": ["scope", ...]}`; replace with an OAuth2 verifier later (`auth.TokenVerifier`) |
-| `PROVIDER_ID`, `DOMAIN_PACK`, `TENANT_*` | api, mcp | from `deploy/providers/<provider>.env`; validate with `frontdesk-api check-config` |
+| `PROVIDER_ID`, `DOMAIN_PACK`, `TENANT_*` | api, mcp | the rollout's `rollout.env` (identity required, the rest only if different); validate with `frontdesk-api rollout validate <dir>` |
+| `ROLLOUT_DIR` | api | where the rollout's files are in the container, for `rollout apply` and `seed` (`/app/rollout`) |
 | `API_BASE_URL`, `API_BEARER_TOKEN` | mcp | the token must hold the `agent` scope |
 | `MCP_BEARER_TOKEN` | mcp | what ContextForge presents; required when `ENV=production` |
 | `MCP_DEV_CALLER_NUMBER` | mcp | dev only; the service refuses to start with it when `ENV=production` |

@@ -55,6 +55,14 @@ Two cautions:
 LiveKit Agents can load MCP servers as function tools. Check with your LiveKit Agents
 version that MCP tools are exposed to a realtime model in the same way as to an LLM.
 
+## Languages are the rollout's
+
+A rollout lists its languages in `TENANT_SUPPORTED_LANGUAGES` (the first hospital: `en,kn,hi`). That list
+decides which words the tools understand (dates, titles, day parts, the domain's department and
+symptom words) and is what the agent's instructions tell the model to use for `language`. A
+hospital in Chennai sets `en,ta` once a Tamil module exists (`ONBOARDING.md` step 1b). Keep `en`
+on in speech-to-speech mode: the model often passes English words even for a Kannada caller.
+
 ## Verified in English, Hindi and Kannada
 
 `services/api/tests/unit/test_spoken_input.py` and `tests/integration/test_languages.py`

@@ -1,7 +1,9 @@
 # Front-desk platform — voice-agent tools, REST service, PostgreSQL
 
 Reusable front desk for voice agents: healthcare first (hospitals), hospitality next, with the
-same code. One deployment per provider; domain words come from domain packs.
+same code. Three layers, composed rather than copied: the **core** platform, a **domain pack**
+(healthcare, hospitality), and a **rollout** per provider (`rollouts/<id>/`: its settings, data
+and acceptance dialogues). A new hospital is a rollout; a new industry is a domain pack.
 
 ```
 LiveKit agent ──MCP──▶ ContextForge ──▶ frontdesk-mcp (FastMCP, 3 tools) ──HTTPS──▶ frontdesk-api (FastAPI) ──▶ PostgreSQL 16
@@ -16,7 +18,8 @@ LiveKit agent ──MCP──▶ ContextForge ──▶ frontdesk-mcp (FastMCP, 
   - `TESTING.md`, testing locally and what to expect
   - `AZURE.md`, deploying and testing on Azure
   - `LIVEKIT.md`, connecting a LiveKit agent (cascade or speech-to-speech), languages
-  - `ONBOARDING.md`, adding a hospital or hotel (and a new language)
+  - `ONBOARDING.md`, adding a hospital or hotel as a rollout (and a new language); `/new-rollout`
+    and `/new-domain-pack` are the Claude Code skills for the two paths
   - `README-API.md`, the API for the staff-portal team
   - `ER.md`, the data model
   - `SEED.md`, the demo data
@@ -34,7 +37,7 @@ uses a local PostgreSQL 16 (`scripts/local-pg.sh`).
 ```bash
 cp .env.example .env             # then replace every change-me value
 make up                          # postgres + migrate + api (:8000) + mcp (:8100), all on 127.0.0.1
-make migrate && make seed        # idempotent; synthetic data dated from today
+make migrate && make seed        # idempotent; the demo rollout and its data dated from today
 make demo                        # Kannada "Dr Garima tomorrow evening" → book → list → reschedule → cancel
 make test                        # unit + integration + contract + MCP, on a throwaway postgres
 ```
@@ -60,7 +63,9 @@ cd services/mcp && uv run python ../../deploy/contextforge/register.py --dry-run
 |---|---|
 | `up` / `down` | start / stop the dev profile (data volume kept) |
 | `migrate` | Alembic upgrade as the owner role (the API never runs DDL) |
-| `seed` / `seed-reset` | load synthetic data / **wipe and reload** it |
+| `seed` / `seed-reset` | apply the demo rollout and its dated scenario / **wipe and reload** it |
+| `rollout-validate` | check a rollout offline (`ROLLOUT=<dir>`, default `rollouts/$PROVIDER_ID`) |
+| `rollout-apply` | write the running stack's rollout to its database (real providers) |
 | `test` | every suite; see `scripts/test.sh` |
 | `demo` | `scripts/demo.sh` against the dev stack |
 | `lint`, `build`, `logs` | ruff, image builds, compose logs |
@@ -70,8 +75,12 @@ cd services/mcp && uv run python ../../deploy/contextforge/register.py --dry-run
 ```
 services/api/   FastAPI service: domain/ (pure engine, resolver, dates, identity), services/, routers/,
                 db/, alembic/, tests/{unit,integration,contract}
-services/mcp/   FastMCP adapter: tools.py (2 tools), server.py, tests/
-deploy/         docker-compose.yml (profiles dev, test), postgres/init, contextforge/register.py
+services/api/src/frontdesk_api/
+                packs/ (domain layer), rollouts/ (rollout model: load, compose, check),
+                locales/ (one module per language), demo/ (demo scenarios, seed only)
+services/mcp/   FastMCP adapter: tools.py (3 tools), prompt.py (core rules), server.py, packs/, tests/
+rollouts/       demo-hospital, demo-hotel: rollout.env, data.yaml, dialogues.yaml
+deploy/         docker-compose.yml (profiles dev, test), azure/deploy.sh, postgres/init, contextforge/register.py
 docs/           frontdesk-api/ (spec), handover/, archive/ (research; git-ignored)
 ```
 

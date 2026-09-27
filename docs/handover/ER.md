@@ -58,7 +58,7 @@ erDiagram
         text term_normalized "NFC, lower, transliterated to Latin"
         text language
         bool approved "unapproved rows are ignored"
-        text source "HOSPITAL | TRANSCRIPT_MINED | AUTO_TRANSLITERATION"
+        text source "PROVIDER | DOMAIN_BASELINE | TRANSCRIPT_MINED | AUTO_TRANSLITERATION"
         timestamptz created_at
     }
     schedule_templates {
