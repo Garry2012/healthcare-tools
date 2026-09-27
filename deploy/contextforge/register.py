@@ -9,7 +9,7 @@ different URL is refused. Credentials come only from the environment.
     CONTEXTFORGE_ADMIN_EMAIL / CONTEXTFORGE_ADMIN_PASSWORD   (POST /v1/auth/login)
     MCP_PUBLIC_URL               URL ContextForge uses to reach the adapter, ending /mcp/
     MCP_BEARER_TOKEN             bearer ContextForge presents to the adapter
-    PROVIDER_ID, DOMAIN_PACK     from deploy/providers/<provider>.env: one gateway per provider,
+    PROVIDER_ID, DOMAIN_PACK     from rollouts/<provider>/rollout.env: one gateway per rollout,
                                  named frontdesk-<provider> (the voice agent's tool prefix)
 
     python deploy/contextforge/register.py --dry-run

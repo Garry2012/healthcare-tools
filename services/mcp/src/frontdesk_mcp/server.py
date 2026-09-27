@@ -18,7 +18,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import packs, tools
+from . import packs, prompt, tools
 from .config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,8 @@ class BearerAuth:
 
 def build_mcp(client: tools.ApiClient) -> FastMCP:
     pack = packs.load(client.settings.domain_pack)
-    mcp = FastMCP(name=f"frontdesk-{pack.name}", instructions=pack.instructions)
+    mcp = FastMCP(name=f"frontdesk-{pack.name}", instructions=prompt.instructions(
+        pack, client.settings.languages, client.settings.tenant_display_name))
     tools.register(mcp, client, pack)
     return mcp
 

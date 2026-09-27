@@ -13,12 +13,15 @@ from frontdesk_mcp.config import Settings
 for _field in Settings.model_fields:
     os.environ.pop(_field.upper(), None)
 
+# The demo hospital rollout's values the adapter reads (rollouts/demo-hospital/rollout.env).
+ROLLOUT = {"provider_id": "demo-hospital", "domain_pack": "healthcare", "tenant_supported_languages": "en,kn,hi"}
+
 
 @pytest.fixture
 def make_settings():
     def factory(**overrides) -> Settings:
-        return Settings(**{"env": "test", "api_bearer_token": "api-token", "mcp_bearer_token": "mcp-token",
-                           **overrides})
+        return Settings(**{**ROLLOUT, "env": "test", "api_bearer_token": "api-token",
+                           "mcp_bearer_token": "mcp-token", **overrides})
 
     return factory
 

@@ -1,8 +1,9 @@
-"""Domain packs for the words the LLM reads (docs/architecture/TARGET.md A3).
+"""Domain packs for the words the LLM reads (docs/architecture/TARGET.md A3, A10).
 
-The tool surface (names, parameters, behaviour) is the same in every domain; only the
-server instructions, tool descriptions and parameter descriptions change. A pack must
-describe every tool, and may only describe parameters that exist.
+The tool surface (names, parameters, behaviour) is the same in every domain; a pack gives only
+its own words: who the agent is (`role`), the instructions that are the domain's alone, and the
+tool and parameter descriptions. The core rules and the rollout's languages are added by
+`prompt.instructions`. A pack must describe every tool, and may only describe parameters that exist.
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ class ToolText:
 @dataclass(frozen=True)
 class Pack:
     name: str
-    instructions: str
+    role: str  # "a hospital voice agent"
+    instructions: str  # the domain's own rules; never a core rule
     tools: dict[str, ToolText]
 
 
@@ -38,4 +40,4 @@ def load(name: str) -> Pack:
         tool: ToolText(description=" ".join(text["description"].split()), parameters=dict(text.get("parameters", {})))
         for tool, text in raw["tools"].items()
     }
-    return Pack(name=name, instructions=" ".join(raw["instructions"].split()), tools=tools)
+    return Pack(name=name, role=raw["role"], instructions=" ".join(raw["instructions"].split()), tools=tools)

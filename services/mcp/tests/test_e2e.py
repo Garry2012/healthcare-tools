@@ -33,7 +33,8 @@ def adapter_url():
     backend and could stall a session handshake; production never does that.)"""
     port = free_port()
     # conftest has already removed every Settings variable from the environment
-    env = {**os.environ, "ENV": "test",
+    env = {**os.environ, "ENV": "test", "PROVIDER_ID": "demo-hospital", "DOMAIN_PACK": "healthcare",
+           "TENANT_SUPPORTED_LANGUAGES": "en,kn,hi",
            "API_BASE_URL": API_URL, "API_BEARER_TOKEN": API_TOKEN, "MCP_BEARER_TOKEN": "mcp-token",
            "HOST": "127.0.0.1", "PORT": str(port), "LOG_LEVEL": "WARNING"}
     proc = subprocess.Popen([sys.executable, "-m", "frontdesk_mcp.cli", "serve"], env=env,
