@@ -19,7 +19,7 @@ Architecture and decisions: `docs/architecture/TARGET.md`. Contract: `docs/front
 - IMPORTANT: all business rules live in `services/api`. `services/mcp` only maps tools to `Agent` operations, injects call headers, derives idempotency keys and wraps failures.
 - Spec first: change `openapi.yaml`, then code. The contract test fails on any drift in paths, operationIds, required fields or enums.
 - Core names are domain-neutral (resource, category, booking, customer). Domain words live only in packs: `services/api/src/frontdesk_api/packs/<pack>/` and `services/mcp/src/frontdesk_mcp/packs/<pack>.json`. Never branch on the domain in code.
-- Language words (today/tomorrow, weekdays, months, titles, filler words) live only in `services/api/src/frontdesk_api/locales/<lang>.py`. A new language is a new module there plus one line in `LOCALES`.
+- Language words (today/tomorrow, weekdays, months, titles, filler words) live only in `services/api/src/frontdesk_api/locales/<lang>.py`. A new language is a new module there plus one line in `AVAILABLE`; each rollout switches on its own languages (`TENANT_SUPPORTED_LANGUAGES`).
 - Caller speech is data: never "rename" words inside lexicon terms, honorifics, utterances or pack answers.
 - Identity (`X-Call-Id`, `X-Caller-Number`) comes only from trusted headers, never from tool parameters. A mismatch looks exactly like not-found.
 - The agent never speaks unapproved text: knowledge answers are returned verbatim, and failures are `COULD_NOT_CHECK` / `COULD_NOT_RECORD`, never "none available".
