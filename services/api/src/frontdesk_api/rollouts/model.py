@@ -4,7 +4,8 @@
     data.yaml       this provider's categories, resources, schedules, local terms, approved answers
     dialogues.yaml  acceptance lines: what a caller says and what must happen (optional)
 
-Nothing here is code; `load` only reads and type-checks the files.
+Nothing here is code; `load` reads the files and checks every row with the staff API's own input
+rules (`fields`), so what loads is well-formed and what validates also applies.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import Any
 import yaml
 
 from ..packs import LexiconRow
+from . import fields as row_rules
 
 
 class RolloutError(ValueError):
@@ -173,7 +175,7 @@ def load(directory: str | Path) -> Rollout:
             raise RolloutError(f"data.yaml terms[{i}]: needs exactly type, target, term and language")
         terms.append((row["type"], row["target"], row["term"], row["language"]))
     dialogues = _yaml(dialogues_file) if dialogues_file.is_file() else None
-    return Rollout(
+    rollout = Rollout(
         id=settings["PROVIDER_ID"],
         domain=settings["DOMAIN_PACK"],
         languages=tuple(code.strip() for code in settings["TENANT_SUPPORTED_LANGUAGES"].split(",") if code.strip()),
@@ -186,3 +188,6 @@ def load(directory: str | Path) -> Rollout:
                         for i, k in enumerate(data.get("knowledge") or ())),
         dialogues=tuple(_build(Dialogue, d, f"dialogues.yaml [{i}]") for i, d in enumerate(dialogues or ())),
     )
+    if found := row_rules.problems(rollout):
+        raise RolloutError("data.yaml:\n  " + "\n  ".join(found))
+    return rollout

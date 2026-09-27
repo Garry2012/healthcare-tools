@@ -91,24 +91,37 @@ exists az keyvault show -n "$KV" ||
 KV_ID="$(out az keyvault show -n "$KV" --query id -o tsv)"
 ME="$(out az ad signed-in-user show --query id -o tsv)"
 run az role assignment create --assignee "$ME" --role "Key Vault Secrets Officer" --scope "$KV_ID" -o none
-secret() {  # secret NAME GENERATOR...: the stored value, or a new one stored now
+secret() {  # secret NAME GENERATOR...: the stored value, or a new one stored now; fails if it can't store
   local value
   if exists az keyvault secret show --vault-name "$KV" -n "$1"; then
-    value="$(az keyvault secret show --vault-name "$KV" -n "$1" --query value -o tsv)"
+    value="$(az keyvault secret show --vault-name "$KV" -n "$1" --query value -o tsv)" || return 1
   else
-    value="$("${@:2}")"
+    value="$("${@:2}")" || return 1
     # From a private file, not --value: argv is readable by every user of this machine.
-    local file; file="$(umask 077 && mktemp)"
+    local file attempt stored=""
+    file="$(umask 077 && mktemp)"
     printf '%s' "$value" > "$file"
-    run az keyvault secret set --vault-name "$KV" -n "$1" --file "$file" --encoding utf-8 -o none
+    # A role assigned a moment ago can take minutes to reach Key Vault: retry before giving up.
+    for attempt in 1 2 3 4 5 6; do
+      if run az keyvault secret set --vault-name "$KV" -n "$1" --file "$file" --encoding utf-8 -o none; then
+        stored=1; break
+      fi
+      echo "Key Vault refused secret $1 (attempt $attempt); retrying" >&2
+      sleep "${KV_RETRY_SECONDS:-20}"
+    done
     rm -f "$file"
+    # Never go on with a secret that isn't stored: the next run would make a different one.
+    [[ -n "$stored" ]] || { echo "could not store secret $1 in $KV; stopping" >&2; return 1; }
   fi
   printf '%s' "$value"
 }
 token() { openssl rand -hex 24; }
 password() { openssl rand -base64 24 | tr -d '/+='; }
-OWNER_PW="$(secret db-owner-password password)" APP_PW="$(secret db-app-password password)"
-AGENT_TOKEN="$(secret agent-token token)" STAFF_TOKEN="$(secret staff-token token)"
+# One assignment per line: `set -e` stops on a failed $(...) only when it is the line's last.
+OWNER_PW="$(secret db-owner-password password)"
+APP_PW="$(secret db-app-password password)"
+AGENT_TOKEN="$(secret agent-token token)"
+STAFF_TOKEN="$(secret staff-token token)"
 MCP_TOKEN="$(secret mcp-token token)"
 
 exists az identity show -g "$RG" -n "$ID_NAME" || run az identity create -g "$RG" -n "$ID_NAME" -o none

@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from pydantic import ValidationError
 
 from . import locales, packs, rollouts
-from .config import DEPLOYMENT, IDENTITY, SECRETS, Settings, get_settings
+from .config import DEPLOYMENT, IDENTITY, SECRETS, FileSettings, Settings, get_settings
 
 
 def settings_problems(settings: Settings) -> list[str]:
@@ -79,14 +79,16 @@ def validate(directory: str) -> int:
     try:
         rollout = rollouts.load(directory)
         written = {k.lower(): v for k, v in rollout.settings.items() if k.lower() in Settings.model_fields}
-        settings = Settings(**written)
+        settings = FileSettings(**written)
     except (rollouts.RolloutError, ValidationError, ValueError) as exc:
         print(f"invalid rollout: {exc}", file=sys.stderr)
         return 1
     composed = rollouts.compose(settings.pack, rollout)
     report = rollouts.validate(composed, settings.transfer_destinations, settings.thresholds,
                                settings.knowledge_thresholds)
-    problems = file_problems(rollout.settings) + settings_problems(settings) + list(report.problems)
+    # The deployment check and the rollout check both name a missing destination: say it once.
+    problems = list(dict.fromkeys(file_problems(rollout.settings) + settings_problems(settings)
+                                  + list(report.problems)))
     _print({"rollout": rollout.id, "domain": f"{settings.pack.name} v{settings.pack.version}",
             "languages": list(rollout.languages), "effective": effective(settings, rollout.settings),
             "counts": {"categories": len(rollout.categories), "resources": len(rollout.resources),

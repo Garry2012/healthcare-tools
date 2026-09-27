@@ -1,11 +1,17 @@
 """`frontdesk-api rollout apply`: write a composed rollout (domain baseline + rollout data).
 
-Idempotent upserts, in one transaction, with the directory and knowledge caches bumped. Rows
-the rollout no longer lists are left alone (retire a resource through the staff API, where
-its bookings are handled); the domain baseline is the exception: it is owned by the pack, so
-baseline rows that the current pack version no longer carries are removed. A tenant may switch
-a baseline row off through the staff API and it stays off, except a danger sign: those are
-add-only and come back on at the next apply.
+Idempotent upserts, in one transaction, with the directory and knowledge caches bumped.
+
+Who owns what: the files say what exists and what it says (departments, resources, schedules,
+wording, answers); staff say whether each thing is on (a resource or category `active`, an
+answer or a term `approved`). So a new row starts on, and an existing row keeps the switch staff
+left it at: re-deploying never brings back a doctor staff retired or an answer they switched off.
+The one exception is a danger sign, which is always on.
+
+Rows the rollout no longer lists are left alone (retire them through the staff API, where
+bookings are handled). The domain baseline is owned by the pack: baseline rows the current pack
+version no longer carries are removed. A row the provider added itself stays the provider's even
+when the baseline has the same words, so a later pack version never deletes it.
 """
 
 from __future__ import annotations
@@ -16,11 +22,11 @@ from decimal import Decimal
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import packs, rollouts
+from .. import rollouts
 from ..config import Settings
 from ..db import tables as t
 from ..domain.text import normalise
-from ..rollouts import BASELINE, Composed
+from ..rollouts import BASELINE, ROLLOUT, Composed
 from . import cache, directory
 
 TEMPLATE_FROM = date(2020, 1, 1)
@@ -37,7 +43,13 @@ def load(settings: Settings, rollout_dir: str | None = None) -> Composed:
     if not path:
         raise RolloutInvalid("no rollout to load: set ROLLOUT_DIR (or pass the directory)")
     rollout = rollouts.load(path)
-    composed = rollouts.compose(packs.load(rollout.domain), rollout)
+    if (rollout.id, rollout.domain, set(rollout.languages)) != (
+            settings.provider_id, settings.domain_pack, set(settings.languages)):
+        raise RolloutInvalid(
+            f"{path} is rollout {rollout.id!r} ({rollout.domain}, {','.join(rollout.languages)}), but this deployment "
+            f"runs {settings.provider_id!r} ({settings.domain_pack}, {settings.tenant_supported_languages}): deploy "
+            "the rollout's own rollout.env with its data")
+    composed = rollouts.compose(settings.pack, rollout)
     report = rollouts.validate(composed, settings.transfer_destinations, settings.thresholds,
                                settings.knowledge_thresholds)
     if report.problems:
@@ -47,16 +59,16 @@ def load(settings: Settings, rollout_dir: str | None = None) -> Composed:
 
 async def _categories(session: AsyncSession, composed: Composed) -> None:
     for c in composed.rollout.categories:
-        row = await session.get(t.Category, c.id) or t.Category(id=c.id)
+        row = await session.get(t.Category, c.id) or t.Category(id=c.id, active=True)
         row.code, row.name, row.localized_names = c.code, c.name, dict(c.names)
-        row.offers_bookings, row.active = c.bookable, True
+        row.offers_bookings = c.bookable
         session.add(row)
     await session.flush()
 
 
 async def _resources(session: AsyncSession, settings: Settings, composed: Composed) -> None:
     for r in composed.rollout.resources:
-        row = await session.get(t.Resource, r.id) or t.Resource(id=r.id)
+        row = await session.get(t.Resource, r.id) or t.Resource(id=r.id, active=True)
         row.name = r.name
         row.localized_names = dict(r.names)
         row.name_variants = list(r.variants)
@@ -67,7 +79,7 @@ async def _resources(session: AsyncSession, settings: Settings, composed: Compos
         row.price_currency = settings.tenant_currency if r.price is not None else None
         row.price_confirmed = r.price_confirmed and r.price is not None
         row.attendance_type, row.booking_policy = r.attendance, r.policy
-        row.data_confirmed, row.active = r.data_confirmed, True
+        row.data_confirmed = r.data_confirmed
         session.add(row)
         await session.flush()
         await session.execute(delete(t.ResourceCategory).where(t.ResourceCategory.resource_id == r.id))
@@ -106,9 +118,11 @@ async def _lexicon(session: AsyncSession, composed: Composed) -> int:
         if row is None:
             row = t.LexiconEntry(id=entry_id, concept_type=kind, concept_id=target, term=term, language=language,
                                  approved=True)
-        elif source != BASELINE or kind == "RED_FLAG":
-            row.approved = True  # the rollout's own rows as written; danger signs are never off
-        row.term_normalized, row.source = normalise(term), source
+        elif kind == "RED_FLAG":
+            row.approved = True  # danger signs are never off
+        if row.source != ROLLOUT or source == ROLLOUT:  # a row the provider made stays the provider's
+            row.source = source
+        row.term_normalized = normalise(term)
         session.add(row)
     stale = await session.scalars(select(t.LexiconEntry.id).where(t.LexiconEntry.source == BASELINE))
     removed = [entry_id for entry_id in stale if entry_id not in wanted]
@@ -119,9 +133,10 @@ async def _lexicon(session: AsyncSession, composed: Composed) -> int:
 
 async def _knowledge(session: AsyncSession, composed: Composed) -> None:
     for k in composed.rollout.knowledge:
-        entry = await session.get(t.KnowledgeEntry, k.id) or t.KnowledgeEntry(id=k.id, source="PROVIDER")
+        entry = await session.get(t.KnowledgeEntry, k.id) or t.KnowledgeEntry(id=k.id, source="PROVIDER",
+                                                                             approved=True)
         entry.topic, entry.questions, entry.answers = k.topic, list(k.questions), dict(k.answers)
-        entry.action, entry.destination, entry.approved, entry.updated_by = k.action, k.destination, True, ACTOR
+        entry.action, entry.destination, entry.updated_by = k.action, k.destination, ACTOR
         session.add(entry)
 
 

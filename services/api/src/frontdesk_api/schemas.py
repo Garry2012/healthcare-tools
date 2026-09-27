@@ -10,6 +10,8 @@ from typing import Annotated, Any, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic.alias_generators import to_camel
 
+from .domain.intervals import weekly_clash
+
 ClockTime = Annotated[str, StringConstraints(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
 Phone = Annotated[str, StringConstraints(pattern=r"^[0-9]{6,15}$")]
 Language = str
@@ -250,6 +252,29 @@ class TemplateSession(ApiModel):
     capacity: CapacitySpec
     walk_in_reserve_percent: Annotated[int, Field(ge=0, le=100)] = 0
     last_arrival_offset_minutes: Annotated[int, Field(ge=0, le=720)] = 15
+
+
+def session_problems(sessions: list[TemplateSession]) -> list[tuple[str, str]]:
+    """(where, what) for every rule a weekly template breaks beyond its field types. The staff API
+    (PUT /schedule-template) and `rollout validate` both apply these, so the two never disagree."""
+    problems: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for i, sess in enumerate(sessions):
+        where = f"sessions[{i}]"
+        if sess.template_session_id in seen:
+            problems.append((where, "templateSessionId must be unique within a template."))
+        seen.add(sess.template_session_id)
+        if sess.end <= sess.start:
+            problems.append((f"{where}.end", "end must be after start."))
+        if sess.capacity_model == "TIMED" and not sess.slot_minutes:
+            problems.append((f"{where}.slotMinutes", "TIMED sessions need slotMinutes."))
+        if sess.capacity.mode != "DEFAULT" and sess.capacity.value is None:
+            problems.append((f"{where}.capacity", "capacity.value is required unless mode is DEFAULT."))
+    for i, sess in enumerate(sessions):
+        for other in sessions[:i]:
+            if weekly_clash(sess.days_of_week, sess.start, sess.end, other.days_of_week, other.start, other.end):
+                problems.append((f"sessions[{i}]", f"Overlaps {other.template_session_id} on the same day."))
+    return problems
 
 
 class ScheduleTemplate(ApiModel):

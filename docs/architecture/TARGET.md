@@ -106,7 +106,12 @@ checks references, schedules, languages, destinations and runs the dialogues.
   Danger signs are add-only: never replaced, and the staff API refuses to switch a baseline
   one off.
 - Baseline rows are stored as `DOMAIN_BASELINE`: a new pack version replaces them on the next
-  `rollout apply` without touching the provider's own rows.
+  `rollout apply` without touching the provider's own rows (a word the provider added stays
+  theirs even when the baseline has it too).
+- The files own what exists and what it says; staff own whether it is on (`active`,
+  `approved`). `rollout apply` never switches back on what staff switched off, except danger
+  signs. `rollout apply` also refuses a rollout whose provider, domain or languages differ
+  from the deployment it runs in.
 - Language words (dates, titles, day parts) come from the locales the rollout switches on,
   never from a pack.
 
