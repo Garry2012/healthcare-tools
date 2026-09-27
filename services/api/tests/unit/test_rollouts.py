@@ -63,13 +63,13 @@ def test_a_second_hospital_is_its_own_files_only(tmp_path):
     (b / "data.yaml").write_text("\n".join(line for line in data.splitlines() if "language: kn}" not in line))
     rollout = rollouts.load(b)
     composed = rollouts.compose(packs.load("healthcare"), rollout)
-    assert {row[3] for row, _ in composed.lexicon} == {"en", "hi"}
+    assert {row[3] for row, _ in composed.lexicon if row[0] != "RED_FLAG"} == {"en", "hi"}
     assert check(b).problems == ()
 
     locales.select(rollout.languages)
     directory = composed.directory()
     assert resolve(utterance="सीने में दर्द", directory=directory).action == "TRANSFER_EMERGENCY"
-    assert resolve(utterance="ಎದೆ ನೋವು", directory=directory).action != "TRANSFER_EMERGENCY"  # Kannada is off
+    assert resolve(utterance="ಹೊಟ್ಟೆ ನೋವು", directory=directory).action == "NO_SERVICE"  # Kannada is off
     today = date(2026, 9, 23)
     assert resolve_when(today=today, expression="paanch tareekh").date_from == date(2026, 10, 5)
     assert resolve_when(today=today, expression="ಐದು ತಾರೀಖು").resolved is False
@@ -149,3 +149,28 @@ def test_a_rollout_file_holds_only_known_non_secret_settings():
     assert problems == ["TENANT_TIMEZOEN is not a setting (a typo?)",
                         "DATABASE_URL is a secret: keep it in the secret store, never in rollout.env",
                         "PORT is set by the deployment (compose, deploy.sh), not by a rollout"]
+
+
+@pytest.mark.parametrize("languages", [("kn", "hi"), ("hi",), ("en",)])
+def test_danger_signs_are_on_in_every_language_whatever_the_rollout_serves(languages):
+    """Callers code-switch: "my father has chest pain" from a Kannada caller, "ಎದೆ ನೋವು" at an
+    English-only desk. Switching a language off never switches its emergencies off."""
+    from dataclasses import replace
+
+    pack = packs.load("healthcare")
+    rollout = replace(rollouts.load(DEMO_HOSPITAL), languages=languages, terms=())
+    composed = rollouts.compose(pack, rollout)
+    flags = {row for row, _ in composed.lexicon if row[0] == "RED_FLAG"}
+    assert flags == {row for row in pack.baseline if row[0] == "RED_FLAG"}
+    locales.select(languages)
+    directory = composed.directory()
+    for utterance in ("my father has chest pain", "he collapsed, not breathing", "ಎದೆ ನೋವು", "सीने में दर्द"):
+        assert resolve(utterance=utterance, directory=directory).action == "TRANSFER_EMERGENCY", utterance
+
+
+def test_a_rollout_may_add_a_danger_sign_in_any_language(tmp_path):
+    b = copy_demo(tmp_path, TENANT_SUPPORTED_LANGUAGES="en,hi")
+    data = (b / "data.yaml").read_text().replace("language: kn}", "language: hi}")
+    data = data.replace("terms:\n", "terms:\n  - {type: RED_FLAG, target: chest, term: ನೆಂಜು ನೋವು, language: kn}\n", 1)
+    (b / "data.yaml").write_text(data)
+    assert check(b).problems == ()

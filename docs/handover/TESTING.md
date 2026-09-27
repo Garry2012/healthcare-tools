@@ -79,11 +79,12 @@ make rollout-validate ROLLOUT=/tmp/hospital-b
 ```
 
 Expect one problem: `term 'ಗರಿಮಾ ಮೇಡಂ' is in 'kn', which this rollout does not switch on`. Remove
-that line (`sed -i '/language: kn}/d' /tmp/hospital-b/data.yaml`) and validate again. Now the
-Kannada dialogues fail: `say 'ಎದೆ ನೋವು ಜಾಸ್ತಿ ಇದೆ': expected TRANSFER_EMERGENCY, got NO_SERVICE`.
-With Kannada off, Kannada words are no longer understood. `"ಅಪ್ಪನಿಗೆ chest pain"` still
-transfers, on its English words. Drop the Kannada dialogues
-(`grep -v "language: kn" … dialogues.yaml`) and it validates: `"problems": []`, 152 terms instead
+that line (`sed -i '/language: kn}/d' /tmp/hospital-b/data.yaml`) and validate again. Now four
+Kannada dialogues fail, e.g. `say 'ಹೊಟ್ಟೆ ನೋವು': expected OFFER_SLOTS cat_genmed, got NO_SERVICE`:
+with Kannada off, Kannada department and symptom words are no longer understood. The Kannada
+**emergency** lines still pass: danger signs stay on in every language whatever a rollout serves,
+because callers mix languages. Drop the Kannada dialogues
+(`grep -v "language: kn" … dialogues.yaml`) and it validates: `"problems": []`, 164 terms instead
 of 196, and `tenant_supported_languages: en,hi [rollout]`. Nothing under `services/` changed.
 
 ## What you can't test yet

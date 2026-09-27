@@ -54,7 +54,7 @@ def _structure(rollout: Rollout, destinations: Mapping[str, str]) -> list[str]:
             problems.append(f"term {term!r}: unknown type {kind!r}")
         elif kind in targets and target not in targets[kind]:
             problems.append(f"term {kind} {term!r} points at unknown {target!r}")
-        if language not in rollout.languages:
+        if language not in rollout.languages and kind != "RED_FLAG":  # a danger sign is welcome in any language
             problems.append(f"term {term!r} is in {language!r}, which this rollout does not switch on")
     for k in rollout.knowledge:
         if not k.questions or not k.answers:

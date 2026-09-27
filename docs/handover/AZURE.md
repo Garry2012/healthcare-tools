@@ -33,7 +33,12 @@ deploy/azure/deploy.sh ../private/hospital-a                 # a real provider: 
 - An optional `azure.env` in the rollout directory overrides `AZ_LOCATION`, `AZ_RESOURCE_GROUP`,
   `AZ_ACR`, `AZ_KEYVAULT`, `AZ_POSTGRES`, `AZ_POSTGRES_SKU`, `AZ_POSTGRES_TIER`,
   `AZ_CONTAINERAPPS_ENV` and `AZ_LOG_WORKSPACE`.
-- The first run needs `psql` on your machine, to create the runtime database role.
+- The first run needs `psql` on your machine, to create the runtime database role. Run it from a
+  machine no one else is logged in to, or Azure Cloud Shell: `az` takes the database admin
+  password only as a command-line argument (every other secret goes through files or the
+  environment, and none is printed).
+- The database admits Azure services (`--public-access 0.0.0.0`, password and TLS required).
+  For production, move it into a VNet (production checklist below).
 - Re-run after any change to the rollout: new image, new settings (exactly the file's, nothing
   stale), migrate, `rollout apply`.
 

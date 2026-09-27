@@ -24,7 +24,7 @@ done
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # --- run, capture, or (in a dry run) print ---------------------------------------------------
-show() { printf '+ %s\n' "$*" | sed -E 's/(--value |PGPASSWORD=|--admin-password )[^ ]*/\1***/g' >&2; }
+show() { printf '+ %s\n' "$*" | sed -E 's/(PGPASSWORD=|--admin-password )[^ ]*/\1***/g' >&2; }
 run() { if [[ -n "$DRY" ]]; then show "$@"; else "$@"; fi; }
 out() { if [[ -n "$DRY" ]]; then show "$@"; echo "<$2-$3>"; else "$@"; fi; }
 exists() { [[ -z "$DRY" ]] && "$@" >/dev/null 2>&1; }  # a dry run shows a first deployment
@@ -97,7 +97,11 @@ secret() {  # secret NAME GENERATOR...: the stored value, or a new one stored no
     value="$(az keyvault secret show --vault-name "$KV" -n "$1" --query value -o tsv)"
   else
     value="$("${@:2}")"
-    run az keyvault secret set --vault-name "$KV" -n "$1" --value "$value" -o none
+    # From a private file, not --value: argv is readable by every user of this machine.
+    local file; file="$(umask 077 && mktemp)"
+    printf '%s' "$value" > "$file"
+    run az keyvault secret set --vault-name "$KV" -n "$1" --file "$file" --encoding utf-8 -o none
+    rm -f "$file"
   fi
   printf '%s' "$value"
 }
@@ -120,6 +124,9 @@ kv() { echo "$1=keyvaultref:https://$KV.vault.azure.net/secrets/$1,identityref:$
 step "database: $PG"
 HOST="$PG.postgres.database.azure.com"
 if ! exists az postgres flexible-server show -g "$RG" -n "$PG"; then
+  # --public-access 0.0.0.0 admits Azure services (password and TLS still required); production
+  # uses VNet integration instead (AZURE.md, production checklist). az takes the admin password
+  # only as an argument: run this from a machine no one else is logged in to, or Cloud Shell.
   run az postgres flexible-server create -g "$RG" -n "$PG" -l "$LOC" --version 16 --tier "$PG_TIER" \
     --sku-name "$PG_SKU" --storage-size 32 --admin-user frontdesk_owner --admin-password "$OWNER_PW" \
     --public-access 0.0.0.0 -o none

@@ -59,7 +59,9 @@ version that MCP tools are exposed to a realtime model in the same way as to an 
 
 A rollout lists its languages in `TENANT_SUPPORTED_LANGUAGES` (the first hospital: `en,kn,hi`). That list
 decides which words the tools understand (dates, titles, day parts, the domain's department and
-symptom words) and is what the agent's instructions tell the model to use for `language`. A
+symptom words) and is what the agent's instructions tell the model to use for `language`.
+Danger signs are the exception: every language's stay on, so "ಎದೆ ನೋವು" still transfers at an
+English-only desk. A
 hospital in Chennai sets `en,ta` once a Tamil module exists (`ONBOARDING.md` step 1b). Keep `en`
 on in speech-to-speech mode: the model often passes English words even for a Kannada caller.
 

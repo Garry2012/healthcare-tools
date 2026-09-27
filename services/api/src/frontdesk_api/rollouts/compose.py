@@ -2,7 +2,9 @@
 
 The domain's baseline is filtered to the rollout's languages and its category codes are resolved
 to the rollout's categories. A rollout term replaces the baseline's meaning of the same words
-(e.g. "thyroid" to Endocrinology where there is one); danger signs are add-only, never replaced.
+(e.g. "thyroid" to Endocrinology where there is one). Danger signs are add-only: never replaced,
+and loaded in every language the domain has them, whatever the rollout switches on: callers mix
+languages ("ಅಪ್ಪನಿಗೆ chest pain"), and a missed emergency is worse than an extra word.
 """
 
 from __future__ import annotations
@@ -60,7 +62,7 @@ def compose(pack: Pack, rollout: Rollout) -> Composed:
     rows: dict[LexiconRow, str] = {}
     unplaced: set[str] = set()
     for kind, target, term, language in pack.baseline:
-        if language not in languages or (kind, normalise(term), language) in replaced:
+        if kind not in _ADD_ONLY and (language not in languages or (kind, normalise(term), language) in replaced):
             continue
         if kind in ("CATEGORY", "NEED_ROUTE"):
             if not by_code.get(target):

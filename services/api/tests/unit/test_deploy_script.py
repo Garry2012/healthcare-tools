@@ -53,7 +53,8 @@ def test_a_valid_rollout_is_deployed_as_its_own_image_and_settings(hospital):
 
 def test_no_secret_is_printed(hospital):
     assert not re.search(r"\b[0-9a-f]{48}\b", hospital.stderr)  # tokens
-    assert not re.search(r"(--value|PGPASSWORD=|--admin-password) (?!\*\*\*)\S", hospital.stderr)
+    assert "--value" not in hospital.stderr  # secrets go to Key Vault from a private file
+    assert not re.search(r"(PGPASSWORD=|--admin-password )(?!\*\*\*)\S", hospital.stderr)
     assert "PASSWORD '" not in hospital.stderr
 
 

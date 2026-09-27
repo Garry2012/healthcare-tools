@@ -99,7 +99,8 @@ fails if a value equals its default), `data.yaml` (`categories`, `resources`, `t
 checks references, schedules, languages, destinations and runs the dialogues.
 
 **Composition rules** (`rollouts.compose`):
-- The baseline is loaded only in the rollout's languages; its codes attach to the rollout's
+- The baseline is loaded only in the rollout's languages, except danger signs: those load in
+  every language the domain has, since callers mix languages. Its codes attach to the rollout's
   categories with that code (a code with no category is a note, not an error).
 - A rollout term re-points a baseline route with the same words (thyroid → Endocrinology).
   Danger signs are add-only: never replaced, and the staff API refuses to switch a baseline
