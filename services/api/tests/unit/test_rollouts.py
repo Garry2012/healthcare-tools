@@ -3,6 +3,7 @@ domain is its own files, nothing else; the domain pack and the core never change
 
 from __future__ import annotations
 
+import re
 import shutil
 from datetime import date
 from pathlib import Path
@@ -133,11 +134,16 @@ def test_a_failing_dialogue_fails_the_rollout(tmp_path):
      "unknown field(s) colour"),
     (("start: '10:00'", "start: 10:00"), "write start and end in quotes"),  # YAML reads 10:00 as 600
     (("knowledge:\n", "wards:\n"), "unknown section(s) wards"),
+    # Checked with the staff API's own input rules: what validates also applies.
+    (("start: '10:00'", "start: '9:00'"), "sessions[0] (am).start: String should match pattern"),
+    (("end: '12:00'", "end: '08:00'"), "sessions[0].end: end must be after start"),
+    (("policy: DESK_ONLY", "policy: desk_only"), "booking_policy: Input should be"),
+    (("variants: [Gareema]", "variants: Gareema"), "name_variants: Input should be a valid list"),
 ])
 def test_files_are_read_strictly(tmp_path, edit, message):
     b = copy_demo(tmp_path)
     (b / "data.yaml").write_text((b / "data.yaml").read_text().replace(*edit, 1))
-    with pytest.raises(rollouts.RolloutError, match=message.replace("(", r"\(").replace(")", r"\)")):
+    with pytest.raises(rollouts.RolloutError, match=re.escape(message)):
         rollouts.load(b)
 
 
@@ -174,3 +180,45 @@ def test_a_rollout_may_add_a_danger_sign_in_any_language(tmp_path):
     data = data.replace("terms:\n", "terms:\n  - {type: RED_FLAG, target: chest, term: ನೆಂಜು ನೋವು, language: kn}\n", 1)
     (b / "data.yaml").write_text(data)
     assert check(b).problems == ()
+
+
+def test_a_question_written_as_one_string_is_refused_not_split_into_letters(tmp_path):
+    b = copy_demo(tmp_path)
+    data = (b / "data.yaml").read_text()
+    start = data.index("    questions:", data.index("knowledge:"))
+    end = data.index("    answers:", start)
+    (b / "data.yaml").write_text(data[:start] + "    questions: what are the visiting hours\n" + data[end:])
+    with pytest.raises(rollouts.RolloutError, match="questions: Input should be a valid list"):
+        rollouts.load(b)
+
+
+def test_validate_reads_the_rollout_file_only_never_the_shell(tmp_path, monkeypatch, capsys):
+    """A rollout that forgets its timezone must fail here, not pass because the operator's shell
+    happens to have one and then fail to start in Azure, which gets only the file."""
+    from frontdesk_api.rollout_cli import validate
+
+    b = copy_demo(tmp_path)
+    env = (b / "rollout.env").read_text().replace("TENANT_TIMEZONE=Asia/Kolkata\n", "")
+    (b / "rollout.env").write_text(env)
+    monkeypatch.setenv("TENANT_TIMEZONE", "Europe/London")
+    assert validate(str(b)) == 1
+    assert "tenant_timezone" in capsys.readouterr().err
+
+
+def test_each_problem_is_reported_once(tmp_path, capsys):
+    import json
+
+    from frontdesk_api.rollout_cli import validate
+
+    b = copy_demo(tmp_path, TENANT_TRANSFER_DESTINATIONS_JSON='{"desk": "Desk"}')
+    assert validate(str(b)) == 1
+    problems = json.loads(capsys.readouterr().out)["problems"]
+    assert problems.count("transfer destinations lack 'emergency'") == 1
+
+
+@pytest.mark.parametrize("override", [{"tenant_supported_languages": "en,hi"}, {"domain_pack": "hospitality"}])
+def test_apply_refuses_a_rollout_that_is_not_what_this_deployment_runs(make_settings, override):
+    from frontdesk_api.services import rollout_apply
+
+    with pytest.raises(rollout_apply.RolloutInvalid, match="but this deployment runs"):
+        rollout_apply.load(make_settings(**override), str(DEMO_HOSPITAL))

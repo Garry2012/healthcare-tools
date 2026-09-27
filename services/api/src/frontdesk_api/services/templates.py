@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import schemas as s
 from ..config import Settings
 from ..db import tables as t
-from ..domain.intervals import weekly_clash
 from ..errors import not_found, validation
 from . import directory, impact, schedule, views
 
@@ -62,24 +61,14 @@ async def get_template(session: AsyncSession, settings: Settings, resource_id: s
 
 
 def _validate_template(body: s.ScheduleTemplate) -> None:
-    seen: set[str] = set()
-    for i, sess in enumerate(body.sessions):
-        where = f"sessions[{i}]"
-        if sess.template_session_id in seen:
-            raise validation("templateSessionId must be unique within a template.", where)
-        seen.add(sess.template_session_id)
-        if sess.end <= sess.start:
-            raise validation("end must be after start.", f"{where}.end")
-        if sess.capacity_model == "TIMED" and not sess.slot_minutes:
-            raise validation("TIMED sessions need slotMinutes.", f"{where}.slotMinutes")
-        if sess.capacity.mode != "DEFAULT" and sess.capacity.value is None:
-            raise validation("capacity.value is required unless mode is DEFAULT.", f"{where}.capacity")
+    field_problems = s.session_problems(body.sessions)
+    overlaps = [p for p in field_problems if p[1].startswith("Overlaps")]
+    for where, what in [p for p in field_problems if p not in overlaps]:
+        raise validation(what, where)
     if body.effective_to is not None and body.effective_to < body.effective_from:
         raise validation("effectiveTo must not be before effectiveFrom.", "effectiveTo")
-    for i, sess in enumerate(body.sessions):
-        for other in body.sessions[:i]:
-            if weekly_clash(sess.days_of_week, sess.start, sess.end, other.days_of_week, other.start, other.end):
-                raise validation(f"Overlaps {other.template_session_id} on the same day.", f"sessions[{i}]")
+    for where, what in overlaps:
+        raise validation(what, where)
 
 
 async def set_template(

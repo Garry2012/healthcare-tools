@@ -13,11 +13,8 @@ from dataclasses import dataclass
 
 from .. import locales
 from ..domain import knowledge, resolver
-from ..domain.intervals import weekly_clash
 from .compose import Composed
 from .model import Dialogue, Rollout
-
-_CONCEPTS = ("CATEGORY", "NEED_ROUTE", "RESOURCE", "RED_FLAG", "SERVICE_TRANSFER", "DAY_PART")
 
 
 @dataclass(frozen=True)
@@ -31,6 +28,7 @@ def _duplicates(ids: Iterable[str], what: str) -> list[str]:
 
 
 def _structure(rollout: Rollout, destinations: Mapping[str, str]) -> list[str]:
+    """References between rows (each row's own fields were checked when it loaded)."""
     problems: list[str] = []
     if unknown := [c for c in rollout.languages if c not in locales.AVAILABLE]:
         problems.append(f"no language module for {', '.join(unknown)}: add one under locales/ first")
@@ -40,25 +38,15 @@ def _structure(rollout: Rollout, destinations: Mapping[str, str]) -> list[str]:
     problems += _duplicates((r.id for r in rollout.resources), "resource")
     problems += _duplicates((k.id for k in rollout.knowledge), "knowledge entry")
     for r in rollout.resources:
-        if not r.categories:
-            problems.append(f"{r.id}: needs at least one category")
         problems += [f"{r.id}: unknown category {c!r}" for c in r.categories if c not in categories]
-        for i, a in enumerate(r.sessions):  # the same rule PUT /schedule-template enforces
-            for b in r.sessions[:i]:
-                if weekly_clash(a.days, a.start, a.end, b.days, b.start, b.end):
-                    problems.append(f"{r.id}: sessions {b.key!r} and {a.key!r} overlap")
     targets = {"CATEGORY": categories, "NEED_ROUTE": categories, "RESOURCE": resources,
                "SERVICE_TRANSFER": set(destinations), "DAY_PART": {*locales.DAY_PARTS, "ANY"}}
     for kind, target, term, language in rollout.terms:
-        if kind not in _CONCEPTS:
-            problems.append(f"term {term!r}: unknown type {kind!r}")
-        elif kind in targets and target not in targets[kind]:
+        if kind in targets and target not in targets[kind]:
             problems.append(f"term {kind} {term!r} points at unknown {target!r}")
         if language not in rollout.languages and kind != "RED_FLAG":  # a danger sign is welcome in any language
             problems.append(f"term {term!r} is in {language!r}, which this rollout does not switch on")
     for k in rollout.knowledge:
-        if not k.questions or not k.answers:
-            problems.append(f"knowledge {k.id}: needs questions and at least one answer")
         if k.action == "TRANSFER_DESK" and k.destination not in destinations:
             problems.append(f"knowledge {k.id}: unknown destination {k.destination!r}")
     return problems

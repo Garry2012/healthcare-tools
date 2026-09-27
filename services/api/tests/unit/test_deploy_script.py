@@ -7,6 +7,7 @@ rollout validates before anything is created, its data rides in its own API imag
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -76,3 +77,34 @@ def test_the_demo_scenario_is_refused_for_a_real_provider(tmp_path):
     result = dry_run(real, "--seed-demo")
     assert result.returncode == 2 and "demo rollouts only" in result.stderr
     assert not [c for c in calls(result) if "job-seed" in c]
+
+
+FAKE_AZ = """#!/usr/bin/env bash
+# Stands in for the Azure CLI: nothing exists yet, queries answer, and Key Vault refuses writes
+# (as it does for a minute or two after the role that allows them was assigned).
+echo "$*" >> "$AZ_LOG"
+case "$*" in
+  *"keyvault secret set"*) exit 1 ;;
+  *"--query"*) echo fake; exit 0 ;;
+  *" show"*) exit 3 ;;
+esac
+exit 0
+"""
+
+
+def test_a_secret_key_vault_refuses_stops_the_deployment_before_the_database(tmp_path):
+    """A password that was generated but never stored would be lost: the next run makes another,
+    and the database created with the first one could no longer be reached."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "az").write_text(FAKE_AZ)
+    (bin_dir / "az").chmod(0o755)
+    log = tmp_path / "az.log"
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+           "AZ_LOG": str(log), "KV_RETRY_SECONDS": "0"}
+    result = subprocess.run([str(SCRIPT), str(DEMO_HOSPITAL)], capture_output=True, text=True, env=env, timeout=300)
+    assert result.returncode != 0
+    assert "could not store secret db-owner-password" in result.stderr
+    called = log.read_text()
+    assert called.count("keyvault secret set") == 6  # retried, then stopped
+    assert "postgres flexible-server create" not in called and "containerapp create" not in called

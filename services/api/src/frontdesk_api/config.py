@@ -212,6 +212,16 @@ def migration_database_url() -> str:
     return async_url(os.environ.get("DATABASE_URL", ""))
 
 
+class FileSettings(Settings):
+    """Settings from given values only (a rollout's file), never the process environment: a
+    setting the file forgets must fail validation, not be filled in by whoever runs it."""
+
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings,
+                                   file_secret_settings):
+        return (init_settings,)
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()

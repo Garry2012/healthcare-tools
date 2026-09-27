@@ -64,7 +64,10 @@ clinicians, not a rollout change.
 make rollout-validate ROLLOUT=<rollout>      # or: cd services/api && uv run frontdesk-api rollout validate <rollout>
 ```
 
-It exits non-zero on any **problem**:
+Every row is checked with the staff API's own input rules as the files load (times as `09:00`,
+known values such as `BOOKABLE`, lists where lists go), so a rollout that validates also
+applies. The check reads the rollout's files only, never your shell's environment. It exits
+non-zero on any **problem**:
 - settings: an unknown timezone, a language with no module, or a missing identity field;
 - data: a reference to something that doesn't exist, overlapping sessions, or a term in a
   language the rollout doesn't switch on;
@@ -88,6 +91,12 @@ Run it with `--dry-run` first (AZURE.md).
    secrets (`AUTH_TOKENS_JSON`, `DATABASE_URL`, `API_BEARER_TOKEN`, `MCP_BEARER_TOKEN`).
 
 Locally: `PROVIDER_ID=<id> make up` for a directory under `rollouts/`.
+
+**Who owns what.** The rollout's files say what exists and what it says: departments, resources,
+schedules, wording, answers. Staff say whether each thing is on: a resource or department's
+`active`, an answer's or a word's `approved`, set through the staff API. A re-deploy never turns
+back on something staff switched off. The one exception is a danger sign, which is always on. To
+change what something *says* (a doctor's name, a fee, an answer's text), change the files.
 
 `rollout apply` is idempotent and allowed in production. It writes the domain baseline for the
 rollout's languages and the rollout's data, and replaces baseline rows a newer pack version
