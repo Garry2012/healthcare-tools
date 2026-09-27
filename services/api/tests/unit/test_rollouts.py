@@ -139,3 +139,13 @@ def test_files_are_read_strictly(tmp_path, edit, message):
     (b / "data.yaml").write_text((b / "data.yaml").read_text().replace(*edit, 1))
     with pytest.raises(rollouts.RolloutError, match=message.replace("(", r"\(").replace(")", r"\)")):
         rollouts.load(b)
+
+
+def test_a_rollout_file_holds_only_known_non_secret_settings():
+    from frontdesk_api.rollout_cli import file_problems
+
+    assert file_problems({"PROVIDER_ID": "x", "TENANT_DISPLAY_NAME": "Demo Hospital"}) == []
+    problems = file_problems({"TENANT_TIMEZOEN": "UTC", "DATABASE_URL": "postgresql://…", "PORT": "8000"})
+    assert problems == ["TENANT_TIMEZOEN is not a setting (a typo?)",
+                        "DATABASE_URL is a secret: keep it in the secret store, never in rollout.env",
+                        "PORT is set by the deployment (compose, deploy.sh), not by a rollout"]

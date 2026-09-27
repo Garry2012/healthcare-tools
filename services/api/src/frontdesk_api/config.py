@@ -31,6 +31,11 @@ DAY_PART_DEFAULT = '{"MORNING":["06:00","12:00"],"AFTERNOON":["12:00","16:00"],"
 _SSLMODE = re.compile(r"([?&])sslmode=")
 
 
+# Never in a rollout's files: they are committed or baked into an image; these live in the secret store.
+SECRETS = frozenset({"database_url", "auth_tokens_json", "api_bearer_token", "mcp_bearer_token"})
+# Deployment wiring, set by compose or deploy.sh, not by a rollout.
+DEPLOYMENT = frozenset({"env", "host", "port", "rollout_dir", "api_base_url", "mcp_dev_caller_number"})
+
 # Settings a rollout must state itself: never defaulted by the core or a domain pack.
 IDENTITY = frozenset({
     "provider_id", "domain_pack", "tenant_timezone", "tenant_country_calling_code", "tenant_phone_pattern",
@@ -73,6 +78,9 @@ class Settings(BaseSettings):
     tenant_supported_languages: str
     # Where the rollout's data files are inside the container (`rollout apply` and `seed` read them).
     rollout_dir: str = ""
+    # Optional: the provider's name as the agent may say it. The MCP adapter puts it in the agent's
+    # instructions; declared here too so `rollout validate` knows every key a rollout may write.
+    tenant_display_name: str = ""
 
     # --- tenant behaviour: core defaults, which the domain pack or the rollout may override ---
     tenant_day_parts_json: str = DAY_PART_DEFAULT

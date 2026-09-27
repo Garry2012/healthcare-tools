@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from pydantic import ValidationError
 
 from . import locales, packs, rollouts
-from .config import IDENTITY, Settings, get_settings
+from .config import DEPLOYMENT, IDENTITY, SECRETS, Settings, get_settings
 
 
 def settings_problems(settings: Settings) -> list[str]:
@@ -59,18 +59,34 @@ def check_config() -> int:
     return 1 if problems else 0
 
 
+def file_problems(written: Mapping[str, str]) -> list[str]:
+    """A rollout file holds known, non-secret rollout settings only: a typo would silently fall
+    back to a default, and a secret would be committed or baked into an image."""
+    problems = []
+    for key in written:
+        name = key.lower()
+        if name in SECRETS:
+            problems.append(f"{key} is a secret: keep it in the secret store, never in rollout.env")
+        elif name in DEPLOYMENT:
+            problems.append(f"{key} is set by the deployment (compose, deploy.sh), not by a rollout")
+        elif name not in Settings.model_fields:
+            problems.append(f"{key} is not a setting (a typo?)")
+    return problems
+
+
 def validate(directory: str) -> int:
     """A rollout directory, offline: the settings it writes, its data and its dialogues."""
     try:
         rollout = rollouts.load(directory)
-        settings = Settings(**{k.lower(): v for k, v in rollout.settings.items()})
+        written = {k.lower(): v for k, v in rollout.settings.items() if k.lower() in Settings.model_fields}
+        settings = Settings(**written)
     except (rollouts.RolloutError, ValidationError, ValueError) as exc:
         print(f"invalid rollout: {exc}", file=sys.stderr)
         return 1
     composed = rollouts.compose(settings.pack, rollout)
     report = rollouts.validate(composed, settings.transfer_destinations, settings.thresholds,
                                settings.knowledge_thresholds)
-    problems = settings_problems(settings) + list(report.problems)
+    problems = file_problems(rollout.settings) + settings_problems(settings) + list(report.problems)
     _print({"rollout": rollout.id, "domain": f"{settings.pack.name} v{settings.pack.version}",
             "languages": list(rollout.languages), "effective": effective(settings, rollout.settings),
             "counts": {"categories": len(rollout.categories), "resources": len(rollout.resources),

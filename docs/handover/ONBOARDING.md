@@ -25,7 +25,9 @@ repository, never in this one. Start from the demo of the same domain
 `TENANT_COUNTRY_CALLING_CODE`, `TENANT_PHONE_PATTERN`, `TENANT_CURRENCY` and
 `TENANT_SUPPORTED_LANGUAGES` are required and have no default anywhere. Everything else only if
 it differs; `rollout validate` prints each setting with the layer it came from
-(`[rollout]`, `[domain]`, `[core]`). The identity policy (`TENANT_DISCLOSURE_POLICY`,
+(`[rollout]`, `[domain]`, `[core]`), and refuses a key that isn't a setting (a typo), a secret, or
+deployment wiring (`PORT`, `ROLLOUT_DIR`…). `TENANT_DISPLAY_NAME` (optional) puts the
+provider's name in the agent's instructions. The identity policy (`TENANT_DISCLOSURE_POLICY`,
 `TENANT_CANCEL_ON_SPOKEN_NUMBER`) defaults to the cautious choice; changing it needs the
 provider's written sign-off (OPEN-QUESTIONS.md P1–P4).
 
