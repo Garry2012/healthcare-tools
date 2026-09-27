@@ -43,11 +43,6 @@ def new_cache() -> cache.VersionedCache[KnowledgeData]:
     return cache.VersionedCache((cache.DIRECTORY, cache.KNOWLEDGE), build)
 
 
-def thresholds(settings: Settings) -> kb.Thresholds:
-    return kb.Thresholds(answer=settings.tenant_knowledge_answer_threshold,
-                         clarify=settings.tenant_knowledge_clarify_threshold)
-
-
 async def agent_search(
     session: AsyncSession, settings: Settings, data_cache: cache.VersionedCache[KnowledgeData],
     body: s.KnowledgeSearchRequest,
@@ -63,7 +58,7 @@ async def agent_search(
     hits = data.index.search(body.question, limit=5)
     if body.topic:
         hits = [h for h in hits if h.entry.topic == body.topic]
-    decision = kb.decide(hits, thresholds(settings))
+    decision = kb.decide(hits, settings.knowledge_thresholds)
     if decision.outcome == "ANSWERED" and decision.hit:
         entry = decision.hit.entry
         language, text = kb.pick_answer(entry, body.language)

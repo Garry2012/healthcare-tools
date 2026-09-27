@@ -44,7 +44,15 @@ echo "== api: lint, unit, contract (hermetic), integration (postgres)"
   && uv run pytest tests/unit tests/contract/test_openapi_matches_spec.py tests/integration \
        -q -p no:cacheprovider)
 
-echo "== starting api on :${API_PORT} with a freshly seeded database"
+echo "== rollouts: every committed rollout validates offline, acceptance dialogues included"
+for dir in rollouts/*/; do
+  (cd services/api && uv run frontdesk-api rollout validate "../../$dir" >/dev/null) || {
+    (cd services/api && uv run frontdesk-api rollout validate "../../$dir"); exit 1; }
+  echo "ok: $dir"
+done
+
+echo "== starting api on :${API_PORT} with a freshly seeded database (rollouts/demo-hospital)"
+eval "$(scripts/rollout-env.sh rollouts/demo-hospital)"
 (cd services/api && DATABASE_URL="$TEST_DATABASE_URL" LOG_LEVEL=WARNING uv run frontdesk-api seed --reset >/dev/null)
 (cd services/api && exec env ENV=test DATABASE_URL="$TEST_DATABASE_URL" PORT="$API_PORT" LOG_LEVEL=WARNING \
   AUTH_TOKENS_JSON="{\"${AGENT_TOKEN}\":[\"agent\"],\"${ALL_TOKEN}\":[\"agent\",\"bookings.staff\",\"schedule.write\",\"board.write\",\"directory.write\",\"knowledge.write\",\"calls.write\",\"calls.read\"]}" \

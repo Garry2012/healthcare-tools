@@ -23,7 +23,7 @@ export CONTEXTFORGE_URL=https://<gateway-host>
 export CONTEXTFORGE_ADMIN_EMAIL=... CONTEXTFORGE_ADMIN_PASSWORD=...   # or CONTEXTFORGE_TOKEN=<admin JWT>
 export MCP_PUBLIC_URL=https://<adapter-host>/mcp/
 export MCP_BEARER_TOKEN=<same value the adapter is configured with>
-export PROVIDER_ID=<provider> DOMAIN_PACK=<pack>   # from deploy/providers/<provider>.env
+eval "$(scripts/rollout-env.sh <rollout dir>)"     # PROVIDER_ID, DOMAIN_PACK, ... from rollout.env
 
 cd services/mcp
 uv run python ../../deploy/contextforge/register.py --dry-run   # prints the payload, token redacted

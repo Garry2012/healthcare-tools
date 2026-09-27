@@ -115,7 +115,7 @@ class LexiconEntry(_Stamped, Base):
             name="concept_type",
         ),
         CheckConstraint(
-            _in("source", ("PROVIDER", "TRANSCRIPT_MINED", "AUTO_TRANSLITERATION")), name="source"
+            _in("source", ("PROVIDER", "DOMAIN_BASELINE", "TRANSCRIPT_MINED", "AUTO_TRANSLITERATION")), name="source"
         ),
         Index("ix_lexicon_approved_type", "approved", "concept_type"),
     )

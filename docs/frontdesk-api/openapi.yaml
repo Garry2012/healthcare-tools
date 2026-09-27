@@ -1713,7 +1713,12 @@ components:
         termNormalized: { type: string, description: 'Server-computed: NFC, lower-case, transliterated to Latin.' }
         language: { $ref: '#/components/schemas/Language' }
         approved: { type: boolean }
-        source: { type: string, enum: [PROVIDER, TRANSCRIPT_MINED, AUTO_TRANSLITERATION] }
+        source:
+          type: string
+          enum: [PROVIDER, DOMAIN_BASELINE, TRANSCRIPT_MINED, AUTO_TRANSLITERATION]
+          description: >-
+            DOMAIN_BASELINE rows come from the domain pack (`frontdesk-api rollout apply`); a
+            provider may switch one off with approved=false, except a RED_FLAG, which stays on.
 
     LexiconEntryInput:
       type: object

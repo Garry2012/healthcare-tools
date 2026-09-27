@@ -220,7 +220,7 @@ class LexiconEntry(ApiModel):
     term_normalized: str | None = None
     language: Language
     approved: bool
-    source: Literal["PROVIDER", "TRANSCRIPT_MINED", "AUTO_TRANSLITERATION"] | None = None
+    source: Literal["PROVIDER", "DOMAIN_BASELINE", "TRANSCRIPT_MINED", "AUTO_TRANSLITERATION"] | None = None
 
 
 class LexiconEntryInput(ApiModel):

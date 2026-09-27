@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 import httpx
@@ -12,7 +13,8 @@ import yaml
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-from frontdesk_mcp import packs, tools
+from frontdesk_mcp import packs, prompt, tools
+from frontdesk_mcp.config import Settings
 from frontdesk_mcp.server import build_mcp, create_app
 
 from .conftest import serving
@@ -66,12 +68,37 @@ async def test_domain_pack_sets_the_words_but_not_the_schema(make_settings, pack
         listed = {t.name: t for t in await client.list_tools()}
         instructions = client.initialize_result.instructions
     text = packs.load(pack)
-    assert instructions == text.instructions
+    assert instructions == prompt.instructions(text, ("en", "kn", "hi"))
     for name, tool in listed.items():
         assert tool.description == text.tools[name].description
         assert set(tool.inputSchema["properties"]) == set(base[name].inputSchema["properties"])
         for param, description in text.tools[name].parameters.items():
             assert tool.inputSchema["properties"][param]["description"] == description
+
+
+def test_the_prompt_is_core_rules_plus_the_domain_plus_the_rollout(make_settings):
+    hotel = prompt.instructions(packs.load("hospitality"), ("en", "hi"), "Hotel Demo")
+    assert hotel.startswith("Front-desk tools for a hotel voice concierge at Hotel Demo.")
+    assert "(en, hi)" in hotel and not re.search(r"\bkn\b|ಕನ್ನಡ|[\u0c80-\u0cff]", hotel)  # the rollout's only
+    assert all(rule in hotel for rule in prompt.CORE_RULES)
+    hospital = prompt.instructions(packs.load("healthcare"), ("en", "ta", "te"))
+    assert "(en, ta, te)" in hospital and "red-flag symptom" in hospital
+
+
+@pytest.mark.parametrize("pack", ["healthcare", "hospitality"])
+def test_no_domain_repeats_a_core_rule(pack):
+    """A domain adds its own words; copying the core's is how domains drift apart."""
+    own = packs.load(pack)
+    words = " ".join([own.instructions, *(t.description for t in own.tools.values())]).casefold()
+    for rule in (*prompt.CORE_RULES, prompt.LANGUAGES.split("(")[0]):
+        assert rule.casefold()[:60] not in words, rule
+
+
+def test_rollout_identity_is_required(make_settings):
+    with pytest.raises(ValueError, match="tenant_supported_languages"):
+        Settings(**{"env": "test", "api_bearer_token": "x", "provider_id": "p", "domain_pack": "healthcare"})
+    with pytest.raises(ValueError, match="language codes"):
+        make_settings(tenant_supported_languages="English")
 
 
 def test_unknown_pack_is_refused(make_settings):

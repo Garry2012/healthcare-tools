@@ -1,11 +1,12 @@
-"""Adapter settings. All from the environment; nothing provider-specific."""
+"""Adapter settings, from the environment: the rollout's rollout.env (which provider, which
+domain, which languages) plus secrets. Nothing provider-specific is written in code."""
 
 from __future__ import annotations
 
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from . import packs
@@ -19,9 +20,14 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8100, ge=1, le=65535)
 
-    provider_id: str = ""
-    # Which words the LLM reads (packs/<name>.json); must match the API's DOMAIN_PACK.
-    domain_pack: str = "healthcare"
+    # The rollout (rollouts/<id>/rollout.env, shared with the API): no defaults.
+    provider_id: str = Field(min_length=1)
+    # Which words the LLM reads (packs/<name>.json); the same DOMAIN_PACK as the API's.
+    domain_pack: str
+    # The languages the rollout serves; the LLM is told to set `language` to one of them.
+    tenant_supported_languages: str
+    # Optional: the provider's name as the agent may say it ("Front-desk tools for ... at <name>").
+    tenant_display_name: str = ""
 
     api_base_url: str = "http://127.0.0.1:8000/api/v1"
     api_bearer_token: SecretStr = SecretStr("")
@@ -33,6 +39,18 @@ class Settings(BaseSettings):
     read_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     write_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     default_retry_after_seconds: int = Field(default=2, ge=0, le=300)
+
+    @field_validator("tenant_supported_languages")
+    @classmethod
+    def _languages(cls, value: str) -> str:
+        codes = [c.strip() for c in value.split(",") if c.strip()]
+        if not codes or not all(c.isalpha() and c.islower() and 2 <= len(c) <= 3 for c in codes):
+            raise ValueError("TENANT_SUPPORTED_LANGUAGES must list language codes, e.g. en,kn,hi")
+        return ",".join(codes)
+
+    @property
+    def languages(self) -> tuple[str, ...]:
+        return tuple(self.tenant_supported_languages.split(","))
 
     @model_validator(mode="after")
     def _production_guards(self) -> Settings:

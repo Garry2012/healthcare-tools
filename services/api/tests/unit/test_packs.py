@@ -1,31 +1,27 @@
-"""Every domain pack is valid data, and the same core resolves each domain's words."""
+"""The domain layer: every pack is valid domain data, and settings resolve core -> domain -> rollout."""
 
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from frontdesk_api import packs
-from frontdesk_api.config import Settings
-from frontdesk_api.domain.resolver import CategoryEntry, Directory, LexiconTerm, ResourceEntry, resolve
+from frontdesk_api.config import IDENTITY, Settings
 
 PACKS = ("healthcare", "hospitality")
-
-
-def directory_of(pack: packs.Pack) -> Directory:
-    return Directory(
-        resources=tuple(ResourceEntry(resource_id=r.id, name=r.name, category_ids=r.categories,
-                                      name_variants=r.variants, localized_names=tuple(r.localized.values()),
-                                      booking_policy=r.policy) for r in pack.resources),
-        categories=tuple(CategoryEntry(category_id=c.id, name=c.name, code=c.code,
-                                       localized_names=tuple(c.localized.values()),
-                                       offers_bookings=c.offers_bookings) for c in pack.categories),
-        lexicon=tuple(LexiconTerm(*row) for row in pack.lexicon),
-    )
 
 
 @pytest.mark.parametrize("name", PACKS)
 def test_pack_is_valid(name):
     assert packs.validate(packs.load(name)) == []
+
+
+@pytest.mark.parametrize("name", PACKS)
+def test_a_pack_holds_no_tenant(name):
+    """Resources, schedules and approved answers are a rollout's: a pack has nowhere to put them."""
+    pack = packs.load(name)
+    assert not {"resources", "knowledge", "scenario"} & set(vars(pack))
+    assert not [row for row in pack.baseline if row[0] == "RESOURCE"]
 
 
 def test_unknown_pack_is_refused():
@@ -35,52 +31,55 @@ def test_unknown_pack_is_refused():
         packs.load("../etc")
 
 
-def test_validate_reports_dangling_references():
-    bad = packs.Pack("bad", "nowhere", {"desk": "Desk"}, (), (packs.ResourceSeed("res_x", "X", ("cat_missing",)),),
-                     (("CATEGORY", "cat_missing", "x", "en"),))
-    problems = packs.validate(bad)
-    assert any("escalation" in p for p in problems)
-    assert any("unknown category" in p for p in problems)
-    assert any("lexicon" in p for p in problems)
+def test_validate_reports_what_a_baseline_may_not_hold():
+    bad = packs.Pack(
+        "bad", "1", "nowhere", {"desk": "Desk"}, {"GM": "General"},
+        baseline=(
+            ("CATEGORY", "cat_gm", "general doctor", "en"),  # a category id, not a code
+            ("SERVICE_TRANSFER", "lab", "blood report", "en"),  # no such destination
+            ("RESOURCE", "res_x", "dr x", "en"),  # a tenant's row
+            ("RED_FLAG", "chest", "chest pain", "xx"),  # no language module
+            ("RED_FLAG", "chest", "Chest Pain", "xx"),  # the same words twice
+        ),
+        settings={"timezone": "UTC"},
+    )
+    problems = "\n".join(packs.validate(bad))
+    for expected in ("escalation 'nowhere'", "unknown category code 'cat_gm'", "unknown destination 'lab'",
+                     "cannot carry RESOURCE", "no language module for 'xx'", "appears twice",
+                     "'timezone' is not a tenant setting"):
+        assert expected in problems
 
 
-def test_validate_reports_overlapping_sessions():
-    sessions = (packs.SessionSeed("am", "Morning", ("MON", "TUE"), "09:00", "12:00"),
-                packs.SessionSeed("late_am", "Late", ("TUE",), "11:00", "13:00"),
-                packs.SessionSeed("pm", "Evening", ("MON",), "12:00", "14:00"))
-    pack = packs.Pack("p", "desk", {"desk": "Desk"}, (packs.CategorySeed("cat_a", "a", "A"),),
-                      (packs.ResourceSeed("res_x", "X", ("cat_a",), sessions=sessions),), ())
-    assert packs.validate(pack) == ["res_x: sessions 'am' and 'late_am' overlap"]
+def test_the_domain_default_sits_between_core_and_rollout(make_settings):
+    hotel = {"domain_pack": "hospitality", "provider_id": "demo-hotel"}
+    assert make_settings().tenant_default_slot_minutes == 15  # core
+    assert make_settings(**hotel).tenant_default_slot_minutes == 30  # domain
+    assert make_settings(**hotel, tenant_default_slot_minutes=20).tenant_default_slot_minutes == 20  # rollout
 
 
-@pytest.mark.parametrize(("utterance", "fields", "action", "category"), [
-    ("I want a massage tomorrow", {"category": "massage"}, "OFFER_SLOTS", "cat_spa"),
-    ("table for dinner tonight", {"category": "table for dinner"}, "OFFER_SLOTS", "cat_dining"),
-    ("my back pain is bad", {"need_text": "back pain"}, "OFFER_SLOTS", "cat_spa"),
-    ("there is smoke in the room", {}, "TRANSFER_EMERGENCY", None),
-    ("I need more towels", {}, "TRANSFER_DESK", None),
-])
-def test_hospitality_words_resolve_with_the_same_core(utterance, fields, action, category):
-    res = resolve(utterance=utterance, directory=directory_of(packs.load("hospitality")), **fields)
-    assert res.action == action
-    if category:
-        assert [d.category_id for d in res.categories] == [category]
+def test_a_domain_cannot_default_identity(make_settings, monkeypatch):
+    real = packs.load("healthcare")
+    fake = packs.Pack(**{**vars(real), "settings": {"tenant_timezone": "Asia/Kolkata"}})
+    monkeypatch.setattr(packs, "load", lambda name: fake)
+    with pytest.raises(ValidationError, match="cannot default 'tenant_timezone'"):
+        make_settings()
+
+
+@pytest.mark.parametrize("field", sorted(IDENTITY))
+def test_identity_has_no_default(make_settings, field):
+    """A rollout that forgets who it is fails to start instead of inheriting another provider's values."""
+    values = make_settings().model_dump()
+    del values[field]
+    with pytest.raises(ValidationError, match=field):
+        Settings(**values)
+
+
+def test_languages_must_have_a_module(make_settings):
+    assert make_settings(tenant_supported_languages="en, hi").languages == ("en", "hi")
+    with pytest.raises(ValidationError, match="no language module for ta"):
+        make_settings(tenant_supported_languages="en,ta")
 
 
 def test_unknown_timezone_is_a_validation_error_not_a_crash(make_settings):
-    from pydantic import ValidationError
-
     with pytest.raises(ValidationError, match="unknown IANA timezone"):
         make_settings(tenant_timezone="Mars/Base")
-
-
-@pytest.mark.parametrize("provider", ["demo-hospital", "demo-hotel"])
-def test_committed_provider_files_are_valid(make_settings, provider):
-    from pathlib import Path
-
-    path = Path(__file__).resolve().parents[4] / "deploy/providers" / f"{provider}.env"
-    values = dict(line.split("=", 1) for line in path.read_text().splitlines() if line and not line.startswith("#"))
-    fields = {k.lower(): v for k, v in values.items() if k.lower() in Settings.model_fields and v != ""}
-    settings = make_settings(**fields)
-    assert packs.validate(settings.pack) == []
-    assert settings.pack.escalation_destination in settings.transfer_destinations

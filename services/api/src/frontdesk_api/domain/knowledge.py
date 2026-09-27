@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from .. import locales
-from .text import STOPWORDS, contains_phrase, normalise, tokens
+from .text import contains_phrase, normalise, stopwords, tokens
 
 CONF_PHRASE = 1.0
 
@@ -58,7 +58,8 @@ class Retriever(Protocol):
 
 
 def _terms(text: str) -> list[str]:
-    return [t for t in tokens(normalise(text)) if t not in STOPWORDS and len(t) > 1]
+    ignore = stopwords()
+    return [t for t in tokens(normalise(text)) if t not in ignore and len(t) > 1]
 
 
 @dataclass(slots=True)
@@ -141,7 +142,7 @@ def decide(hits: Sequence[Hit], thresholds: Thresholds) -> Decision:
     return Decision("CLARIFICATION_NEEDED", options=close[:3])
 
 
-_SCRIPTS = {loc.code: loc.script for loc in locales.LOCALES if loc.script}
+_SCRIPTS = {loc.code: loc.script for loc in locales.AVAILABLE.values() if loc.script}
 
 
 def option_label(entry: Entry, language: str) -> str:

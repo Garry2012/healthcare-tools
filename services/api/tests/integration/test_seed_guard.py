@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from frontdesk_api.seed import LegacyDemoData, _upsert_directory
+from frontdesk_api.seed import LegacyDemoData, load_directory
 
 
 async def test_seed_refuses_pre_0002_demo_ids(app, app_settings):
@@ -13,4 +13,4 @@ async def test_seed_refuses_pre_0002_demo_ids(app, app_settings):
         await session.execute(text("INSERT INTO resources (id, name) VALUES ('doc_garima', 'Dr. Garima')"))
         await session.commit()
         with pytest.raises(LegacyDemoData, match="seed --reset"):
-            await _upsert_directory(session, app_settings)
+            await load_directory(session, app_settings)

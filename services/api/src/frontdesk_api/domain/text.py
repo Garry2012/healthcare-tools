@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from functools import lru_cache
+from functools import cache, lru_cache
 
 from indic_transliteration import sanscript
 from metaphone import doublemetaphone
@@ -44,14 +44,27 @@ _WORD = re.compile(r"(?:[^\W_]|[\u0300-\u036f\u0900-\u0dff\u200c\u200d])+")
 # English possessive: "children's doctor" means "children doctor"; "D'Souza" is untouched.
 _POSSESSIVE = re.compile(r"(?<=\w)['’]s\b")
 
-# Titles callers put in front of a resource's name, in the scripts we see.
-HONORIFICS = frozenset(locales.union("titles"))
+
+@cache
+def _titles_for(codes: tuple[str, ...]) -> frozenset[str]:
+    return frozenset(locales.union("titles", codes))
 
 
-# Words that carry no topic in the languages callers use (romanised forms included, since
-# Kannada and Devanagari are transliterated before this runs). Question words (when/where,
-# kab/kahan, yavaga/elli) are kept: they separate "opening hours" from "location".
-STOPWORDS = frozenset(locales.union("stopwords"))
+def honorifics() -> frozenset[str]:
+    """Titles callers put in front of a resource's name, in the selected languages."""
+    return _titles_for(locales.selected())
+
+
+@cache
+def _stopwords_for(codes: tuple[str, ...]) -> frozenset[str]:
+    return frozenset(locales.union("stopwords", codes))
+
+
+def stopwords() -> frozenset[str]:
+    """Words that carry no topic in the selected languages (romanised forms included, since
+    Kannada and Devanagari are transliterated before this runs). Question words (when/where,
+    kab/kahan, yavaga/elli) are kept: they separate "opening hours" from "location"."""
+    return _stopwords_for(locales.selected())
 
 
 def _script_of(ch: str) -> str | None:
@@ -103,12 +116,18 @@ def native_form(text: str) -> str:
     return " ".join(tokens(_POSSESSIVE.sub("", unicodedata.normalize("NFC", text).casefold())))
 
 
-@lru_cache(maxsize=16384)
 def normalise(text: str, *, strip_honorifics: bool = False) -> str:
     """NFC → lower → (honorifics) → transliterate → strip accents → single spaces."""
+    # Only the honorifics depend on the selected languages, so only then is the selection a key.
+    return _normalise(text, strip_honorifics, locales.selected() if strip_honorifics else ())
+
+
+@lru_cache(maxsize=16384)
+def _normalise(text: str, strip_honorifics: bool, codes: tuple[str, ...]) -> str:
     words = tokens(_POSSESSIVE.sub("", unicodedata.normalize("NFC", text).casefold()))
     if strip_honorifics:
-        words = [w for w in words if w not in HONORIFICS]
+        titles = _titles_for(codes)
+        words = [w for w in words if w not in titles]
     latin = _strip_marks(transliterate(" ".join(words)))
     return " ".join(tokens(latin.lower()))
 
@@ -144,4 +163,5 @@ def loosely_same(a: str, b: str) -> bool:
 
 def content_words(text: str) -> list[str]:
     """Normalised words that carry meaning (stopwords and 1-letter tokens removed)."""
-    return [w for w in tokens(normalise(text)) if w not in STOPWORDS and len(w) > 1]
+    ignore = stopwords()
+    return [w for w in tokens(normalise(text)) if w not in ignore and len(w) > 1]

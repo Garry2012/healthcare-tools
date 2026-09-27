@@ -1,6 +1,8 @@
 # Seed data
 
-The seed comes from the deployment's domain pack (`DOMAIN_PACK`, default `healthcare`).
+The seed is a demo rollout (`rollouts/demo-hospital`, or `rollouts/demo-hotel`) applied exactly as
+`frontdesk-api rollout apply` would, plus that demo's dated scenario (`frontdesk_api/demo/`).
+It refuses `ENV=production`: a real provider's data is its own rollout, never the demo.
 
 `make seed` (or `frontdesk-api seed`) loads **synthetic** data. Every name and number is
 invented; nothing comes from the archived hospital documents. Dates are computed from the run
@@ -39,17 +41,20 @@ date, so the demo works on any day.
   `NEEDS_RESCHEDULE` with three pending notifications), two customers on one phone (Lakshmi Rao
   and her son Aarav, 9000000101), and a booking made from a different number than the
   customer's own (Ramesh Iyer, phone 9000000202, booked from +919000000303).
-- **Lexicon (111 approved terms, en/kn/hi):** category names callers use ("skin doctor",
-  "ಚರ್ಮ ವೈದ್ಯ", "charm ka doctor"), resource aliases, need routes ("thyroid doctor" → General
-  Medicine), red flags (chest pain, breathlessness, unconscious, heavy bleeding, fits, labour
-  pains), day parts ("ಸಂಜೆ", "shaam"), and service transfers (lab, pharmacy, insurance, desk).
+- **Lexicon (196 approved terms, en/kn/hi):** from the healthcare domain's baseline, 194 terms:
+  department names callers use ("skin doctor", "ಚರ್ಮ ವೈದ್ಯ", "charm ka doctor"), symptom routes
+  ("thyroid doctor" → General Medicine), red flags (chest pain, breathlessness, unconscious,
+  heavy bleeding, fits, labour pains) and service transfers (lab, pharmacy, insurance, desk).
+  From the demo hospital's own `terms`, 2 doctor aliases. Day-part words ("ಸಂಜೆ", "shaam") come
+  from the language modules, not the lexicon.
 
-Source: the domain pack `services/api/src/frontdesk_api/packs/healthcare/` (data, knowledge
-base, dated `scenario`) and `seed.py` (generic loading).
+Source: `rollouts/demo-hospital/` (directory, schedules, aliases, knowledge base), the domain
+pack `services/api/src/frontdesk_api/packs/healthcare/` (baseline words), and
+`services/api/src/frontdesk_api/demo/hospital.py` (the dated scenario).
 
 ## Other packs
 
-`DOMAIN_PACK=hospitality` seeds a synthetic hotel instead: two spa therapists (60-minute timed
+`PROVIDER_ID=demo-hotel` (the `rollouts/demo-hotel` rollout of the hospitality domain) seeds a synthetic hotel instead: two spa therapists (60-minute timed
 treatments), rooftop restaurant tables (30-minute seatings, 25 % held for walk-ins), a desk-only
 concierge, an en/hi lexicon (red flags escalate to `security`) and hotel FAQs. The API, the
-MCP tools and the database are identical; only the pack differs.
+MCP tools and the database are identical; only the domain pack and the rollout differ.

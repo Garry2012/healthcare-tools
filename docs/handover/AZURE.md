@@ -1,6 +1,7 @@
 # Deploy and test on Azure
 
-One stack per provider (hospital or hotel), as everywhere else (TARGET.md A1):
+One stack per rollout (a hospital's or hotel's instance of its domain), as everywhere else
+(TARGET.md A1, A10):
 
 ```
                        Azure Container Apps environment  (region: Central India or South India)
@@ -8,18 +9,46 @@ One stack per provider (hospital or hotel), as everywhere else (TARGET.md A1):
                    (gateway)         (external ingress,     (internal ingress only)                   (Flexible Server 16)
                                       bearer auth)
  Images: Azure Container Registry   Secrets: Key Vault (read by a managed identity)   Logs: Log Analytics
- Migrations: a Container Apps job (manual trigger), run with the owner role before each rollout
+ Migrations and the rollout's data: Container Apps jobs (manual trigger), migrate then `rollout apply`
 ```
 
 > These steps use the documented `az` CLI (Azure CLI 2.60+ with the `containerapp` extension).
-> They haven't been run against a subscription from this repository. Run them in a test
-> subscription first, and read each step's check.
+> They haven't been run against a subscription from this repository: `deploy.sh --dry-run` is
+> tested, a real deployment is not. Run it in a test subscription first, and read each step's check.
+
+## One command
+
+The rollout directory is the only input. Everything below is what the script does, in order.
+
+```bash
+az login && az extension add -n containerapp --upgrade
+deploy/azure/deploy.sh rollouts/demo-hospital --dry-run      # print every az call first
+deploy/azure/deploy.sh rollouts/demo-hospital --seed-demo    # a demo: also its dated scenario
+deploy/azure/deploy.sh ../private/hospital-a                 # a real provider: its own directory
+```
+
+- It validates the rollout (settings, data, acceptance dialogues) before creating anything.
+- Names are derived from the subscription and the rollout id, so a re-run finds the same
+  resources. Secrets are generated once into Key Vault and read back on every later run.
+- An optional `azure.env` in the rollout directory overrides `AZ_LOCATION`, `AZ_RESOURCE_GROUP`,
+  `AZ_ACR`, `AZ_KEYVAULT`, `AZ_POSTGRES`, `AZ_POSTGRES_SKU`, `AZ_POSTGRES_TIER`,
+  `AZ_CONTAINERAPPS_ENV` and `AZ_LOG_WORKSPACE`.
+- The first run needs `psql` on your machine, to create the runtime database role. Run it from a
+  machine no one else is logged in to, or Azure Cloud Shell: `az` takes the database admin
+  password only as a command-line argument (every other secret goes through files or the
+  environment, and none is printed).
+- The database admits Azure services (`--public-access 0.0.0.0`, password and TLS required).
+  For production, move it into a VNet (production checklist below).
+- Re-run after any change to the rollout: new image, new settings (exactly the file's, nothing
+  stale), migrate, `rollout apply`.
+
+The manual steps follow, for reading or for running one at a time.
 
 ## 0. Variables
 
 ```bash
 az login && az extension add -n containerapp --upgrade
-export P=demo-hospital            # provider id: deploy/providers/$P.env
+export P=demo-hospital R=rollouts/$P   # the rollout: its id and its directory
 export RG=rg-frontdesk-$P LOC=centralindia
 export ACR=acrfrontdesk$RANDOM KV=kv-fd-${P:0:12}-$RANDOM ENV_NAME=cae-frontdesk LAW=law-frontdesk  # Key Vault: max 24 chars, globally unique
 export PG=pg-frontdesk-$P DB=frontdesk TAG=$(git rev-parse --short HEAD)
@@ -42,9 +71,13 @@ DOMAIN=$(az containerapp env show -g $RG -n $ENV_NAME --query properties.default
 az acr create -g $RG -n $ACR --sku Basic
 az acr build -r $ACR -t frontdesk-api:$TAG services/api
 az acr build -r $ACR -t frontdesk-mcp:$TAG services/mcp
+# The rollout's data on top of the platform image: the only per-rollout image.
+CTX=$(mktemp -d) && cp $R/rollout.env $R/data.yaml $CTX/ && cp $R/dialogues.yaml $CTX/ 2>/dev/null
+printf 'FROM %s.azurecr.io/frontdesk-api:%s\nCOPY . /app/rollout\n' $ACR $TAG > $CTX/Dockerfile
+az acr build -r $ACR -t frontdesk-api-$P:$TAG $CTX
 ```
 
-**Check:** `az acr repository show-tags -n $ACR --repository frontdesk-api` lists `$TAG`.
+**Check:** `az acr repository show-tags -n $ACR --repository frontdesk-api-$P` lists `$TAG`.
 
 ## 2. PostgreSQL (one server or database per provider)
 
@@ -64,7 +97,7 @@ admits Azure services, so first allow your own IP for this step, and remove the 
 ```bash
 az postgres flexible-server firewall-rule create -g $RG -n $PG --rule-name setup \
   --start-ip-address "$(curl -s https://ifconfig.me)" --end-ip-address "$(curl -s https://ifconfig.me)"
-psql "host=$PG.postgres.database.azure.com port=5432 dbname=$DB user=frontdesk_owner password=$OWNER_PW sslmode=require" <<SQL
+PGPASSWORD="$OWNER_PW" psql "host=$PG.postgres.database.azure.com port=5432 dbname=$DB user=frontdesk_owner sslmode=require" <<SQL
 CREATE ROLE frontdesk_app LOGIN PASSWORD '$APP_PW';
 GRANT CONNECT ON DATABASE $DB TO frontdesk_app;
 GRANT USAGE ON SCHEMA public TO frontdesk_app;
@@ -101,37 +134,46 @@ az role assignment create --assignee-object-id $PRINCIPAL --assignee-principal-t
 kv() { echo "$1=keyvaultref:https://$KV.vault.azure.net/secrets/$2,identityref:$ID"; }
 ```
 
-## 4. Provider settings
+## 4. The rollout's settings
 
-Container Apps takes the same non-secret file the compose stack uses. Read it line by
-line; never `source` it, because that strips the JSON quotes:
+Container Apps takes the same `rollout.env` the compose stack uses: only what the rollout
+changes. Read it line by line; never `source` it, because that strips the JSON quotes:
 
 ```bash
-mapfile -t PROVIDER_ENV < <(grep -Ev '^[[:space:]]*(#|$)' deploy/providers/$P.env)
+mapfile -t ROLLOUT_ENV < <(grep -Ev '^[[:space:]]*(#|$)' $R/rollout.env)
 ```
 
-## 5. Migrate (a job, run before every rollout)
+## 5. Migrate, then write the rollout's data (jobs, run on every deployment)
 
 ```bash
 az containerapp job create -g $RG -n job-migrate-$P --environment $ENV_NAME \
   --trigger-type Manual --replica-timeout 600 --replica-retry-limit 0 \
-  --image $ACR.azurecr.io/frontdesk-api:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
+  --image $ACR.azurecr.io/frontdesk-api-$P:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
   --mi-user-assigned $ID --secrets "$(kv db-owner-url db-owner-url)" \
-  --env-vars ENV=production DATABASE_URL=secretref:db-owner-url "${PROVIDER_ENV[@]}" \
+  --env-vars ENV=production DATABASE_URL=secretref:db-owner-url \
   --command frontdesk-api --args migrate
 az containerapp job start -g $RG -n job-migrate-$P
 az containerapp job execution list -g $RG -n job-migrate-$P -o table     # wait for Succeeded
+
+# The domain baseline for the rollout's languages + the rollout's data. Idempotent.
+az containerapp job create -g $RG -n job-apply-$P --environment $ENV_NAME \
+  --trigger-type Manual --replica-timeout 600 --replica-retry-limit 0 \
+  --image $ACR.azurecr.io/frontdesk-api-$P:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
+  --mi-user-assigned $ID --secrets "$(kv db-app-url db-app-url)" \
+  --env-vars ENV=production DATABASE_URL=secretref:db-app-url ROLLOUT_DIR=/app/rollout "${ROLLOUT_ENV[@]}" \
+  --command frontdesk-api --args rollout apply
+az containerapp job start -g $RG -n job-apply-$P
 ```
 
 ## 6. API (internal only) and MCP adapter (reachable by the gateway)
 
 ```bash
 az containerapp create -g $RG -n api-$P --environment $ENV_NAME \
-  --image $ACR.azurecr.io/frontdesk-api:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
+  --image $ACR.azurecr.io/frontdesk-api-$P:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
   --user-assigned $ID --ingress internal --target-port 8000 --min-replicas 1 --max-replicas 3 --cpu 0.5 --memory 1Gi \
   --secrets "$(kv db-app-url db-app-url)" "$(kv auth-tokens auth-tokens)" \
-  --env-vars ENV=production HOST=0.0.0.0 PORT=8000 DATABASE_URL=secretref:db-app-url \
-             AUTH_TOKENS_JSON=secretref:auth-tokens "${PROVIDER_ENV[@]}"
+  --env-vars ENV=production HOST=0.0.0.0 PORT=8000 DATABASE_URL=secretref:db-app-url ROLLOUT_DIR=/app/rollout \
+             AUTH_TOKENS_JSON=secretref:auth-tokens "${ROLLOUT_ENV[@]}"
 
 az containerapp create -g $RG -n mcp-$P --environment $ENV_NAME \
   --image $ACR.azurecr.io/frontdesk-mcp:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
@@ -139,7 +181,7 @@ az containerapp create -g $RG -n mcp-$P --environment $ENV_NAME \
   --secrets "$(kv agent-token agent-token)" "$(kv mcp-token mcp-token)" \
   --env-vars ENV=production HOST=0.0.0.0 PORT=8100 \
              API_BASE_URL=https://api-$P.internal.$DOMAIN/api/v1 \
-             API_BEARER_TOKEN=secretref:agent-token MCP_BEARER_TOKEN=secretref:mcp-token "${PROVIDER_ENV[@]}"
+             API_BEARER_TOKEN=secretref:agent-token MCP_BEARER_TOKEN=secretref:mcp-token "${ROLLOUT_ENV[@]}"
 ```
 
 - `--min-replicas 1` keeps a warm instance, so a caller never waits for a cold start.
@@ -171,7 +213,7 @@ official image, following ContextForge's own deployment guide, with
 
 ```bash
 export CONTEXTFORGE_URL=https://<gateway-host> MCP_PUBLIC_URL=https://mcp-$P.$DOMAIN/mcp/ MCP_BEARER_TOKEN=$MCP_TOKEN
-export PROVIDER_ID=$P DOMAIN_PACK=$(grep '^DOMAIN_PACK=' deploy/providers/$P.env | cut -d= -f2)
+eval "$(scripts/rollout-env.sh $R)"   # PROVIDER_ID, DOMAIN_PACK, ...
 (cd services/mcp && uv run python ../../deploy/contextforge/register.py --dry-run && uv run python ../../deploy/contextforge/register.py)
 ```
 
@@ -179,15 +221,16 @@ Point the LiveKit agent at ContextForge and set the call headers (`LIVEKIT.md`).
 
 ## 8. Test in Azure
 
-**Test environment only:** load the synthetic hospital. For a real provider, follow
-`ONBOARDING.md` step 4 instead and never seed.
+**Demo rollouts only:** add the dated demo scenario (bookings, exceptions, board). A real
+provider already has its data from `rollout apply` (§5); the seed refuses `ENV=production` and
+`deploy.sh --seed-demo` refuses a rollout whose id is not `demo-*`.
 
 ```bash
 az containerapp job create -g $RG -n job-seed-$P --environment $ENV_NAME --trigger-type Manual \
   --replica-timeout 600 --replica-retry-limit 0 \
-  --image $ACR.azurecr.io/frontdesk-api:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
+  --image $ACR.azurecr.io/frontdesk-api-$P:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
   --mi-user-assigned $ID --secrets "$(kv db-app-url db-app-url)" \
-  --env-vars ENV=staging DATABASE_URL=secretref:db-app-url "${PROVIDER_ENV[@]}" \
+  --env-vars ENV=staging DATABASE_URL=secretref:db-app-url ROLLOUT_DIR=/app/rollout "${ROLLOUT_ENV[@]}" \
   --command frontdesk-api --args seed
 az containerapp job start -g $RG -n job-seed-$P
 ```
@@ -200,7 +243,7 @@ az containerapp ingress update -g $RG -n api-$P --type external
 az containerapp ingress access-restriction set -g $RG -n api-$P --rule-name tester \
   --ip-address "$(curl -s https://ifconfig.me)/32" --action Allow
 API_HOST=$(az containerapp show -g $RG -n api-$P --query properties.configuration.ingress.fqdn -o tsv)
-curl -s https://$API_HOST/ready                    # {"status":"ready","schema":"0003"}
+curl -s https://$API_HOST/ready                    # {"status":"ready","schema":"0004"}
 API_URL=https://$API_HOST/api/v1 AGENT_TOKEN=$AGENT_TOKEN ./scripts/demo.sh   # book → list → reschedule → cancel
 az containerapp ingress update -g $RG -n api-$P --type internal
 ```
@@ -242,11 +285,15 @@ ContainerAppConsoleLogs_CL
 | extend j = parse_json(Log_s) | where tostring(j.callId) == "azure-smoke-1"
 ```
 
-## 9. Upgrades
+## 9. Upgrades and rollout changes
 
-1. `az acr build` the new tag.
-2. Update the migrate job's image and start it. Wait for `Succeeded`.
-3. `az containerapp update --image …:<tag>` for `api-$P`, then `mcp-$P`.
+Re-run `deploy/azure/deploy.sh <rollout>` for a new platform version, a new domain pack version,
+or a change to the rollout's files. By hand:
+
+1. `az acr build` the new tag, and the rollout image on top of it.
+2. Update the migrate job's image and start it. Wait for `Succeeded`. Then the apply job.
+3. `az containerapp update --image …:<tag> --replace-env-vars …` for `api-$P`, then `mcp-$P`
+   (replace, so a setting removed from `rollout.env` falls back to its domain or core default).
 
 `/ready` is strict, so an old API goes unready as soon as the schema moves on: roll out right
 after the migration. Revision `0002` renames tables and needs a maintenance window

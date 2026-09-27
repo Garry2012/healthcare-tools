@@ -8,7 +8,7 @@ from logging.config import fileConfig
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
-from frontdesk_api.config import Settings
+from frontdesk_api.config import migration_database_url
 from frontdesk_api.db.tables import Base
 
 config = context.config
@@ -19,7 +19,7 @@ target_metadata = Base.metadata
 
 
 def _url() -> str:
-    url = config.attributes.get("database_url") or Settings().async_database_url
+    url = config.attributes.get("database_url") or migration_database_url()
     if not url:
         raise SystemExit("DATABASE_URL is not set")
     return url

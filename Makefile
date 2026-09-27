@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 
-.PHONY: up down migrate seed seed-reset test test-fast demo lint logs build
+.PHONY: up down migrate seed seed-reset rollout-validate rollout-apply test test-fast demo lint logs build
 
 up: ## Start postgres, run migrations, start api and mcp (dev profile)
 	$(COMPOSE) --profile dev up -d --build --wait api mcp
@@ -13,10 +13,16 @@ down: ## Stop the dev stack (data volume kept)
 migrate: ## Alembic upgrade head as the owner role
 	$(COMPOSE) --profile dev run --rm migrate
 
-seed: ## Load synthetic demo data (idempotent)
+rollout-validate: ## Offline check of rollouts/$(PROVIDER_ID) (settings, data, dialogues); ROLLOUT=<dir> for another
+	cd services/api && uv run frontdesk-api rollout validate $(abspath $(or $(ROLLOUT),rollouts/$(or $(PROVIDER_ID),demo-hospital)))
+
+rollout-apply: ## Write the running stack's rollout (domain baseline + its data) to its database
+	$(COMPOSE) --profile dev exec api frontdesk-api rollout apply
+
+seed: ## Apply the demo rollout and its dated demo scenario (idempotent; refused in production)
 	$(COMPOSE) --profile dev exec api frontdesk-api seed
 
-seed-reset: ## DESTRUCTIVE: empty every table in the dev database and reload the seed
+seed-reset: ## DESTRUCTIVE: empty every table in the dev database, then seed
 	$(COMPOSE) --profile dev exec api frontdesk-api seed --reset
 
 test: ## Everything (L4): unit + integration + contract + MCP e2e + schemathesis, on a throwaway postgres

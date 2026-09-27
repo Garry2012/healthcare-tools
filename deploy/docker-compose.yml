@@ -4,8 +4,9 @@ name: frontdesk-${PROVIDER_ID:-demo-hospital}
 #   dev  : postgres + migrate (one-shot) + api + mcp
 #   test : a throwaway postgres for the integration, contract and MCP suites
 # Secrets and ports come from the repository-root .env (the Makefile passes --env-file .env).
-# Provider settings (domain pack, TENANT_*) come from providers/$PROVIDER_ID.env, one file per
-# hospital or hotel; each provider is its own stack (project name frontdesk-<provider>).
+# The rollout (a provider's instance of a domain) comes from rollouts/$PROVIDER_ID: its settings
+# (rollout.env) as environment, its data files mounted read-only for `seed` and `rollout apply`.
+# Each rollout is its own stack (project name frontdesk-<provider>).
 # Host ports bind to 127.0.0.1 only.
 
 x-db-env: &db-env
@@ -21,7 +22,7 @@ x-api-env: &api-env
   AUTH_TOKENS_JSON: ${AUTH_TOKENS_JSON}
 
 x-provider: &provider
-  env_file: providers/${PROVIDER_ID:-demo-hospital}.env
+  env_file: ../rollouts/${PROVIDER_ID:-demo-hospital}/rollout.env
 
 services:
   postgres:
@@ -59,6 +60,9 @@ services:
       HOST: 0.0.0.0
       PORT: "8000"
       DATABASE_URL: postgresql://${APP_DB_USER}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      ROLLOUT_DIR: /app/rollout
+    volumes:
+      - ../rollouts/${PROVIDER_ID:-demo-hospital}:/app/rollout:ro
     ports: ["127.0.0.1:${API_HOST_PORT:-8000}:8000"]
     depends_on:
       migrate: {condition: service_completed_successfully}

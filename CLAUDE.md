@@ -12,7 +12,8 @@ Architecture and decisions: `docs/architecture/TARGET.md`. Contract: `docs/front
 - Lint: `uv run ruff check .` in each service (a hook also lints every edited file)
 - Architecture: `cd services/api && uv run lint-imports` (layer contracts in `pyproject.toml`; CI fails on a violation)
 - Latency: `cd services/api && DATABASE_URL=$TEST_DATABASE_URL uv run python scripts/bench.py`
-- Provider config check: `uv run frontdesk-api check-config` (reads `deploy/providers/<provider>.env` values from env)
+- Rollout check (offline: settings with their layer, data, dialogues): `cd services/api && uv run frontdesk-api rollout validate ../../rollouts/<id>`
+- Deploy a rollout to Azure: `deploy/azure/deploy.sh <rollout dir> --dry-run` (AZURE.md)
 
 ## Rules that the code will not tell you
 - IMPORTANT: all business rules live in `services/api`. `services/mcp` only maps tools to `Agent` operations, injects call headers, derives idempotency keys and wraps failures.
@@ -24,7 +25,9 @@ Architecture and decisions: `docs/architecture/TARGET.md`. Contract: `docs/front
 - The agent never speaks unapproved text: knowledge answers are returned verbatim, and failures are `COULD_NOT_CHECK` / `COULD_NOT_RECORD`, never "none available".
 - Voice latency is a product requirement: any writer of directory/lexicon/knowledge data must call `cache.bump(...)` in its transaction; cached values are plain dataclasses, never ORM rows; `test_latency_budget.py` gates round trips per call.
 - Schema changes: add a new Alembic revision (owner role runs it; the API role is DML-only). Never edit an applied revision; write a working `downgrade`.
-- One deployment per provider (hospital/hotel); per-provider settings are non-secret files in `deploy/providers/`.
+- Three layers, composed, never copied (TARGET.md A10): core → domain pack → rollout. A rollout (`rollouts/<id>/`: `rollout.env`, `data.yaml`, `dialogues.yaml`) is one provider's differences only; never edit a pack or the core to fit one provider. `rollout.env` lists only settings that differ from their default (a test fails otherwise). Settings resolve core default → domain default → rollout; identity (`PROVIDER_ID`, `DOMAIN_PACK`, timezone, phone, currency, languages) has no default anywhere.
+- One deployment per rollout. A real provider's rollout lives outside this repository; only `rollouts/demo-*` are committed. `seed` is for demos; `rollout apply` loads a real provider.
+- Packs hold baseline words keyed by category **code**; danger signs (RED_FLAG) are add-only for a rollout. Bump `Pack.version` when a baseline changes.
 
 ## Gotchas
 - Don't `source` provider `.env` files in bash: it strips JSON quotes. Use `docker --env-file` or a line reader.

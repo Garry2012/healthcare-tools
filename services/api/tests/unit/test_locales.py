@@ -7,7 +7,9 @@ from __future__ import annotations
 import pytest
 
 from frontdesk_api import locales
-from frontdesk_api.locales import LOCALES, Locale
+from frontdesk_api.locales import AVAILABLE, Locale
+
+LOCALES = tuple(AVAILABLE.values())
 
 LISTS = [f for f in Locale.__dataclass_fields__ if f not in ("code", "script", "weekdays", "months")]
 

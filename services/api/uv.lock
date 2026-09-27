@@ -173,6 +173,7 @@ dependencies = [
     { name = "metaphone" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "starlette" },
     { name = "uvicorn", extra = ["standard"] },
@@ -184,7 +185,6 @@ dev = [
     { name = "import-linter" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "pyyaml" },
     { name = "ruff" },
     { name = "schemathesis" },
 ]
@@ -198,6 +198,7 @@ requires-dist = [
     { name = "metaphone", specifier = "==0.6" },
     { name = "pydantic", specifier = "==2.13.5" },
     { name = "pydantic-settings", specifier = "==2.15.0" },
+    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.0.54" },
     { name = "starlette", specifier = "==1.7.0" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.53.0" },
@@ -209,7 +210,6 @@ dev = [
     { name = "import-linter", specifier = "==2.15" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-asyncio", specifier = "==1.4.0" },
-    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "ruff", specifier = "==0.16.9" },
     { name = "schemathesis", specifier = "==4.28.0" },
 ]

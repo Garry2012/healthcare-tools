@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
 
-from . import errors
+from . import errors, locales
 from .auth import StaticTokenVerifier, TokenVerifier
 from .config import Settings, get_settings
 from .db.session import DbStats, db_stats_var, make_engine, make_sessionmaker
@@ -38,6 +38,7 @@ API_PREFIX = "/api/v1"
 def create_app(settings: Settings | None = None, verifier: TokenVerifier | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.provider_id)
+    locales.select(settings.languages)  # one deployment serves one rollout's languages
     engine = make_engine(settings)
 
     @contextlib.asynccontextmanager

@@ -20,7 +20,8 @@ Work in this order; each step has a check that must pass before the next.
 4. **MCP** — the wrapper in `services/mcp/src/frontdesk_mcp/tools.py` (no domain rules; identity
    headers from `call_context`, never parameters; writes get `_keyed` idempotency). Add the
    tool's description and parameter wording to **every** `packs/*.json`, and add it to the
-   required set in `register()`.
+   required set in `register()`. A rule every agent follows whatever the domain goes in
+   `prompt.CORE_RULES`, never into the packs (a test fails if a pack repeats a core rule).
 5. **Gateway** — add the tool to `TOOLS` in `deploy/contextforge/register.py`.
 6. **Tests** — unit (domain), integration (HTTP, scopes, red flags first if it reads caller
    words), MCP unit (tool listed, no header params leak), MCP e2e.
