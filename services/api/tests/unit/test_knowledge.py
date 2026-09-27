@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from frontdesk_api import packs
 from frontdesk_api.domain.knowledge import Entry, Hit, LexicalIndex, Thresholds, decide, pick_answer
 
 
 @pytest.fixture(scope="module")
-def index() -> LexicalIndex:
-    pack = packs.load("healthcare")
-    return LexicalIndex.build(Entry(k.id, k.topic, k.questions, k.answers, k.action, k.destination)
-                              for k in pack.knowledge)
+def index(demo_hospital) -> LexicalIndex:
+    return LexicalIndex.build(demo_hospital.knowledge_entries())
 
 
 def ask(index: LexicalIndex, question: str):

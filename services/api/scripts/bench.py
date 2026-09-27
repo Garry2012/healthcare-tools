@@ -2,8 +2,9 @@
 
     DATABASE_URL=postgresql://app:…@host/db uv run python scripts/bench.py [-n 50]
 
-Prints p50/p95/max per scenario and the budget from docs/architecture/TARGET.md. The
-gateway, the adapter and the network are not included; this is the API's own share.
+Runs as rollouts/demo-hospital (seed it first). Prints p50/p95/max per scenario and the budget
+from docs/architecture/TARGET.md. The gateway, the adapter and the network are not included;
+this is the API's own share.
 """
 
 from __future__ import annotations
@@ -13,12 +14,15 @@ import asyncio
 import json
 import statistics
 import time
+from pathlib import Path
 
 import httpx
 
 from frontdesk_api.app import create_app
 from frontdesk_api.config import Settings
+from frontdesk_api.rollouts import read_env
 
+DEMO_HOSPITAL = Path(__file__).resolve().parents[3] / "rollouts/demo-hospital"
 TOKEN = "bench-token"  # noqa: S105 - local benchmark only
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "X-Call-Id": "bench", "X-Caller-Number": "+919000000101"}
 SCENARIOS: dict[str, tuple[str, str, dict | None, float]] = {
@@ -43,7 +47,9 @@ def pct(values: list[float], q: float) -> float:
 
 
 async def main(n: int) -> dict[str, dict[str, float]]:
-    settings = Settings(auth_tokens_json=json.dumps({TOKEN: ["agent"]}), log_level="WARNING")
+    rollout = {k.lower(): v for k, v in read_env(DEMO_HOSPITAL / "rollout.env").items()}
+    settings = Settings(**rollout, rollout_dir=str(DEMO_HOSPITAL), auth_tokens_json=json.dumps({TOKEN: ["agent"]}),
+                        log_level="WARNING")
     app = create_app(settings)
     results: dict[str, dict[str, float]] = {}
     async with app.router.lifespan_context(app), httpx.AsyncClient(

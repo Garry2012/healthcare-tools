@@ -32,7 +32,7 @@ WORDS = dict(
         ("ಜನವರಿ",), ("ಫೆಬ್ರವರಿ",), ("ಮಾರ್ಚ್",), ("ಏಪ್ರಿಲ್",), ("ಮೇ",), ("ಜೂನ್",), ("ಜುಲೈ",), ("ಆಗಸ್ಟ್",),
         ("ಸೆಪ್ಟೆಂಬರ್",), ("ಅಕ್ಟೋಬರ್",), ("ನವೆಂಬರ್",), ("ಡಿಸೆಂಬರ್",),
     ),
-    day_of_month=("ತಾರೀಖು", "ತಾರೀಕು"),
+    day_of_month=("ತಾರೀಖು", "ತಾರೀಕು", "tareekhu", "tarikhu", "tareeku", "tareekh", "tarikh"),
     history=(),
     # "indu" is Kannada for today and a common given name: a date only when given as the time.
     ambiguous_in_speech=("indu",),
@@ -47,4 +47,5 @@ WORDS = dict(
     tens={},
     ambiguous_months=("ಮೇ",),  # "me": also the English and Hindi word
     date_fillers=(),
+    day_parts={"MORNING": ("ಬೆಳಿಗ್ಗೆ", "beligge"), "AFTERNOON": ("ಮಧ್ಯಾಹ್ನ",), "EVENING": ("ಸಂಜೆ", "sanje")},
 )

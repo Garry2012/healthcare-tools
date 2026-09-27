@@ -45,4 +45,5 @@ WORDS = dict(
     tens={"twenty": 20, "thirty": 30},
     ambiguous_months=("may",),
     date_fillers=("of", "the"),
+    day_parts={"MORNING": ("morning",), "AFTERNOON": ("afternoon",), "EVENING": ("evening", "night", "tonight")},
 )

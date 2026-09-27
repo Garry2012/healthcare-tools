@@ -1,29 +1,41 @@
-"""Service settings and tenant configuration (IMPLEMENTATION.md §2.9).
+"""Service settings, resolved in three layers: core default -> domain pack default -> rollout.
 
-Every value comes from the process environment; the service never reads a `.env` file
-itself (compose and the Makefile load it). Nothing provider- or domain-specific lives in code.
+Every value comes from the process environment (a rollout's `rollout.env` plus secrets); the
+service never reads a `.env` file itself (compose and the Makefile load it). A domain pack may
+default any tenant setting (`Pack.settings`); what the rollout sets always wins. Identity
+settings (who the provider is, its timezone, phone numbering, currency and languages) have no
+default at any layer: a rollout that forgets one fails to start instead of inheriting another's.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import time
 from functools import lru_cache
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from . import packs
+from . import locales, packs
 from .domain.availability import EngineConfig
+from .domain.knowledge import Thresholds as KnowledgeThresholds
 from .domain.resolver import ResolverThresholds
 
 DAY_PART_DEFAULT = '{"MORNING":["06:00","12:00"],"AFTERNOON":["12:00","16:00"],"EVENING":["16:00","23:00"]}'
 
 
 _SSLMODE = re.compile(r"([?&])sslmode=")
+
+
+# Settings a rollout must state itself: never defaulted by the core or a domain pack.
+IDENTITY = frozenset({
+    "provider_id", "domain_pack", "tenant_timezone", "tenant_country_calling_code", "tenant_phone_pattern",
+    "tenant_currency", "tenant_supported_languages",
+})
 
 
 class Settings(BaseSettings):
@@ -48,17 +60,21 @@ class Settings(BaseSettings):
     database_statement_timeout_ms: int = Field(default=5000, ge=100, le=60000)
     max_request_bytes: int = Field(default=65536, ge=1024, le=10_485_760)
 
-    # Which provider this deployment serves (deploy/providers/<provider>.env); on every log line.
-    provider_id: str = ""
+    # --- rollout identity: required, no default anywhere (rollouts/<id>/rollout.env) ---
+    # Which provider this deployment serves; on every log line.
+    provider_id: str = Field(min_length=1)
+    # The domain pack (packs/<name>) this rollout instantiates.
+    domain_pack: str
+    tenant_timezone: str
+    tenant_country_calling_code: str = Field(pattern=r"^[0-9]{1,3}$")
+    tenant_phone_pattern: str
+    tenant_currency: str = Field(pattern=r"^[A-Z]{3}$")
+    # The languages this rollout serves, comma-separated (locales/<code>.py must exist for each).
+    tenant_supported_languages: str
+    # Where the rollout's data files are inside the container (`rollout apply` and `seed` read them).
+    rollout_dir: str = ""
 
-    # --- domain pack (packs/<name>): vocabulary data, escalation, demo seed ---
-    domain_pack: str = "healthcare"
-
-    # --- tenant: this deployment's provider (one deployment per provider) ---
-    tenant_timezone: str = "Asia/Kolkata"
-    tenant_country_calling_code: str = "91"
-    tenant_phone_pattern: str = r"^[0-9]{10}$"
-    tenant_currency: str = "INR"
+    # --- tenant behaviour: core defaults, which the domain pack or the rollout may override ---
     tenant_day_parts_json: str = DAY_PART_DEFAULT
     tenant_default_capacity: int = Field(default=12, ge=1)
     tenant_last_arrival_offset_minutes: int = Field(default=15, ge=0)
@@ -83,13 +99,28 @@ class Settings(BaseSettings):
     tenant_desk_follow_up_list_enabled: bool = True
     # Empty = the domain pack's defaults.
     tenant_transfer_destinations_json: str = ""
-    tenant_supported_languages: str = "en,kn,hi"
 
-    @field_validator("domain_pack")
+    @model_validator(mode="before")
     @classmethod
-    def _pack(cls, value: str) -> str:
-        packs.load(value)
-        return value
+    def _domain_defaults(cls, data: object) -> object:
+        """The middle layer: the domain pack's defaults, under whatever the rollout set."""
+        if not isinstance(data, dict) or not isinstance(data.get("domain_pack"), str):
+            return data  # the field validation reports the missing pack
+        pack = packs.load(data["domain_pack"])
+        for key in pack.settings:
+            if key in IDENTITY or key not in cls.model_fields:
+                raise ValueError(f"domain pack {pack.name!r} cannot default {key!r}")
+        return {**pack.settings, **data}
+
+    @field_validator("tenant_supported_languages")
+    @classmethod
+    def _languages(cls, value: str) -> str:
+        codes = [c.strip() for c in value.split(",") if c.strip()]
+        if not codes:
+            raise ValueError("at least one language is required")
+        if unknown := [c for c in codes if c not in locales.AVAILABLE]:
+            raise ValueError(f"no language module for {', '.join(unknown)} (locales/)")
+        return ",".join(codes)
 
     @field_validator("tenant_timezone")
     @classmethod
@@ -105,6 +136,10 @@ class Settings(BaseSettings):
     def _pattern(cls, value: str) -> str:
         re.compile(value)
         return value
+
+    @property
+    def languages(self) -> tuple[str, ...]:
+        return tuple(self.tenant_supported_languages.split(","))
 
     @property
     def tz(self) -> ZoneInfo:
@@ -144,15 +179,29 @@ class Settings(BaseSettings):
         )
 
     @property
+    def knowledge_thresholds(self) -> KnowledgeThresholds:
+        return KnowledgeThresholds(answer=self.tenant_knowledge_answer_threshold,
+                                   clarify=self.tenant_knowledge_clarify_threshold)
+
+    @property
     def async_database_url(self) -> str:
-        url = self.database_url.get_secret_value()
-        # Managed PostgreSQL (Azure, Supabase) hands out libpq URLs with `sslmode=`; asyncpg
-        # takes the same values as `ssl=` and fails on `sslmode`.
-        url = _SSLMODE.sub(r"\1ssl=", url)
-        for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
-            if url.startswith(prefix):
-                return "postgresql+asyncpg://" + url[len(prefix):]
-        return url
+        return async_url(self.database_url.get_secret_value())
+
+
+def async_url(url: str) -> str:
+    """The SQLAlchemy asyncpg form of a PostgreSQL URL."""
+    # Managed PostgreSQL (Azure, Supabase) hands out libpq URLs with `sslmode=`; asyncpg
+    # takes the same values as `ssl=` and fails on `sslmode`.
+    url = _SSLMODE.sub(r"\1ssl=", url)
+    for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+asyncpg://" + url[len(prefix):]
+    return url
+
+
+def migration_database_url() -> str:
+    """Migrations need only the owner's database URL, never a rollout's settings."""
+    return async_url(os.environ.get("DATABASE_URL", ""))
 
 
 @lru_cache(maxsize=1)

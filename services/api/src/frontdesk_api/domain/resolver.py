@@ -12,12 +12,12 @@ import difflib
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from functools import cache
 from typing import Protocol
 
 from .. import locales
 from .dates import time_words
 from .text import (
-    HONORIFICS,
     contains_phrase,
     content_words,
     loosely_same,
@@ -138,9 +138,13 @@ class Resolution:
     departed: str | None = None  # the caller named a resource that no longer takes bookings
 
 
-# Words that only ask "is someone free?", in every registered language.
-AVAILABILITY_WORDS = frozenset(normalise(w) for w in locales.union("availability"))
-HONORIFICS_LATIN = frozenset(normalise(h) for h in HONORIFICS)
+@cache
+def _filler_words_for(codes: tuple[str, ...]) -> frozenset[str]:
+    """Words that only ask "is someone free?", titles and day parts, in the selected languages."""
+    availability = (normalise(w) for w in locales.union("availability", codes))
+    titles = (normalise(h) for h in locales.union("titles", codes))
+    day_parts = (w for word, _ in locales.day_parts(codes) for w in normalise(word).split())
+    return frozenset((*availability, *titles, *day_parts))
 _NUMBER = re.compile(r"\d+(st|nd|rd|th)?")
 
 
@@ -454,9 +458,10 @@ def resolve(
     # "Anyone available right now?" only when every word is about availability or time; words we
     # did not understand never get a doctor offered in their place.
     day_part_words = {w for t in directory.terms("DAY_PART") for w in t.latin.split()}
+    fillers = _filler_words_for(locales.selected())
     unexplained = [
         w for w in content_words(utterance)
-        if w not in AVAILABILITY_WORDS and w not in HONORIFICS_LATIN and w not in time_words()
+        if w not in fillers and w not in time_words()
         and w not in day_part_words and not _NUMBER.fullmatch(w)
     ]
     resolution.action = "NO_SERVICE" if unexplained else "OFFER_SLOTS"

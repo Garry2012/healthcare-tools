@@ -1,0 +1,9 @@
+# Acceptance lines for the demo hotel (see rollouts/demo-hospital/dialogues.yaml for the format).
+- {say: "I want a massage tomorrow", category: massage, expect: OFFER_SLOTS, expect_category: cat_spa}
+- {say: "table for dinner tonight", category: "table for dinner", expect: OFFER_SLOTS, expect_category: cat_dining}
+- {say: "my back pain is bad", need_text: "back pain", expect: OFFER_SLOTS, expect_category: cat_spa}
+- {say: "there is smoke in the room", expect: TRANSFER_EMERGENCY}
+- {say: "कमरे में आग लगी है", language: hi, expect: TRANSFER_EMERGENCY}
+- {say: "I need more towels", expect: TRANSFER_DESK}
+- {ask: "when is checkout", expect: ANSWERED, expect_answer: kb_checkout}
+- {ask: "नाश्ता कब है", language: hi, expect: ANSWERED, expect_answer: kb_breakfast}

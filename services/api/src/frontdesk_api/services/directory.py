@@ -336,6 +336,8 @@ async def upsert_lexicon(
             source=source,
         )
         session.add(row)
+    if row.source == "DOMAIN_BASELINE" and concept_type == "RED_FLAG" and not body.approved:
+        raise validation("A danger sign from the domain baseline cannot be switched off.", "approved")
     row.term_normalized = normalise(body.term)
     row.approved = body.approved
     await cache.bump(session, cache.DIRECTORY)

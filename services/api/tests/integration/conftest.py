@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from frontdesk_api.app import create_app
-from frontdesk_api.seed import _upsert_directory
+from frontdesk_api.seed import load_directory
 from frontdesk_api.services import schedule
 from tests.conftest import AGENT_TOKEN, STAFF_TOKEN
 
@@ -80,7 +80,7 @@ async def app(app_settings):
     await owner.dispose()
     application = create_app(app_settings)
     async with application.state.sessionmaker() as session:
-        await _upsert_directory(session, app_settings)
+        await load_directory(session, app_settings)
     yield application
     await application.state.engine.dispose()
 

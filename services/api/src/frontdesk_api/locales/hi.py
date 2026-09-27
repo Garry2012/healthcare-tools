@@ -50,4 +50,5 @@ WORDS = dict(
     tens={},
     ambiguous_months=("मई",),  # "mai": also "I" and "in"
     date_fillers=(),
+    day_parts={"MORNING": ("सुबह", "subah"), "AFTERNOON": ("दोपहर", "dopahar"), "EVENING": ("शाम", "shaam")},
 )

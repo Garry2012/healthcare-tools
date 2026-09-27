@@ -1,8 +1,9 @@
 """Relative date expressions, resolved in the facility's timezone (openapi RULE on search).
 
 The model never does calendar arithmetic; it forwards what the caller said. Day-part
-words ("evening", "ಸಂಜೆ", "shaam") come from the tenant's DAY_PART lexicon; the words
-for today/tomorrow/weekdays/months are language data in `frontdesk_api.locales`.
+words ("evening", "ಸಂಜೆ", "shaam") come from the selected languages plus the tenant's
+DAY_PART lexicon; the words for today/tomorrow/weekdays/months are language data in
+`frontdesk_api.locales`, for the languages the rollout selected.
 
 Rules:
 - explicit `dateFrom`/`dateTo` always win;
@@ -20,6 +21,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
+from functools import cache
 
 from .. import locales
 from .text import contains_phrase, normalise, tokens
@@ -29,29 +31,64 @@ def _forms(*words: str) -> frozenset[str]:
     return frozenset(normalise(w) for w in words)
 
 
-_TODAY = _forms(*locales.union("today"))
-_TOMORROW = _forms(*locales.union("tomorrow"))
-_DAY_AFTER = _forms(*locales.union("day_after_tomorrow"))
-_NEXT = _forms(*locales.union("next"))
-_THIS = _forms(*locales.union("this"))
-_WEEK = _forms(*locales.union("week"))
-_WEEKDAYS: tuple[frozenset[str], ...] = tuple(_forms(*day) for day in locales.calendar("weekdays"))
-_MONTHS: tuple[frozenset[str], ...] = tuple(_forms(*month) for month in locales.calendar("months"))
-# "5 tareekh": the 5th, whichever month it next falls in.
-_DAY_OF_MONTH = _forms(*locales.union("day_of_month"))
-# In a sentence these start history, not the visit: "fever since monday", "pain last night".
-_HISTORY = _forms(*locales.union("history"))
-# Words that are dates only when given as the time: "indu" is Kannada 'today' and a common name.
-_AMBIGUOUS_IN_SPEECH = _forms(*locales.union("ambiguous_in_speech"))
-# A day of the month said in words (locales/): cardinals only before "tareekh", ordinals also
-# next to a month, tens only as the start of "twenty first". Digits keep their own rules.
-_CARDINAL_WORDS = {normalise(w): n for w, n in locales.numbers("cardinals").items()}
-_ORDINAL_WORDS = {normalise(w): n for w, n in locales.numbers("ordinals").items()}
-_TENS_WORDS = {normalise(w): n for w, n in locales.numbers("tens").items()}
-_DAY_WORDS = {**_CARDINAL_WORDS, **_ORDINAL_WORDS}
-# Month names that are also everyday words ("may", "mai", "me"): never read with a number word.
-_AMBIGUOUS_MONTHS = _forms(*locales.union("ambiguous_months"))
-_FILLERS = _forms(*locales.union("date_fillers"))
+@dataclass(frozen=True, slots=True)
+class _Words:
+    """The selected languages' date words, normalised (built once per language selection)."""
+
+    today: frozenset[str]
+    tomorrow: frozenset[str]
+    day_after: frozenset[str]
+    next: frozenset[str]
+    this: frozenset[str]
+    week: frozenset[str]
+    weekdays: tuple[frozenset[str], ...]
+    months: tuple[frozenset[str], ...]
+    # "5 tareekh": the 5th, whichever month it next falls in.
+    day_of_month: frozenset[str]
+    # In a sentence these start history, not the visit: "fever since monday", "pain last night".
+    history: frozenset[str]
+    # Words that are dates only when given as the time: "indu" is Kannada 'today' and a common name.
+    ambiguous_in_speech: frozenset[str]
+    # A day of the month said in words (locales/): cardinals only before "tareekh", ordinals also
+    # next to a month, tens only as the start of "twenty first". Digits keep their own rules.
+    ordinals: dict[str, int]
+    tens: dict[str, int]
+    day_words: dict[str, int]  # cardinals and ordinals
+    # Month names that are also everyday words ("may", "mai", "me"): never read with a number word.
+    ambiguous_months: frozenset[str]
+    fillers: frozenset[str]
+    time_words: frozenset[str]
+    day_parts: tuple[tuple[str, str], ...]  # (normalised word, MORNING|AFTERNOON|EVENING)
+
+
+@cache
+def _words_for(codes: tuple[str, ...]) -> _Words:
+    def forms(name: str) -> frozenset[str]:
+        return _forms(*locales.union(name, codes))
+
+    def table(name: str) -> dict[str, int]:
+        return {normalise(w): n for w, n in locales.numbers(name, codes).items()}
+
+    weekdays = tuple(_forms(*day) for day in locales.calendar("weekdays", codes))
+    months = tuple(_forms(*month) for month in locales.calendar("months", codes))
+    groups = (forms("today"), forms("tomorrow"), forms("day_after_tomorrow"), forms("next"), forms("this"),
+              forms("week"), forms("day_of_month"), *weekdays, *months)
+    return _Words(
+        today=forms("today"), tomorrow=forms("tomorrow"), day_after=forms("day_after_tomorrow"),
+        next=forms("next"), this=forms("this"), week=forms("week"), weekdays=weekdays, months=months,
+        day_of_month=forms("day_of_month"), history=forms("history"),
+        ambiguous_in_speech=forms("ambiguous_in_speech"), ordinals=table("ordinals"), tens=table("tens"),
+        day_words={**table("cardinals"), **table("ordinals")}, ambiguous_months=forms("ambiguous_months"),
+        fillers=forms("date_fillers"),
+        time_words=frozenset(word for group in groups for form in group for word in form.split()),
+        day_parts=tuple((normalise(word), part) for word, part in locales.day_parts(codes)),
+    )
+
+
+def _w() -> _Words:
+    return _words_for(locales.selected())
+
+
 UNCLEAR = -1  # a day was said but which one is not clear: ask, never guess
 _ORDINAL = re.compile(r"^(\d{1,2})(st|nd|rd|th)?$")
 _ISO = re.compile(r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)")
@@ -80,7 +117,7 @@ def _digit_day(word: str) -> int | None:
 
 
 def _is_number(word: str) -> bool:
-    return _digit_day(word) is not None or word in _DAY_WORDS or word in _TENS_WORDS
+    return _digit_day(word) is not None or word in _w().day_words or word in _w().tens
 
 
 def _word_day_ending_at(words: list[str], j: int, table: dict[str, int]) -> int | None:
@@ -89,8 +126,8 @@ def _word_day_ending_at(words: list[str], j: int, table: dict[str, int]) -> int 
     if j < 0 or (n := table.get(words[j])) is None:
         return None
     before = words[j - 1] if j > 0 else ""
-    if before in _TENS_WORDS:
-        return _TENS_WORDS[before] + n if n < 10 and words[j] in _ORDINAL_WORDS else UNCLEAR
+    if before in _w().tens:
+        return _w().tens[before] + n if n < 10 and words[j] in _w().ordinals else UNCLEAR
     return UNCLEAR if _is_number(before) else n
 
 
@@ -98,10 +135,10 @@ def _ordinal_ending_the_phrase(words: list[str], k: int) -> int | None:
     """ "October fifth", "October the thirty first": an ordinal that is the last thing said, so
     "October first week" is not the 1st."""
     rest = words[k:]
-    if len(rest) == 1 and rest[0] in _ORDINAL_WORDS:
-        return _ORDINAL_WORDS[rest[0]]
-    if len(rest) == 2 and rest[0] in _TENS_WORDS and _ORDINAL_WORDS.get(rest[1], 10) < 10:
-        return _TENS_WORDS[rest[0]] + _ORDINAL_WORDS[rest[1]]
+    if len(rest) == 1 and rest[0] in _w().ordinals:
+        return _w().ordinals[rest[0]]
+    if len(rest) == 2 and rest[0] in _w().tens and _w().ordinals.get(rest[1], 10) < 10:
+        return _w().tens[rest[0]] + _w().ordinals[rest[1]]
     return None
 
 
@@ -110,15 +147,15 @@ def _month_day(words: list[str], i: int) -> int | None:
     before = words[i - 2] if i >= 2 and words[i - 1] == "of" else (words[i - 1] if i else "")
     around = [before, words[i + 1] if i + 1 < len(words) else ""]
     number = next((n for w in around if (n := _digit_day(w)) is not None), None)
-    if number is not None or words[i] in _AMBIGUOUS_MONTHS:
+    if number is not None or words[i] in _w().ambiguous_months:
         return number
     j = i - 1
-    while j >= 0 and words[j] in _FILLERS:
+    while j >= 0 and words[j] in _w().fillers:
         j -= 1
-    number = _word_day_ending_at(words, j, _ORDINAL_WORDS)
+    number = _word_day_ending_at(words, j, _w().ordinals)
     if number is None:
         k = i + 1
-        while k < len(words) and words[k] in _FILLERS:
+        while k < len(words) and words[k] in _w().fillers:
             k += 1
         number = _ordinal_ending_the_phrase(words, k)
     return number
@@ -128,10 +165,10 @@ def _tareekh_days(words: list[str]) -> list[int]:
     """Every day said with a day-of-month word: "5 tareekh", "paanch tareekh", "ಐದನೇ ತಾರೀಖು"."""
     days = []
     for i, word in enumerate(words):
-        if word in _DAY_OF_MONTH and i > 0:
+        if word in _w().day_of_month and i > 0:
             n = _digit_day(words[i - 1])
             if n is None:
-                n = _word_day_ending_at(words, i - 1, _DAY_WORDS)
+                n = _word_day_ending_at(words, i - 1, _w().day_words)
             if n is not None:
                 days.append(n)
     return days
@@ -149,11 +186,11 @@ def _explicit(raw: str, text: str, today: date) -> tuple[bool, date | None]:
     words = tokens(text)
     named_month = None
     for i, word in enumerate(words):
-        month = next((n for n, forms in enumerate(_MONTHS, start=1) if word in forms), None)
+        month = next((n for n, forms in enumerate(_w().months, start=1) if word in forms), None)
         if month is not None and (number := _month_day(words, i)) is not None:
             # "5 October", "October 5", "5th of October", "the fifth of October", "October fifth".
             return True, None if number == UNCLEAR else _upcoming(today, month, number)
-        if month is not None and word not in _AMBIGUOUS_MONTHS:
+        if month is not None and word not in _w().ambiguous_months:
             named_month = named_month or month
     days = _tareekh_days(words)
     if days:
@@ -174,7 +211,7 @@ def _without_history(text: str) -> str:
     """Speech mode: drop words that are history or names, not the time of the visit."""
     words = tokens(text)
     kept = [w for i, w in enumerate(words)
-            if w not in _AMBIGUOUS_IN_SPEECH and not (i > 0 and words[i - 1] in _HISTORY)]
+            if w not in _w().ambiguous_in_speech and not (i > 0 and words[i - 1] in _w().history)]
     return " ".join(kept)
 
 
@@ -197,11 +234,11 @@ def _day_part(text: str, day_parts: Iterable[tuple[str, str]]) -> str | None:
 
 def _weekday(words: list[str], today: date) -> date | None:
     for i, word in enumerate(words):
-        for index, forms in enumerate(_WEEKDAYS):
+        for index, forms in enumerate(_w().weekdays):
             if word not in forms:
                 continue
             ahead = (index - today.weekday()) % 7
-            if i > 0 and words[i - 1] in _NEXT:
+            if i > 0 and words[i - 1] in _w().next:
                 ahead = ahead or 7
             return today + timedelta(days=ahead)
     return None
@@ -209,21 +246,21 @@ def _weekday(words: list[str], today: date) -> date | None:
 
 def _dates(text: str, today: date) -> tuple[date, date] | None:
     words = tokens(text)
-    if any(contains_phrase(text, p) for p in _DAY_AFTER):
+    if any(contains_phrase(text, p) for p in _w().day_after):
         return today + timedelta(days=2), today + timedelta(days=2)
     for i, word in enumerate(words):
-        if word in _WEEK and i > 0:
-            if words[i - 1] in _NEXT:
+        if word in _w().week and i > 0:
+            if words[i - 1] in _w().next:
                 monday = today + timedelta(days=7 - today.weekday())
                 return monday, monday + timedelta(days=6)
-            if words[i - 1] in _THIS:
+            if words[i - 1] in _w().this:
                 return today, today + timedelta(days=6 - today.weekday())
-    if any(contains_phrase(text, p) for p in _TOMORROW):
+    if any(contains_phrase(text, p) for p in _w().tomorrow):
         return today + timedelta(days=1), today + timedelta(days=1)
     day = _weekday(words, today)
     if day is not None:
         return day, day
-    if any(contains_phrase(text, p) for p in _TODAY):
+    if any(contains_phrase(text, p) for p in _w().today):
         return today, today
     return None
 
@@ -239,8 +276,9 @@ def resolve_when(
     day_parts: Iterable[tuple[str, str]] = (),
     default_days: int = 7,
 ) -> WhenResult:
-    """`day_parts` are (normalised term, DayPart) pairs from the approved lexicon."""
-    day_parts = list(day_parts)
+    """`day_parts` are (normalised term, DayPart) pairs from the approved lexicon, on top of the
+    selected languages' own day-part words."""
+    day_parts = [*_w().day_parts, *day_parts]
     part = None if day_part in (None, "ANY") else day_part
     if date_from is not None or date_to is not None:
         start = date_from or date_to
@@ -275,5 +313,4 @@ def resolve_when(
 
 def time_words() -> frozenset[str]:
     """Every word the date rules understand (so the resolver can tell a time from a topic)."""
-    groups = (_TODAY, _TOMORROW, _DAY_AFTER, _NEXT, _THIS, _WEEK, _DAY_OF_MONTH, *_WEEKDAYS, *_MONTHS)
-    return frozenset(word for group in groups for form in group for word in form.split())
+    return _w().time_words
