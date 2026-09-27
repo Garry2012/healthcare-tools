@@ -85,8 +85,16 @@ def _words_for(codes: tuple[str, ...]) -> _Words:
     )
 
 
+_current: tuple[tuple[str, ...], _Words] | None = None
+
+
 def _w() -> _Words:
-    return _words_for(locales.selected())
+    """The selected languages' words: called many times per parse, so the last build is kept."""
+    global _current
+    codes = locales.selected()
+    if _current is None or _current[0] is not codes:
+        _current = (codes, _words_for(codes))
+    return _current[1]
 
 
 UNCLEAR = -1  # a day was said but which one is not clear: ask, never guess

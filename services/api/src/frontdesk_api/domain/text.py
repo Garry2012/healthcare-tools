@@ -118,16 +118,17 @@ def native_form(text: str) -> str:
 
 def normalise(text: str, *, strip_honorifics: bool = False) -> str:
     """NFC → lower → (honorifics) → transliterate → strip accents → single spaces."""
-    words = native_form(text)
-    if strip_honorifics:
-        titles = honorifics()
-        words = " ".join(w for w in words.split() if w not in titles)
-    return _romanised(words)
+    # Only the honorifics depend on the selected languages, so only then is the selection a key.
+    return _normalise(text, strip_honorifics, locales.selected() if strip_honorifics else ())
 
 
 @lru_cache(maxsize=16384)
-def _romanised(words: str) -> str:
-    latin = _strip_marks(transliterate(words))
+def _normalise(text: str, strip_honorifics: bool, codes: tuple[str, ...]) -> str:
+    words = tokens(_POSSESSIVE.sub("", unicodedata.normalize("NFC", text).casefold()))
+    if strip_honorifics:
+        titles = _titles_for(codes)
+        words = [w for w in words if w not in titles]
+    latin = _strip_marks(transliterate(" ".join(words)))
     return " ".join(tokens(latin.lower()))
 
 
