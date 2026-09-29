@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
@@ -24,7 +25,7 @@ SUN = date(2026, 9, 27)
 MON = date(2026, 9, 28)
 THU = date(2026, 10, 1)
 NOW = datetime(2026, 9, 25, 8, 0, tzinfo=IST)
-CFG = EngineConfig(default_capacity=10, sequence_window_minutes=20, default_last_arrival_offset_minutes=15)
+CFG = EngineConfig(default_capacity=10, default_last_arrival_offset_minutes=15)
 
 GARIMA = ResourceDef("res_garima")
 AM = TemplateSessionDef(
@@ -202,8 +203,77 @@ def test_walk_in_reserve_reduces_offered_slots():
 def test_sequence_expected_windows():
     am, pm = run()
     windows = [(s.position, s.window_from, s.window_to) for s in am.slots[:3]]
-    assert windows == [(1, time(9, 0), time(9, 20)), (2, time(9, 15), time(9, 35)), (3, time(9, 30), time(9, 50))]
+    assert windows == [(1, time(9, 0), time(9, 15)), (2, time(9, 15), time(9, 30)), (3, time(9, 30), time(9, 45))]
     assert pm.slots[3].window_from == time(15, 45)  # position 4 at 4 per hour
+
+
+@pytest.mark.parametrize(("rate", "boundaries"), [
+    (4, [0, 15, 30, 45, 60]),
+    (6, [0, 10, 20, 30, 40, 50, 60]),
+    (8, [0, 7, 15, 22, 30, 37, 45, 52, 60]),
+    (9, [0, 6, 13, 20, 26, 33, 40, 46, 53, 60]),
+])
+def test_sequence_hourly_boundaries_repeat_without_drift(rate, boundaries):
+    session = replace(AM, capacity=CapacityRule("PER_HOUR", rate), walk_in_reserve_percent=0)
+    [view] = run(templates=(replace(TEMPLATE, sessions=(session,)),))
+    assert view.total == len(view.slots) == 3 * rate
+    for hour in range(3):
+        slots = view.slots[hour * rate:(hour + 1) * rate]
+        actual = [(s.window_from.hour * 60 + s.window_from.minute - (9 + hour) * 60,
+                   s.window_to.hour * 60 + s.window_to.minute - (9 + hour) * 60) for s in slots]
+        assert actual == list(zip(boundaries, boundaries[1:], strict=False))
+    assert view.slots[-1].window_to == time(12)
+    assert all(a.window_to == b.window_from for a, b in zip(view.slots, view.slots[1:], strict=False))
+
+
+@pytest.mark.parametrize(("capacity", "step", "total"), [
+    (CapacityRule("FIXED", 9), 20, 9),
+    (CapacityRule("DEFAULT"), 18, 10),
+])
+def test_sequence_session_capacity_divides_the_whole_session(capacity, step, total):
+    session = replace(AM, capacity=capacity, walk_in_reserve_percent=0)
+    [view] = run(templates=(replace(TEMPLATE, sessions=(session,)),))
+    assert len(view.slots) == total
+    assert view.slots[0].window_to == time(9, step)
+    assert view.slots[-1].window_to == time(12)
+    assert all(s.window_to.hour * 60 + s.window_to.minute
+               - s.window_from.hour * 60 - s.window_from.minute == step for s in view.slots)
+
+
+def test_reserves_and_bookings_do_not_shift_sequence_windows():
+    [plain] = run(templates=(replace(TEMPLATE, sessions=(replace(AM, walk_in_reserve_percent=0),)),))
+    third = plain.slots[2].slot_id
+    am, _ = run(held=(third,))
+    assert (am.total, am.walk_in_reserve, am.booked, am.remaining) == (12, 3, 1, 8)
+    assert [(s.slot_id, s.window_from, s.window_to) for s in am.slots] == [
+        (s.slot_id, s.window_from, s.window_to) for s in plain.slots[:9]]
+    assert [s.position for s in am.available_slots()] == [1, 2, 4, 5, 6, 7, 8, 9]
+
+
+def test_partial_hour_keeps_the_hourly_rate():
+    session = replace(AM, end=time(10, 10), capacity=CapacityRule("PER_HOUR", 9), walk_in_reserve_percent=0)
+    [view] = run(templates=(replace(TEMPLATE, sessions=(session,)),))
+    assert view.total == len(view.slots) == 10
+    assert (view.slots[-1].window_from, view.slots[-1].window_to) == (time(10), time(10, 6))
+
+
+@pytest.mark.parametrize("capacity", [CapacityRule("PER_HOUR", 61), CapacityRule("FIXED", 181)])
+def test_legacy_sub_minute_capacity_is_not_offered(capacity):
+    session = replace(AM, capacity=capacity)
+    [view] = run(templates=(replace(TEMPLATE, sessions=(session,)),))
+    assert not view.bookable and view.not_bookable_reason == "NOT_OFFERED"
+    assert not view.slots
+
+
+def test_delayed_windows_are_clamped_and_zero_length_positions_are_not_offered():
+    sid = "ses_res_garima_2026-09-25_1"
+    session = replace(AM, walk_in_reserve_percent=0)
+    [view] = run(on=FRI, templates=(replace(TEMPLATE, sessions=(session,)),),
+                 board={sid: BoardDef(sid, delay_minutes=20)})
+    assert (view.slots[0].window_from, view.slots[0].window_to) == (time(9, 20), time(9, 35))
+    assert (view.slots[10].window_from, view.slots[10].window_to) == (time(11, 50), time(12))
+    assert not view.slots[11].available
+    assert all(s.window_from < s.window_to <= time(12) for s in view.available_slots())
 
 
 def test_sequence_windows_follow_a_late_start():
@@ -280,11 +350,10 @@ def test_timed_slots_that_already_started_today_are_not_offered():
 
 
 def test_queue_positions_whose_window_has_closed_are_not_offered():
-    # 4 per hour from 09:00, 20-minute windows; at 10:00 positions 1-3 (windows end 09:20, 09:35,
-    # 09:50) are gone, position 4 (09:45-10:05) can still make it.
+    # 4 per hour from 09:00: at 10:00 the first four 15-minute windows have closed.
     am, _ = run(on=FRI, now=datetime(2026, 9, 25, 10, 0, tzinfo=IST))
     available = [s.position for s in am.slots if s.available]
-    assert available[0] == 4 and 3 not in available
+    assert available[0] == 5 and 4 not in available
     assert am.remaining == len(available)
     assert am.bookable
 
@@ -296,7 +365,7 @@ def test_future_days_are_not_trimmed_by_the_clock():
 
 def test_a_huge_queue_is_capped_so_slot_ids_stay_unambiguous():
     big = TemplateDef(date(2026, 9, 1), None, (
-        TemplateSessionDef("tpl_big", 1, frozenset({"MON"}), time(8), time(20), "SEQUENCE",
+        TemplateSessionDef("tpl_big", 1, frozenset({"MON"}), time(0), time(23), "SEQUENCE",
                            CapacityRule("FIXED", 1500)),
     ))
     [view] = run(templates=(big,))

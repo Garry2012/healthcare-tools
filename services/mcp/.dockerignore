@@ -1,6 +1,9 @@
-.venv
-**/__pycache__
+**
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!src/**
+**/__pycache__/
 **/*.pyc
-.pytest_cache
-.ruff_cache
-tests

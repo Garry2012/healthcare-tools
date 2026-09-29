@@ -13,8 +13,10 @@ One stack per rollout (a hospital's or hotel's instance of its domain), as every
 ```
 
 > These steps use the documented `az` CLI (Azure CLI 2.60+ with the `containerapp` extension).
-> They haven't been run against a subscription from this repository: `deploy.sh --dry-run` is
-> tested, a real deployment is not. Run it in a test subscription first, and read each step's check.
+> The synthetic `demo-hospital` rollout was deployed and verified in `healthcare-rg`, Central
+> India, on 2026-09-27. Migrate/apply/seed jobs and the live MCP smoke check passed, followed by
+> multilingual knowledge, booking/retry/list/reschedule/cancel and caller-isolation checks.
+> This verifies the backend deployment; ContextForge and LiveKit voice calls remain separate.
 
 ## One command
 
@@ -22,25 +24,41 @@ The rollout directory is the only input. Everything below is what the script doe
 
 ```bash
 az login && az extension add -n containerapp --upgrade
+export AZ_RESOURCE_GROUP=healthcare-rg AZ_LOCATION=centralindia  # this demo's target
 deploy/azure/deploy.sh rollouts/demo-hospital --dry-run      # print every az call first
 deploy/azure/deploy.sh rollouts/demo-hospital --seed-demo    # a demo: also its dated scenario
 deploy/azure/deploy.sh ../private/hospital-a                 # a real provider: its own directory
 ```
 
 - It validates the rollout (settings, data, acceptance dialogues) before creating anything.
+- It supports macOS Bash 3.2. Live runs check `uv`, `git`, `openssl`, `az`, `psql` and `curl`
+  before provisioning; dry runs do not require Azure CLI, login or `psql`.
 - Names are derived from the subscription and the rollout id, so a re-run finds the same
   resources. Secrets are generated once into Key Vault and read back on every later run.
 - An optional `azure.env` in the rollout directory overrides `AZ_LOCATION`, `AZ_RESOURCE_GROUP`,
   `AZ_ACR`, `AZ_KEYVAULT`, `AZ_POSTGRES`, `AZ_POSTGRES_SKU`, `AZ_POSTGRES_TIER`,
   `AZ_CONTAINERAPPS_ENV` and `AZ_LOG_WORKSPACE`.
-- The first run needs `psql` on your machine, to create the runtime database role. Run it from a
+- Every live run needs `psql` on your machine, to reconcile the runtime database role. On macOS,
+  install it with `brew install libpq` and add `$(brew --prefix libpq)/bin` to `PATH`. Run it from a
   machine no one else is logged in to, or Azure Cloud Shell: `az` takes the database admin
   password only as a command-line argument (every other secret goes through files or the
   environment, and none is printed).
+- Database and role/grant setup runs even if a previous attempt already created the server.
+  The script waits for connectivity, applies role/grant changes in a transaction and removes
+  the temporary `setup` firewall rule on success or failure (including INT/TERM). If cleanup
+  fails, it reports the rule to remove and exits unsuccessfully.
 - The database admits Azure services (`--public-access 0.0.0.0`, password and TLS required).
   For production, move it into a VNet (production checklist below).
 - Re-run after any change to the rollout: new image, new settings (exactly the file's, nothing
   stale), migrate, `rollout apply`.
+- Completion requires the latest API and MCP revisions to be healthy and ready, followed by
+  `deploy/azure/smoke.py` against the deployed adapter. This verifies upstream readiness,
+  rejects unauthenticated access, discovers all three tools, and makes authenticated availability
+  and knowledge requests through to the internal API. Failure envelopes fail the release even
+  when MCP returns HTTP 200. These checks are read-only and do not create demo bookings.
+- Revision polling allows 60 attempts, normally five seconds apart. The MCP check has a
+  120-second overall deadline. Inspect Container Apps logs when either gate fails; `done`
+  is printed only after both gates pass.
 
 The manual steps follow, for reading or for running one at a time.
 

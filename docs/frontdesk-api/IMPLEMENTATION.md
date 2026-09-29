@@ -189,7 +189,13 @@ sessions(doctor, date):
   slots            = positions 1..(total − walkInReserve)   [SEQUENCE]
                    | start..end step slotMinutes            [TIMED]
   mark slot.available = no appointment in {BOOKED, CONFIRMED_BY_DESK, RESCHEDULED, ARRIVED} holds it
-  expectedWindow(position) = start + (position−1)/patientsPerHour ± tolerance   [SEQUENCE]
+  intervalMinutes = 60 / capacity.value [PER_HOUR] | sessionMinutes / total [FIXED or DEFAULT]
+  boundary(n) = min(expectedStartOrStart + floor(n × intervalMinutes), end)
+  expectedWindow(position) = [boundary(position−1), boundary(position)]   [SEQUENCE]
+  # Boundaries use exact integer ratios; never round and repeatedly add the interval.
+  # Reserves/bookings do not alter the interval; zero-length windows cannot be booked.
+  # HH:MM cannot represent intervals below one minute: reject explicit template capacities
+  # requiring them, and do not offer such sessions if inherited from defaults/old data.
   arriveBy         = min(board.lastArrivalTime, end − lastArrivalOffsetMinutes)
   bookable=false when: status CANCELLED | presence LEFT | sessionEnded | capacityState FULL
                      | remaining == 0 | now > arriveBy (today) | bookingPolicy ∈ {DESK_ONLY, NO_OPD}

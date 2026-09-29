@@ -41,7 +41,7 @@ hospital (or product owner) must confirm.
 | S21 | `setBoard` | "(today)" in the summary only. | Any other date → 400 (use an exception). |
 | S22 | Search with nothing bookable | Routing has no "nothing to offer" action. | `outcome: NONE_AVAILABLE`, `routing.action: OFFER_SLOTS`, with `unavailable[].nextBookable` (also for a department with nothing in range) and same-category, same-language `alternatives`. All-DESK_ONLY → `TRANSFER_DESK`. Not in the asked-for part of the day → `NO_SESSION_IN_DAY_PART`. A named resource that left → its category (`FORMER_RESOURCE`) or the desk. |
 | S23 | "Anyone available right now?" | "all sessions today with presence present/arriving". | All bookable sessions today, PRESENT then ARRIVING first. It doesn't filter to present-only, because on a day the desk hasn't used the board that would offer nothing. |
-| S24 | Sequence expected window | "± tolerance" vs the example `[t, t+20]`. | `[t, t + TENANT_SEQUENCE_WINDOW_MINUTES]` (default 20), clamped to session end. |
+| S24 | Sequence expected window | Capacity-derived adjacent windows (updated 2026-09-28). | Interval = `60 / value` for PER_HOUR, otherwise session minutes / resolved total capacity. Boundary n = expected start + floor(n × interval), clamped to session end; reserves and bookings do not change boundaries. Sub-minute capacity intervals are not offered. |
 | S25 | Idempotency on errors | Unspecified. | Only successful responses are stored; a retried 4xx is recomputed. |
 | S26 | Unknown query parameters | Not forbidden by OpenAPI 3.0. | Ignored (schemathesis `negative_data_rejection` excluded for this reason). |
 

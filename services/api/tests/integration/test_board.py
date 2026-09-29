@@ -71,7 +71,7 @@ async def test_reopening_a_full_session_offers_it_again(client, today):
 async def test_a_delay_reopens_queue_positions_whose_window_had_closed(client, today):
     on_time = await _session(client, today)
     first = on_time["slots"][0]
-    # at 09:30 position 1 (expected 09:00-09:30) can no longer be reached
+    # at 09:30 position 1 (expected 09:00-09:15) can no longer be reached
     assert first["position"] == 1 and first["expectedWindow"]["from"] == "09:00" and first["available"] is False
 
     assert (await _board(client, today, delayMinutes=45)).status_code == 200

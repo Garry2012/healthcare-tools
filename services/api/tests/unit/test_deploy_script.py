@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -99,6 +101,8 @@ def test_a_secret_key_vault_refuses_stops_the_deployment_before_the_database(tmp
     bin_dir.mkdir()
     (bin_dir / "az").write_text(FAKE_AZ)
     (bin_dir / "az").chmod(0o755)
+    (bin_dir / "psql").write_text("#!/bin/bash\nexit 0\n")
+    (bin_dir / "psql").chmod(0o755)
     log = tmp_path / "az.log"
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
            "AZ_LOG": str(log), "KV_RETRY_SECONDS": "0"}
@@ -108,3 +112,140 @@ def test_a_secret_key_vault_refuses_stops_the_deployment_before_the_database(tmp
     called = log.read_text()
     assert called.count("keyvault secret set") == 6  # retried, then stopped
     assert "postgres flexible-server create" not in called and "containerapp create" not in called
+
+
+def test_missing_psql_is_caught_before_azure_is_called(tmp_path):
+    # An isolated PATH makes the test independent of whether the developer installed psql.
+    for command in ("bash", "uv", "git", "openssl", "az", "curl", "dirname"):
+        target = shutil.which(command)
+        if target:
+            (tmp_path / command).symlink_to(target)
+        else:
+            (tmp_path / command).write_text("#!/bin/bash\nexit 99\n")
+            (tmp_path / command).chmod(0o755)
+    result = subprocess.run([str(SCRIPT), str(DEMO_HOSPITAL)], capture_output=True, text=True,
+                            env={**os.environ, "PATH": str(tmp_path)}, timeout=30)
+    assert result.returncode != 0
+    assert "missing prerequisite: psql" in result.stderr
+    assert "== infrastructure" not in result.stderr
+
+
+@pytest.fixture
+def fake_cloud(tmp_path):
+    """Exercise the real shell control flow without touching a subscription or database."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "commands.log"
+    az = f"#!{sys.executable}\n" + '''
+import json, os, sys
+args = sys.argv[1:]
+text = " ".join(args)
+with open(os.environ["AZ_LOG"], "a") as log:
+    log.write(text + "\\n")
+if args[:3] == ["postgres", "flexible-server", "db"] and "show" in args:
+    sys.exit(0 if os.environ.get("DATABASE_EXISTS") else 3)
+if args[:3] == ["containerapp", "job", "show"]:
+    sys.exit(3)
+if args[:3] == ["postgres", "flexible-server", "firewall-rule"] and "delete" in args:
+    sys.exit(int(os.environ.get("CLEANUP_FAIL", "0")))
+if args[:2] == ["containerapp", "show"] and "yaml" in args:
+    print(json.dumps({"properties": {"template": {"containers": [{}]}}}))
+elif "--query" in args:
+    query = args[args.index("--query") + 1]
+    values = {"properties.healthState": "Unhealthy" if os.environ.get("UNHEALTHY") else "Healthy",
+              "properties.latestRevisionName": "revision-new",
+              "properties.latestReadyRevisionName": "revision-old" if os.environ.get("OLD_READY") else "revision-new",
+              "properties.status": "Succeeded", "value": "stored-test-secret"}
+    print(values.get(query, "fake"))
+'''
+    scripts = {
+        "az": az,
+        "curl": "#!/bin/bash\necho 203.0.113.10\n",
+        "sleep": "#!/bin/bash\nexit 0\n",
+        "psql": '''#!/bin/bash
+echo "PSQL $*" >> "$AZ_LOG"
+if [[ "$*" == *"-c SELECT 1"* ]]; then
+  [[ -z "${PG_UNREACHABLE:-}" ]] || exit 1
+  if [[ -n "${PG_TRANSIENT:-}" && ! -f "$AZ_LOG.connected" ]]; then
+    touch "$AZ_LOG.connected"; exit 1
+  fi
+  exit 0
+fi
+cat >> "$AZ_LOG"
+exit "${SQL_FAIL:-0}"
+''',
+        "uv": f'''#!/bin/bash
+if [[ "$*" == *"deploy/azure/smoke.py"* ]]; then
+  echo SMOKE >> "$AZ_LOG"
+  exit "${{SMOKE_FAIL:-0}}"
+fi
+exec {shlex.quote(shutil.which("uv"))} "$@"
+''',
+    }
+    for name, script in scripts.items():
+        path = bin_dir / name
+        path.write_text(script)
+        path.chmod(0o755)
+
+    def run(**overrides):
+        env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "AZ_LOG": str(log), **overrides}
+        result = subprocess.run([str(SCRIPT), str(DEMO_HOSPITAL)], capture_output=True, text=True,
+                                env=env, timeout=60)
+        return result, log.read_text()
+
+    return run
+
+
+@pytest.mark.parametrize("database_exists", ["", "1"])
+def test_resume_repairs_roles_even_when_server_or_database_already_exists(fake_cloud, database_exists):
+    result, log = fake_cloud(DATABASE_EXISTS=database_exists)
+    assert result.returncode == 0, result.stderr
+    assert "postgres flexible-server create" not in log
+    assert ("postgres flexible-server db create" in log) == (not database_exists)
+    assert "WHERE NOT EXISTS (SELECT 1 FROM pg_roles" in log
+    assert "ON ALL TABLES IN SCHEMA public" in log
+    assert log.index("COMMIT;") < log.index("firewall-rule delete") < log.index("job-migrate-")
+    assert log.index("properties.healthState") < log.index("SMOKE")
+    assert "== done:" in result.stderr
+    assert "stored-test-secret" not in result.stdout + result.stderr
+
+
+def test_failed_role_setup_removes_firewall_and_stops_before_migrations(fake_cloud):
+    result, log = fake_cloud(SQL_FAIL="1")
+    assert result.returncode != 0
+    assert "firewall-rule delete" in log
+    assert "job-migrate-" not in log and "== done:" not in result.stderr
+
+
+@pytest.mark.parametrize("state", ["UNHEALTHY", "OLD_READY"])
+def test_an_unready_new_revision_cannot_report_success(fake_cloud, state):
+    result, log = fake_cloud(**{state: "1"})
+    assert result.returncode != 0
+    assert "did not become ready" in result.stderr
+    assert "SMOKE" not in log and "== done:" not in result.stderr
+
+
+def test_failed_functional_smoke_cannot_report_success(fake_cloud):
+    result, log = fake_cloud(SMOKE_FAIL="1")
+    assert result.returncode != 0
+    assert "SMOKE" in log and "== done:" not in result.stderr
+
+
+def test_transient_database_connectivity_is_retried(fake_cloud):
+    result, log = fake_cloud(PG_TRANSIENT="1")
+    assert result.returncode == 0, result.stderr
+    assert log.count("-c SELECT 1") == 2
+
+
+def test_unreachable_database_cleans_up_and_stops(fake_cloud):
+    result, log = fake_cloud(PG_UNREACHABLE="1")
+    assert result.returncode != 0
+    assert "database did not become reachable" in result.stderr
+    assert "firewall-rule delete" in log and "job-migrate-" not in log
+
+
+def test_firewall_cleanup_failure_is_reported(fake_cloud):
+    result, log = fake_cloud(CLEANUP_FAIL="1")
+    assert result.returncode != 0
+    assert "could not remove PostgreSQL firewall rule 'setup'" in result.stderr
+    assert "job-migrate-" not in log and "== done:" not in result.stderr

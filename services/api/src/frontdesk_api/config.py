@@ -87,7 +87,6 @@ class Settings(BaseSettings):
     tenant_default_capacity: int = Field(default=12, ge=1)
     tenant_last_arrival_offset_minutes: int = Field(default=15, ge=0)
     tenant_walk_in_reserve_percent: int = Field(default=0, ge=0, le=100)
-    tenant_sequence_window_minutes: int = Field(default=20, ge=1)
     # A shorter queue only moves someone to a position whose window ends at least this far ahead.
     tenant_move_lead_minutes: int = Field(default=15, ge=0, le=240)
     tenant_default_slot_minutes: int = Field(default=15, ge=1)
@@ -174,7 +173,6 @@ class Settings(BaseSettings):
             default_capacity=self.tenant_default_capacity,
             default_walk_in_reserve_percent=self.tenant_walk_in_reserve_percent,
             default_last_arrival_offset_minutes=self.tenant_last_arrival_offset_minutes,
-            sequence_window_minutes=self.tenant_sequence_window_minutes,
             default_slot_minutes=self.tenant_default_slot_minutes,
         )
 
