@@ -30,6 +30,31 @@ out() { if [[ -n "$DRY" ]]; then show "$@"; echo "<$2-$3>"; else "$@"; fi; }
 exists() { [[ -z "$DRY" ]] && "$@" >/dev/null 2>&1; }  # a dry run shows a first deployment
 step() { printf '\n== %s\n' "$*" >&2; }
 
+# Check local dependencies before creating any cloud resources. Dry runs need no Azure/psql.
+required="uv git openssl"
+[[ -n "$DRY" ]] || required="$required az psql curl"
+for command in $required; do
+  command -v "$command" >/dev/null 2>&1 || {
+    echo "missing prerequisite: $command (install it and add it to PATH)" >&2; exit 1;
+  }
+done
+CONTEXT="" SETUP_FIREWALL=""
+cleanup() {
+  local status=$?
+  if [[ -n "$SETUP_FIREWALL" ]]; then
+    if ! run az postgres flexible-server firewall-rule delete -g "$RG" -n "$PG" \
+      --rule-name setup --yes -o none; then
+      echo "could not remove PostgreSQL firewall rule 'setup'; remove it before continuing" >&2
+      status=1
+    fi
+  fi
+  [[ -z "$CONTEXT" ]] || rm -rf "$CONTEXT"
+  return "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # --- 1. the rollout must pass its own checks before anything is created ------------------------
 step "validate $ROLLOUT (settings, data, dialogues)"
 (cd "$ROOT/services/api" && uv run -q frontdesk-api rollout validate "$ROLLOUT" >/dev/null) || {
@@ -38,10 +63,13 @@ step "validate $ROLLOUT (settings, data, dialogues)"
 read_env() {  # KEY=value lines, never `source` (JSON quotes, `$` in patterns)
   grep -Ev '^[[:space:]]*(#|$)' "$1" || true
 }
-mapfile -t ROLLOUT_ENV < <(read_env "$ROLLOUT/rollout.env")
+ROLLOUT_ENV=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+  ROLLOUT_ENV+=("$line")
+done < <(read_env "$ROLLOUT/rollout.env")
 P="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^PROVIDER_ID=//p')"
 if [[ -f "$ROLLOUT/azure.env" ]]; then
-  while IFS= read -r line; do export "${line?}"; done < <(read_env "$ROLLOUT/azure.env")
+  while IFS= read -r line || [[ -n "$line" ]]; do export "${line?}"; done < <(read_env "$ROLLOUT/azure.env")
 fi
 if [[ -n "$SEED_DEMO" && "$P" != demo-* ]]; then
   echo "--seed-demo is for demo rollouts only; $P is loaded with its own data" >&2; exit 2
@@ -49,7 +77,7 @@ fi
 
 # --- names: deterministic per subscription and rollout, so a re-run finds the same resources ---
 SUB="$(out az account show --query id -o tsv)"
-hash6() { printf '%s' "$1" | sha1sum | cut -c1-6; }
+hash6() { printf '%s' "$1" | openssl dgst -sha1 | sed 's/^.*= //' | cut -c1-6; }
 LOC="${AZ_LOCATION:-centralindia}"
 RG="${AZ_RESOURCE_GROUP:-rg-frontdesk-$P}"
 ENV_NAME="${AZ_CONTAINERAPPS_ENV:-cae-frontdesk-$P}" LAW="${AZ_LOG_WORKSPACE:-law-frontdesk-$P}"
@@ -77,10 +105,11 @@ exists az acr show -n "$ACR" || run az acr create -g "$RG" -n "$ACR" --sku Basic
 step "images $TAG: platform images, then this rollout's data on top of the API image"
 run az acr build -r "$ACR" -t "frontdesk-api:$TAG" "$ROOT/services/api" -o none
 run az acr build -r "$ACR" -t "frontdesk-mcp:$TAG" "$ROOT/services/mcp" -o none
-CONTEXT="$(mktemp -d)"; trap 'rm -rf "$CONTEXT"' EXIT
+CONTEXT="$(mktemp -d)"
 cp "$ROLLOUT/rollout.env" "$ROLLOUT/data.yaml" "$CONTEXT/"
 [[ -f "$ROLLOUT/dialogues.yaml" ]] && cp "$ROLLOUT/dialogues.yaml" "$CONTEXT/"
-printf 'FROM %s.azurecr.io/frontdesk-api:%s\nCOPY . /app/rollout\n' "$ACR" "$TAG" > "$CONTEXT/Dockerfile"
+# The build context may be private (umask 077); the non-root runtime must own its rollout.
+printf 'FROM %s.azurecr.io/frontdesk-api:%s\nCOPY --chown=10001:10001 . /app/rollout\n' "$ACR" "$TAG" > "$CONTEXT/Dockerfile"
 run az acr build -r "$ACR" -t "frontdesk-api-$P:$TAG" "$CONTEXT" -o none
 API_IMAGE="$ACR.azurecr.io/frontdesk-api-$P:$TAG" MCP_IMAGE="$ACR.azurecr.io/frontdesk-mcp:$TAG"
 
@@ -143,20 +172,44 @@ if ! exists az postgres flexible-server show -g "$RG" -n "$PG"; then
   run az postgres flexible-server create -g "$RG" -n "$PG" -l "$LOC" --version 16 --tier "$PG_TIER" \
     --sku-name "$PG_SKU" --storage-size 32 --admin-user frontdesk_owner --admin-password "$OWNER_PW" \
     --public-access 0.0.0.0 -o none
+fi
+# Reconcile the database and roles even after a previous run created only the server.
+exists az postgres flexible-server db show -g "$RG" -s "$PG" -d "$DB" ||
   run az postgres flexible-server db create -g "$RG" -s "$PG" -d "$DB" -o none
-  MY_IP="$(out curl -s https://ifconfig.me)"
-  run az postgres flexible-server firewall-rule create -g "$RG" -n "$PG" --rule-name setup \
-    --start-ip-address "$MY_IP" --end-ip-address "$MY_IP" -o none
-  ROLES="CREATE ROLE frontdesk_app LOGIN PASSWORD '$APP_PW';
+MY_IP="$(out curl -4 --fail --silent --show-error --max-time 15 https://ifconfig.me)"
+SETUP_FIREWALL=1  # also clean up if Azure creates the rule but the CLI then fails
+run az postgres flexible-server firewall-rule create -g "$RG" -n "$PG" --rule-name setup \
+  --start-ip-address "$MY_IP" --end-ip-address "$MY_IP" -o none
+# Wait for firewall propagation, but don't retry SQL errors as though they were network errors.
+DB_READY=""
+for _ in $(seq 1 30); do
+  if run env PGPASSWORD="$OWNER_PW" psql \
+    "host=$HOST port=5432 dbname=$DB user=frontdesk_owner sslmode=require connect_timeout=5" \
+    -X -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null; then
+    DB_READY=1; break
+  fi
+  sleep "${PG_RETRY_SECONDS:-10}"
+done
+[[ -n "$DB_READY" ]] || { echo "database did not become reachable" >&2; exit 1; }
+# Quote the stored password as a SQL literal; no password appears in argv or dry-run output.
+APP_PW_SQL="${APP_PW//\'/\'\'}"
+ROLES="BEGIN;
+SET LOCAL standard_conforming_strings = on;
+SELECT format('CREATE ROLE frontdesk_app LOGIN PASSWORD %L', '$APP_PW_SQL')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'frontdesk_app')
+\gexec
 GRANT CONNECT ON DATABASE $DB TO frontdesk_app;
 GRANT USAGE ON SCHEMA public TO frontdesk_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO frontdesk_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO frontdesk_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE frontdesk_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO frontdesk_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE frontdesk_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO frontdesk_app;"
-  # SQL on stdin and the password in the environment: neither shows in the process list.
-  run env PGPASSWORD="$OWNER_PW" psql "host=$HOST port=5432 dbname=$DB user=frontdesk_owner sslmode=require" \
-    -v ON_ERROR_STOP=1 <<<"$ROLES"
-  run az postgres flexible-server firewall-rule delete -g "$RG" -n "$PG" --rule-name setup --yes -o none
-fi
+ALTER DEFAULT PRIVILEGES FOR ROLE frontdesk_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO frontdesk_app;
+COMMIT;"
+run env PGPASSWORD="$OWNER_PW" psql \
+  "host=$HOST port=5432 dbname=$DB user=frontdesk_owner sslmode=require connect_timeout=5" \
+  -X -v ON_ERROR_STOP=1 <<<"$ROLES"
+run az postgres flexible-server firewall-rule delete -g "$RG" -n "$PG" --rule-name setup --yes -o none
+SETUP_FIREWALL=""
 secret db-owner-url echo "postgresql://frontdesk_owner:$OWNER_PW@$HOST:5432/$DB?sslmode=require" >/dev/null
 secret db-app-url echo "postgresql://frontdesk_app:$APP_PW@$HOST:5432/$DB?sslmode=require" >/dev/null
 STAFF_SCOPES='"bookings.staff","schedule.write","board.write","directory.write","knowledge.write","calls.write","calls.read"'
@@ -167,7 +220,8 @@ job() {  # job NAME ENV SECRET ARGS...: (re)create a manual job with the current
   local name="job-$1-$P" env="$2" db_secret="$3"; shift 3
   exists az containerapp job show -g "$RG" -n "$name" && run az containerapp job delete -g "$RG" -n "$name" --yes -o none
   run az containerapp job create -g "$RG" -n "$name" --environment "$ENV_NAME" --trigger-type Manual \
-    --replica-timeout 600 --replica-retry-limit 0 --image "$API_IMAGE" --registry-server "$ACR.azurecr.io" \
+    --replica-timeout 600 --replica-retry-limit 0 --cpu 0.5 --memory 1Gi \
+    --image "$API_IMAGE" --registry-server "$ACR.azurecr.io" \
     --registry-identity "$ID" --mi-user-assigned "$ID" --secrets "$(kv "$db_secret")" \
     --env-vars ENV="$env" DATABASE_URL="secretref:$db_secret" ROLLOUT_DIR=/app/rollout "${ROLLOUT_ENV[@]}" \
     --command frontdesk-api --args "$@" -o none
@@ -227,6 +281,34 @@ app "api-$P" "$API_IMAGE" 8000 internal 0.5 1Gi "$(kv db-app-url) $(kv auth-toke
 app "mcp-$P" "$MCP_IMAGE" 8100 external 0.25 0.5Gi "$(kv agent-token) $(kv mcp-token)" \
   ENV=production HOST=0.0.0.0 PORT=8100 "API_BASE_URL=https://api-$P.internal.$DOMAIN/api/v1" \
   API_BEARER_TOKEN=secretref:agent-token MCP_BEARER_TOKEN=secretref:mcp-token "${ROLLOUT_ENV[@]}"
+
+# A healthy old revision is not proof that this deployment succeeded.
+wait_ready() {
+  local name="$1" revision health ready
+  revision="$(out az containerapp show -g "$RG" -n "$name" --query properties.latestRevisionName -o tsv)"
+  for _ in $(seq 1 60); do
+    health="$(out az containerapp revision show -g "$RG" -n "$name" --revision "$revision" \
+      --query properties.healthState -o tsv)"
+    ready="$(out az containerapp show -g "$RG" -n "$name" --query properties.latestReadyRevisionName -o tsv)"
+    [[ -n "$DRY" ]] && return 0
+    [[ -n "$revision" && "$health" == Healthy && "$ready" == "$revision" ]] && return 0
+    sleep "${READY_RETRY_SECONDS:-5}"
+  done
+  echo "$name revision $revision did not become ready; inspect its Container Apps logs" >&2
+  return 1
+}
+step "verify: latest revisions, upstream readiness and authenticated MCP tools"
+wait_ready "api-$P"
+wait_ready "mcp-$P"
+MCP_HOST="$(out az containerapp show -g "$RG" -n "mcp-$P" --query properties.configuration.ingress.fqdn -o tsv)"
+if [[ -n "$DRY" ]]; then
+  show uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
+else
+  # Environment, not arguments: the bearer is never printed or stored in shell history.
+  MCP_URL="https://$MCP_HOST/mcp/" MCP_BEARER_TOKEN="$MCP_TOKEN" \
+    SMOKE_LANGUAGE="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^TENANT_SUPPORTED_LANGUAGES=//p' | cut -d, -f1)" \
+    uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
+fi
 
 step "done: $P"
 cat >&2 <<EOF

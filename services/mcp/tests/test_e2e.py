@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import contextlib
 import os
+import runpy
 import subprocess
 import sys
 import time
 import uuid
+from pathlib import Path
 
 import httpx
 import pytest
@@ -24,6 +26,11 @@ pytestmark = [
     pytest.mark.skipif(not (API_URL and API_TOKEN), reason="MCP_E2E_API_URL / MCP_E2E_API_TOKEN not set"),
 ]
 CALLER = "+919000000555"
+
+
+async def test_deployment_smoke_against_running_adapter(adapter_url):
+    smoke = runpy.run_path(str(Path(__file__).resolve().parents[3] / "deploy/azure/smoke.py"))
+    await smoke["smoke"](f"{adapter_url}/mcp/", "mcp-token", "en")
 
 
 @pytest.fixture(scope="module")
