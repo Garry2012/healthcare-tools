@@ -96,7 +96,6 @@ class EngineConfig:
     default_capacity: int = 12
     default_walk_in_reserve_percent: int = 0
     default_last_arrival_offset_minutes: int = 15
-    sequence_window_minutes: int = 20
     default_slot_minutes: int = 15
 
 
@@ -275,10 +274,9 @@ def apply_exceptions(
     return sessions
 
 
-def _capacity(s: _Working, cfg: EngineConfig) -> tuple[int, str, float]:
-    """(total, capacitySource, customers per hour) for one session."""
+def _capacity(s: _Working, cfg: EngineConfig) -> tuple[int, str]:
+    """(total, capacitySource) before walk-in reserves or bookings."""
     minutes = max(0, _minutes(s.end) - _minutes(s.start))
-    hours = minutes / 60 if minutes else 0.0
     mode, value = s.capacity.mode, s.capacity.value
     if s.capacity_model == "TIMED":
         step = s.slot_minutes or cfg.default_slot_minutes
@@ -286,23 +284,19 @@ def _capacity(s: _Working, cfg: EngineConfig) -> tuple[int, str, float]:
         if mode == "FIXED" and value is not None:
             total, source = min(grid, value), "FIXED"
         elif mode == "PER_HOUR" and value is not None:
-            total, source = min(grid, math.floor(value * hours)), "PER_HOUR"
+            total, source = min(grid, value * minutes // 60), "PER_HOUR"
         else:
             total, source = grid, "DEFAULT"
-        return total, source, (60 / step)
+        return total, source
     if mode == "FIXED" and value is not None:
         total, source = value, "FIXED"
     elif mode == "PER_HOUR" and value is not None:
-        total, source = math.floor(value * hours), "PER_HOUR"
+        total, source = value * minutes // 60, "PER_HOUR"
     else:
         total, source = cfg.default_capacity, "DEFAULT"
     # Queue positions are written with at most three digits, so an id can never read as HH:MM.
     total = min(total, MAX_QUEUE)
-    if mode == "PER_HOUR" and value:
-        pph = float(value)
-    else:
-        pph = total / hours if hours else float(total or 1)
-    return total, source, pph
+    return total, source
 
 
 def compute_sessions(
@@ -328,7 +322,15 @@ def compute_sessions(
     for w in working:
         sid = ids.session_id(resource.resource_id, on, w.n)
         entry = board.get(sid) if on == today else None
-        total, source, pph = _capacity(w, cfg)
+        total, source = _capacity(w, cfg)
+        # Keep the interval rational: rounding each absolute boundary once avoids
+        # floating-point errors and accumulated drift at rates such as 9/hour.
+        if w.capacity.mode == "PER_HOUR" and w.capacity.value:
+            interval_minutes, interval_divisor = 60, w.capacity.value
+        else:
+            interval_minutes = _minutes(w.end) - _minutes(w.start)
+            interval_divisor = total or 1
+        precision_supported = w.capacity_model != "SEQUENCE" or interval_minutes >= interval_divisor
         reserve = math.ceil(total * w.walk_in_reserve_percent / 100) if total else 0
         offered = max(0, total - reserve)
 
@@ -365,6 +367,8 @@ def compute_sessions(
             reason = "CANCELLED"
         elif resource.booking_policy == "NOT_OFFERED":
             reason = "NOT_OFFERED"
+        elif not precision_supported:
+            reason = "NOT_OFFERED"
         elif entry and entry.presence == "LEFT":
             reason = "LEFT_FOR_DAY"
         elif status == "ENDED":
@@ -396,17 +400,16 @@ def compute_sessions(
                             end=_clock(start_m + step),
                         )
                     )
-            else:
-                interval = 60 / pph if pph else 0
+            elif precision_supported:
                 for position in range(1, offered + 1):
                     slot_id = ids.position_slot_id(sid, position)
-                    at = min(run_from + math.floor((position - 1) * interval), end_min)
-                    window_to = min(at + cfg.sequence_window_minutes, end_min)
+                    at = min(run_from + (position - 1) * interval_minutes // interval_divisor, end_min)
+                    window_to = min(run_from + position * interval_minutes // interval_divisor, end_min)
                     slots.append(
                         SlotView(
                             slot_id=slot_id,
                             kind="SEQUENCE",
-                            available=bookable and slot_id not in held and window_to > clock,
+                            available=bookable and slot_id not in held and at < window_to and window_to > clock,
                             position=position,
                             window_from=_clock(at),
                             window_to=_clock(window_to),

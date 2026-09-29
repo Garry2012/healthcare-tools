@@ -243,9 +243,9 @@ paths:
                         bookable: true
                         notBookableReason: null
                         slots:
-                          - { slotId: slot_ses_res_garima_2026-09-26_2_04, kind: SEQUENCE, position: 4, expectedWindow: { from: "15:30", to: "15:50" }, available: true }
-                          - { slotId: slot_ses_res_garima_2026-09-26_2_05, kind: SEQUENCE, position: 5, expectedWindow: { from: "15:40", to: "16:00" }, available: true }
-                          - { slotId: slot_ses_res_garima_2026-09-26_2_06, kind: SEQUENCE, position: 6, expectedWindow: { from: "15:50", to: "16:10" }, available: true }
+                          - { slotId: slot_ses_res_garima_2026-09-26_2_04, kind: SEQUENCE, position: 4, expectedWindow: { from: "15:30", to: "15:40" }, available: true }
+                          - { slotId: slot_ses_res_garima_2026-09-26_2_05, kind: SEQUENCE, position: 5, expectedWindow: { from: "15:40", to: "15:50" }, available: true }
+                          - { slotId: slot_ses_res_garima_2026-09-26_2_06, kind: SEQUENCE, position: 6, expectedWindow: { from: "15:50", to: "16:00" }, available: true }
                     unavailable: []
                 alternatives: []
         '400': { $ref: '#/components/responses/ValidationFailed' }
@@ -305,7 +305,7 @@ paths:
                 category: { id: cat_genmed, name: "General Medicine" }
                 date: "2026-09-26"
                 session: { sessionId: ses_res_garima_2026-09-26_2, label: Afternoon, start: "15:00", end: "17:00" }
-                slot: { slotId: slot_ses_res_garima_2026-09-26_2_04, kind: SEQUENCE, position: 4, expectedWindow: { from: "15:30", to: "15:50" } }
+                slot: { slotId: slot_ses_res_garima_2026-09-26_2_04, kind: SEQUENCE, position: 4, expectedWindow: { from: "15:30", to: "15:40" } }
                 arriveBy: "16:45"
                 timingCertainty: EXPECTED
                 price: { amount: 600, currency: INR, confirmed: true }
@@ -1519,7 +1519,7 @@ components:
               code: SLOT_UNAVAILABLE
               message: "Slot already booked"
               currentSlots:
-                - { slotId: slot_ses_res_garima_2026-09-26_2_05, kind: SEQUENCE, position: 5, expectedWindow: { from: "15:40", to: "16:00" }, available: true }
+                - { slotId: slot_ses_res_garima_2026-09-26_2_05, kind: SEQUENCE, position: 5, expectedWindow: { from: "15:40", to: "15:50" }, available: true }
     RateLimited:
       description: Too many requests.
       headers:
@@ -1901,7 +1901,13 @@ components:
         expectedWindow:
           type: object
           nullable: true
-          description: SEQUENCE only. Server-computed from start and throughput; spoken as "around".
+          description: >-
+            SEQUENCE only; spoken as "around". Adjacent boundaries are computed from
+            the session's expected start using floor(position * intervalMinutes).
+            PER_HOUR uses 60 / capacity.value; FIXED and DEFAULT use session duration
+            / resolved total capacity, before walk-in reserves or bookings. Each
+            window ends at the next boundary, clamped to session end. Sub-minute
+            capacity intervals cannot be offered with the HH:MM representation.
           properties:
             from: { $ref: '#/components/schemas/ClockTime' }
             to: { $ref: '#/components/schemas/ClockTime' }

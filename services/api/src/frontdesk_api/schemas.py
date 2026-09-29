@@ -270,6 +270,13 @@ def session_problems(sessions: list[TemplateSession]) -> list[tuple[str, str]]:
             problems.append((f"{where}.slotMinutes", "TIMED sessions need slotMinutes."))
         if sess.capacity.mode != "DEFAULT" and sess.capacity.value is None:
             problems.append((f"{where}.capacity", "capacity.value is required unless mode is DEFAULT."))
+        if sess.capacity_model == "SEQUENCE" and sess.capacity.value is not None:
+            start, end = dt.time.fromisoformat(sess.start), dt.time.fromisoformat(sess.end)
+            minutes = (end.hour - start.hour) * 60 + end.minute - start.minute
+            limit = 60 if sess.capacity.mode == "PER_HOUR" else minutes
+            if sess.capacity.mode != "DEFAULT" and minutes > 0 and sess.capacity.value > limit:
+                problems.append((f"{where}.capacity.value",
+                                 "SEQUENCE capacity must allow at least one minute per position."))
     for i, sess in enumerate(sessions):
         for other in sessions[:i]:
             if weekly_clash(sess.days_of_week, sess.start, sess.end, other.days_of_week, other.start, other.end):

@@ -193,10 +193,10 @@ def _cut(day):
 
 async def test_today_a_position_about_to_close_is_not_a_place_to_move_to(client, app, monkeypatch, app_settings):
     """After the cut the session holds 3 over two hours, so positions are 40 minutes apart and
-    position 2 is expected 15:40-16:00. At 15:50 it closes in ten minutes: nobody can get there."""
+    position 2 is expected 15:40-16:20. At 16:10 it closes in ten minutes: nobody can get there."""
     from datetime import time
 
-    today = _freeze(monkeypatch, app_settings, 3, time(15, 50))
+    today = _freeze(monkeypatch, app_settings, 3, time(16, 10))
     ids = await _book_positions(client, today, (5, 6))
     r = await client.post("/schedule-exceptions", headers=STAFF, json=_cut(today))
     assert r.status_code == 201, r.text

@@ -45,7 +45,7 @@ async def test_booking_response_closes_the_call(client, app_settings):
     assert body["resource"]["name"] == "Dr. Garima"
     assert body["session"] == {"sessionId": f"ses_res_garima_{monday}_2", "label": "Afternoon",
                                "start": "15:00", "end": "17:00"}
-    assert body["slot"]["expectedWindow"] == {"from": "15:45", "to": "16:05"}
+    assert body["slot"]["expectedWindow"] == {"from": "15:45", "to": "16:00"}
     assert body["arriveBy"] == "16:45" and body["timingCertainty"] == "EXPECTED"
     assert body["price"] == {"amount": 600.0, "currency": "INR", "confirmed": True}
     assert len(body["confirmationCode"]) == 4
