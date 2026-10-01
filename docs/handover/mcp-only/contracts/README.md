@@ -25,7 +25,16 @@ Five unquoted descriptions in YAML flow mappings contain commas, producing four 
 | 1256 | `ClientCredentialsGrant.properties.scope` |
 | 1278 | `LoginResponse.properties.role` |
 
-The earlier contract investigation validated 25 discovered typed inline examples successfully; that does not make the full document valid. Request an owner-published correction when available. If development needs a temporary test overlay, quote only these five descriptions, record source/overlay hashes and label it test-only. Do not overwrite this original or silently add guessed semantics. This handover does not contain an implemented overlay or stub.
+The earlier contract investigation validated 25 discovered typed inline examples successfully; that does not make the full document valid. Request an owner-published correction when available. Do not overwrite this original or silently add guessed semantics.
+
+## Test-only quoting overlay
+
+[manoj-openapi-20260930.test-overlay.yaml](manoj-openapi-20260930.test-overlay.yaml) is a **test-only** copy of the pinned snapshot in which exactly the five descriptions above are quoted. Nothing else changes: no endpoint, field, enum or wording.
+
+- Source SHA-256: `b8f282718c2c45410dd0dd403369223b9cbe8dea045ee044207aa1e52ec2de78`
+- Overlay SHA-256: `e21869b20a6c956d12d69873b138b721fc7676ba6e6f86b5ecc0a4a7af4dd1a3`
+
+`services/mcp/tests/test_contract.py` fails if either file or hash changes, if the overlay differs from the original on any line other than 1208, 1209, 1235, 1256 and 1278, or if the MCP client types in `services/mcp/src/frontdesk_mcp/contract.py` drift from the contract's enums, patterns and examples. The overlay is never deployed; it exists so consumer tests can parse the contract. Replace it with the owner's corrected revision when one is published.
 
 The [plan](../PLAN.md) records collective consumer mismatches, authentication, missing agreements and test scenarios. There is no slot endpoint. `/availability` is a live board over the usual schedule, not reservable-slot inventory. The UNKNOWN callback-only policy is our agreed consumer policy; the original specification retains the owner's wording unchanged.
 

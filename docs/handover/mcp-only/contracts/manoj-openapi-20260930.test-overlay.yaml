@@ -1,0 +1,1284 @@
+openapi: 3.0.3
+info:
+  title: Healthcare Operations API
+  description: >
+    Domain API for the healthcare voice AI operational backend. Consumed by the
+    MCP tool layer (voice agent path) and the front-desk web application.
+    Generic for the healthcare domain: facility-specific values (departments,
+    staleness threshold, session names) are tenant data and configuration, never
+    part of this contract. An appointment is noted, never confirmed - no
+    guaranteed time, slot or token exists in this domain.
+  version: 0.3.0-draft
+  contact:
+    name: Operational backend workstream
+servers:
+  - url: https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io
+    description: Contract mock in Azure - always up, listed first so Swagger UI targets it by default. No /api/v1 prefix.
+  - url: http://localhost:8000/api/v1
+    description: Local backend (docker-compose.prod.yml or uvicorn)
+  - url: http://localhost:4010
+    description: Contract mock (Prism) - deterministic responses from this spec's examples, no backend needed. Prism serves the paths exactly as written here, so the mock has no /api/v1 prefix.
+  - url: https://{host}/api/v1
+    description: Azure dev environment (host set when the shared resource group is provisioned)
+    variables:
+      host:
+        default: TBD-azure-dev-host
+        description: Hostname of the deployed domain-api Container App
+
+tags:
+  - name: Auth
+    description: >
+      Token issuance (ADR-003). The backend is the single issuer for every
+      consumer - machine clients exchange client credentials, staff log in
+      with username/password - so no external identity provider is required.
+      Lifetimes are deployment configuration, never fixed in code.
+  - name: Doctors
+    description: Doctor directory and usual schedules (background context only - never today's position)
+  - name: Departments
+    description: Facility departments with staffing state
+  - name: Availability
+    description: The live board - the only source for "today" answers
+  - name: Appointments
+    description: The register - requests are noted, never confirmed
+  - name: Affected Patients
+    description: Patients impacted by a doctor's schedule change
+  - name: Doctor Messages
+    description: Inbox of availability messages from doctor channels; never auto-applied
+  - name: Call Summaries
+    description: >
+      Hospital-facing summary of each agent-handled call, for the admin UI.
+      Summaries only - transcripts, audio and latency traces remain in the
+      voice platform's observability, referenced by callId.
+
+security:
+  - oauth2: []
+
+paths:
+  /auth/token:
+    post:
+      tags: [Auth]
+      operationId: issueMachineToken
+      summary: Machine token (OAuth2 client credentials)
+      description: >
+        Machine consumers (MCP gateway, channel adapter, voice platform, web
+        application backend) exchange their registered client_id/client_secret
+        for a short-lived bearer token. Scopes are the ones granted at
+        registration - never requested. Unknown id, wrong secret and inactive
+        client all produce the same 401.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: '#/components/schemas/ClientCredentialsGrant' }
+      responses:
+        '200':
+          description: Bearer token issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+              example:
+                access_token: eyJhbGciOiJIUzI1NiJ9.example.signature
+                token_type: Bearer
+                expires_in: 3600
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: staffLogin
+      summary: Staff login (web application)
+      description: >
+        Front-desk / admin staff sign in with username and password. Returns a
+        short-lived access token (scopes derived from the staff role) and a
+        single-use refresh token. Neutral 401 on any failure.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Session established.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+              example:
+                access_token: eyJhbGciOiJIUzI1NiJ9.example.signature
+                refresh_token: 0hV3v2mQ7e...single-use...
+                token_type: Bearer
+                expires_in: 3600
+                role: desk
+                username: frontdesk1
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshStaffSession
+      summary: Rotate a staff session
+      description: >
+        Exchanges a refresh token for a new access + refresh pair. Each refresh
+        token is single-use; presenting one twice revokes the whole session
+        family (reuse detection). A deactivated account cannot refresh.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: New token pair.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: staffLogout
+      summary: End a staff session
+      description: Revokes the refresh token's whole family. Idempotent and neutral - always 200.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Session revoked (or already gone).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+
+  /doctors:
+    get:
+      tags: [Doctors]
+      operationId: searchDoctors
+      summary: Search the doctor directory
+      description: >
+        Search by free-text name and/or department. Only active doctors
+        are returned unless active=false is passed explicitly (staff use).
+      parameters:
+        - name: query
+          in: query
+          description: Free-text match on doctor name.
+          schema: { type: string, maxLength: 100 }
+        - name: department
+          in: query
+          description: Department id to filter by.
+          schema: { type: string }
+        - name: gender
+          in: query
+          description: Filter by doctor gender (e.g. a caller asking for a lady doctor).
+          schema: { type: string, enum: [FEMALE, MALE] }
+        - name: active
+          in: query
+          schema: { type: boolean, default: true }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching doctors.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/DoctorSummary' }
+                  total: { type: integer }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /doctors/{doctorId}:
+    get:
+      tags: [Doctors]
+      operationId: getDoctor
+      summary: Get a doctor's full profile and usual schedule
+      description: >
+        The usual schedule (OPD days, sessions, patients-per-hour) is background
+        context only. Consumers must never present it to a caller as today's
+        position - today's position comes exclusively from /availability.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+      responses:
+        '200':
+          description: Doctor detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DoctorDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /departments:
+    get:
+      tags: [Departments]
+      operationId: listDepartments
+      summary: List the facility's departments
+      description: >
+        Consumers must not confirm the facility offers a department, or route a
+        caller to it, when hasConsultant is false.
+      responses:
+        '200':
+          description: Department list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Department' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /availability:
+    get:
+      tags: [Availability]
+      operationId: getAvailability
+      summary: Get the live board for a date
+      description: >
+        Today's (or a given date's) position for one doctor or a whole
+        department. Exactly one of doctorId or department must be given.
+        Staleness is computed server-side against the tenant threshold
+        (default 4 hours): a stale or missing entry is returned with status
+        UNKNOWN, and the consumer's behaviour is to hand the caller to a person.
+
+        The board is PER SESSION (v0.3): a doctor with multiple shifts returns
+        one entry per session, each with its own status and staleness clock -
+        consumers must NOT assume one entry per doctor. A morning confirmation
+        is not an evening confirmation. Entries may be pre-filled from the
+        usual schedule by the desk application, but a pre-filled entry stays
+        NOT_CONFIRMED until a staff member confirms it - the agent never treats
+        the usual schedule as today's position.
+      parameters:
+        - name: date
+          in: query
+          description: ISO date, or the literal "today" (facility timezone). Defaults to today.
+          schema: { type: string, default: today }
+        - name: doctorId
+          in: query
+          schema: { type: string }
+        - name: department
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Board entries - one per doctor PER SESSION in scope.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [date, items]
+                properties:
+                  date: { type: string, format: date }
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AvailabilityEntry' }
+                example:
+                  date: "2026-09-29"
+                  items:
+                    - doctorId: "doc_001"
+                      doctorName: "Dr. Ambika V"
+                      date: "2026-09-29"
+                      session: "Morning"
+                      status: "IN"
+                      expectedTime: "10:30"
+                      expectedEndTime: "12:00"
+                      lastUpdatedAt: "2026-09-29T09:05:00+05:30"
+                      updatedBy: "frontdesk1"
+                      source: "DESK"
+                      isStale: false
+                    - doctorId: "doc_001"
+                      doctorName: "Dr. Ambika V"
+                      date: "2026-09-29"
+                      session: "Evening"
+                      status: "NOT_CONFIRMED"
+                      expectedTime: "18:30"
+                      expectedEndTime: "19:30"
+                      isStale: false
+                    - doctorId: "doc_007"
+                      doctorName: "Dr. Purushothama Reddy"
+                      date: "2026-09-29"
+                      session: "Afternoon"
+                      status: "LATE"
+                      delayMinutes: 30
+                      expectedTime: "16:00"
+                      expectedEndTime: "17:00"
+                      note: "In surgery"
+                      lastUpdatedAt: "2026-09-29T14:40:00+05:30"
+                      updatedBy: "frontdesk1"
+                      source: "DOCTOR_MESSAGE"
+                      isStale: false
+                    - doctorId: "doc_013"
+                      doctorName: "Dr. Roopa A H"
+                      date: "2026-09-29"
+                      status: "UNKNOWN"
+                      isStale: true
+                      lastUpdatedAt: "2026-09-29T08:10:00+05:30"
+                      updatedBy: "vinay"
+                      source: "DESK"
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /availability/{doctorId}:
+    post:
+      tags: [Availability]
+      operationId: setAvailability
+      summary: Set a doctor's board status (staff only)
+      description: >
+        Staff-only in Beta - not exposed on the agent path. The write is
+        attributed to the acting staff identity and the source is recorded.
+        One write per session (v0.3): pass the session label when the doctor
+        has multiple shifts; omitting it addresses the doctor's single/default
+        session. expectedEndTime records a limited window (e.g. "today only
+        15:00-16:00") so the agent can state until when the doctor is available.
+      security:
+        - oauth2: [availability.write]
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/ActingUser'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AvailabilityUpdate' }
+      responses:
+        '200':
+          description: The updated board entry.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AvailabilityEntry' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /appointments:
+    post:
+      tags: [Appointments]
+      operationId: createAppointment
+      summary: Create an appointment
+      description: >
+        Records the caller's request while they are on the line. Exactly one of
+        doctorId or department must be given. reasonVerbatim must be the
+        caller's own words - never an interpretation or diagnosis. The response
+        status is NOTED: details have been noted, nothing is confirmed.
+      security:
+        - oauth2: [appointments.write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppointmentCreate' }
+      responses:
+        '201':
+          description: The created request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    get:
+      tags: [Appointments]
+      operationId: findAppointments
+      summary: Find appointments by mobile number
+      description: >
+        Lookup is scoped by mobile number: a consumer can only ever retrieve
+        requests belonging to the number it presents. There is no unscoped list
+        on the agent path. The staff web application uses its own
+        staff-authorised search (staff scope) with additional filters.
+      parameters:
+        - name: mobile
+          in: query
+          required: true
+          description: The caller's 10-digit mobile number.
+          schema: { $ref: '#/components/schemas/Mobile' }
+        - name: from
+          in: query
+          description: Earliest visit date (inclusive). Defaults to today.
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          description: Latest visit date (inclusive).
+          schema: { type: string, format: date }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/AppointmentStatus' }
+      responses:
+        '200':
+          description: Requests registered under this mobile number (may be empty).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Appointment' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /appointments/{appointmentId}/cancel:
+    post:
+      tags: [Appointments]
+      operationId: cancelAppointment
+      summary: Cancel an appointment (mobile-match verified)
+      description: >
+        Succeeds only when callerMobile matches the mobile on the request.
+        A mismatch returns the same neutral 404 NOT_FOUND as a genuinely absent
+        request - nothing is leaked about whether a request exists under another
+        number. Refused attempts are logged for review. Staff acting through the
+        web application override with their own authorisation (staff scope,
+        callerMobile not required).
+      security:
+        - oauth2: [appointments.write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [callerMobile]
+              properties:
+                callerMobile: { $ref: '#/components/schemas/Mobile' }
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: Optional cancellation reason, caller's own words.
+                callId: { $ref: '#/components/schemas/CallId' }
+      responses:
+        '200':
+          description: The cancelled request (status CANCELLED).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /appointments/{appointmentId}/reschedule:
+    post:
+      tags: [Appointments]
+      operationId: rescheduleAppointment
+      summary: Reschedule an appointment (mobile-match verified)
+      description: >
+        Same verification and neutral-404 behaviour as cancel. Rescheduling
+        records the new expectation; it does not guarantee any time or token.
+      security:
+        - oauth2: [appointments.write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [callerMobile, newVisitDate]
+              properties:
+                callerMobile: { $ref: '#/components/schemas/Mobile' }
+                newVisitDate: { type: string, format: date }
+                newExpectedTime: { $ref: '#/components/schemas/ApproxTime' }
+                callId: { $ref: '#/components/schemas/CallId' }
+      responses:
+        '200':
+          description: The updated request (status CHANGED).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /appointments/{appointmentId}/confirm:
+    post:
+      tags: [Appointments]
+      operationId: confirmAppointment
+      summary: Mark a request as confirmed by the desk (staff only)
+      description: Desk acknowledgement that the request has been acted on. Staff-only.
+      security:
+        - oauth2: [appointments.staff]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/ActingUser'
+      responses:
+        '200':
+          description: The request (status CONFIRMED_BY_DESK).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /appointments/{appointmentId}/informed:
+    post:
+      tags: [Affected Patients]
+      operationId: markInformed
+      summary: Record that the patient has been informed of a change
+      security:
+        - oauth2: [appointments.staff]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+        - $ref: '#/components/parameters/ActingUser'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [via]
+              properties:
+                via:
+                  type: string
+                  enum: [PHONE, WHATSAPP, SMS, IN_PERSON, OTHER]
+                note: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: The request with informed state set.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /doctors/{doctorId}/affected-patients:
+    get:
+      tags: [Affected Patients]
+      operationId: getAffectedPatients
+      summary: List patients affected by a doctor's schedule change
+      description: >
+        Appointments registered for the doctor on the given date,
+        each with its informed state. Staff-facing in Beta; also the foundation
+        for future automated outbound notification.
+      security:
+        - oauth2: [appointments.staff]
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Affected appointments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [doctorId, date, boardStatus, items]
+                properties:
+                  doctorId: { type: string }
+                  date: { type: string, format: date }
+                  boardStatus: { $ref: '#/components/schemas/AvailabilityStatus' }
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Appointment' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /call-summaries:
+    post:
+      tags: [Call Summaries]
+      operationId: createCallSummary
+      summary: Store the summary of a completed call
+      description: >
+        Posted by the voice platform when a call ends. callId is a natural
+        idempotency key - posting the same callId again replaces nothing and
+        returns the stored summary (200 instead of 201). Transcripts and audio
+        are never sent here.
+      security:
+        - oauth2: [calls.write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CallSummaryCreate' }
+      responses:
+        '201':
+          description: The stored summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallSummary' }
+        '200':
+          description: A summary with this callId already exists; returned unchanged.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallSummary' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    get:
+      tags: [Call Summaries]
+      operationId: listCallSummaries
+      summary: List call summaries (admin UI)
+      security:
+        - oauth2: [calls.read]
+      parameters:
+        - name: from
+          in: query
+          description: Earliest call start (inclusive).
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: intent
+          in: query
+          schema: { $ref: '#/components/schemas/CallIntent' }
+        - name: outcome
+          in: query
+          schema: { $ref: '#/components/schemas/CallOutcome' }
+        - name: doctorId
+          in: query
+          schema: { type: string }
+        - name: mobile
+          in: query
+          schema: { $ref: '#/components/schemas/Mobile' }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Summaries, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/CallSummary' }
+                  total: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /call-summaries/{summaryId}:
+    get:
+      tags: [Call Summaries]
+      operationId: getCallSummary
+      summary: Get one call summary (admin UI)
+      security:
+        - oauth2: [calls.read]
+      parameters:
+        - name: summaryId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /doctor-messages:
+    post:
+      tags: [Doctor Messages]
+      operationId: receiveDoctorMessage
+      summary: Receive an availability message from a doctor channel
+      description: >
+        Channel-agnostic receive endpoint - the messaging integration posts
+        here. The message is held as PENDING and never changes the board by
+        itself.
+      security:
+        - oauth2: [messages.receive]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DoctorMessageCreate' }
+      responses:
+        '201':
+          description: The stored message (status PENDING).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DoctorMessage' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    get:
+      tags: [Doctor Messages]
+      operationId: listDoctorMessages
+      summary: List doctor messages (staff only)
+      security:
+        - oauth2: [messages.decide]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, APPLIED, IGNORED]
+            default: PENDING
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/DoctorMessage' }
+                  total: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /doctor-messages/{messageId}/apply:
+    post:
+      tags: [Doctor Messages]
+      operationId: applyDoctorMessage
+      summary: Apply a message to the board (staff only)
+      description: >
+        Staff decision. Updates the availability board with source
+        DOCTOR_MESSAGE. The body carries the interpreted board update -
+        the desk confirms the interpretation, the system never guesses.
+      security:
+        - oauth2: [messages.decide]
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+        - $ref: '#/components/parameters/ActingUser'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [doctorId, update]
+              properties:
+                doctorId: { type: string }
+                update: { $ref: '#/components/schemas/AvailabilityUpdate' }
+      responses:
+        '200':
+          description: The message (status APPLIED) with the resulting board entry.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, availability]
+                properties:
+                  message: { $ref: '#/components/schemas/DoctorMessage' }
+                  availability: { $ref: '#/components/schemas/AvailabilityEntry' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /doctor-messages/{messageId}/ignore:
+    post:
+      tags: [Doctor Messages]
+      operationId: ignoreDoctorMessage
+      summary: Ignore a message (staff only)
+      security:
+        - oauth2: [messages.decide]
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+        - $ref: '#/components/parameters/ActingUser'
+      responses:
+        '200':
+          description: The message (status IGNORED).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DoctorMessage' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      description: >
+        OAuth2 client credentials per consumer (MCP gateway, web application).
+        The facility (tenant) is bound to the credential. Scopes gate the write
+        surfaces; all reads require a valid token.
+      flows:
+        clientCredentials:
+          tokenUrl: auth/token
+          scopes:
+            appointments.write: Create, cancel and reschedule appointments (agent + staff)
+            appointments.staff: Staff-only request operations (confirm, informed, affected patients, unscoped search)
+            availability.write: Update the live board (staff)
+            messages.receive: Post incoming doctor messages (channel integration)
+            messages.decide: List, apply and ignore doctor messages (staff)
+            calls.write: Store call summaries (voice platform)
+            calls.read: Read call summaries (hospital admin UI)
+
+  parameters:
+    DoctorId:
+      name: doctorId
+      in: path
+      required: true
+      schema: { type: string }
+    AppointmentId:
+      name: appointmentId
+      in: path
+      required: true
+      schema: { type: string }
+    MessageId:
+      name: messageId
+      in: path
+      required: true
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >
+        Unique key for safe retries on POST. A replay with the same key returns
+        the original result; the same key with a different body returns 409
+        IDEMPOTENCY_CONFLICT.
+      schema: { type: string, maxLength: 64 }
+    ActingUser:
+      name: X-Acting-User
+      in: header
+      required: true
+      description: >
+        Identity of the staff member performing the action (attribution).
+        Required on all staff writes; recorded in the audit trail.
+      schema: { type: string, maxLength: 64 }
+
+  responses:
+    ValidationFailed:
+      description: The request is invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: VALIDATION_FAILED, message: "mobile must be a 10-digit number" } }
+    NotFound:
+      description: >
+        The resource does not exist - or, on verified operations, the caller's
+        mobile did not match. The two cases are deliberately indistinguishable.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: NOT_FOUND, message: "No matching appointment was found" } }
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: UNAUTHORIZED, message: "Invalid token" } }
+    Forbidden:
+      description: The credential lacks the required scope.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: FORBIDDEN, message: "Scope availability.write is required" } }
+    Conflict:
+      description: Idempotency conflict, or the resource state does not allow the operation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: CONFLICT, message: "Request is already cancelled" } }
+
+  schemas:
+    Mobile:
+      type: string
+      pattern: '^[0-9]{10}$'
+      description: 10-digit mobile number, no country code, no separators.
+      example: '9876543210'
+
+    ApproxTime:
+      type: string
+      pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+      description: >
+        24h local facility time, HH:MM. All times in this domain are
+        expectations ("around 10:30"), never guaranteed slots.
+      example: '10:30'
+
+    CallId:
+      type: string
+      maxLength: 64
+      description: >
+        Reference to the voice platform's call record, for traceability.
+        Call logs themselves belong to platform observability, not this API.
+      example: 'call_8f2a41'
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: number }
+        currency: { type: string, example: INR }
+
+    AttendanceType:
+      type: string
+      enum: [REGULAR, VISITING, ON_CALL]
+      description: >
+        REGULAR sits on fixed usual sessions; VISITING attends specific days;
+        ON_CALL attends on demand with no usual timing - availability questions
+        for ON_CALL doctors resolve to the front desk unless the board
+        has a confirmed entry.
+
+    DepartmentRef:
+      type: object
+      required: [id, name]
+      description: >
+        Compact department reference embedded in doctor records (v0.3) - id for
+        filtering and joins, name ready to speak/display, so consumers never
+        need a second call to name a doctor's department.
+      properties:
+        id: { type: string, example: dept_gynaec }
+        name: { type: string, example: Obstetrics & Gynaecology }
+
+    Department:
+      type: object
+      required: [id, name, hasConsultant, active]
+      properties:
+        id: { type: string, example: dept_ortho }
+        name: { type: string, example: Orthopaedics }
+        hasConsultant:
+          type: boolean
+          description: False means no practising consultant - never confirm or route.
+        active: { type: boolean }
+
+    UsualSession:
+      type: object
+      required: [daysOfWeek, start, end]
+      properties:
+        label: { type: string, example: Morning, description: Optional session label (tenant terminology). }
+        daysOfWeek:
+          type: array
+          items: { type: string, enum: [MON, TUE, WED, THU, FRI, SAT, SUN] }
+        start: { $ref: '#/components/schemas/ApproxTime' }
+        end: { $ref: '#/components/schemas/ApproxTime' }
+
+    DoctorSummary:
+      type: object
+      required: [id, name, departments, attendanceType, active]
+      properties:
+        id: { type: string, example: doc_014 }
+        name: { type: string }
+        departments:
+          type: array
+          items: { $ref: '#/components/schemas/DepartmentRef' }
+          description: >
+            The doctor's departments as {id, name} objects (changed from plain
+            ids in v0.3). Filter parameters and appointment inputs still use
+            the department id.
+        attendanceType: { $ref: '#/components/schemas/AttendanceType' }
+        gender:
+          type: string
+          enum: [FEMALE, MALE]
+          description: >
+            Doctor's gender, for caller preference filtering (a common request,
+            e.g. asking for a lady doctor). Optional until confirmed per doctor.
+        qualification: { type: string }
+        consultationFee: { $ref: '#/components/schemas/Money' }
+        languages:
+          type: array
+          items: { type: string, example: kn }
+        active: { type: boolean }
+
+    DoctorDetail:
+      allOf:
+        - $ref: '#/components/schemas/DoctorSummary'
+        - type: object
+          properties:
+            usualSchedule:
+              type: array
+              items: { $ref: '#/components/schemas/UsualSession' }
+              description: >
+                Background context only. Never present this to a caller as
+                today's position; today's position comes from /availability.
+            patientsPerHour:
+              type: number
+              description: >
+                How many patients this doctor typically sees per hour.
+                Used to phrase realistic "come by around" expectations.
+            dataConfirmed:
+              type: boolean
+              description: False while the facility has not confirmed this row (seed data).
+
+    AvailabilityStatus:
+      type: string
+      enum: [IN, LATE, CANCELLED, NOT_CONFIRMED, UNKNOWN]
+      description: >
+        UNKNOWN is returned (never stored) when the entry is stale or absent -
+        the consumer hands the caller to a person.
+
+    AvailabilityEntry:
+      type: object
+      required: [doctorId, doctorName, date, status, isStale]
+      properties:
+        doctorId: { type: string }
+        doctorName: { type: string }
+        date: { type: string, format: date }
+        session:
+          type: string
+          maxLength: 40
+          example: Morning
+          description: >
+            Which session this entry covers (e.g. Morning, Evening) - labels
+            come from the doctor's usual schedule. Absent for a doctor with a
+            single/unspecified session. Added in v0.3.
+        status: { $ref: '#/components/schemas/AvailabilityStatus' }
+        delayMinutes: { type: integer, minimum: 0, description: Present when status is LATE. }
+        expectedTime: { $ref: '#/components/schemas/ApproxTime' }
+        expectedEndTime:
+          allOf: [{ $ref: '#/components/schemas/ApproxTime' }]
+          description: >
+            Until about when the doctor is available in this session - set by
+            the desk, e.g. for a limited window. The agent compares it with the
+            current time: once passed, it offers the desk instead of "in".
+            Approximate by definition. Added in v0.3.
+        note: { type: string, maxLength: 200, example: In surgery }
+        lastUpdatedAt: { type: string, format: date-time }
+        updatedBy: { type: string, description: Staff identity that made the update. }
+        source:
+          type: string
+          enum: [DESK, DOCTOR_MESSAGE]
+        isStale:
+          type: boolean
+          description: >
+            Computed server-side - lastUpdatedAt older than the tenant staleness
+            threshold (default 4 hours). When true, status is reported UNKNOWN.
+
+    AvailabilityUpdate:
+      type: object
+      required: [date, status]
+      properties:
+        date: { type: string, format: date }
+        session:
+          type: string
+          maxLength: 40
+          description: Session this update addresses (v0.3). Omit for a single-session doctor.
+        status:
+          type: string
+          enum: [IN, LATE, CANCELLED, NOT_CONFIRMED]
+          description: UNKNOWN cannot be written - it is a computed read-side state.
+        delayMinutes: { type: integer, minimum: 0 }
+        expectedTime: { $ref: '#/components/schemas/ApproxTime' }
+        expectedEndTime:
+          allOf: [{ $ref: '#/components/schemas/ApproxTime' }]
+          description: Until about when the doctor is available in this session (v0.3).
+        note: { type: string, maxLength: 200 }
+
+    AppointmentStatus:
+      type: string
+      enum: [NOTED, CONFIRMED_BY_DESK, CHANGED, CANCELLED]
+      description: >
+        NOTED - recorded, nothing promised. CONFIRMED_BY_DESK - the desk has
+        acted on it. CHANGED - rescheduled. CANCELLED - withdrawn.
+
+    AppointmentCreate:
+      type: object
+      required: [patientName, mobile, visitDate]
+      properties:
+        patientName: { type: string, maxLength: 100 }
+        mobile: { $ref: '#/components/schemas/Mobile' }
+        doctorId: { type: string, description: Exactly one of doctorId or department. }
+        department: { type: string }
+        visitDate: { type: string, format: date }
+        expectedTime: { $ref: '#/components/schemas/ApproxTime' }
+        reasonVerbatim:
+          type: string
+          maxLength: 500
+          description: >
+            The caller's own words, never an interpretation or diagnosis
+            (e.g. "pain in right knee for some time", never "suspected arthritis").
+        callId: { $ref: '#/components/schemas/CallId' }
+
+    Informed:
+      type: object
+      required: [at, by, via]
+      properties:
+        at: { type: string, format: date-time }
+        by: { type: string, description: Staff identity. }
+        via: { type: string, enum: [PHONE, WHATSAPP, SMS, IN_PERSON, OTHER] }
+        note: { type: string }
+
+    Appointment:
+      type: object
+      required: [id, patientName, mobile, visitDate, status, createdAt, createdBy]
+      properties:
+        id: { type: string, example: appt_0192 }
+        patientName: { type: string }
+        mobile: { $ref: '#/components/schemas/Mobile' }
+        doctorId: { type: string }
+        department: { type: string }
+        visitDate: { type: string, format: date }
+        expectedTime: { $ref: '#/components/schemas/ApproxTime' }
+        reasonVerbatim: { type: string }
+        status: { $ref: '#/components/schemas/AppointmentStatus' }
+        callId: { $ref: '#/components/schemas/CallId' }
+        createdAt: { type: string, format: date-time }
+        createdBy:
+          type: object
+          required: [type]
+          properties:
+            type: { type: string, enum: [AGENT, STAFF] }
+            id: { type: string }
+        updatedAt: { type: string, format: date-time }
+        informed:
+          allOf: [{ $ref: '#/components/schemas/Informed' }]
+          nullable: true
+          description: Set when the patient has been informed of a schedule change.
+
+    DoctorMessageCreate:
+      type: object
+      required: [channel, from, rawText]
+      properties:
+        channel: { type: string, enum: [WHATSAPP, SMS, PHONE_NOTE, OTHER] }
+        from: { type: string, description: Sender identifier as given by the channel. }
+        doctorId: { type: string, description: Set when the channel integration can resolve the sender. }
+        rawText: { type: string, maxLength: 1000, example: Running 30 mins late today }
+        receivedAt: { type: string, format: date-time }
+
+    DoctorMessage:
+      allOf:
+        - $ref: '#/components/schemas/DoctorMessageCreate'
+        - type: object
+          required: [id, status]
+          properties:
+            id: { type: string, example: msg_0034 }
+            status: { type: string, enum: [PENDING, APPLIED, IGNORED] }
+            decidedBy: { type: string }
+            decidedAt: { type: string, format: date-time }
+
+    CallIntent:
+      type: string
+      enum: [AVAILABILITY, BOOKING, RESCHEDULE, CANCEL, GENERAL_INFO, LAB,
+             INSURANCE, EMERGENCY, AMBULANCE, SYMPTOM_ROUTING, COMPLAINT,
+             ADMIN, OTHER]
+      description: What the caller wanted, categorised for reporting.
+
+    CallOutcome:
+      type: string
+      enum: [RESOLVED_BY_AGENT, APPOINTMENT_NOTED, APPOINTMENT_CANCELLED,
+             APPOINTMENT_RESCHEDULED, TRANSFERRED, EMERGENCY_TRANSFERRED,
+             AMBULANCE_NUMBER_GIVEN, CALLBACK_NOTED, ABANDONED]
+      description: How the call ended, from the hospital's point of view.
+
+    CallSummaryCreate:
+      type: object
+      required: [callId, startedAt, intent, outcome]
+      properties:
+        callId:
+          type: string
+          maxLength: 64
+          description: The voice platform's call reference. Natural unique key.
+        startedAt: { type: string, format: date-time }
+        durationSeconds: { type: integer, minimum: 0 }
+        language: { type: string, enum: [EN, KN, HI], description: Language the call was handled in. }
+        callerMobile:
+          allOf: [{ $ref: '#/components/schemas/Mobile' }]
+          description: Only when the caller gave it during the call.
+        intent: { $ref: '#/components/schemas/CallIntent' }
+        outcome: { $ref: '#/components/schemas/CallOutcome' }
+        transferredTo:
+          type: string
+          maxLength: 64
+          description: Desk or department the call was handed to, when outcome is a transfer.
+        doctorId: { type: string, description: "The doctor the call was about, when applicable." }
+        appointmentId: { type: string, description: "The appointment this call created or changed, when applicable." }
+        summaryText:
+          type: string
+          maxLength: 500
+          description: One or two sentences for the admin UI. Never a transcript.
+
+    CallSummary:
+      allOf:
+        - $ref: '#/components/schemas/CallSummaryCreate'
+        - type: object
+          required: [id, createdAt]
+          properties:
+            id: { type: string, example: cs_0107 }
+            createdAt: { type: string, format: date-time }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [VALIDATION_FAILED, NOT_FOUND, UNAUTHORIZED, FORBIDDEN, CONFLICT, IDEMPOTENCY_CONFLICT, RATE_LIMITED, INTERNAL]
+            message: { type: string, description: "Human-readable, safe to log, never leaks another patient's data." }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+    ClientCredentialsGrant:
+      type: object
+      description: >
+        Standard OAuth2 client-credentials request (RFC 6749 §4.4). The client
+        authenticates either with an HTTP Basic header (client_id:client_secret,
+        RFC 6749 §2.3.1 - what Swagger UI and most OAuth2 libraries send) or by
+        putting client_id and client_secret in this form body. Both are accepted.
+      required: [grant_type]
+      properties:
+        grant_type: { type: string, enum: [client_credentials] }
+        client_id: { type: string, description: Required unless sent via HTTP Basic. }
+        client_secret: { type: string, format: password, description: Required unless sent via HTTP Basic. }
+        scope: { type: string, description: "Ignored - scopes are granted at registration, never requested." }
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string, description: JWT bearer token. }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer, description: Seconds until the access token expires (deployment-configured). }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+    LoginResponse:
+      type: object
+      required: [access_token, refresh_token, token_type, expires_in, role, username]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string, description: Single-use; rotated on every /auth/refresh. }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer, description: Access token lifetime in seconds. }
+        role: { type: string, description: "Staff role (tenant-configurable, e.g. desk, admin)." }
+        username: { type: string }
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
