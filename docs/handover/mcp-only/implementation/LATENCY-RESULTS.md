@@ -119,6 +119,23 @@ that a slow turn fails fast, never that successful responses meet the target); t
 in section B (one stage ≈ 350 ms) say a laptop cannot meet it and a same-region deployment is required.
 Fast failures are reported separately from successful-response percentiles in every run above.
 
+### A3. Stubs, after the re-review bench corrections (call-id attribution, CREATE scenario, over-budget count)
+
+30 samples, concurrency 5, in-process stubs, routing + owner calls verified per sample
+(`evidence/bench-stubs-c5-rereview-20261001.json`):
+
+| Scenario | ok | over 300 ms | p50 ms | p95 ms |
+|---|---:|---:|---:|---:|
+| availability_known_doctor | 30/30 | 0 | 114 | 171 |
+| availability_name_search | 30/30 | 0 | 97 | 139 |
+| availability_ambiguous | 30/30 | 0 | 104 | 165 |
+| availability_department | 30/30 | 0 | 96 | 138 |
+| knowledge_answer | 30/30 | 0 | 57 | 108 |
+| booking_list | 30/30 | 0 | 63 | 85 |
+| booking_create | 30/30 | 0 | 67 | 89 |
+
+Stub timings only; the per-exchange caps now differ by path (in-call 0.30 s; summaries 8 s; token refresh 5 s).
+
 ## Comparison with the targets
 
 | Target (TARGET-STATE.md) | Measured | Verdict |

@@ -1,7 +1,7 @@
 # Implementation review report (1 October 2026)
 
 Branch `Garry2012/mcp-external-api` → PR #11 against `main`. Tested code commit after the architect's
-follow-up corrections: **`4af9628`** (earlier passes: `e9c6bc5` self-review fixes, `04e282b` AR-01..08; reports
+re-review pass: **`d1ec197`** (earlier passes: `e9c6bc5` self-review fixes, `04e282b` AR-01..08, `4af9628` follow-ups; reports
 may be committed afterwards and reference the code SHA). Author: Claude Fable 5.1 acting as
 lead implementation engineer under [FABLE-MASTER-PROMPT.md](../FABLE-MASTER-PROMPT.md). This is a
 self-review plus three independent reviewer agents dispatched by the author; it is **not** the
@@ -37,14 +37,41 @@ shared vault (rejected by the live backend); recorded in AZURE-RETIREMENT-RESULT
 | 4 Assertions | `tests/gates.py` predicates: LIST must be FOUND/NOT_FOUND before inspection; negative case compares a successful baseline; transport test split into header-forwarding (COULD_NOT_CHECK tolerated) and backend-lookup (FOUND/NOT_FOUND only) | `test_gate_assertions.py` (4 tests prove COULD_NOT_CHECK, IDENTITY_UNAVAILABLE, ROUTING_UNAVAILABLE and a created appointment cannot pass); `test_external.py`, `test_external_transport.py` use the predicates |
 | 5 Cleanup plan | Resource-ID inventory with ownership evidence (createdBy/tags/names), consumers, shared flag, disposition and prerequisites; voice-team secrets removed from our list; shared server/environment/registry/vault/identity (also used by Manoj's apps) retained; `frontdesk` data disposition requires owner-confirmed inventory; nothing executed | `AZURE-RETIREMENT-RESULTS.md` |
 
+## Re-review (three fresh reviewers on 745c99b) and third fix pass
+
+Commit `d1ec197`. Findings re-graded by effect; everything Important fixed with a failing-first test; Minors deferred.
+
+| Finding (reviewer) | Resolution | Regression evidence |
+|---|---|---|
+| In-call per-exchange cap (0.30 s) also throttled the after-call summary write and the background/start-up token refresh (latency 1–2, safety 7, arch 1) | `Deadline(cap=…)`: summaries use their own 8 s budget/cap; token refresh has `TOKEN_REFRESH_TIMEOUT_SECONDS` (5 s); the in-call cap applies only to in-call tools | `test_ops_client::test_summary_writes_use_their_own_cap_not_the_in_call_share`, `::test_background_token_refresh_has_its_own_timeout`, `test_summary::test_a_slow_but_healthy_owner_still_stores_the_summary` |
+| Usable token waited behind a refresh lock (latency 3) | returned without waiting while a refresh is in flight | `::test_a_usable_token_is_returned_without_waiting_for_a_refresh_in_progress` |
+| Same-key retry impossible under the 0.30 s budget (latency 4, safety 8) | threshold = max(50 ms, 1.5 × first attempt) | `::test_same_key_retry_happens_when_the_first_attempt_failed_instantly` |
+| 5xx on the first attempt of a sent write reported definite (safety 3) | any 5xx after a write left → UNCERTAIN; 429 stays definite | `::test_a_5xx_on_a_sent_write_is_uncertain_even_on_the_first_attempt`, updated `test_server_errors_after_a_write_was_sent_are_uncertain` |
+| Override guard read the raw env string (latency 7, arch 4) | after-validator on the parsed bool | `test_settings::test_budget_override_flag_is_parsed_as_a_boolean_from_the_environment` |
+| Equal bearers allowed in staging (safety 11) | distinct outside development | `::test_lifecycle_and_gateway_bearers_must_differ_outside_development` |
+| 200 on `/call-summaries` for a different summary reported as DONE (safety 5) | intent/outcome(/callerMobile) compared → CONFLICT `CALL_ID_ALREADY_USED` | `test_summary::test_a_200_for_a_different_summary_under_the_same_call_id_is_a_conflict_not_done` |
+| Department CREATE ignored session/time; time outside the chosen window accepted; whole-day/unmatched scope answered differently from availability (safety 1, arch 2) | one shared rule `board_scope.py` for availability, CREATE and RESCHEDULE; department scope per doctor; time outside window → INVALID; unresolved scope with any UNKNOWN → callback in both tools (ASK_WHICH_SESSION removed) | `test_booking::test_department_create_uses_the_same_session_scope_as_availability`, `::test_a_preferred_time_outside_the_chosen_session_window_is_rejected`, `::test_unresolved_scope_with_any_unknown_is_callback_for_create_as_for_availability` |
+| Missing row for a session the profile lists today treated as "no such session" (safety 2) | missing promised row = UNKNOWN (`SESSION_ROW_MISSING`) in availability and CREATE (profile read for the scope rule) | `test_availability::test_a_missing_row_for_a_usual_session_today_is_unknown`, `test_booking::test_a_missing_row_for_a_usual_session_today_is_unknown_for_create_too` |
+| RESCHEDULE skipped the board (safety 4) | gate on the new date for the appointment's doctor/department (LIST → board) | `test_booking::test_reschedule_checks_the_board_for_the_new_date`, `::test_reschedule_of_an_unknown_appointment_is_still_the_owners_neutral_not_found` |
+| Profile failure + no board row → NOT_FOUND (safety 9, arch 7) | COULD_NOT_CHECK `PROFILE_UNAVAILABLE` | `test_availability::test_profile_failure_with_no_board_row_is_could_not_check_not_not_found` |
+| Single-match search waited for routing before profile/board (latency 6) | profile ∥ board start inside the prefetch | `test_availability::test_single_match_search_starts_profile_and_board_before_routing_finishes` |
+| `eval` swallowed env.sh's refusal; blank profile values overwrote exports; script created shared infra; bash 3.2 quoting; in-place upgrade of the live app (arch 3, 6, 11, 12) | `deploy.sh` unsets inherited values, stops on profile failure, requires the shared resources, checks the subscription (simulated in dry runs), messages without apostrophes; `live.env` targets `mcp-demo-hospital-canary` | `test_deploy.py` (profile/RG/infra/subscription/eval tests) |
+| External negative test unchanged, availability gate counted as passed without a knowledge host, `except … pass` (arch 5, 10, 17) | gate predicates applied; availability gate BLOCKED without a knowledge host; `contextlib.suppress` warm-up | `tests/test_external.py`, `tests/test_gate_assertions.py` |
+| Bench attribution and claims (latency 5, arch 9) | owner calls attributed by call id, knowledge routing verified, over-budget count, CREATE scenario, credentials from the profile's `OPS_E2E_*` | `evidence/bench-stubs-c5-rereview-20261001.json` (7 scenarios, c=5, 0 rejected, 0 over 300 ms) |
+| `.env.example`/compose missing the new settings; exported profile URL repointed `make up` (arch 13) | settings documented; compose reads `COMPOSE_*` | `docker compose config` |
+| Stale report statements (arch 8, 14, 15) | corrected in this report, LIVEKIT, ONBOARDING, AZURE, TESTING | — |
+| `patientName` in results and board `note` to the model (safety 6, 10) | documented exceptions in CLAUDE.md (verified caller's own appointments; desk-authored note) — policy ruling, not a code change | — |
+
+Deferred (Minor): pool/connect-phase timeout reported as UNCERTAIN; cancellation hygiene of background tasks; wall-clock timing thresholds in three tests (loosened once); whether a 4,000-character base64 header survives every gateway; the knowledge contract remains provisional.
+
 ## Environments tested
 
 | Layer | Endpoint | Auth | What ran | Result |
 |---|---|---|---|---|
-| In-process stubs | ASGI, no network | stub client credentials | hermetic suites, bench | 297 passed; bench 6/6 scenarios 50/50 with owner calls verified |
+| In-process stubs | ASGI, no network | stub client credentials | hermetic suites, bench | 319 passed; bench 7/7 scenarios 30/30 at c=5 with owner + routing calls verified, 0 over 300 ms |
 | Real processes over TCP | `127.0.0.1` stubs + adapter | stub credentials, gateway and lifecycle bearers | `pytest -m e2e`, release smoke | 2 passed |
 | **Public contract mock (Prism)** | `https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io` (no `/api/v1`), selected by `eval "$(scripts/env.sh mock)"` | `POST /auth/token` issues the example token for any client credentials; `401` without a bearer; any bearer accepted on reads | `pytest -m external` at `4af9628`: token issuance + departments/doctors/board reads, absent-bearer refusal, availability tool (ROUTING_UNAVAILABLE without a knowledge host); writes/knowledge/transport gates report BLOCKED | 3 PASSED, 6 BLOCKED (the fixture now warms the mock first; a first attempt that overlapped the full test script hit its cold start and was rerun) — **mock verification only: static example bodies, no state** |
-| **Live backend** | `https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1` | registered machine client required | unauthenticated probes only (`401 Missing bearer token`, `401 Invalid client credentials`); served OpenAPI compared with the pin (servers entry differs only) | **not verified** (no registered credentials) |
+| **Live backend** | `https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1` | registered machine client required | unauthenticated probes only (`401 Missing bearer token`, `401 Invalid client credentials`); served OpenAPI hash `6f827be1…` differs from the pin `b8f28271…` in the `servers` entry only (evidence file kept) | **not verified** (no registered credentials); status: awaiting live integration |
 | Knowledge service | — | — | — | **BLOCKED** (no contract/host) |
 | Deployed adapter transport | — | — | `test_external_transport.py` | **BLOCKED** (adapter not deployed with the new image) |
 
@@ -52,9 +79,9 @@ shared vault (rejected by the live backend); recorded in AZURE-RETIREMENT-RESULT
 
 | State | Status |
 |---|---|
-| Code-ready | **Yes.** Four tools, independent owner clients, stubs, deploy tooling, retirement of the legacy backend; 299 tests green on a clean checkout without a database or owner source (297 hermetic + 2 process e2e); 9 `external` gate tests exist: 3 passed against the public contract mock (mock mode), 6 report BLOCKED without registered live credentials, a knowledge host or a deployed adapter |
+| Code-ready | **Yes.** Four tools, independent owner clients, stubs, deploy tooling, retirement of the legacy backend; 321 tests green on a clean checkout without a database or owner source (319 hermetic + 2 process e2e); 9 `external` gate tests exist: 3 passed against the public contract mock (mock mode), 6 report BLOCKED without registered live credentials, a knowledge host or a deployed adapter |
 | Test-fixture-verified | **Yes.** Every acceptance area below has stub-backed tests; process-level e2e over TCP; release smoke passes against the stub processes |
-| Real-service-verified | **No.** Manoj's backend (`healthcare-api`) is deployed and serves the pinned contract byte-for-byte, but refuses our unregistered client (401); Shobhit's service does not exist; only unauthenticated probes and the public contract mock were exercised |
+| Real-service-verified | **No.** Manoj's backend (`healthcare-api`) is deployed and serves the pinned contract (differing only in the `servers` entry), but refuses our unregistered client (401); Shobhit's service does not exist; only unauthenticated probes and the public contract mock were exercised |
 | Production-cut-over | **No.** Nothing deployed: production configuration requires the owners' real hosts and credentials, which are not available; the voice platform still binds to the legacy REST API |
 | Cloud-retired | **No destructive action executed.** Refreshed inventory and ordered action list in [AZURE-RETIREMENT-RESULTS.md](AZURE-RETIREMENT-RESULTS.md) |
 
@@ -76,18 +103,18 @@ Caller ⇄ LiveKit agent ⇄ ContextForge ⇄ MCP            services/mcp: four 
 
 From a clean clone of the branch (Python 3.13, uv 0.11.21; Docker optional):
 
-| Command | Result on `e9c6bc5` | Fixtures or real services |
+| Command | Result (latest tested commit) | Fixtures or real services |
 |---|---|---|
 | `./scripts/test.sh` | `== all suites passed` (see below) | fixtures (stubs) |
 | `cd services/mcp && uv run ruff check . ../../deploy` | All checks passed | — |
-| `cd services/mcp && uv run pytest tests -q -m "not e2e and not external"` | **297 passed** | in-process stubs (ASGI); the clients' own `asyncio.timeout` caps every exchange; one real-TCP dribbling-server test |
+| `cd services/mcp && uv run pytest tests -q -m "not e2e and not external"` | **319 passed** | in-process stubs (ASGI); the clients' own `asyncio.timeout` caps every exchange; one real-TCP dribbling-server test |
 | `cd services/mcp && uv run pytest tests -q -m e2e` | **2 passed** | real processes over TCP (stubs + adapter), release smoke |
 | `uv build --project services/mcp` | sdist + wheel | — |
 | `docker build services/mcp` then `import frontdesk_stubs` / `import pytest` inside the image | both **absent** (image 80 MB) | — |
 | `docker build -f services/mcp/dev/Dockerfile services/mcp` (stubs image for `make up`) | builds | — |
 | production container with `OPS_BASE_URL` pointing at the contract mock | refuses to start (`points at a stub/mock endpoint`) | — |
 | `make demo` | all four tools walked; outcomes AVAILABILITY, CALLBACK_REQUIRED, CLARIFICATION_NEEDED, NOTED, FOUND, ANSWERED, ROUTING_REQUIRED, STORED | stubs |
-| `deploy/azure/deploy.sh rollouts/demo-hospital --dry-run` | full plan printed, no az login | — |
+| `deploy/azure/deploy.sh rollouts/demo-hospital --profile <test profile> --dry-run` (see `tests/test_deploy.py`; the committed `live` profile is blank, `mock` is refused) | full plan printed, no az login | — |
 | `eval "$(scripts/env.sh mock)"; export OPS_E2E_CLIENT_ID=x OPS_E2E_CLIENT_SECRET=x; cd services/mcp && uv run pytest tests -m external` (9 gates) | 3 PASSED (mock reads), 6 FAILED with `BLOCKED: …` (writes need a live synthetic tenant; knowledge host; deployed adapter) | public contract mock — **mock only** |
 | `eval "$(scripts/env.sh live)"` … | **cannot run**: the live profile is blank until Manoj supplies the base URL; registered credentials also missing | live backend — awaiting live integration |
 | Smoke against a deployed adapter | **not run** (nothing deployed) | — |
@@ -108,11 +135,11 @@ labelled `BLOCKED`, never a skip. Writes run only on a designated synthetic live
 | Identity: override attempts, missing verification, number formats, family restriction, concurrent isolation | `context.py`, `identity.py`, `booking.py` | `test_context.py` (absent verification = unverified), `test_booking.py::test_list_cancel_reschedule_need_an_authorised_number` (incl. bare number), `test_a_dictated_number_never_reaches_a_lookup_or_change` (other-number/family refused), `test_server.py::test_the_model_cannot_supply_identity_or_lifecycle_fields`, `test_concurrent_calls_keep_their_own_identity` | fixture-verified; verification policy agreement open; delegated family access not implemented by design |
 | Routing: named doctor + symptoms reaches Shobhit; blocks writes; changed context, missing/slow/malformed/outage never clear | `availability.py::routing`, `booking.py::_routing`, `knowledge_client.py` | `test_availability.py::test_routing_*`, `test_booking.py::test_create_waits_for_a_current_routing_clearance`, `test_the_callers_reason_reaches_routing_before_a_create`, `test_knowledge.py::test_the_trusted_turn_travels_with_the_question` | fixture-verified against the PROVISIONAL contract only |
 | Mutations: success, validation/conflict, same-intent replay, changed payload/target, uncertain commit, dropped response, duplicate/concurrent, malformed success, auth rejection, total deadline, server-side board check | `booking.py`, `ops_client.py::_write` | `test_booking.py` (35 cases), `test_ops_client.py` (43 cases incl. real-TCP deadline) | fixture-verified; replay TTL/precedence with Manoj open |
-| Summaries: call-end access, metadata after disconnect, frozen replay, 200/201, 500 chars, language, hang-up outcome, failed persistence | `summary.py`, `access.py` | `test_summary.py` (26 cases) | fixture-verified |
+| Summaries: call-end access, metadata after disconnect, frozen replay, 200/201 (200 for a different summary → CONFLICT), 500 chars, language, hang-up outcome, failed persistence | `summary.py`, `access.py` | `test_summary.py` | fixture-verified; **the platform's actual call-end invocation is unverified** (no platform access) |
 | Transport: independent pools/auth, token expiry/single-flight, mock/backend base paths, bounded retries, cancellation uncertainty, local readiness vs dependency status | `ops_client.py`, `knowledge_client.py`, `config.py`, `server.py` | `test_ops_client.py`, `test_settings.py`, `test_server.py::test_dependency_status_*`, `test_external.py` (mock mode: token + reads + absent-bearer refusal) | fixture-verified; token issuance and reads verified against the public contract mock (no `/api/v1`); live backend not verified |
 | Separation: clean checkout builds/tests without services/api, venv, PostgreSQL; no production fixtures or hidden engines | repo layout, `Dockerfile`, `.dockerignore`, `config.STUB_MARKERS`, `scripts/test.sh` | `test_stubs.py` (stubs are tables, not classifiers), `test_settings.py` (production refuses stubs), image checks in `scripts/test.sh` | verified locally and in CI definition |
 | Voice: model calls the right tools with valid arguments and concise honest speech; interruptions/retries don't duplicate | `prompt.py`, `packs/healthcare.json`, operation keys, budget-derived deadlines | prompt policy tests in `test_server.py`; replay tests; `test_external_transport.py` (deployed-adapter gate, BLOCKED) | **not verified with a model or a live call; deployed transport gate BLOCKED** |
-| Operations: rollback, one appointment authority, scoped Azure inventory, shared-resource preservation, no obsolete references | `deploy/azure/deploy.sh`, `AZURE.md`, `AZURE-RETIREMENT-RESULTS.md` | straggler grep (no active references to the retired stack) | rollback procedure documented, **not tested**; Azure retirement **not executed** |
+| Operations: rollback, one appointment authority, scoped Azure inventory, shared-resource preservation, no obsolete references, cost | `deploy/azure/deploy.sh`, `AZURE.md`, `AZURE-RETIREMENT-RESULTS.md` | straggler grep (no active references to the retired stack); `test_deploy.py` (profile/RG/subscription guards, upgrade path, dry run only) | rollback procedure documented, **not tested**; Azure retirement **not executed**; **no cost evidence** (no Cost Management query) |
 
 ## Independent review and fixes
 
@@ -140,7 +167,7 @@ green suite afterwards; Minor findings are deferred and listed. Fix commit: `e9c
 | A board with no row for the doctor made usual hours look bookable | No row = UNKNOWN (`BOARD_ENTRY_MISSING`). `test_a_board_that_omits_the_doctor_is_treated_as_unknown` |
 | Profile/board waited for routing when the doctor was known; escalation waited for a slow directory read | Reads overlap routing and are cancelled on escalation. `test_known_doctor_reads_overlap_the_routing_check`, `test_an_escalating_routing_decision_is_not_delayed_by_a_slow_directory` |
 | Token fetched lazily inside a caller's turn; lock wait unbounded | Warm at start-up, background refresher, bounded wait. `test_token_is_warmed_at_startup_and_refreshed_in_the_background`, `test_waiting_for_the_token_lock_is_bounded_by_the_callers_deadline` |
-| Default deadlines (2 s/4 s/1.5 s) exceeded the 1 s turn budget | 1.2 s read, 2.5 s write, 0.8 s per exchange. `test_default_deadlines_fit_inside_a_one_second_turn_budget` |
+| Default deadlines (2 s/4 s/1.5 s) exceeded the 1 s turn budget | first reduced to 1.2 s/2.5 s/0.8 s, later derived from the voice budget (AR-06, follow-up 2: 0.30 s). `test_default_deadlines_fit_inside_a_one_second_turn_budget` |
 | Write key included the target, so a retry with a changed doctor created a second appointment | Key = sha256(tenant\|call\|action\|operation). `test_a_changed_target_under_the_same_operation_is_a_conflict_not_a_second_appointment` |
 | Only the caller's name was protected from the 500-character truncation | `requestedDate` and `doctorId` in the protected prefix. `test_callback_essentials_survive_truncation_as_structured_prefix` |
 | `search_knowledge` forwarded only the model's question | Trusted turn travels with the question. `test_the_trusted_turn_travels_with_the_question` |
@@ -158,7 +185,6 @@ green suite afterwards; Minor findings are deferred and listed. Fix commit: `e9c
 - Directory cache lookups are not single-flight at TTL expiry; `TokenCache.invalidate()` may discard a token another call just refreshed; a token margin ≥ `expires_in` would refresh on every call.
 - No response-size cap; the contract's `findAppointments` has no `limit` parameter.
 - The bench includes client-side schema checking and shares the server's event loop; session set-up is not timed separately ("warm" refers to the token).
-- Trusted utterance cut at 1,000 characters before routing.
 - `register.py` drift check compares parameter names only; a rotated `auth_token` is not pushed on the already-registered path.
 - `CONFIRMED_BY_DESK` collapsed into `NOTED`; an action/status mismatch is not treated as UNCERTAIN.
 - Test-quality notes: the overlap tests assert timing, not interleaving; the slow-write test asserts the outcome; the summary 409 path is unreachable with the stub's callId precedence.

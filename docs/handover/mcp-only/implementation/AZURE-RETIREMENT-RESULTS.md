@@ -24,6 +24,8 @@ Subscription `Rajeev Subscription` (`4e1c081a-9a6a-4e16-9da2-90217c22378b`), res
 
 ## Resource-ID inventory (read-only, 1 October 2026, after the architect's job deletions)
 
+Note: the live-vs-pinned contract statement earlier in this report is superseded: the live `/api/v1/openapi.yaml` hash is `6f827be1…` (servers entry only differs).
+
 Prefix for every ID: `/subscriptions/4e1c081a-9a6a-4e16-9da2-90217c22378b/resourceGroups/healthcare-rg/providers/`.
 "Ours" = created by this repository's `deploy/azure/deploy.sh` (createdBy `Garima.Tyagi@intimetec.com`, 27 Sep 2026,
 names matching the script's `<kind>-frontdesk-<provider>` / `<kind>-<provider>` pattern, no `product=` tag).
@@ -35,7 +37,7 @@ in this pass.
 | Resource (ID suffix) | Ours? (evidence) | Current consumers | Shared? | Disposition | Must happen before retirement |
 |---|---|---|---|---|---|
 | `Microsoft.App/containerApps/api-demo-hospital` | Yes (deploy.sh `api-$P`, createdBy Garima 2026-09-27) | `mcp-demo-hospital` (`API_BASE_URL`), `voice-api` and `voice-worker` (`HEALTHCARE_TOOLS_BINDINGS_JSON.demo_hospital.base_url` + `VOICE_FRONTDESK_*_TOKEN`) | No (ours), but consumed by another team | **Retire** | Voice team removes the REST binding; new MCP image deployed and voice path verified; `frontdesk` data disposition decided |
-| `Microsoft.App/containerApps/mcp-demo-hospital` | Yes (deploy.sh `mcp-$P`) | `voice-api`/`voice-worker` (`mcp.url`), future gateway | No | **Retain and upgrade** (AR-05 path) | Registered live credentials (`live` profile) |
+| `Microsoft.App/containerApps/mcp-demo-hospital` | Yes (deploy.sh `mcp-$P`) | `voice-api`/`voice-worker` (`mcp.url`), future gateway | No | **Retain** as the legacy integration until the voice team moves to the canary; then retire or rename | Live URL + registered credentials + knowledge host (canary works); voice team cutover |
 | `Microsoft.App/jobs/job-{migrate,apply,seed}-demo-hospital` | Yes | none | No | **Already deleted by the architect** | — |
 | `Microsoft.DBforPostgreSQL/flexibleServers/pg-fd-demo-hospital-0574c1` (server) | Created by deploy.sh (createdAt 2026-09-27 13:12; admin `frontdesk_owner`) | databases `voice_agent`, `voice_cis` (voice team), `operations`, `medplum` (Manoj), `frontdesk` (ours) | **Yes** | **Retain** (shared server) | — |
 | database `frontdesk` on that server | Yes (deploy.sh `DB=frontdesk`, roles `frontdesk_owner`/`frontdesk_app`) | `api-demo-hospital` only | No | **Retire after data disposition** | Owner-confirmed inventory of rows (appointments, summaries, knowledge entries): log activity shows demo-era writes only, which is **not** proof every row is disposable; decide export vs delete; then `DROP DATABASE frontdesk` and drop roles |
@@ -74,7 +76,7 @@ In this order, once gates 1–4 above are met and the owner confirms the `frontd
 
 ```bash
 RG=healthcare-rg
-# 0. prove the replacement: deploy/azure/deploy.sh rollouts/demo-hospital (MCP-only), smoke green, voice path verified
+# 0. prove the replacement: deploy/azure/deploy.sh rollouts/demo-hospital --profile live (canary app), smoke green, voice path verified
 # 1. consumers first
 az containerapp update -g $RG -n voice-api    --set-env-vars 'HEALTHCARE_TOOLS_BINDINGS_JSON=<without base_url/agent_key_ref/staff_key_ref>'   # voice team
 az containerapp update -g $RG -n voice-worker --set-env-vars 'HEALTHCARE_TOOLS_BINDINGS_JSON=<same>'                                            # voice team
@@ -117,4 +119,4 @@ the `frontdesk` disposition is decided; no retention obligation is known for syn
   booking_booked 5, booking_rescheduled 1, booking_cancelled 1 (27 Sep 13:33 – 28 Sep 05:56 UTC);
   `mcp-demo-hospital` 171,776 lines (mostly probes).
 - `curl https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1/openapi.yaml | shasum -a 256`
-  → `b8f282718c2c45410dd0dd403369223b9cbe8dea045ee044207aa1e52ec2de78`, identical to the pinned snapshot.
+  → at that time `b8f28271…` (identical); later the same day `6f827be1…` (servers entry only; see note above).
