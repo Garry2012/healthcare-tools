@@ -1,5 +1,12 @@
 # Front-desk platform — voice-agent tools, REST service, PostgreSQL
 
+> **MCP-only migration handover (1 October 2026):** Read
+> [docs/handover/mcp-only/README.md](docs/handover/mcp-only/README.md) first.
+> The revised plan assigns operational APIs to Manoj and knowledge/routing to Shobhit.
+> Migration is **not implemented**: the code and setup below still describe the legacy
+> three-tool MCP + REST API + PostgreSQL stack. For migration work, the new plan takes
+> precedence over conflicting legacy architecture/rules; do not move backend engines into MCP.
+
 Reusable front desk for voice agents: healthcare first (hospitals), hospitality next, with the
 same code. Three layers, composed rather than copied: the **core** platform, a **domain pack**
 (healthcare, hospitality), and a **rollout** per provider (`rollouts/<id>/`: its settings, data
