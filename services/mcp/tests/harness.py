@@ -75,11 +75,12 @@ class Harness:
         await self.knowledge.aclose()
 
 
-def build(settings, now: datetime = NOW) -> Harness:
+def build(settings, now: datetime = NOW, ops_secret: str = "ops-secret") -> Harness:
+    """The stub's registered credential is fixed (like a real registration), not copied from settings."""
     clock = FixedClock(now)
+    scopes = {"appointments.write", "calls.write"}
     ops_state = ops_stub.OpsStubState(clock=clock, zone=settings.tenant_timezone,
-                                      clients={settings.ops_client_id: (settings.ops_client_secret.get_secret_value(),
-                                                                        {"appointments.write", "calls.write"})})
+                                      clients={settings.ops_client_id: (ops_secret, scopes)})
     knowledge_state = knowledge_stub.KnowledgeStubState(bearer=settings.knowledge_bearer_token.get_secret_value())
     requests: list[httpx.Request] = []
 

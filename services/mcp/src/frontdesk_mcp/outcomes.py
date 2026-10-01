@@ -111,3 +111,41 @@ class AvailabilityResult(_Out):
     callback: Callback | None = None
     detail: str | None = Field(default=None, description="Machine-readable reason for non-success outcomes.")
     retryAfterSeconds: int | None = None  # noqa: N815
+
+
+# ---------------------------------------------------------------------------------- manage_booking
+
+
+class AppointmentOut(_Out):
+    """The minimum the agent needs to speak about a request: no contact number, no reason text."""
+
+    appointmentId: str  # noqa: N815
+    status: contract.AppointmentStatus
+    visitDate: str  # noqa: N815
+    expectedTime: str | None = None  # noqa: N815
+    doctorId: str | None = None  # noqa: N815
+    department: str | None = None
+    patientName: str  # noqa: N815
+
+
+BookingOutcome = Literal[
+    "NOTED", "CHANGED", "CANCELLED", "FOUND", "NOT_FOUND", "REJECTED", "CONFLICT", "UNCERTAIN",
+    "IDENTITY_UNAVAILABLE", "ROUTING_REQUIRED", "ROUTING_UNAVAILABLE", "CONFIRMATION_REQUIRED",
+    "OPERATION_CONTEXT_MISSING", "COULD_NOT_RECORD", "COULD_NOT_CHECK", "INVALID_REQUEST",
+]
+BookingNextStep = Literal[
+    "SAY_REQUEST_NOTED", "SAY_CHANGED", "SAY_CANCELLED", "OFFER_CHOICES", "SAY_NOT_FOUND", "ASK_TO_CORRECT",
+    "SAY_UNCERTAIN_AND_TRANSFER", "TRANSFER_DESK", "TRANSFER_EMERGENCY", "ASK_ROUTING_CLARIFICATION",
+    "ASK_CONFIRMATION", "SAY_COULD_NOT_RECORD", "SAY_COULD_NOT_CHECK",
+]
+
+
+class BookingResult(_Out):
+    outcome: BookingOutcome
+    nextStep: BookingNextStep  # noqa: N815
+    appointment: AppointmentOut | None = None
+    appointments: list[AppointmentOut] = []
+    fields: list[str] = Field(default=[], description="Request fields that were invalid or rejected.")
+    routing: Routing | None = None
+    detail: str | None = None
+    retryAfterSeconds: int | None = None  # noqa: N815
