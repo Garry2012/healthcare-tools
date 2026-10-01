@@ -1,8 +1,8 @@
 # Implementation review report (1 October 2026)
 
 Branch `Garry2012/mcp-external-api` → PR #11 against `main`. Tested code commit after the architect's
-correction pass: **`04e282b`** (the earlier self-review/fix pass was `e9c6bc5`; reports may be committed
-afterwards and reference the code SHA). Author: Claude Fable 5.1 acting as
+follow-up corrections: **`4af9628`** (earlier passes: `e9c6bc5` self-review fixes, `04e282b` AR-01..08; reports
+may be committed afterwards and reference the code SHA). Author: Claude Fable 5.1 acting as
 lead implementation engineer under [FABLE-MASTER-PROMPT.md](../FABLE-MASTER-PROMPT.md). This is a
 self-review plus three independent reviewer agents dispatched by the author; it is **not** the
 architect's review the master prompt requests.
@@ -27,13 +27,23 @@ change and passes after. Environments: all tests below are fixture/mock based un
 Reconciled with the architect's own actions: three legacy jobs deleted and two generated test secrets created in the
 shared vault (rejected by the live backend); recorded in AZURE-RETIREMENT-RESULTS.md and OPEN-DEPENDENCIES.md, not repeated.
 
+## Architect follow-up (PR #11 at 17d86b1): five corrections
+
+| Item | Resolution | Regression evidence |
+|---|---|---|
+| 1 UNKNOWN in doctor-specific session filtering | `availability.py` doctor path keeps unlabelled rows next to the matched session (same rule as the department path) | `test_availability::test_doctor_session_query_keeps_an_unlabelled_unknown_row_next_to_a_matched_session`; journey `test_booking::test_availability_and_create_agree_when_an_unlabelled_unknown_row_is_present` (both CALLBACK_REQUIRED, no write, callback wording) |
+| 2 Budget: 0.6 s write + 0.65 s reserved > 1 s | Every in-call tool (read and confirmed write) gets budget − reserved − gateway overhead = 1.0 − 0.65 − 0.05 = **0.30 s**; overrides above the share are refused unless `ALLOW_BUDGET_OVERRIDES=true` (tests/bench/external runs set it explicitly). Short deadlines are not evidence that successful responses meet the target; live measurement still required | `test_settings::test_every_in_call_tool_deadline_fits_the_voice_budget_including_the_gateway`, `::test_tool_deadlines_derive_from_the_voice_budget` |
+| 3 One configuration mechanism | `deploy/environments/{mock,live}.env` (non-secret: OPS_BASE_URL, mode, secret *names*, subscription `4e1c…`, `healthcare-rg`, env/ACR/vault/identity) loaded by `scripts/env.sh <profile>` for deploy, external gates and bench; `live.env` is blank → refused with "awaiting live integration"; `deploy.sh --profile` required, subscription checked, no RG default/creation; dummy-credential replacement documented (`deploy/environments/README.md`) | `test_deploy::test_deployment_targets_only_the_profiles_resource_group_and_never_creates_one`, `::test_the_live_profile_is_refused_while_its_base_url_is_blank_and_mock_cannot_deploy`, `::test_upgrading_an_existing_app_…` |
+| 4 Assertions | `tests/gates.py` predicates: LIST must be FOUND/NOT_FOUND before inspection; negative case compares a successful baseline; transport test split into header-forwarding (COULD_NOT_CHECK tolerated) and backend-lookup (FOUND/NOT_FOUND only) | `test_gate_assertions.py` (4 tests prove COULD_NOT_CHECK, IDENTITY_UNAVAILABLE, ROUTING_UNAVAILABLE and a created appointment cannot pass); `test_external.py`, `test_external_transport.py` use the predicates |
+| 5 Cleanup plan | Resource-ID inventory with ownership evidence (createdBy/tags/names), consumers, shared flag, disposition and prerequisites; voice-team secrets removed from our list; shared server/environment/registry/vault/identity (also used by Manoj's apps) retained; `frontdesk` data disposition requires owner-confirmed inventory; nothing executed | `AZURE-RETIREMENT-RESULTS.md` |
+
 ## Environments tested
 
 | Layer | Endpoint | Auth | What ran | Result |
 |---|---|---|---|---|
-| In-process stubs | ASGI, no network | stub client credentials | hermetic suites, bench | 288 passed; bench 6/6 scenarios 50/50 |
+| In-process stubs | ASGI, no network | stub client credentials | hermetic suites, bench | 297 passed; bench 6/6 scenarios 50/50 with owner calls verified |
 | Real processes over TCP | `127.0.0.1` stubs + adapter | stub credentials, gateway and lifecycle bearers | `pytest -m e2e`, release smoke | 2 passed |
-| **Public contract mock (Prism)** | `https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io` (no `/api/v1`) | `POST /auth/token` issues the example token for any client credentials; `401` without a bearer; any bearer accepted on reads | `OPS_E2E_MODE=mock pytest -m external`: token issuance + departments/doctors/board reads, absent-bearer refusal, availability tool (ROUTING_UNAVAILABLE without a knowledge host) | 3 PASSED (one earlier attempt hit the mock's cold start and exceeded the 5 s per-exchange cap; rerun passed) — **mock verification only: static example bodies, no state** |
+| **Public contract mock (Prism)** | `https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io` (no `/api/v1`), selected by `eval "$(scripts/env.sh mock)"` | `POST /auth/token` issues the example token for any client credentials; `401` without a bearer; any bearer accepted on reads | `pytest -m external` at `4af9628`: token issuance + departments/doctors/board reads, absent-bearer refusal, availability tool (ROUTING_UNAVAILABLE without a knowledge host); writes/knowledge/transport gates report BLOCKED | 3 PASSED, 6 BLOCKED (the fixture now warms the mock first; a first attempt that overlapped the full test script hit its cold start and was rerun) — **mock verification only: static example bodies, no state** |
 | **Live backend** | `https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1` | registered machine client required | unauthenticated probes only (`401 Missing bearer token`, `401 Invalid client credentials`); served OpenAPI compared with the pin (servers entry differs only) | **not verified** (no registered credentials) |
 | Knowledge service | — | — | — | **BLOCKED** (no contract/host) |
 | Deployed adapter transport | — | — | `test_external_transport.py` | **BLOCKED** (adapter not deployed with the new image) |
@@ -42,7 +52,7 @@ shared vault (rejected by the live backend); recorded in AZURE-RETIREMENT-RESULT
 
 | State | Status |
 |---|---|
-| Code-ready | **Yes.** Four tools, independent owner clients, stubs, deploy tooling, retirement of the legacy backend; 290 tests green on a clean checkout without a database or owner source (288 hermetic + 2 process e2e); 8 `external` gate tests exist: 3 passed against the public contract mock, the rest report BLOCKED without owner credentials, a knowledge host or a deployed adapter |
+| Code-ready | **Yes.** Four tools, independent owner clients, stubs, deploy tooling, retirement of the legacy backend; 299 tests green on a clean checkout without a database or owner source (297 hermetic + 2 process e2e); 9 `external` gate tests exist: 3 passed against the public contract mock (mock mode), 6 report BLOCKED without registered live credentials, a knowledge host or a deployed adapter |
 | Test-fixture-verified | **Yes.** Every acceptance area below has stub-backed tests; process-level e2e over TCP; release smoke passes against the stub processes |
 | Real-service-verified | **No.** Manoj's backend (`healthcare-api`) is deployed and serves the pinned contract byte-for-byte, but refuses our unregistered client (401); Shobhit's service does not exist; only unauthenticated probes and the public contract mock were exercised |
 | Production-cut-over | **No.** Nothing deployed: production configuration requires the owners' real hosts and credentials, which are not available; the voice platform still binds to the legacy REST API |
@@ -70,7 +80,7 @@ From a clean clone of the branch (Python 3.13, uv 0.11.21; Docker optional):
 |---|---|---|
 | `./scripts/test.sh` | `== all suites passed` (see below) | fixtures (stubs) |
 | `cd services/mcp && uv run ruff check . ../../deploy` | All checks passed | — |
-| `cd services/mcp && uv run pytest tests -q -m "not e2e and not external"` | **288 passed** | in-process stubs (ASGI); the clients' own `asyncio.timeout` caps every exchange; one real-TCP dribbling-server test |
+| `cd services/mcp && uv run pytest tests -q -m "not e2e and not external"` | **297 passed** | in-process stubs (ASGI); the clients' own `asyncio.timeout` caps every exchange; one real-TCP dribbling-server test |
 | `cd services/mcp && uv run pytest tests -q -m e2e` | **2 passed** | real processes over TCP (stubs + adapter), release smoke |
 | `uv build --project services/mcp` | sdist + wheel | — |
 | `docker build services/mcp` then `import frontdesk_stubs` / `import pytest` inside the image | both **absent** (image 80 MB) | — |
@@ -78,8 +88,8 @@ From a clean clone of the branch (Python 3.13, uv 0.11.21; Docker optional):
 | production container with `OPS_BASE_URL` pointing at the contract mock | refuses to start (`points at a stub/mock endpoint`) | — |
 | `make demo` | all four tools walked; outcomes AVAILABILITY, CALLBACK_REQUIRED, CLARIFICATION_NEEDED, NOTED, FOUND, ANSWERED, ROUTING_REQUIRED, STORED | stubs |
 | `deploy/azure/deploy.sh rollouts/demo-hospital --dry-run` | full plan printed, no az login | — |
-| `cd services/mcp && OPS_E2E_MODE=mock OPS_E2E_BASE_URL=https://healthcare-contract-mock.… OPS_E2E_CLIENT_ID=x OPS_E2E_CLIENT_SECRET=x uv run pytest tests -m external` (8 gates) | 3 PASSED (mock reads), 5 FAILED with `BLOCKED: …` (writes need a live synthetic tenant; knowledge host; deployed adapter) | public contract mock — **mock only** |
-| same with `OPS_E2E_MODE=live` and registered credentials | **not run** (no registered client) | live backend — blocked |
+| `eval "$(scripts/env.sh mock)"; export OPS_E2E_CLIENT_ID=x OPS_E2E_CLIENT_SECRET=x; cd services/mcp && uv run pytest tests -m external` (9 gates) | 3 PASSED (mock reads), 6 FAILED with `BLOCKED: …` (writes need a live synthetic tenant; knowledge host; deployed adapter) | public contract mock — **mock only** |
+| `eval "$(scripts/env.sh live)"` … | **cannot run**: the live profile is blank until Manoj supplies the base URL; registered credentials also missing | live backend — awaiting live integration |
 | Smoke against a deployed adapter | **not run** (nothing deployed) | — |
 
 Skipped/deselected: none silently. The `external` gates run via `scripts/test.sh` only when `OPS_E2E_BASE_URL`

@@ -109,11 +109,13 @@ samples did perform their owner calls (the recording transport confirms the same
 
 ### D. Deadline budget after the architect's AR-06 correction
 
-Defaults are now derived: read deadline = `VOICE_RESPONSE_BUDGET_SECONDS` (1.0) − `RESERVED_STAGE_SECONDS`
-(0.65) = **0.35 s** for the whole tool round trip; per-exchange cap 0.35 s; confirmed write 0.6 s; summaries
-8 s (after the call). Slow and degraded paths are exercised with injected delays (routing/directory 0.3 s each,
-slow write, dribbling TCP server) and return COULD_NOT_CHECK / UNCERTAIN inside the budget. Whether 0.35 s is
-enough for the real in-region path is exactly what the live measurement must show; the laptop → Azure numbers
+Defaults are now derived: tool deadline = `VOICE_RESPONSE_BUDGET_SECONDS` (1.0) − `RESERVED_STAGE_SECONDS`
+(0.65) − `GATEWAY_OVERHEAD_SECONDS` (0.05) = **0.30 s** for every in-call tool, reads and confirmed writes alike
+(the earlier 0.6 s write allowance exceeded the budget together with the reserved stages); per-exchange cap
+0.30 s; summaries 8 s (after the call). Overrides above the share need `ALLOW_BUDGET_OVERRIDES=true`. Slow and degraded paths are exercised with injected delays (routing/directory 0.3 s each,
+slow write, dribbling TCP server) and return COULD_NOT_CHECK / UNCERTAIN inside the budget. Whether 0.30 s is
+enough for the real in-region path is exactly what the live measurement must show (a short deadline proves only
+that a slow turn fails fast, never that successful responses meet the target); the laptop → Azure numbers
 in section B (one stage ≈ 350 ms) say a laptop cannot meet it and a same-region deployment is required.
 Fast failures are reported separately from successful-response percentiles in every run above.
 
