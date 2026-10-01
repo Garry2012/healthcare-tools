@@ -137,6 +137,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         departmentId: Ident = None,
         visitDate: IsoDate = None,
         preferredTime: ApproxTime = None,
+        session: Annotated[str | None, Field(max_length=40)] = None,
         reasonVerbatim: Annotated[str | None, Field(max_length=500)] = None,
         appointmentId: Ident = None,
         newVisitDate: IsoDate = None,
@@ -148,7 +149,8 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
     ) -> ToolResult:
         request = booking.BookingRequest(
             action=action, patientName=patientName, patientMobile=patientMobile, doctorId=doctorId,
-            departmentId=departmentId, visitDate=visitDate, preferredTime=preferredTime, reasonVerbatim=reasonVerbatim,
+            departmentId=departmentId, visitDate=visitDate, preferredTime=preferredTime, session=session,
+            reasonVerbatim=reasonVerbatim,
             appointmentId=appointmentId, newVisitDate=newVisitDate, newPreferredTime=newPreferredTime,
             fromDate=fromDate, toDate=toDate, status=status, callerConfirmed=callerConfirmed)
         return observed("manage_booking", await services.booking.manage(ctx(), request))

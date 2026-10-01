@@ -47,7 +47,9 @@ class KnowledgeStubState:
     decisions: list[Decision] = field(default_factory=load_decisions)
     answers: list[dict[str, Any]] = field(default_factory=load_answers)
     fail_next: list[int] = field(default_factory=list)
+    fail_next_for: list[tuple[str, int]] = field(default_factory=list)  # (path, status): one failure for that path
     malformed_next: list[bool] = field(default_factory=list)
+    malformed_next_for: list[str] = field(default_factory=list)  # paths answering {"unexpected": true} once
     delay_seconds: float = 0.0
     routed: list[dict[str, Any]] = field(default_factory=list)  # every routing request received, for tests
 
@@ -58,9 +60,17 @@ def create_app(state: KnowledgeStubState) -> Starlette:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         return None
 
-    async def scenario() -> Response | None:
+    async def scenario(path: str = "") -> Response | None:
         if state.delay_seconds:
             await asyncio.sleep(state.delay_seconds)
+        for i, (prefix, status) in enumerate(state.fail_next_for):
+            if path.startswith(prefix):
+                del state.fail_next_for[i]
+                return JSONResponse({"error": "injected"}, status_code=status)
+        for i, prefix in enumerate(state.malformed_next_for):
+            if path.startswith(prefix):
+                del state.malformed_next_for[i]
+                return JSONResponse({"unexpected": True})
         if state.fail_next:
             return JSONResponse({"error": "injected"}, status_code=state.fail_next.pop(0))
         if state.malformed_next:
@@ -71,7 +81,7 @@ def create_app(state: KnowledgeStubState) -> Starlette:
     async def route(request: Request) -> Response:
         if refused := denied(request):
             return refused
-        if blocked := await scenario():
+        if blocked := await scenario(kc.ROUTE_PATH):
             return blocked
         body = await request.json()
         state.routed.append(body)
@@ -90,7 +100,7 @@ def create_app(state: KnowledgeStubState) -> Starlette:
     async def answer(request: Request) -> Response:
         if refused := denied(request):
             return refused
-        if blocked := await scenario():
+        if blocked := await scenario(kc.ANSWER_PATH):
             return blocked
         body = await request.json()
         question = str(body.get("question", "")).strip().casefold()

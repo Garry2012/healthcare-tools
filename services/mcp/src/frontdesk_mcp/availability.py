@@ -122,7 +122,7 @@ class AvailabilityService:
 
     async def routing(self, ctx: CallContext, deadline: Deadline) -> _Routing:
         if ctx.turn is None:
-            return _Routing(None, "TURN_CONTEXT_MISSING")
+            return _Routing(None, ctx.turn_failure or "TURN_CONTEXT_MISSING")
         try:
             return _Routing(await self.knowledge.route(ctx.turn, ctx, deadline), None)
         except KnowledgeUnavailable as exc:
@@ -321,9 +321,12 @@ class AvailabilityService:
         for summary in page.items:
             entries = [e for e in board.items if e.doctorId == summary.id]
             if session:
-                entries = [e for e in entries if e.session and _normalised(e.session) == _normalised(session)]
-                if not entries:
-                    continue  # this doctor has no such session; not UNKNOWN, simply not in scope
+                # A labelled row for another session is evidence the doctor is not in this session. A row
+                # without a label (the owner's UNKNOWN/missing shape) cannot be scoped away: it stays in scope.
+                scoped = [e for e in entries if not e.session or _normalised(e.session) == _normalised(session)]
+                if not scoped and entries:
+                    continue  # only other sessions: not UNKNOWN, simply not in scope
+                entries = scoped
             doctors.append(self._overlay(None, summary.name, summary.id, entries, requested, today, now,
                                          summary=summary))
         dept_out = _choice(department)

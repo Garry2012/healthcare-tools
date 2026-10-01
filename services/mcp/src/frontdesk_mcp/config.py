@@ -53,12 +53,17 @@ class Settings(BaseSettings):
     accepted_caller_verification: str = "SIP_CALLER_ID"
 
     # --- one total deadline per tool invocation (pool wait + auth + every call + any retry) -------
-    # Derived from the ~1 s caller-response budget (TARGET-STATE.md): a read must leave room for the model's
-    # answer and TTS; a confirmed write may run a little longer; summaries run after the call.
-    read_deadline_seconds: float = Field(default=1.2, gt=0, le=30)
-    write_deadline_seconds: float = Field(default=2.5, gt=0, le=30)
-    summary_deadline_seconds: float = Field(default=8.0, gt=0, le=60)
-    request_timeout_seconds: float = Field(default=0.8, gt=0, le=30)  # cap for any single HTTP exchange
+    # The caller's response budget (TARGET-STATE.md): end of speech → first useful audio. The other stages
+    # (endpointing/STT, model tool choice, model answer, TTS start, headroom) are reserved; what remains is the
+    # whole tool round trip including the gateway, so the adapter's own deadline is derived from it unless a
+    # diagnostic override sets READ_DEADLINE_SECONDS explicitly. These are design allocations to validate on
+    # the real path, not measured guarantees.
+    voice_response_budget_seconds: float = Field(default=1.0, gt=0, le=10)
+    reserved_stage_seconds: float = Field(default=0.65, ge=0, le=10)
+    read_deadline_seconds: float | None = Field(default=None, gt=0, le=30)  # default: budget - reserved
+    write_deadline_seconds: float | None = Field(default=None, gt=0, le=30)  # default: read + one exchange, ≤ 0.6
+    summary_deadline_seconds: float = Field(default=8.0, gt=0, le=60)  # after the call: outside the budget
+    request_timeout_seconds: float | None = Field(default=None, gt=0, le=30)  # cap per exchange; default: read
     token_refresh_margin_seconds: int = Field(default=60, ge=0, le=3600)
     token_refresh_check_seconds: float = Field(default=15.0, gt=0, le=3600)  # background refresher cadence
     directory_cache_seconds: int = Field(default=300, ge=0, le=86400)
@@ -119,6 +124,24 @@ class Settings(BaseSettings):
     @property
     def ops_token_url(self) -> str:
         return f"{self.ops_base_url}/auth/token"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_deadlines(cls, data):
+        if not isinstance(data, dict):
+            return data
+        budget = float(data.get("voice_response_budget_seconds", 1.0))
+        reserved = float(data.get("reserved_stage_seconds", 0.65))
+        tool_share = round(budget - reserved, 3)
+        if tool_share < 0.1:
+            raise ValueError("voice budget minus reserved stages leaves no time for the tool (reserved too large)")
+        if data.get("read_deadline_seconds") is None:
+            data["read_deadline_seconds"] = tool_share
+        if data.get("request_timeout_seconds") is None:
+            data["request_timeout_seconds"] = data["read_deadline_seconds"]
+        if data.get("write_deadline_seconds") is None:
+            data["write_deadline_seconds"] = min(0.6, round(float(data["read_deadline_seconds"]) + 0.25, 3))
+        return data
 
     @model_validator(mode="after")
     def _deadlines_nest(self) -> Settings:

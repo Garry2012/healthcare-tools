@@ -363,3 +363,38 @@ async def test_known_doctor_reads_overlap_the_routing_check(make_settings):
         assert result.outcome == "AVAILABILITY" and elapsed < 0.5, elapsed  # sequential would be ≥ 0.9 s
     finally:
         await hh.aclose()
+
+
+# ------------------------------------------------------------------ architect review AR-03
+
+
+async def test_department_session_query_keeps_a_sessionless_unknown_row(h):
+    """AR-03: a sessionless UNKNOWN row cannot be scoped away; it is unknown availability, not 'no such session'."""
+    h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "status": "UNKNOWN", "updatedMinutesAgo": 1}])
+    result = await ask(h, departmentName="General Medicine", session="Morning")
+    assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+    assert any(d.doctorId == "doc_garima" and d.journey == "CALLBACK_ONLY" for d in result.doctors)
+
+
+async def test_department_session_query_with_a_missing_row_is_unknown_too(h):
+    h.ops_state.omit_missing_entries = True
+    h.ops_state.set_board("2026-10-01", [])
+    result = await ask(h, departmentName="General Medicine", session="Morning")
+    assert result.outcome == "CALLBACK_REQUIRED"
+
+
+async def test_doctor_session_query_with_a_sessionless_stale_row_is_unknown(h):
+    h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "status": "IN", "updatedMinutesAgo": 500}])
+    result = await ask(h, doctorId="doc_garima", session="Morning")
+    assert result.outcome == "CALLBACK_REQUIRED" and result.sessionMatched is False
+
+
+async def test_a_doctor_who_simply_lacks_the_session_is_not_unknown(h):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_anil_sharma", "session": "Morning", "status": "IN", "expectedTime": "10:00",
+         "updatedMinutesAgo": 5},
+        {"doctorId": "doc_ravi_sharma", "session": "Evening", "status": "IN", "expectedTime": "16:00",
+         "updatedMinutesAgo": 5},
+    ])
+    result = await ask(h, departmentName="cardiology", session="Morning")
+    assert result.outcome == "AVAILABILITY" and [d.doctorId for d in result.doctors] == ["doc_anil_sharma"]

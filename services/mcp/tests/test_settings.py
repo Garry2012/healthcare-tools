@@ -113,3 +113,20 @@ def test_unknown_pack_is_refused(make_settings):
 def test_default_deadlines_fit_inside_a_one_second_turn_budget(make_settings):
     s = make_settings()
     assert s.read_deadline_seconds <= 1.2 and s.write_deadline_seconds <= 2.5 and s.request_timeout_seconds <= 0.8
+
+
+# ------------------------------------------------------------------ architect review AR-06
+
+
+def test_tool_deadlines_derive_from_the_voice_budget(make_settings):
+    s = make_settings()
+    assert s.voice_response_budget_seconds == 1.0 and s.reserved_stage_seconds == 0.65
+    assert s.read_deadline_seconds == pytest.approx(0.35)  # 1.0 - 0.65: the tool's share of the caller's second
+    assert s.request_timeout_seconds <= s.read_deadline_seconds
+    assert s.write_deadline_seconds <= 0.6  # a confirmed write may use one more exchange than a read
+    tighter = make_settings(voice_response_budget_seconds=0.8)
+    assert tighter.read_deadline_seconds == pytest.approx(0.15)
+    explicit = make_settings(read_deadline_seconds=2.0, write_deadline_seconds=2.0, request_timeout_seconds=1.5)
+    assert explicit.read_deadline_seconds == 2.0  # diagnostic override stays explicit
+    with pytest.raises(ValueError, match="reserved"):
+        make_settings(voice_response_budget_seconds=0.6)

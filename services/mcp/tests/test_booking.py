@@ -358,3 +358,72 @@ async def test_board_check_overlaps_the_routing_check(make_settings):
         assert result.outcome == "NOTED" and elapsed < 0.95, elapsed  # routing ∥ board (0.3) + write (0.3) + token
     finally:
         await hh.aclose()
+
+
+# ------------------------------------------------------------------ architect review AR-01, AR-04
+
+
+async def test_the_decisive_tail_of_a_long_utterance_still_blocks_the_create(h):
+    """AR-01: 1,177 characters whose last words carry the danger sign must reach routing whole."""
+    from frontdesk_stubs.knowledge import Decision
+
+    text = "I would like an appointment. " * 40 + "I have chest pain"
+    h.knowledge_state.decisions.insert(0, Decision((text,), "EMERGENCY_TRANSFER"))
+    result = await run(h, h.ctx(operation_id="op-long", turn=text), **CREATE)
+    assert result.outcome == "ROUTING_REQUIRED" and result.nextStep == "TRANSFER_EMERGENCY"
+    assert sent(h, "/appointments") == [] and h.knowledge_state.routed[-1]["utterance"] == text
+
+
+async def test_an_oversized_turn_context_refuses_the_write(h):
+    from frontdesk_mcp import context as context_module
+
+    text = "x" * (context_module.UTTERANCE_MAX + 1)
+    result = await run(h, h.ctx(operation_id="op-big", turn=text), **CREATE)
+    assert result.outcome == "ROUTING_UNAVAILABLE" and result.detail == "TURN_CONTEXT_OVERSIZED"
+    assert sent(h, "/appointments") == []
+
+
+MIXED_BOARD = [
+    {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
+     "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+    {"doctorId": "doc_garima", "session": "Afternoon", "status": "UNKNOWN", "updatedMinutesAgo": 1},
+]
+
+
+async def test_create_scope_follows_the_session_the_caller_chose(h):
+    """AR-04: availability for Morning offered a request; the create for that session must not flip to callback."""
+    from frontdesk_mcp import availability
+
+    h.ops_state.set_board("2026-10-01", MIXED_BOARD)
+    service = availability.AvailabilityService(h.ops, h.knowledge, h.cache, h.settings, h.clock)
+    morning = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today",
+                                                                           session="Morning"))
+    assert morning.outcome == "AVAILABILITY" and morning.nextStep == "OFFER_APPOINTMENT_REQUEST"
+    created = await run(h, h.ctx(operation_id="op-m"), **{**CREATE, "session": "Morning"})
+    assert created.outcome == "NOTED"
+    afternoon = await run(h, h.ctx(operation_id="op-a"),
+                          **{**CREATE, "session": "Afternoon", "preferredTime": "15:30"})
+    assert afternoon.outcome == "CALLBACK_REQUIRED"
+
+
+async def test_create_without_a_session_resolves_scope_from_the_preferred_time_or_asks(h):
+    h.ops_state.set_board("2026-10-01", MIXED_BOARD)
+    inside_morning = await run(h, h.ctx(operation_id="op-1"), **CREATE)  # 09:30 falls in the Morning window
+    assert inside_morning.outcome == "NOTED"
+    outside = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "preferredTime": "15:30"})
+    assert outside.outcome == "CALLBACK_REQUIRED"  # the only session that could hold 15:30 is UNKNOWN
+    unscoped = await run(h, h.ctx(operation_id="op-3"), **{**CREATE, "preferredTime": None})
+    assert unscoped.outcome == "CLARIFICATION_NEEDED" and unscoped.nextStep == "ASK_WHICH_SESSION"
+    assert [(s.session, s.status) for s in unscoped.sessions] == [("Morning", "IN"), ("Afternoon", "UNKNOWN")]
+    assert len(h.ops_state.appointments) == 1
+
+
+async def test_unknown_in_an_unrelated_session_does_not_block_a_scoped_create(h):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
+         "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": "Evening", "status": "IN", "expectedTime": "17:00",
+         "expectedEndTime": "19:00", "updatedMinutesAgo": 500},  # stale → UNKNOWN
+    ])
+    result = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "session": "morning", "preferredTime": "10:00"})
+    assert result.outcome == "NOTED"

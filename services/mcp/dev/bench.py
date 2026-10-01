@@ -33,13 +33,18 @@ from frontdesk_mcp.server import create_app  # noqa: E402
 from frontdesk_stubs import knowledge as knowledge_stub  # noqa: E402
 from frontdesk_stubs import ops as ops_stub  # noqa: E402
 
+# name → (tool, arguments, outcomes that count as the intended success, owner paths the call must have hit)
 SCENARIOS = {
-    "availability_known_doctor": ("get_doctor_availability", {"doctorId": "doc_garima", "date": "today"}),
-    "availability_name_search": ("get_doctor_availability", {"doctorName": "garima", "date": "today"}),
-    "availability_ambiguous": ("get_doctor_availability", {"doctorName": "sharma", "date": "today"}),
-    "availability_department": ("get_doctor_availability", {"departmentName": "cardiology", "date": "today"}),
-    "knowledge_answer": ("search_knowledge", {"question": "parking", "language": "en"}),
-    "booking_list": ("manage_booking", {"action": "LIST"}),
+    "availability_known_doctor": ("get_doctor_availability", {"doctorId": "doc_garima", "date": "today"},
+                                  {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("/availability",)),
+    "availability_name_search": ("get_doctor_availability", {"doctorName": "garima", "date": "today"},
+                                 {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("/doctors", "/availability")),
+    "availability_ambiguous": ("get_doctor_availability", {"doctorName": "sharma", "date": "today"},
+                               {"CLARIFICATION_NEEDED"}, ("/doctors",)),
+    "availability_department": ("get_doctor_availability", {"departmentName": "cardiology", "date": "today"},
+                                {"AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED"}, ("/departments",)),
+    "knowledge_answer": ("search_knowledge", {"question": "parking", "language": "en"}, {"ANSWERED", "NO_ANSWER"}, ()),
+    "booking_list": ("manage_booking", {"action": "LIST"}, {"FOUND", "NOT_FOUND"}, ("/appointments",)),
 }
 
 
@@ -53,10 +58,17 @@ def percentile(values: list[float], p: float) -> float:
     return ordered[min(len(ordered) - 1, int(round(p / 100 * (len(ordered) - 1))))]
 
 
-async def measure(base: str, name: str, tool: str, args: dict, i: int, sem: asyncio.Semaphore) -> float | str:
-    """One tool round trip in ms, or the failure outcome/detail when the result is an error/failure envelope."""
+OWNER_CALLS: list[str] = []  # owner request paths seen by the recording transport (stub mode only)
+
+
+async def measure(base: str, name: str, tool: str, args: dict, expected: set[str], paths: tuple[str, ...],
+                  i: int, sem: asyncio.Semaphore) -> float | str:
+    """One tool round trip in ms when the outcome is the scenario's intended success AND the intended owner
+    operation was observed (stub mode); otherwise the outcome/detail label, counted as a rejected sample."""
     headers = {"Authorization": "Bearer gateway", "X-Call-Id": f"bench-{name}-{i}",
-               "X-Caller-Number": "+919000000101", "X-Turn-Context": turn("availability please")}
+               "X-Caller-Number": "+919000000101", "X-Caller-Verification": "SIP_CALLER_ID",
+               "X-Turn-Context": turn("availability please")}
+    before = len(OWNER_CALLS)
     async with sem, Client(StreamableHttpTransport(f"{base}/mcp/", headers=headers)) as c:
         started = time.perf_counter()
         result = await c.call_tool(tool, args, raise_on_error=False)
@@ -64,16 +76,26 @@ async def measure(base: str, name: str, tool: str, args: dict, i: int, sem: asyn
     body = result.structured_content or {}
     if result.is_error:
         return "TOOL_ERROR"
-    if body.get("outcome") in ("COULD_NOT_CHECK", "ROUTING_UNAVAILABLE", "COULD_NOT_RECORD"):
-        return f"{body.get('outcome')}:{body.get('detail')}"
+    outcome = body.get("outcome")
+    if outcome not in expected:
+        return f"{outcome}:{body.get('detail')}"
+    if OWNER_CALLS is not None and RECORDING_OWNER_CALLS:
+        seen = OWNER_CALLS[before:]
+        for path in paths:
+            if not any(path in p for p in seen):
+                return f"{outcome}:owner call {path} not observed"
     return elapsed
+
+
+RECORDING_OWNER_CALLS = False
 
 
 async def run(base: str, samples: int, concurrency: int) -> dict:
     report: dict = {}
-    for name, (tool, args) in SCENARIOS.items():
+    for name, (tool, args, expected, paths) in SCENARIOS.items():
         sem = asyncio.Semaphore(concurrency)
-        results = await asyncio.gather(*(measure(base, name, tool, args, i, sem) for i in range(samples)))
+        results = await asyncio.gather(*(measure(base, name, tool, args, expected, paths, i, sem)
+                                         for i in range(samples)))
         timings = [r for r in results if isinstance(r, float)]
         failed = [r for r in results if isinstance(r, str)]
         failures = len(failed)
@@ -81,7 +103,8 @@ async def run(base: str, samples: int, concurrency: int) -> dict:
         for r in results:
             label = r if isinstance(r, str) else "ok"
             outcomes[label] = outcomes.get(label, 0) + 1
-        report[name] = {"samples": samples, "ok": len(timings), "failures": failures, "outcomes": outcomes,
+        report[name] = {"samples": samples, "ok": len(timings), "rejected_or_failed": failures,
+                        "expected_outcomes": sorted(expected), "outcomes": outcomes,
                         "first_call_ms": round(results[0], 1) if isinstance(results[0], float) else results[0],
                         "p50_ms": round(percentile(timings, 50), 1) if timings else None,
                         "p95_ms": round(percentile(timings, 95), 1) if timings else None,
@@ -128,7 +151,18 @@ async def main() -> None:
         clock = FixedClock(datetime(2026, 10, 1, 4, 30, tzinfo=UTC))
         scopes = {"appointments.write", "calls.write"}
         ops_state = ops_stub.OpsStubState(clock=clock, clients={"mcp-dev": ("dev-secret", scopes)})
-        ops_transport = httpx.ASGITransport(app=ops_stub.create_app(ops_state, prefix="/api/v1"))
+
+        class Recording(httpx.AsyncBaseTransport):
+            def __init__(self, app):
+                self.inner = httpx.ASGITransport(app=app)
+
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                OWNER_CALLS.append(request.url.path)
+                return await self.inner.handle_async_request(request)
+
+        global RECORDING_OWNER_CALLS
+        RECORDING_OWNER_CALLS = True
+        ops_transport = Recording(ops_stub.create_app(ops_state, prefix="/api/v1"))
         kb_state = knowledge_stub.KnowledgeStubState(bearer="dev-knowledge-secret")
         knowledge_transport = httpx.ASGITransport(app=knowledge_stub.create_app(kb_state))
     app = create_app(settings, ops_transport=ops_transport, knowledge_transport=knowledge_transport, clock=clock)
@@ -138,7 +172,11 @@ async def main() -> None:
             await c.list_tools()
         report = await run(base, args.samples, args.concurrency)
     print(json.dumps({"measured_at": datetime.now(UTC).isoformat(timespec="seconds"), "boundary": boundary,
-                      "samples_per_scenario": args.samples, "concurrency": args.concurrency, "warm": True,
+                      "samples_per_scenario": args.samples, "concurrency": args.concurrency,
+                      "warm": "token warmed at start-up; one tools/list before sampling; a new MCP session per sample",
+                      "owner_calls_verified": RECORDING_OWNER_CALLS,
+                      "note": "timings include client-side schema checking and session initialize; "
+                              "a sample counts only when the intended outcome and owner call were observed",
                       "scenarios": report}, indent=2))
 
 

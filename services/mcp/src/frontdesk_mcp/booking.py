@@ -48,6 +48,7 @@ class BookingRequest(BaseModel):
     departmentId: str | None = Field(default=None, max_length=64)  # noqa: N815
     visitDate: str | None = Field(default=None, max_length=10)  # noqa: N815
     preferredTime: str | None = Field(default=None, max_length=5)  # noqa: N815
+    session: str | None = Field(default=None, max_length=40, description="The board session the caller chose.")
     reasonVerbatim: str | None = Field(default=None, max_length=500)  # noqa: N815
     # CANCEL / RESCHEDULE
     appointmentId: str | None = Field(default=None, max_length=64)  # noqa: N815
@@ -167,7 +168,7 @@ class BookingService:
         (reason for the visit); nothing else is clearance."""
         if ctx.turn is None:
             return outcomes.BookingResult(outcome="ROUTING_UNAVAILABLE", nextStep="TRANSFER_DESK",
-                                          detail="TURN_CONTEXT_MISSING")
+                                          detail=ctx.turn_failure or "TURN_CONTEXT_MISSING")
         try:
             decision = await self.knowledge.route(ctx.turn, ctx, deadline, additional_text=extra_text)
         except KnowledgeUnavailable as exc:
@@ -244,9 +245,8 @@ class BookingService:
                                           detail=detail, retryAfterSeconds=retry)
         except Rejected as exc:
             return self._failure(exc, write=True)
-        if self._board_is_unknown(board, request.doctorId):
-            return outcomes.BookingResult(outcome="CALLBACK_REQUIRED", nextStep="ASK_CALLBACK_DETAILS",
-                                          callback=outcomes.Callback(), detail="BOARD_UNKNOWN")
+        if blocked := self._board_gate(board, request):
+            return blocked
         body: dict[str, Any] = {"patientName": request.patientName.strip(), "mobile": request.patientMobile}
         if request.doctorId:
             body["doctorId"] = request.doctorId
@@ -266,15 +266,52 @@ class BookingService:
         return self._written(appointment, "SAY_REQUEST_NOTED")
 
     @staticmethod
-    def _board_is_unknown(board: contract.AvailabilityBoard, doctor_id: str | None) -> bool:
-        """Doctor target: any UNKNOWN session (or no row) on that date. Department target: every doctor UNKNOWN."""
-        if doctor_id:
-            entries = [e for e in board.items if e.doctorId == doctor_id]
-            return not entries or any(e.status == "UNKNOWN" for e in entries)
-        by_doctor: dict[str, list[str]] = {}
-        for e in board.items:
-            by_doctor.setdefault(e.doctorId, []).append(e.status)
-        return not by_doctor or all("UNKNOWN" in statuses for statuses in by_doctor.values())
+    def _board_gate(board: contract.AvailabilityBoard, request: BookingRequest) -> outcomes.BookingResult | None:
+        """Live-board check before a create, with the same session scope as get_doctor_availability.
+
+        Doctor target: the scope is the session the caller chose (`session`), else the session whose window holds
+        the preferred time, else the whole day. Any UNKNOWN or missing row in scope → callback only; a day with
+        mixed statuses and no resolvable scope → ask which session. Department target: every doctor UNKNOWN →
+        callback."""
+        callback = outcomes.BookingResult(outcome="CALLBACK_REQUIRED", nextStep="ASK_CALLBACK_DETAILS",
+                                          callback=outcomes.Callback(), detail="BOARD_UNKNOWN")
+        if not request.doctorId:
+            by_doctor: dict[str, list[str]] = {}
+            for e in board.items:
+                by_doctor.setdefault(e.doctorId, []).append(e.status)
+            if not by_doctor or all("UNKNOWN" in statuses for statuses in by_doctor.values()):
+                return callback
+            return None
+        entries = [e for e in board.items if e.doctorId == request.doctorId]
+        if not entries:
+            return callback
+        scoped = entries
+        resolved = False
+        if request.session:
+            wanted = " ".join(request.session.casefold().split())
+            labelled = [e for e in entries if e.session and " ".join(e.session.casefold().split()) == wanted]
+            if labelled:
+                scoped = labelled + [e for e in entries if not e.session]  # unlabelled rows cannot be scoped away
+                resolved = True
+        elif request.preferredTime and len(entries) > 1:
+            holding = [e for e in entries if e.expectedTime and e.expectedEndTime
+                       and e.expectedTime <= request.preferredTime <= e.expectedEndTime]
+            if len(holding) == 1:
+                scoped = holding + [e for e in entries if not e.session]
+                resolved = True
+            else:
+                # no window holds the time: sessions whose windows are known cannot be meant; the rest stay in scope
+                unplaced = [e for e in entries if not (e.expectedTime and e.expectedEndTime)]
+                scoped, resolved = (unplaced, True) if unplaced else (entries, False)
+        statuses = {e.status for e in scoped}
+        if not resolved and len(scoped) > 1 and "UNKNOWN" in statuses and statuses != {"UNKNOWN"}:
+            return outcomes.BookingResult(
+                outcome="CLARIFICATION_NEEDED", nextStep="ASK_WHICH_SESSION", detail="SESSION_SCOPE_UNRESOLVED",
+                sessions=[outcomes.SessionStatus(session=e.session, status=e.status, expectedTime=e.expectedTime,
+                                                 expectedEndTime=e.expectedEndTime) for e in entries])
+        if "UNKNOWN" in statuses:
+            return callback
+        return None
 
     async def _change(self, ctx: CallContext, request: BookingRequest) -> outcomes.BookingResult:
         today = local_now(self.clock, self.settings.zone).date()

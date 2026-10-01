@@ -26,7 +26,10 @@ principal_var: ContextVar[Principal | None] = ContextVar("mcp_principal", defaul
 call_id_var: ContextVar[str | None] = ContextVar("mcp_call_id", default=None)
 
 _ID = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
-_UTTERANCE_MAX = 1000
+# Agreed size limit for one turn's words. Never truncated: an oversized context is refused (no clearance),
+# because the decisive words may be at the end. Header transport comfortably carries 4,000 characters.
+UTTERANCE_MAX = 4000
+TurnFailure = Literal["TURN_CONTEXT_MISSING", "TURN_CONTEXT_MALFORMED", "TURN_CONTEXT_OVERSIZED"]
 
 FIELD_OF_HEADER = {
     "x-call-id": "call_id",
@@ -57,6 +60,7 @@ class CallContext:
     caller_number: str | None = None
     caller_verification: str | None = None
     turn: TurnContext | None = None
+    turn_failure: TurnFailure | None = None  # why `turn` is None; never clearance
     operation_id: str | None = None
     call_started_at: datetime | None = None
     call_duration_seconds: int | None = None
@@ -71,9 +75,9 @@ def _ident(value: str | None, header: str) -> str | None:
     return value
 
 
-def _turn(value: str | None) -> TurnContext | None:
+def _turn(value: str | None) -> tuple[TurnContext | None, TurnFailure | None]:
     if not value:
-        return None
+        return None, "TURN_CONTEXT_MISSING"
     try:
         padded = value + "=" * (-len(value) % 4)
         raw = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
@@ -83,10 +87,13 @@ def _turn(value: str | None) -> TurnContext | None:
         turn_id = raw.get("turnId")
         if turn_id is not None and not isinstance(turn_id, str):
             raise ValueError("turnId must be a string")
-        return TurnContext(utterance=utterance[:_UTTERANCE_MAX], language=language[:16], turn_id=turn_id)
     except (binascii.Error, UnicodeDecodeError, ValueError, KeyError, TypeError, AttributeError):
         logger.warning("trusted_header_malformed", extra={"fields": {"header": "x-turn-context"}})
-        return None
+        return None, "TURN_CONTEXT_MALFORMED"
+    if len(utterance) > UTTERANCE_MAX or len(language) > 16:
+        logger.warning("trusted_turn_oversized", extra={"fields": {"length": len(utterance), "max": UTTERANCE_MAX}})
+        return None, "TURN_CONTEXT_OVERSIZED"
+    return TurnContext(utterance=utterance, language=language, turn_id=turn_id), None
 
 
 def _started_at(value: str | None) -> datetime | None:
@@ -121,11 +128,13 @@ def from_headers(headers: Mapping[str, str], settings: Settings) -> CallContext:
     verification = lower.get("x-caller-verification") or None
     if not caller and settings.env == "development" and settings.mcp_dev_caller_number:
         caller, verification = settings.mcp_dev_caller_number, "SIP_CALLER_ID"  # development convenience only
+    turn, turn_failure = _turn(lower.get("x-turn-context"))
     return CallContext(
         call_id=call_id,
         caller_number=caller,
         caller_verification=verification if caller else None,
-        turn=_turn(lower.get("x-turn-context")),
+        turn=turn,
+        turn_failure=turn_failure,
         operation_id=_ident(lower.get("x-operation-id"), "x-operation-id"),
         call_started_at=_started_at(lower.get("x-call-started-at")),
         call_duration_seconds=_duration(lower.get("x-call-duration-seconds")),

@@ -38,4 +38,11 @@ The earlier contract investigation validated 25 discovered typed inline examples
 
 The [plan](../PLAN.md) records collective consumer mismatches, authentication, missing agreements and test scenarios. There is no slot endpoint. `/availability` is a live board over the usual schedule, not reservable-slot inventory. The UNKNOWN callback-only policy is our agreed consumer policy; the original specification retains the owner's wording unchanged.
 
-On 1 October 2026 Manoj's deployed backend (`healthcare-api`, `/api/v1`) served `/api/v1/openapi.yaml` with the same SHA-256 as this snapshot; the deployed server list adds `/api/v1` ("This deployment") first. A new owner revision should be reviewed as a contract change before updating fixtures. Shobhit's contract is still pending; do not present a guessed endpoint as published documentation.
+**Live server metadata (1 October 2026, later in the day):** Manoj's deployed backend (`healthcare-api`, `/api/v1`) now serves `/api/v1/openapi.yaml` with SHA-256 `6f827be1b62e22f4f4f0c54174d22a1b40bd02ab130ec74ce5f83b8b9aa80391`. The only difference from this snapshot is the fourth `servers` entry: the `https://{host}/api/v1` placeholder became `https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1` ("Real API in Azure … Needs registered credentials"). Paths, operations and schemas are unchanged, so the pinned snapshot, overlay and client types stay authoritative; the live copy is kept as evidence in `../implementation/evidence/manoj-openapi-live-20261001-servers-only-diff.yaml`. A revision that changes paths or schemas is a contract change to review before updating fixtures.
+
+**Environments used for integration testing:**
+
+| Environment | Base URL | Auth behaviour observed | Use |
+|---|---|---|---|
+| Public contract mock (Prism) | `https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io` (no `/api/v1`) | `401` without a bearer; any bearer accepted; `POST /auth/token` issues the example token for any client credentials; bodies are the spec's static examples; no state | transport, base-path, auth-discipline and shape checks (`OPS_E2E_MODE=mock`) |
+| Live backend | `https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1` | `401 Missing bearer token` on reads; `401 Invalid client credentials` for unregistered clients | real-service verification once Manoj registers a client (`OPS_E2E_MODE=live`) | Shobhit's contract is still pending; do not present a guessed endpoint as published documentation.

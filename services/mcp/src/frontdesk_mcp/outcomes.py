@@ -130,14 +130,21 @@ class AppointmentOut(_Out):
 
 BookingOutcome = Literal[
     "NOTED", "CHANGED", "CANCELLED", "FOUND", "NOT_FOUND", "REJECTED", "CONFLICT", "UNCERTAIN",
-    "IDENTITY_UNAVAILABLE", "ROUTING_REQUIRED", "ROUTING_UNAVAILABLE", "CALLBACK_REQUIRED", "CONFIRMATION_REQUIRED",
-    "OPERATION_CONTEXT_MISSING", "COULD_NOT_RECORD", "COULD_NOT_CHECK", "INVALID_REQUEST",
+    "IDENTITY_UNAVAILABLE", "ROUTING_REQUIRED", "ROUTING_UNAVAILABLE", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED",
+    "CONFIRMATION_REQUIRED", "OPERATION_CONTEXT_MISSING", "COULD_NOT_RECORD", "COULD_NOT_CHECK", "INVALID_REQUEST",
 ]
 BookingNextStep = Literal[
     "SAY_REQUEST_NOTED", "SAY_CHANGED", "SAY_CANCELLED", "OFFER_CHOICES", "SAY_NOT_FOUND", "ASK_TO_CORRECT",
     "SAY_UNCERTAIN_AND_TRANSFER", "TRANSFER_DESK", "TRANSFER_EMERGENCY", "ASK_ROUTING_CLARIFICATION",
-    "ASK_CALLBACK_DETAILS", "ASK_CONFIRMATION", "SAY_COULD_NOT_RECORD", "SAY_COULD_NOT_CHECK",
+    "ASK_CALLBACK_DETAILS", "ASK_WHICH_SESSION", "ASK_CONFIRMATION", "SAY_COULD_NOT_RECORD", "SAY_COULD_NOT_CHECK",
 ]
+
+
+class SessionStatus(_Out):
+    session: str | None
+    status: contract.AvailabilityStatus
+    expectedTime: str | None = None  # noqa: N815
+    expectedEndTime: str | None = None  # noqa: N815
 
 
 class BookingResult(_Out):
@@ -148,6 +155,7 @@ class BookingResult(_Out):
     fields: list[str] = Field(default=[], description="Request fields that were invalid or rejected.")
     routing: Routing | None = None
     callback: Callback | None = None
+    sessions: list[SessionStatus] = Field(default=[], description="For ASK_WHICH_SESSION: the board sessions that day.")
     detail: str | None = None
     retryAfterSeconds: int | None = None  # noqa: N815
 
@@ -155,10 +163,10 @@ class BookingResult(_Out):
 # -------------------------------------------------------------------------------- search_knowledge
 
 
-KnowledgeOutcome = Literal["ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED", "COULD_NOT_CHECK",
-                           "INVALID_REQUEST"]
+KnowledgeOutcome = Literal["ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED", "ROUTING_UNAVAILABLE",
+                           "COULD_NOT_CHECK", "INVALID_REQUEST"]
 KnowledgeNextStep = Literal["SPEAK_ANSWER", "SAY_NO_ANSWER_AND_OFFER_DESK", "ASK_CLARIFICATION", "TRANSFER_DESK",
-                            "SAY_COULD_NOT_CHECK", "ASK_TO_REPHRASE"]
+                            "TRANSFER_EMERGENCY", "ASK_ROUTING_CLARIFICATION", "SAY_COULD_NOT_CHECK", "ASK_TO_REPHRASE"]
 
 
 class KnowledgeResult(_Out):
@@ -167,6 +175,7 @@ class KnowledgeResult(_Out):
     answer: Speech | None = Field(default=None, description="Approved text to speak exactly as given.")
     sourceId: str | None = None  # noqa: N815
     destination: str | None = None
+    routing: Routing | None = Field(default=None, description="The owner's routing decision over the caller's words.")
     detail: str | None = None
 
 

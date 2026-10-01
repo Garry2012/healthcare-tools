@@ -1,6 +1,6 @@
 {
-  "instructions": "Front-desk tools for a hospital voice agent. Dates: pass date='today' or an explicit date YYYY-MM-DD the caller confirmed; every result carries facilityToday and weekday to help you confirm. Never work out a relative date yourself: ask for the day. get_doctor_availability returns usual hours qualified by the live board per session. Speak the board status (IN, LATE with its expectedTime, CANCELLED, NOT_CONFIRMED, expired) and never present usual hours as today's attendance. There are no slots, tokens or guaranteed times: a preferred time is a request. manage_booking CREATE returns NOTED: say the request is recorded with that preferred time; never say 'confirmed' or 'booked'. CALLBACK_REQUIRED (board UNKNOWN today or on a later date): stop the appointment journey. Ask 'May I have your name and a callback number?' and then say 'Someone from the hospital will call you back.' Do not book, transfer, offer another doctor or date, or promise when; the call summary records it as CALLBACK_NOTED. Help one patient per call. Whether the caller's words contain a danger sign is decided by the hospital's routing service, never by you: follow its decision in routing. Before CREATE, CANCEL or RESCHEDULE, read the details back and get a clear yes; only then set callerConfirmed=true and call manage_booking once for that intent. UNCERTAIN means it may or may not be recorded: say so and transfer to the desk; never retry it as a new request. IDENTITY_UNAVAILABLE: the caller's number could not be verified for looking up or changing appointments; do not ask for another number to use instead, offer the desk. ROUTING_REQUIRED: follow nextStep (TRANSFER_EMERGENCY at once, TRANSFER_DESK, or ask routing.speak) and speak routing.speak.text verbatim when present. ROUTING_UNAVAILABLE, COULD_NOT_CHECK or COULD_NOT_RECORD: say the system could not check right now and offer the desk; never say that no one is available. CLARIFICATION_NEEDED: offer the returned choices (complete=false means there are more) and ask; never choose for the caller. NOT_FOUND: ask the caller to repeat the name or department once, then offer the desk. For general questions (hours, parking, reports, payment, directions) call search_knowledge and speak answer.text exactly as given; add nothing. Languages: set `language` to the language the caller is speaking (en, kn, hi). Pass names, departments and questions as heard, untranslated; speak approved answers in the language they come back in. Tool schema 2026-10-01.2.",
-  "schemaVersion": "2026-10-01.2",
+  "instructions": "Front-desk tools for a hospital voice agent. Dates: pass date='today' or an explicit date YYYY-MM-DD the caller confirmed; every result carries facilityToday and weekday to help you confirm. Never work out a relative date yourself: ask for the day. get_doctor_availability returns usual hours qualified by the live board per session. Speak the board status (IN, LATE with its expectedTime, CANCELLED, NOT_CONFIRMED, expired) and never present usual hours as today's attendance. There are no slots, tokens or guaranteed times: a preferred time is a request. manage_booking CREATE returns NOTED: say the request is recorded with that preferred time; never say 'confirmed' or 'booked'. CALLBACK_REQUIRED (board UNKNOWN today or on a later date): stop the appointment journey. Ask 'May I have your name and a callback number?' and then say 'Someone from the hospital will call you back.' Do not book, transfer, offer another doctor or date, or promise when; the call summary records it as CALLBACK_NOTED. Help one patient per call. Whether the caller's words contain a danger sign is decided by the hospital's routing service, never by you: follow its decision in routing. Before CREATE, CANCEL or RESCHEDULE, read the details back and get a clear yes; only then set callerConfirmed=true and call manage_booking once for that intent. UNCERTAIN means it may or may not be recorded: say so and transfer to the desk; never retry it as a new request. IDENTITY_UNAVAILABLE: the caller's number could not be verified for looking up or changing appointments; do not ask for another number to use instead, offer the desk. ROUTING_REQUIRED: follow nextStep (TRANSFER_EMERGENCY at once, TRANSFER_DESK, or ask routing.speak) and speak routing.speak.text verbatim when present. ROUTING_UNAVAILABLE, COULD_NOT_CHECK or COULD_NOT_RECORD: say the system could not check right now and offer the desk; never say that no one is available. CLARIFICATION_NEEDED: offer the returned choices (complete=false means there are more) and ask; never choose for the caller. NOT_FOUND: ask the caller to repeat the name or department once, then offer the desk. For general questions (hours, parking, reports, payment, directions) call search_knowledge and speak answer.text exactly as given; add nothing. Languages: set `language` to the language the caller is speaking (en, kn, hi). Pass names, departments and questions as heard, untranslated; speak approved answers in the language they come back in. Tool schema 2026-10-01.3.",
+  "schemaVersion": "2026-10-01.3",
   "tools": [
     {
       "annotations": {
@@ -822,6 +822,19 @@
             "default": null,
             "description": "CREATE/CANCEL: the caller's own words for the reason. Never an interpretation."
           },
+          "session": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CREATE: the board session the caller chose from get_doctor_availability (e.g. Morning), when the doctor has several that day."
+          },
           "status": {
             "anyOf": [
               {
@@ -1013,6 +1026,62 @@
             "title": "Routing",
             "type": "object"
           },
+          "SessionStatus": {
+            "properties": {
+              "expectedEndTime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expectedendtime"
+              },
+              "expectedTime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expectedtime"
+              },
+              "session": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Session"
+              },
+              "status": {
+                "enum": [
+                  "IN",
+                  "LATE",
+                  "CANCELLED",
+                  "NOT_CONFIRMED",
+                  "UNKNOWN"
+                ],
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "required": [
+              "session",
+              "status"
+            ],
+            "title": "SessionStatus",
+            "type": "object"
+          },
           "Speech": {
             "properties": {
               "language": {
@@ -1097,6 +1166,7 @@
               "TRANSFER_EMERGENCY",
               "ASK_ROUTING_CLARIFICATION",
               "ASK_CALLBACK_DETAILS",
+              "ASK_WHICH_SESSION",
               "ASK_CONFIRMATION",
               "SAY_COULD_NOT_RECORD",
               "SAY_COULD_NOT_CHECK"
@@ -1118,6 +1188,7 @@
               "ROUTING_REQUIRED",
               "ROUTING_UNAVAILABLE",
               "CALLBACK_REQUIRED",
+              "CLARIFICATION_NEEDED",
               "CONFIRMATION_REQUIRED",
               "OPERATION_CONTEXT_MISSING",
               "COULD_NOT_RECORD",
@@ -1149,6 +1220,15 @@
               }
             ],
             "default": null
+          },
+          "sessions": {
+            "default": [],
+            "description": "For ASK_WHICH_SESSION: the board sessions that day.",
+            "items": {
+              "$ref": "#/$defs/SessionStatus"
+            },
+            "title": "Sessions",
+            "type": "array"
           }
         },
         "required": [
@@ -1189,6 +1269,49 @@
       "name": "search_knowledge",
       "outputSchema": {
         "$defs": {
+          "Routing": {
+            "properties": {
+              "decision": {
+                "enum": [
+                  "CONTINUE",
+                  "ROUTE_DEPARTMENT",
+                  "CLARIFY",
+                  "DESK_TRANSFER",
+                  "EMERGENCY_TRANSFER"
+                ],
+                "title": "Decision",
+                "type": "string"
+              },
+              "department": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Department"
+              },
+              "speak": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Speech"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "decision"
+            ],
+            "title": "Routing",
+            "type": "object"
+          },
           "Speech": {
             "properties": {
               "language": {
@@ -1251,6 +1374,8 @@
               "SAY_NO_ANSWER_AND_OFFER_DESK",
               "ASK_CLARIFICATION",
               "TRANSFER_DESK",
+              "TRANSFER_EMERGENCY",
+              "ASK_ROUTING_CLARIFICATION",
               "SAY_COULD_NOT_CHECK",
               "ASK_TO_REPHRASE"
             ],
@@ -1263,11 +1388,24 @@
               "NO_ANSWER",
               "CLARIFICATION_NEEDED",
               "ROUTING_REQUIRED",
+              "ROUTING_UNAVAILABLE",
               "COULD_NOT_CHECK",
               "INVALID_REQUEST"
             ],
             "title": "Outcome",
             "type": "string"
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Routing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The owner's routing decision over the caller's words."
           },
           "sourceId": {
             "anyOf": [

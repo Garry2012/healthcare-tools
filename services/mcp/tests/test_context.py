@@ -109,3 +109,22 @@ def test_mobile_fields_match_the_contract_pattern():
     assert identity.is_contract_mobile("9000000101") and not identity.is_contract_mobile("+919000000101")
     assert identity.is_approx_time("09:05")
     assert not identity.is_approx_time("9:05") and not identity.is_approx_time("24:00")
+
+
+# ------------------------------------------------------------------ architect review AR-01
+
+
+def test_a_long_trusted_utterance_is_preserved_whole(make_settings):
+    text = "I would like an appointment. " * 40 + "I have chest pain"  # 1,177 characters; the tail decides
+    ctx = context.from_headers({"x-turn-context": b64({"utterance": text, "language": "en"})}, make_settings())
+    assert ctx.turn is not None and ctx.turn.utterance == text and ctx.turn_failure is None
+
+
+def test_an_oversized_turn_context_is_refused_not_truncated(make_settings):
+    text = "x" * (context.UTTERANCE_MAX + 1)
+    ctx = context.from_headers({"x-turn-context": b64({"utterance": text, "language": "en"})}, make_settings())
+    assert ctx.turn is None and ctx.turn_failure == "TURN_CONTEXT_OVERSIZED"
+    absent = context.from_headers({}, make_settings())
+    assert absent.turn is None and absent.turn_failure == "TURN_CONTEXT_MISSING"
+    broken = context.from_headers({"x-turn-context": "not-base64!"}, make_settings())
+    assert broken.turn is None and broken.turn_failure == "TURN_CONTEXT_MALFORMED"

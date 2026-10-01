@@ -22,7 +22,7 @@ The agent gets three tools through the gateway bearer: `get_doctor_availability`
 |---|---|---|
 | `X-Call-Id` | every request | Correlation, call-bound write keys, summary identity |
 | `X-Caller-Number`, `X-Caller-Verification` | every request when known | Authority to list/change appointments. The platform must state what it verified (`SIP_CALLER_ID`, `OTP`, …): a number without a verification header is unverified and gets IDENTITY_UNAVAILABLE |
-| `X-Turn-Context` | every request | The caller's original words of the current turn, which the adapter forwards to the knowledge service for the required routing decision. Without it availability and CREATE return ROUTING_UNAVAILABLE |
+| `X-Turn-Context` | every request | The caller's original words of the current turn (≤ 4,000 characters, never truncated by the adapter: an oversized or malformed value is refused with ROUTING_UNAVAILABLE), forwarded to the knowledge service for the required routing decision before any availability result, create or knowledge answer. Without it those tools return ROUTING_UNAVAILABLE |
 | `X-Operation-Id` | every CREATE/CANCEL/RESCHEDULE | A stable logical id per confirmed intent. Retrying the same intent reuses it (replay); any changed payload under the same id, including a changed doctor or appointment, is refused as a conflict; a new intent gets a new id. Keep the mapping in the platform's call state |
 | `X-Call-Started-At`, `X-Call-Duration-Seconds` | the call-end summary | Authoritative timing; never from the model |
 
@@ -44,6 +44,22 @@ Build the payload once and resend it unchanged on retry. Act on `nextStep`: `DON
 `FIX_PLATFORM_INPUT` (`INVALID_REQUEST`/`REJECTED`/`CONFLICT`: the platform's inputs are wrong). The
 platform owns the finalization queue and retries; the adapter is stateless. Call summaries are outside
 the voice response budget.
+
+## Sessions and the create
+
+`get_doctor_availability` returns board sessions per doctor. When a doctor has several sessions that day,
+pass the chosen one as `session` on `manage_booking` CREATE (or a `preferredTime` inside its window); the
+adapter re-reads the live board for the visit date with the same scope and refuses an UNKNOWN session with the
+callback-only outcome, or returns `CLARIFICATION_NEEDED` / `ASK_WHICH_SESSION` (with the day's sessions) when
+the scope cannot be established and statuses are mixed.
+
+## Latency budget the adapter enforces
+
+The adapter derives its read deadline from `VOICE_RESPONSE_BUDGET_SECONDS` (1.0) minus
+`RESERVED_STAGE_SECONDS` (0.65 for endpointing/STT, model tool choice, model answer, TTS start and headroom):
+0.35 s for the whole tool round trip including the gateway, 0.6 s for a confirmed write. A tool that cannot
+finish inside that returns COULD_NOT_CHECK / UNCERTAIN promptly rather than holding the turn. These are design
+allocations to validate on the real path; diagnostic overrides (`READ_DEADLINE_SECONDS`, …) are explicit.
 
 ## Conversation rules the agent follows
 

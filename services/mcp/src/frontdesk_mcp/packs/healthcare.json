@@ -24,6 +24,7 @@
         "departmentId": "CREATE: the chosen departmentId when no particular doctor was chosen.",
         "visitDate": "CREATE: the confirmed visit date, YYYY-MM-DD.",
         "preferredTime": "CREATE: the time the caller would like to come, HH:MM 24-hour, if they gave one.",
+        "session": "CREATE: the board session the caller chose from get_doctor_availability (e.g. Morning), when the doctor has several that day.",
         "reasonVerbatim": "CREATE/CANCEL: the caller's own words for the reason. Never an interpretation.",
         "appointmentId": "CANCEL/RESCHEDULE: the appointmentId from LIST or CREATE.",
         "newVisitDate": "RESCHEDULE: the new confirmed date, YYYY-MM-DD.",

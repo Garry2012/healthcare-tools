@@ -30,7 +30,15 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 show() { printf '+ %s\n' "$*" | sed -E 's/(--admin-password |--value )[^ ]*/\1***/g' >&2; }
 run() { if [[ -n "$DRY" ]]; then show "$@"; else "$@"; fi; }
 out() { if [[ -n "$DRY" ]]; then show "$@"; echo "<$2-$3>"; else "$@"; fi; }
-exists() { [[ -z "$DRY" ]] && "$@" >/dev/null 2>&1; }
+# A dry run shows a first deployment, or an upgrade of an existing app with DEPLOY_ASSUME_EXISTING=1 (only the
+# container-app existence check honours the flag; vault/identity lookups still show a first deployment).
+exists() {
+  if [[ -n "$DRY" ]]; then
+    [[ -n "${DEPLOY_ASSUME_EXISTING:-}" && "$*" == *"containerapp show"* ]]
+    return
+  fi
+  "$@" >/dev/null 2>&1
+}
 step() { printf '\n== %s\n' "$*" >&2; }
 
 required="uv git openssl"
@@ -153,7 +161,15 @@ ENV_VARS=(ENV=production HOST=0.0.0.0 PORT=8100
   MCP_BEARER_TOKEN=secretref:mcp-token MCP_LIFECYCLE_BEARER_TOKEN=secretref:mcp-lifecycle-token
   "${ROLLOUT_ENV[@]}")
 if exists az containerapp show -g "$RG" -n "$APP"; then
+  # Upgrade path (AR-05): an app deployed by the legacy script carries only agent-token/mcp-token. Attach the
+  # identity and registry access, then every Key Vault reference the new environment names, BEFORE switching the
+  # revision's environment; otherwise the new revision cannot resolve its secretrefs and never becomes ready.
+  run az containerapp identity assign -g "$RG" -n "$APP" --user-assigned "$ID" -o none
+  run az containerapp registry set -g "$RG" -n "$APP" --server "$ACR.azurecr.io" --identity "$ID" -o none
+  # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
+  run az containerapp secret set -g "$RG" -n "$APP" --secrets $SECRETS -o none
   run az containerapp update -g "$RG" -n "$APP" --image "$MCP_IMAGE" --replace-env-vars "${ENV_VARS[@]}" -o none
+  # Legacy secrets (agent-token for the retired API) stay attached until the retirement step removes them.
 else
   # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
   run az containerapp create -g "$RG" -n "$APP" --environment "$ENV_NAME" --image "$MCP_IMAGE" \

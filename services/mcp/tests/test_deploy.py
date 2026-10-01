@@ -146,3 +146,29 @@ def test_schema_drift_between_server_and_gateway_is_detected():
     extra = REGISTER["drift"](served, [*gateway_ok, {"name": "frontdesk-demo-hospital-find-availability",
                                                      "input_schema": {}}], "frontdesk-demo-hospital")
     assert any("find-availability" in p for p in extra)
+
+
+# ------------------------------------------------------------------ architect review AR-05
+
+
+def test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env(tmp_path):
+    """AR-05: the live app has only agent-token/mcp-token; an update with new secretref names must first attach
+    the Key Vault references (and identity/registry access), else the revision fails to start."""
+    import os
+    import subprocess
+
+    env = {**os.environ, "DEPLOY_ASSUME_EXISTING": "1", "OPS_BASE_URL": "https://ops.example/api/v1",
+           "KNOWLEDGE_BASE_URL": "https://kb.example"}
+    out = subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"), "--dry-run"],
+                         capture_output=True, text=True, env=env, check=False, cwd=DEPLOY.parent)
+    log = out.stderr
+    assert out.returncode == 0, log[-2000:]
+    secret_set = log.index("az containerapp secret set")
+    identity = log.index("az containerapp identity assign")
+    registry = log.index("az containerapp registry set")
+    update = log.index("az containerapp update -g")
+    assert secret_set < update and identity < update and registry < update, "attach secrets/identity before env"
+    secrets_line = [line for line in log.splitlines() if "az containerapp secret set" in line][0]
+    for name in ("mcp-token", "mcp-lifecycle-token", "ops-client-id", "ops-client-secret", "knowledge-token"):
+        assert f"{name}=keyvaultref:" in secrets_line, name
+    assert "az containerapp create" not in log  # the existing app is upgraded, not recreated
