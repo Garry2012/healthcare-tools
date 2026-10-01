@@ -1,16 +1,48 @@
 # Implementation review report (1 October 2026)
 
-Branch `Garry2012/mcp-external-api` → PR against `main`. Tested/reviewed code commit: **`e9c6bc5`**
-(this report may be committed afterwards and references that SHA). Author: Claude Fable 5.1 acting as
+Branch `Garry2012/mcp-external-api` → PR #11 against `main`. Tested code commit after the architect's
+correction pass: **`04e282b`** (the earlier self-review/fix pass was `e9c6bc5`; reports may be committed
+afterwards and reference the code SHA). Author: Claude Fable 5.1 acting as
 lead implementation engineer under [FABLE-MASTER-PROMPT.md](../FABLE-MASTER-PROMPT.md). This is a
 self-review plus three independent reviewer agents dispatched by the author; it is **not** the
 architect's review the master prompt requests.
+
+## Architect correction pass (ARCHITECT-REVIEW.md, AR-01 … AR-08)
+
+All eight findings are addressed in commit `04e282b`; each has a regression test that failed before the
+change and passes after. Environments: all tests below are fixture/mock based unless stated; see
+"Environments tested" for exactly what reached a network.
+
+| Finding | Resolution | Regression tests |
+|---|---|---|
+| AR-01 silent truncation of the trusted utterance | `context.py`: no truncation; `UTTERANCE_MAX` = 4,000 as an agreed size limit; an oversized, malformed or missing context sets `turn_failure` and every routed tool returns ROUTING_UNAVAILABLE with that detail (never clearance) | `test_context.py::test_a_long_trusted_utterance_is_preserved_whole`, `::test_an_oversized_turn_context_is_refused_not_truncated`; `test_booking.py::test_the_decisive_tail_of_a_long_utterance_still_blocks_the_create` (the architect's 1,177-char probe), `::test_an_oversized_turn_context_refuses_the_write` |
+| AR-02 symptom routing through `search_knowledge` | `knowledge.py`: the owner's routing decision over the trusted turn (plus the question) runs concurrently with the answer call and is awaited first; EMERGENCY/DESK/CLARIFY → ROUTING_REQUIRED (answer discarded), ROUTE_DEPARTMENT/CONTINUE → answer returned with `routing`; missing turn or routing failure → ROUTING_UNAVAILABLE. Clinical reasoning stays in Shobhit's service (PROVISIONAL contract) | `test_knowledge.py::test_a_danger_sign_in_the_trusted_turn_routes_before_any_answer`, `::test_department_routing_is_returned_with_the_answer`, `::test_clarification_from_routing_takes_precedence`, `::test_plain_faq_is_answered_once_routing_clears`, `::test_knowledge_without_a_routing_decision_is_not_an_answer[…]`, `::test_answer_service_problems_are_could_not_check_never_an_answer[…]` |
+| AR-03 session filter dropped sessionless UNKNOWN rows | `availability.py::_department`: a row without a session label (the owner's UNKNOWN/missing shape) stays in scope; only labelled rows for other sessions exclude a doctor | `test_availability.py::test_department_session_query_keeps_a_sessionless_unknown_row`, `::test_department_session_query_with_a_missing_row_is_unknown_too`, `::test_doctor_session_query_with_a_sessionless_stale_row_is_unknown`, `::test_a_doctor_who_simply_lacks_the_session_is_not_unknown` |
+| AR-04 booking scope inconsistent with availability | `booking.py`: CREATE accepts `session`; scope = chosen session → window holding `preferredTime` → whole day; UNKNOWN in scope → CALLBACK_REQUIRED; unresolved scope with mixed statuses → `CLARIFICATION_NEEDED` / `ASK_WHICH_SESSION` listing the day's sessions (no slot engine) | `test_booking.py::test_create_scope_follows_the_session_the_caller_chose` (journey from the availability result), `::test_create_without_a_session_resolves_scope_from_the_preferred_time_or_asks`, `::test_unknown_in_an_unrelated_session_does_not_block_a_scoped_create` |
+| AR-05 upgrade of an existing Container App | `deploy/azure/deploy.sh`: the update branch runs `identity assign`, `registry set` and `secret set` (all five Key Vault references) before `update --replace-env-vars`; legacy secrets stay until retirement; `DEPLOY_ASSUME_EXISTING=1` makes a dry run exercise the upgrade path | `test_deploy.py::test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env` (dry run of the upgrade path; not run against Azure) |
+| AR-06 deadlines did not enforce the voice budget | `config.py`: `VOICE_RESPONSE_BUDGET_SECONDS` (1.0) − `RESERVED_STAGE_SECONDS` (0.65) derives the read deadline (0.35 s) and per-exchange cap; write ≤ 0.6 s; explicit values are diagnostic overrides; a budget that leaves < 0.1 s is refused. Slow multi-stage and uncertain-write paths tested with injected delays | `test_settings.py::test_tool_deadlines_derive_from_the_voice_budget`; existing `test_booking.py::test_total_deadline_bounds_a_slow_write`, `test_availability.py::test_routing_problems_never_become_clearance[slow]`, `test_ops_client.py::test_the_deadline_is_a_wall_clock_total_even_against_a_dribbling_server` |
+| AR-07 benchmark counted refused calls as successes | `dev/bench.py`: sends `X-Caller-Verification`; each scenario declares its intended outcomes and the owner paths it must hit; a sample counts only when both are observed (stub mode records owner calls); other outcomes are reported as `rejected_or_failed` with their labels | rerun: all six scenarios 50/50 ok with owner calls verified (`evidence/bench-stubs-c1-verified-outcomes-20261001.json`) |
+| AR-08 vacuous external assertions | `tests/test_external.py` rewritten: `or True` removed; `OPS_E2E_MODE=mock|live` required; a missing input fails with `BLOCKED: …`; deterministic positive journey create→list→reschedule→cancel→summary→replay only with `OPS_E2E_ALLOW_WRITES=1` on `OPS_E2E_WRITE_TENANT` (live only); negative UNKNOWN-date case separate; `tests/test_external_transport.py` adds the deployed-adapter gate (smoke + trusted-header forwarding over real MCP transport) | run against the public contract mock (`OPS_E2E_MODE=mock`): 3 read gates PASSED; write/knowledge/transport gates reported BLOCKED (see "Environments tested") |
+
+Reconciled with the architect's own actions: three legacy jobs deleted and two generated test secrets created in the
+shared vault (rejected by the live backend); recorded in AZURE-RETIREMENT-RESULTS.md and OPEN-DEPENDENCIES.md, not repeated.
+
+## Environments tested
+
+| Layer | Endpoint | Auth | What ran | Result |
+|---|---|---|---|---|
+| In-process stubs | ASGI, no network | stub client credentials | hermetic suites, bench | 288 passed; bench 6/6 scenarios 50/50 |
+| Real processes over TCP | `127.0.0.1` stubs + adapter | stub credentials, gateway and lifecycle bearers | `pytest -m e2e`, release smoke | 2 passed |
+| **Public contract mock (Prism)** | `https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io` (no `/api/v1`) | `POST /auth/token` issues the example token for any client credentials; `401` without a bearer; any bearer accepted on reads | `OPS_E2E_MODE=mock pytest -m external`: token issuance + departments/doctors/board reads, absent-bearer refusal, availability tool (ROUTING_UNAVAILABLE without a knowledge host) | 3 PASSED (one earlier attempt hit the mock's cold start and exceeded the 5 s per-exchange cap; rerun passed) — **mock verification only: static example bodies, no state** |
+| **Live backend** | `https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1` | registered machine client required | unauthenticated probes only (`401 Missing bearer token`, `401 Invalid client credentials`); served OpenAPI compared with the pin (servers entry differs only) | **not verified** (no registered credentials) |
+| Knowledge service | — | — | — | **BLOCKED** (no contract/host) |
+| Deployed adapter transport | — | — | `test_external_transport.py` | **BLOCKED** (adapter not deployed with the new image) |
 
 ## Completion status
 
 | State | Status |
 |---|---|
-| Code-ready | **Yes.** Four tools, independent owner clients, stubs, deploy tooling, retirement of the legacy backend; 271 tests green on a clean checkout without a database or owner source (269 hermetic + 2 process e2e); 4 `external` tests exist and were not run (no owner credentials) |
+| Code-ready | **Yes.** Four tools, independent owner clients, stubs, deploy tooling, retirement of the legacy backend; 290 tests green on a clean checkout without a database or owner source (288 hermetic + 2 process e2e); 8 `external` gate tests exist: 3 passed against the public contract mock, the rest report BLOCKED without owner credentials, a knowledge host or a deployed adapter |
 | Test-fixture-verified | **Yes.** Every acceptance area below has stub-backed tests; process-level e2e over TCP; release smoke passes against the stub processes |
 | Real-service-verified | **No.** Manoj's backend (`healthcare-api`) is deployed and serves the pinned contract byte-for-byte, but refuses our unregistered client (401); Shobhit's service does not exist; only unauthenticated probes and the public contract mock were exercised |
 | Production-cut-over | **No.** Nothing deployed: production configuration requires the owners' real hosts and credentials, which are not available; the voice platform still binds to the legacy REST API |
@@ -38,7 +70,7 @@ From a clean clone of the branch (Python 3.13, uv 0.11.21; Docker optional):
 |---|---|---|
 | `./scripts/test.sh` | `== all suites passed` (see below) | fixtures (stubs) |
 | `cd services/mcp && uv run ruff check . ../../deploy` | All checks passed | — |
-| `cd services/mcp && uv run pytest tests -q -m "not e2e and not external"` | **269 passed** | in-process stubs (ASGI); the clients' own `asyncio.timeout` caps every exchange; one real-TCP dribbling-server test |
+| `cd services/mcp && uv run pytest tests -q -m "not e2e and not external"` | **288 passed** | in-process stubs (ASGI); the clients' own `asyncio.timeout` caps every exchange; one real-TCP dribbling-server test |
 | `cd services/mcp && uv run pytest tests -q -m e2e` | **2 passed** | real processes over TCP (stubs + adapter), release smoke |
 | `uv build --project services/mcp` | sdist + wheel | — |
 | `docker build services/mcp` then `import frontdesk_stubs` / `import pytest` inside the image | both **absent** (image 80 MB) | — |
@@ -46,12 +78,14 @@ From a clean clone of the branch (Python 3.13, uv 0.11.21; Docker optional):
 | production container with `OPS_BASE_URL` pointing at the contract mock | refuses to start (`points at a stub/mock endpoint`) | — |
 | `make demo` | all four tools walked; outcomes AVAILABILITY, CALLBACK_REQUIRED, CLARIFICATION_NEEDED, NOTED, FOUND, ANSWERED, ROUTING_REQUIRED, STORED | stubs |
 | `deploy/azure/deploy.sh rollouts/demo-hospital --dry-run` | full plan printed, no az login | — |
-| `cd services/mcp && OPS_E2E_BASE_URL=… OPS_E2E_CLIENT_ID=… OPS_E2E_CLIENT_SECRET=… uv run pytest tests -m external` (4 tests) | **not run** (no owner credentials); without the variables the tests fail, they do not skip | real services — blocked |
+| `cd services/mcp && OPS_E2E_MODE=mock OPS_E2E_BASE_URL=https://healthcare-contract-mock.… OPS_E2E_CLIENT_ID=x OPS_E2E_CLIENT_SECRET=x uv run pytest tests -m external` (8 gates) | 3 PASSED (mock reads), 5 FAILED with `BLOCKED: …` (writes need a live synthetic tenant; knowledge host; deployed adapter) | public contract mock — **mock only** |
+| same with `OPS_E2E_MODE=live` and registered credentials | **not run** (no registered client) | live backend — blocked |
 | Smoke against a deployed adapter | **not run** (nothing deployed) | — |
 
-Skipped/deselected: none silently. The `external` suite is run by `scripts/test.sh` only when `OPS_E2E_BASE_URL`
-is set, and the script prints that it was not run otherwise; inside the suite one write-journey test is skipped
-unless `OPS_E2E_ALLOW_WRITES=1` names a designated synthetic tenant (writes are never made to a real tenant).
+Skipped/deselected: none silently. The `external` gates run via `scripts/test.sh` only when `OPS_E2E_BASE_URL`
+is set (the script prints that they were not run otherwise); inside them a missing input is a FAILED test
+labelled `BLOCKED`, never a skip. Writes run only on a designated synthetic live tenant (`OPS_E2E_ALLOW_WRITES=1`,
+`OPS_E2E_WRITE_TENANT`), never on the mock (stateless) and never on a hospital tenant.
 
 ## Requirement → code → test → evidence
 
@@ -65,9 +99,9 @@ unless `OPS_E2E_ALLOW_WRITES=1` names a designated synthetic tenant (writes are 
 | Routing: named doctor + symptoms reaches Shobhit; blocks writes; changed context, missing/slow/malformed/outage never clear | `availability.py::routing`, `booking.py::_routing`, `knowledge_client.py` | `test_availability.py::test_routing_*`, `test_booking.py::test_create_waits_for_a_current_routing_clearance`, `test_the_callers_reason_reaches_routing_before_a_create`, `test_knowledge.py::test_the_trusted_turn_travels_with_the_question` | fixture-verified against the PROVISIONAL contract only |
 | Mutations: success, validation/conflict, same-intent replay, changed payload/target, uncertain commit, dropped response, duplicate/concurrent, malformed success, auth rejection, total deadline, server-side board check | `booking.py`, `ops_client.py::_write` | `test_booking.py` (35 cases), `test_ops_client.py` (43 cases incl. real-TCP deadline) | fixture-verified; replay TTL/precedence with Manoj open |
 | Summaries: call-end access, metadata after disconnect, frozen replay, 200/201, 500 chars, language, hang-up outcome, failed persistence | `summary.py`, `access.py` | `test_summary.py` (26 cases) | fixture-verified |
-| Transport: independent pools/auth, token expiry/single-flight, mock/backend base paths, bounded retries, cancellation uncertainty, local readiness vs dependency status | `ops_client.py`, `knowledge_client.py`, `config.py`, `server.py` | `test_ops_client.py`, `test_settings.py`, `test_server.py::test_dependency_status_*` | fixture-verified; base-path handling also exercised against the Azure mock (bench) |
+| Transport: independent pools/auth, token expiry/single-flight, mock/backend base paths, bounded retries, cancellation uncertainty, local readiness vs dependency status | `ops_client.py`, `knowledge_client.py`, `config.py`, `server.py` | `test_ops_client.py`, `test_settings.py`, `test_server.py::test_dependency_status_*`, `test_external.py` (mock mode: token + reads + absent-bearer refusal) | fixture-verified; token issuance and reads verified against the public contract mock (no `/api/v1`); live backend not verified |
 | Separation: clean checkout builds/tests without services/api, venv, PostgreSQL; no production fixtures or hidden engines | repo layout, `Dockerfile`, `.dockerignore`, `config.STUB_MARKERS`, `scripts/test.sh` | `test_stubs.py` (stubs are tables, not classifiers), `test_settings.py` (production refuses stubs), image checks in `scripts/test.sh` | verified locally and in CI definition |
-| Voice: model calls the right tools with valid arguments and concise honest speech; interruptions/retries don't duplicate | `prompt.py`, `packs/healthcare.json`, operation keys | prompt policy tests in `test_server.py`; replay tests | **not verified with a model or a live call** |
+| Voice: model calls the right tools with valid arguments and concise honest speech; interruptions/retries don't duplicate | `prompt.py`, `packs/healthcare.json`, operation keys, budget-derived deadlines | prompt policy tests in `test_server.py`; replay tests; `test_external_transport.py` (deployed-adapter gate, BLOCKED) | **not verified with a model or a live call; deployed transport gate BLOCKED** |
 | Operations: rollback, one appointment authority, scoped Azure inventory, shared-resource preservation, no obsolete references | `deploy/azure/deploy.sh`, `AZURE.md`, `AZURE-RETIREMENT-RESULTS.md` | straggler grep (no active references to the retired stack) | rollback procedure documented, **not tested**; Azure retirement **not executed** |
 
 ## Independent review and fixes

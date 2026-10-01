@@ -1,12 +1,13 @@
 # Latency results (1 October 2026)
 
-**Status: no real voice-path or real owner-service measurement exists yet.** The tool round trip was
-measured against the in-process development stubs and against Manoj's public *contract mock* in
-Central India from a developer laptop outside Azure. Manoj's real backend (`healthcare-api`) appeared
-in `healthcare-rg` during this work but machine credentials were not available to this repository, so
-no authenticated real-service timing was possible. Stub and mock timings are **not production timings**
-and prove only the adapter's own overhead and composition shape. Caller-audio latency
-(end of speech → first useful audible result) was not measured: no voice-platform access.
+**Status: no real voice-path or live owner-service measurement exists yet.** The tool round trip was
+measured against the in-process development stubs (labelled *stub*) and against Manoj's public *contract
+mock* in Central India from a developer laptop outside Azure (labelled *mock*). Manoj's live backend
+(`healthcare-api`) is deployed but rejects unregistered clients, so no authenticated live timing was
+possible. Stub and mock timings are **not production timings**; they prove the adapter's own overhead and
+the composition shape. Caller-audio latency (end of speech → first useful audible result) was not
+measured: no voice-platform access. Updated after the architect's review: AR-06 (budget-derived
+deadlines) and AR-07 (benchmark counts only verified successful owner operations).
 
 ## Method and commands
 
@@ -86,6 +87,35 @@ network and TLS from the laptop; from the intended region the same shape should 
 Unauthenticated (no machine credentials available): `POST /api/v1/auth/token` returned 401 in
 0.70–1.02 s over 12 samples; `GET /health` 200 in 0.69–1.01 s; one sample broke down as DNS 3 ms,
 TCP connect 292 ms, TLS 592 ms, first byte 884 ms. This is the laptop's path, not the gateway's.
+
+### A2. Stubs, after the architect's AR-07 correction — verified outcomes only
+
+The benchmark now sends `X-Caller-Verification`, declares the intended outcome per scenario and, in stub mode,
+checks that the intended owner operation was observed on the wire; anything else is counted as rejected, never
+as a success timing. 50 samples, c=1, warm token, in-process stubs (`evidence/bench-stubs-c1-verified-outcomes-20261001.json`).
+
+| Scenario | verified ok | p50 ms | p95 | p99 | rejected/failed |
+|---|---:|---:|---:|---:|---:|
+| availability_known_doctor | 50/50 | 27.5 | 38.1 | 59.9 | 0 |
+| availability_name_search | 50/50 | 27.5 | 31.8 | 37.0 | 0 |
+| availability_ambiguous | 50/50 | 27.1 | 36.6 | 44.2 | 0 |
+| availability_department | 50/50 | 28.0 | 45.4 | 76.2 | 0 |
+| knowledge_answer | 50/50 | 14.4 | 17.8 | 22.1 | 0 |
+| booking_list | 50/50 | 19.3 | 23.8 | 48.5 | 0 |
+
+The earlier stub figures above were produced before this correction; their booking LIST samples were
+IDENTITY_UNAVAILABLE refusals (no owner call), so those LIST timings are withdrawn. Availability and knowledge
+samples did perform their owner calls (the recording transport confirms the same paths now).
+
+### D. Deadline budget after the architect's AR-06 correction
+
+Defaults are now derived: read deadline = `VOICE_RESPONSE_BUDGET_SECONDS` (1.0) − `RESERVED_STAGE_SECONDS`
+(0.65) = **0.35 s** for the whole tool round trip; per-exchange cap 0.35 s; confirmed write 0.6 s; summaries
+8 s (after the call). Slow and degraded paths are exercised with injected delays (routing/directory 0.3 s each,
+slow write, dribbling TCP server) and return COULD_NOT_CHECK / UNCERTAIN inside the budget. Whether 0.35 s is
+enough for the real in-region path is exactly what the live measurement must show; the laptop → Azure numbers
+in section B (one stage ≈ 350 ms) say a laptop cannot meet it and a same-region deployment is required.
+Fast failures are reported separately from successful-response percentiles in every run above.
 
 ## Comparison with the targets
 

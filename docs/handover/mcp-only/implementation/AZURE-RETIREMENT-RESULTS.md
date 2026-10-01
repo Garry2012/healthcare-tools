@@ -1,6 +1,13 @@
 # Azure retirement results (1 October 2026)
 
-**Status: no destructive action was executed.** The cutover gates in PLAN.md phase 5/6 are not met
+> **Reconciliation (architect's actions, same day):** after this report was written the architect, at the user's
+> request, deleted the three legacy jobs (`job-migrate-demo-hospital`, `job-apply-demo-hospital`,
+> `job-seed-demo-hospital`) and created two generated test secrets (`ops-client-id`, `ops-client-secret`) in
+> `kv-fd-demo-hospi-0574c1`, which the live backend rejected (401). Details and evidence paths:
+> [ARCHITECT-AZURE-CLEANUP.md](ARCHITECT-AZURE-CLEANUP.md). The correction pass performed **no** further Azure
+> change. Rows below are updated to the current state.
+
+**Status: partially executed (by the architect, jobs only); the correction pass executed nothing.** The cutover gates in PLAN.md phase 5/6 are not met
 (no credentials to Manoj's real service, Shobhit's service absent, the voice platform still bound to
 the legacy REST API, no voice-path verification), so retiring the legacy API, jobs, images, database
 or credentials now would break the running demo and remove the only appointment authority the voice
@@ -20,12 +27,13 @@ Resource IDs share the prefix `/subscriptions/4e1c081a-9a6a-4e16-9da2-90217c2237
 | Resource | Type | Owner / consumers (observed) | Disposition | Executed |
 |---|---|---|---|---|
 | `api-demo-hospital` (revision `--0000002`, image `frontdesk-api-demo-hospital:expected-windows-20260928051702`) | Microsoft.App/containerApps | This repo's retired backend. **Consumers:** `mcp-demo-hospital` (`API_BASE_URL`), and `voice-api`/`voice-worker` via `HEALTHCARE_TOOLS_BINDINGS_JSON.demo_hospital.base_url` with `VOICE_FRONTDESK_AGENT_TOKEN`/`VOICE_FRONTDESK_STAFF_TOKEN` | Retire after cutover gates | **Not executed** (active consumers) |
-| `job-migrate-demo-hospital`, `job-apply-demo-hospital`, `job-seed-demo-hospital` (1 execution each) | Microsoft.App/jobs | Retired backend's DDL/seed jobs; nothing schedules them | Delete; no data dependency (jobs are one-shot) | **Not executed** — deferred to the same change window as the API so rollback of the demo stays possible |
+| `job-migrate-demo-hospital`, `job-apply-demo-hospital`, `job-seed-demo-hospital` | Microsoft.App/jobs | Retired backend's one-shot jobs | Delete | **Deleted by the architect** (ARCHITECT-AZURE-CLEANUP.md); absent from `az containerapp job list` on re-check |
 | `frontdesk` database on `pg-fd-demo-hospital-0574c1` (Standard_B1ms, 32 GiB, PG16) | database | Retired backend only (roles `frontdesk_owner`, `frontdesk_app`). Rows not read (no TTY for `az containerapp exec`; API internal-only). Log Analytics (30 days): `booking_booked` ×5, `booking_rescheduled` ×1, `booking_cancelled` ×1, `bookings_listed` ×8, `availability_search` ×73, `knowledge_search` ×30, all between 27 Sep 13:33 and 28 Sep 05:56 UTC, i.e. the deployment's own demo/e2e runs on synthetic data; no activity since | Owner confirms the synthetic bookings need no handoff, then `DROP DATABASE frontdesk` and role removal. **The server stays**: `voice_agent`, `voice_cis`, `operations`, `medplum` belong to the voice platform and Manoj | **Not executed** |
 | `frontdesk-api`, `frontdesk-api-demo-hospital` repositories (3 manifests each, ~74 MB, 27–28 Sep) | ACR repositories in `acrfd399536` | Retired backend images | Delete repositories after the API app is gone (keeps a rollback image until then) | **Not executed** |
 | `frontdesk-mcp` repository (tags `32ef56b-…`, `-r2`) | ACR repository | Current MCP app (old revision); new adapter images will be pushed here | Keep; prune pre-migration tags after cutover | — |
 | `mcp-demo-hospital` (revision `--0000001`, env `API_BASE_URL` → legacy API) | Microsoft.App/containerApps | This repo. Consumers: `voice-api`/`voice-worker` (`mcp.url`), gateway (none deployed) | Redeploy with the MCP-only image and owner URLs via `deploy/azure/deploy.sh` once credentials exist | **Not executed** (needs Manoj/Shobhit credentials; production config refuses stubs) |
 | Key Vault `kv-fd-demo-hospi-0574c1` secrets `agent-token`, `auth-tokens`, `staff-token`, `db-owner-password`, `db-owner-url`, `db-app-password`, `db-app-url` | secrets | Retired backend credentials; `voice-frontdesk-agent-token`/`voice-frontdesk-staff-token` duplicate them for the voice platform | Delete after API/database retirement; rotate nothing else. Vault stays (voice/livekit/mcp secrets) | **Not executed** |
+| Key Vault secrets `ops-client-id`, `ops-client-secret` (generated test values, tagged `validation=not-accepted-by-live-api`) | secrets | Created by the architect for the MCP adapter; not registered with Manoj's backend | Keep as the slots `deploy.sh` reads once Manoj registers the pair, or replace their values with registered ones | **Exists; not valid for the live API** |
 | Key Vault grants: `Garima.Tyagi@intimetec.com` Secrets Officer; principal `39cb86ed-…` (id-frontdesk-demo-hospital) Secrets User | role assignments | Deployer and the shared identity | Keep (MCP redeploy uses the same identity) | — |
 | `id-frontdesk-demo-hospital` | managed identity | API, jobs **and** MCP app (AcrPull, KV Secrets User) | Keep for MCP | — |
 | `cae-frontdesk-demo-hospital`, `acrfd399536`, `law-frontdesk-demo-hospital` | shared environment, registry, logs | All 13 container apps and 8 jobs | Keep; owner: platform (this repo's deployer created them; voice team and Manoj consume them) | — |
@@ -59,9 +67,7 @@ az containerapp update -g $RG -n voice-api    --set-env-vars 'HEALTHCARE_TOOLS_B
 az containerapp update -g $RG -n voice-worker --set-env-vars 'HEALTHCARE_TOOLS_BINDINGS_JSON=<same>'                                            # voice team
 # 2. the retired backend
 az containerapp delete -g $RG -n api-demo-hospital --yes
-az containerapp job delete -g $RG -n job-migrate-demo-hospital --yes
-az containerapp job delete -g $RG -n job-apply-demo-hospital --yes
-az containerapp job delete -g $RG -n job-seed-demo-hospital --yes
+# (the three legacy jobs were already deleted by the architect on 1 Oct 2026)
 # 3. its data (after owner-led export/handoff or explicit "delete")
 #    psql as frontdesk_owner: DROP DATABASE frontdesk; DROP ROLE frontdesk_app;   (server stays: voice_agent, voice_cis, operations, medplum)
 # 4. its credentials
@@ -81,9 +87,9 @@ hence data (3) and images (5) are last. Nothing is deleted while it has a consum
 
 ## Residual cost and retention
 
-Not measured (no Cost Management query was run). Expected savings from the list above: one Container
-App (0.5 vCPU/1 GiB, min 1 replica), three idle jobs, ~450 MB of registry storage and one database on
-a shared Burstable server (server cost unchanged). Retained-data expiry: to be set by the owner when
+Not measured (no Cost Management query was run). Three idle jobs already removed. Expected savings from the
+remaining list: one Container App (0.5 vCPU/1 GiB, min 1 replica), ~450 MB of registry storage and one
+database on a shared Burstable server (server cost unchanged). Retained-data expiry: to be set by the owner when
 the `frontdesk` disposition is decided; no retention obligation is known for synthetic demo data.
 
 ## Verification evidence
