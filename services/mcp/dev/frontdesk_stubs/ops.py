@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from starlette.routing import Route
+from starlette.routing import Mount, Route
 
 from frontdesk_mcp.clock import Clock, SystemClock
 
@@ -96,7 +96,23 @@ def error(status: int, code: str, message: str, details: list[dict[str, str]] | 
     return JSONResponse(body, status_code=status, headers=headers)
 
 
-def create_app(state: OpsStubState) -> Starlette:
+def relative_path(request: Request) -> str:
+    """The contract path, without the deployment prefix the app is mounted under."""
+    return request.url.path.removeprefix(request.scope.get("root_path", "")) or "/"
+
+
+HONORIFICS = {"dr", "dr.", "doctor", "डॉक्टर", "डॉ.", "ಡಾಕ್ಟರ್", "ಡಾ."}
+
+
+def name_matches(query: str, name: str) -> bool:
+    """Stub approximation of free-text name search: every non-honorific query token occurs in the name.
+    Manoj's real matching is his; this exists so fixtures can express 'one match', 'several', 'none'."""
+    tokens = [t for t in query.casefold().split() if t not in HONORIFICS]
+    return bool(tokens) and all(t in name.casefold() for t in tokens)
+
+
+def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
+    """`prefix` mirrors the owner's deployment: the documented backend serves under /api/v1, the mock under /."""
     def authenticated(request: Request) -> tuple[str | None, Response | None]:
         header = request.headers.get("authorization", "")
         if not header.startswith("Bearer "):
@@ -115,14 +131,14 @@ def create_app(state: OpsStubState) -> Starlette:
         if state.delay_seconds:
             await asyncio.sleep(state.delay_seconds)
         for i, (prefix, status, headers) in enumerate(state.fail_next):
-            if request.url.path.startswith(prefix):
+            if relative_path(request).startswith(prefix):
                 del state.fail_next[i]
                 return error(status, "INTERNAL", "injected failure", headers=headers)
         return None
 
     def malformed(request: Request) -> Response | None:
         for i, prefix in enumerate(state.malformed_next):
-            if request.url.path.startswith(prefix):
+            if relative_path(request).startswith(prefix):
                 del state.malformed_next[i]
                 return JSONResponse({"unexpected": True})
         return None
@@ -170,8 +186,8 @@ def create_app(state: OpsStubState) -> Starlette:
         if q.get("gender") not in (None, "FEMALE", "MALE"):
             return error(400, "VALIDATION_FAILED", "gender must be FEMALE or MALE")
         rows = [d for d in state.data["doctors"] if d["active"]]
-        if query := q.get("query", "").strip().casefold():
-            rows = [d for d in rows if query in d["name"].casefold()]
+        if query := q.get("query", "").strip():
+            rows = [d for d in rows if name_matches(query, d["name"])]
         if department := q.get("department"):
             rows = [d for d in rows if any(ref["id"] == department for ref in d["departments"])]
         if gender := q.get("gender"):
@@ -273,7 +289,7 @@ def create_app(state: OpsStubState) -> Starlette:
             state.idempotency[key] = (body_hash(body), status, payload)
         if status < 300:
             for prefix, failure in list(state.commit_then.items()):
-                if request.url.path.startswith(prefix):
+                if relative_path(request).startswith(prefix):
                     del state.commit_then[prefix]
                     return Response(status_code=failure)  # committed, response lost
         if malformed(request) and status < 300:
@@ -434,7 +450,7 @@ def create_app(state: OpsStubState) -> Starlette:
         return JSONResponse({"appointments": list(state.appointments.values()),
                              "summaries": list(state.summaries.values()), "today": state.today().isoformat()})
 
-    return Starlette(routes=[
+    routes = [
         Route("/auth/token", issue_token, methods=["POST"]),
         Route("/departments", departments),
         Route("/doctors", search_doctors),
@@ -448,4 +464,7 @@ def create_app(state: OpsStubState) -> Starlette:
         Route("/__stub/reset", stub_reset, methods=["POST"]),
         Route("/__stub/scenario", stub_scenario, methods=["POST"]),
         Route("/__stub/state", stub_state),
-    ])
+    ]
+    if prefix:
+        return Starlette(routes=[Mount(prefix.rstrip("/"), routes=routes)])
+    return Starlette(routes=routes)

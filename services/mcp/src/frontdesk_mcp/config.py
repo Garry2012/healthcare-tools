@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = Field(default=1.5, gt=0, le=30)  # cap for any single HTTP exchange
     token_refresh_margin_seconds: int = Field(default=60, ge=0, le=3600)
     directory_cache_seconds: int = Field(default=300, ge=0, le=86400)
+    directory_page_size: int = Field(default=25, ge=1, le=100)  # bounded search/department fan-out
     directory_cache_max_entries: int = Field(default=512, ge=1, le=100_000)
     ops_pool_max_connections: int = Field(default=20, ge=1, le=1000)
     knowledge_pool_max_connections: int = Field(default=10, ge=1, le=1000)
