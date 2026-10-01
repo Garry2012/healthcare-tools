@@ -1,0 +1,87 @@
+{
+  "measured_at": "2026-10-01T06:55:09+00:00",
+  "boundary": "laptop \u2192 MCP (local TCP) \u2192 in-process stubs (ASGI, no network): fixture timings only",
+  "samples_per_scenario": 50,
+  "concurrency": 5,
+  "warm": true,
+  "scenarios": {
+    "availability_known_doctor": {
+      "samples": 50,
+      "ok": 50,
+      "failures": 0,
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 62.3,
+      "p50_ms": 94.8,
+      "p95_ms": 133.4,
+      "p99_ms": 140.5,
+      "mean_ms": 96.0
+    },
+    "availability_name_search": {
+      "samples": 50,
+      "ok": 50,
+      "failures": 0,
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 54.1,
+      "p50_ms": 98.1,
+      "p95_ms": 137.3,
+      "p99_ms": 158.0,
+      "mean_ms": 98.6
+    },
+    "availability_ambiguous": {
+      "samples": 50,
+      "ok": 50,
+      "failures": 0,
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 56.8,
+      "p50_ms": 97.4,
+      "p95_ms": 158.5,
+      "p99_ms": 197.5,
+      "mean_ms": 104.0
+    },
+    "availability_department": {
+      "samples": 50,
+      "ok": 50,
+      "failures": 0,
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 61.0,
+      "p50_ms": 100.6,
+      "p95_ms": 168.6,
+      "p99_ms": 197.0,
+      "mean_ms": 106.7
+    },
+    "knowledge_answer": {
+      "samples": 50,
+      "ok": 50,
+      "failures": 0,
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 49.9,
+      "p50_ms": 64.8,
+      "p95_ms": 102.6,
+      "p99_ms": 109.4,
+      "mean_ms": 66.2
+    },
+    "booking_list": {
+      "samples": 50,
+      "ok": 50,
+      "failures": 0,
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 46.0,
+      "p50_ms": 61.4,
+      "p95_ms": 81.0,
+      "p99_ms": 81.7,
+      "mean_ms": 62.6
+    }
+  }
+}

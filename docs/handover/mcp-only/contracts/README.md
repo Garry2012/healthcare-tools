@@ -38,4 +38,4 @@ The earlier contract investigation validated 25 discovered typed inline examples
 
 The [plan](../PLAN.md) records collective consumer mismatches, authentication, missing agreements and test scenarios. There is no slot endpoint. `/availability` is a live board over the usual schedule, not reservable-slot inventory. The UNKNOWN callback-only policy is our agreed consumer policy; the original specification retains the owner's wording unchanged.
 
-A new owner revision should be reviewed as a contract change before updating fixtures. Shobhit's contract is still pending; do not present a guessed endpoint as published documentation.
+On 1 October 2026 Manoj's deployed backend (`healthcare-api`, `/api/v1`) served `/api/v1/openapi.yaml` with the same SHA-256 as this snapshot; the deployed server list adds `/api/v1` ("This deployment") first. A new owner revision should be reviewed as a contract change before updating fixtures. Shobhit's contract is still pending; do not present a guessed endpoint as published documentation.
