@@ -6,6 +6,8 @@ The current application still has three MCP tools, our REST backend and PostgreS
 
 ## Read in this order
 
+Start with [TARGET-STATE.md](TARGET-STATE.md) for the ownership diagram, contract-only boundary, cleanup completion gates and voice-performance requirements. The [Azure inventory](AZURE-RETIREMENT.md) identifies actual legacy and shared resources that must be handled during retirement.
+
 1. [CURRENT-STATE.md](CURRENT-STATE.md): direct source audit, current dependency diagram and what breaks if the backend is removed now.
 2. [PLAN.md](PLAN.md): authoritative scope, four tools and REST mapping, contract mismatches, stubs, response budget, phases, removal inventory, rollback and acceptance criteria.
 3. [OPUS-REVIEW.md](OPUS-REVIEW.md): original review plus disposition; recommendations are incorporated in the plan, subject to the user's decisions. This is not a second review of the revised plan.
@@ -38,7 +40,7 @@ uv build --project services/mcp --out-dir /tmp/healthcare-mcp-build
 
 The existing MCP Dockerfile also builds with `services/mcp` as its context. The full legacy `make up`, `make build`, `make test` and Azure deployment still include the old API/database; they are not the planned MCP-only workflow. Do not run migration/seed/deployment commands merely to review this handover. Existing agent session hooks can also start a local database in their remote-session mode; see the source audit before using that automation.
 
-Before implementation, create a new branch from current `main`, review the plan and turn its phases into changes. Start with consumer contracts and independent operational/knowledge test stubs. Adapt tools and deployment together, verify against owner services, then remove the old backend only after the stated gates pass. Do not recreate its engines inside MCP or the stubs.
+Before implementation, create a new branch from current `main`, review the plan and turn its phases into changes. Start with consumer contracts and independent operational/knowledge test stubs. Adapt tools and deployment together, verify against owner services, then remove the old backend and retire obsolete Azure resources after the stated gates pass. Do not recreate its engines inside MCP or the stubs.
 
 ## Handover validation on 1 October 2026
 

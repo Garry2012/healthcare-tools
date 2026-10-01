@@ -1,6 +1,6 @@
 # What the source code actually contains
 
-Audit date: 1 October 2026. Runtime source baseline: `7e20b4459d0a58422bf3b5ba40a670be94b758f5`. Findings below come from reading executable source, dependency declarations, tests and deployment scripts, not from accepting the older architecture documents. Publishing this handover changes documentation only.
+Audit date: 1 October 2026. Runtime source baseline: `7e20b4459d0a58422bf3b5ba40a670be94b758f5`. Findings below come from reading executable source, dependency declarations, tests and deployment scripts, not from accepting the older architecture documents. A subsequent [read-only Azure inventory](AZURE-RETIREMENT.md) confirms deployed MCP still points to the legacy API and identifies shared resources for future retirement. Publishing this handover changes documentation only.
 
 **The entire old backend is still present.** This is our previous backend implementation, covering responsibilities now assigned to Manoj and Shobhit; it is not a copy of Manoj's new implementation. None of the planned external integrations or backend removal has been implemented. There is no meaningful partial-removal percentage to report: the old application is still wired end to end.
 
@@ -52,7 +52,7 @@ The actual registration and smoke lists in [register.py](../../../deploy/context
 | Calls and notifications | [routers/calls.py](../../../services/api/src/frontdesk_api/routers/calls.py), [routers/notifications.py](../../../services/api/src/frontdesk_api/routers/notifications.py) |
 | Database models, migrations and demo/rollout loading | [db/tables.py](../../../services/api/src/frontdesk_api/db/tables.py), [alembic/versions/](../../../services/api/alembic/versions/), [cli.py](../../../services/api/src/frontdesk_api/cli.py) |
 
-The 15 declared tables are `categories`, `resources`, `resource_categories`, `lexicon_entries`, `schedule_templates`, `template_sessions`, `schedule_exceptions`, `board_entries`, `bookings`, `booking_history`, `notifications`, `idempotency_keys`, `call_summaries`, `knowledge_entries`, and `cache_versions`. Four Alembic revisions remain. This is source/schema evidence; no live database contents or deployed cloud resources were inspected or modified for this audit.
+The 15 declared tables are `categories`, `resources`, `resource_categories`, `lexicon_entries`, `schedule_templates`, `template_sessions`, `schedule_exceptions`, `board_entries`, `bookings`, `booking_history`, `notifications`, `idempotency_keys`, `call_summaries`, `knowledge_entries`, and `cache_versions`. Four Alembic revisions remain. This is source/schema evidence; no live database contents were inspected or modified. The subsequent Azure inventory reads resource/configuration metadata and database names only.
 
 The legacy repository does contain interpretation code. That fact does not change the agreed new-service plan: advanced multilingual date/name/synonym behavior is deferred and must not be copied into MCP as a hidden replacement backend.
 
@@ -89,4 +89,4 @@ Their storage           Their storage
 No operational REST backend or application database owned by this repository.
 ```
 
-The next implementer must replace the HTTP contract, test fixtures, configuration, prompts, gateway registration, build/deployment and automation dependencies before retiring all of `services/api` and PostgreSQL setup. The [plan](PLAN.md) lists the full removal inventory and acceptance gates. Source removal is separate from deleting live infrastructure or data; neither has been authorized as part of publishing this handover.
+The next implementer must replace the HTTP contract, test fixtures, configuration, prompts, gateway registration, build/deployment and automation dependencies before retiring all of `services/api` and PostgreSQL setup. The [plan](PLAN.md) lists the full removal inventory and acceptance gates. Cloud retirement is a distinct, mandatory future phase, now clarified in [TARGET-STATE.md](TARGET-STATE.md). Publishing this handover performs no source retirement, cloud deletion or data changes.
