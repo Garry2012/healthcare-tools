@@ -126,7 +126,9 @@ async def test_on_call_doctor_with_a_confirmed_entry_is_offered_otherwise_desk(h
     assert unconfirmed.doctors[0].journey == "DESK" and unconfirmed.nextStep == "TRANSFER_DESK"
 
 
-async def test_session_request_scopes_the_board_and_the_unknown_rule(h):
+async def test_any_unknown_session_in_scope_stops_the_journey(h):
+    """Review fix: the caller may mean the UNKNOWN session; without a matched session the whole board is in
+    scope and one UNKNOWN entry is enough for callback-only."""
     h.ops_state.set_board("2026-10-01", [
         {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
          "updatedMinutesAgo": 5},
@@ -134,15 +136,45 @@ async def test_session_request_scopes_the_board_and_the_unknown_rule(h):
          "updatedMinutesAgo": 500},
     ])
     whole = await ask(h, doctorId="doc_garima")
-    assert whole.outcome == "AVAILABILITY" and [b.status for b in whole.doctors[0].board] == ["IN", "UNKNOWN"]
-    assert whole.doctors[0].journey == "APPOINTMENT_REQUEST" and whole.doctors[0].unknownSessions == ["Afternoon"]
+    assert whole.outcome == "CALLBACK_REQUIRED" and [b.status for b in whole.doctors[0].board] == ["IN", "UNKNOWN"]
+    assert whole.doctors[0].journey == "CALLBACK_ONLY" and whole.doctors[0].unknownSessions == ["Afternoon"]
     afternoon = await ask(h, doctorId="doc_garima", session="afternoon")
     assert afternoon.outcome == "CALLBACK_REQUIRED" and [b.session for b in afternoon.doctors[0].board] == ["Afternoon"]
     morning = await ask(h, doctorId="doc_garima", session="Morning")
     assert morning.outcome == "AVAILABILITY" and [b.session for b in morning.doctors[0].board] == ["Morning"]
-    unmatched = await ask(h, doctorId="doc_garima", session="Night")
-    assert unmatched.outcome == "AVAILABILITY" and len(unmatched.doctors[0].board) == 2
-    assert unmatched.sessionMatched is False
+    unmatched = await ask(h, doctorId="doc_garima", session="this evening")
+    assert unmatched.outcome == "CALLBACK_REQUIRED" and unmatched.sessionMatched is False
+    assert len(unmatched.doctors[0].board) == 2
+
+
+async def test_unmatched_session_without_any_unknown_is_availability(h):
+    result = await ask(h, doctorId="doc_garima", session="Night")  # fixture: Morning IN, Afternoon NOT_CONFIRMED
+    assert result.outcome == "AVAILABILITY" and result.sessionMatched is False and len(result.doctors[0].board) == 2
+
+
+async def test_department_queries_honour_the_session_too(h):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_anil_sharma", "session": "Morning", "status": "IN", "expectedTime": "10:00",
+         "updatedMinutesAgo": 5},
+        {"doctorId": "doc_ravi_sharma", "session": "Evening", "status": "IN", "expectedTime": "16:00",
+         "updatedMinutesAgo": 500},  # stale → UNKNOWN
+    ])
+    evening = await ask(h, departmentName="cardiology", session="Evening")
+    assert [d.doctorId for d in evening.doctors] == ["doc_ravi_sharma"] and evening.outcome == "CALLBACK_REQUIRED"
+    none = await ask(h, departmentName="cardiology", session="Night")
+    assert none.outcome == "NOT_FOUND" and none.detail == "NO_SESSION"
+
+
+async def test_a_board_that_omits_the_doctor_is_treated_as_unknown(h):
+    """The contract says a missing entry comes back as UNKNOWN; an owner that returns no row must not make
+    usual hours look bookable."""
+    h.ops_state.omit_missing_entries = True
+    h.ops_state.set_board("2026-10-01", [])
+    result = await ask(h, doctorId="doc_garima")
+    assert result.outcome == "CALLBACK_REQUIRED" and result.doctors[0].journey == "CALLBACK_ONLY"
+    assert result.doctors[0].board == [] and result.detail == "BOARD_ENTRY_MISSING"
+    department = await ask(h, departmentName="cardiology")
+    assert department.outcome == "CALLBACK_REQUIRED"
 
 
 async def test_ambiguous_name_asks_the_caller_to_choose(h):
@@ -189,6 +221,14 @@ async def test_department_with_all_unknown_is_callback_required(h):
 async def test_department_without_a_consultant_is_never_confirmed(h):
     result = await ask(h, departmentName="Dental")
     assert result.outcome == "NOT_FOUND" and result.detail == "NO_CONSULTANT" and result.nextStep == "TRANSFER_DESK"
+
+
+async def test_department_names_match_exactly_or_ask(h):
+    """Review fix: substring matching sent 'dentist' to ENT; only an exact normalised name resolves."""
+    partial = await ask(h, departmentName="medicine")  # substring of General Medicine
+    assert partial.outcome == "CLARIFICATION_NEEDED" and partial.nextStep == "ASK_WHICH_DEPARTMENT"
+    exact = await ask(h, departmentName="  general   MEDICINE ")
+    assert exact.outcome == "AVAILABILITY" and exact.department.id == "dept_genmed"
 
 
 async def test_unmatched_department_name_offers_the_real_list(h):
@@ -274,7 +314,8 @@ async def test_profile_and_board_reads_overlap_once_the_doctor_is_known(h):
 
 
 @pytest.mark.parametrize("date,detail", [("2026-09-30", "PAST_DATE"), ("tomorrow", "DATE_FORMAT"),
-                                         ("01/10/2026", "DATE_FORMAT")])
+                                         ("01/10/2026", "DATE_FORMAT"), ("20261005", "DATE_FORMAT"),
+                                         ("2026-W41-1", "DATE_FORMAT")])
 async def test_dates_are_today_or_explicit_iso(h, date, detail):
     result = await ask(h, doctorId="doc_garima", date=date)
     assert result.outcome == "INVALID_REQUEST" and result.detail == detail and result.facilityToday == "2026-10-01"
@@ -290,3 +331,35 @@ async def test_unconfirmed_profile_data_is_flagged(h):
 async def test_gender_filter_reaches_the_directory(h):
     result = await ask(h, departmentName="General Medicine", gender="FEMALE")
     assert [d.doctorId for d in result.doctors] == ["doc_garima"]
+
+
+async def test_an_escalating_routing_decision_is_not_delayed_by_a_slow_directory(make_settings):
+    """Review fix: the directory prefetch is cancelled, not awaited, once routing says transfer."""
+    import time
+
+    hh = harness.build(make_settings(read_deadline_seconds=2.0, write_deadline_seconds=2.5,
+                                     request_timeout_seconds=1.5))
+    try:
+        hh.ops_state.delay_seconds = 1.0
+        started = time.monotonic()
+        result = await ask(hh, hh.ctx(turn="severe stomach pain"), doctorName="garima")
+        assert result.outcome == "ROUTING_REQUIRED" and time.monotonic() - started < 0.6
+    finally:
+        await hh.aclose()
+
+
+async def test_known_doctor_reads_overlap_the_routing_check(make_settings):
+    """Review fix: profile and board start together with routing when the doctor is already known."""
+    import time
+
+    hh = harness.build(make_settings(read_deadline_seconds=2.0, write_deadline_seconds=2.5,
+                                     request_timeout_seconds=1.5))
+    try:
+        hh.knowledge_state.delay_seconds = 0.3
+        hh.ops_state.delay_seconds = 0.3
+        started = time.monotonic()
+        result = await ask(hh, doctorId="doc_garima")
+        elapsed = time.monotonic() - started
+        assert result.outcome == "AVAILABILITY" and elapsed < 0.5, elapsed  # sequential would be ≥ 0.9 s
+    finally:
+        await hh.aclose()

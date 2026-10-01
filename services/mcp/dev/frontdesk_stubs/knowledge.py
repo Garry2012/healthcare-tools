@@ -76,8 +76,9 @@ def create_app(state: KnowledgeStubState) -> Starlette:
         body = await request.json()
         state.routed.append(body)
         utterance = str(body.get("utterance", "")).strip()
+        texts = [utterance, *(str(t).strip() for t in (body.get("additionalText") or []))]
         for item in state.decisions:
-            if utterance in item.utterances:
+            if any(t in item.utterances for t in texts):
                 payload: dict[str, Any] = {"decision": item.decision, "provenance": "stub-fixture"}
                 if item.department:
                     payload["department"] = {"name": item.department}

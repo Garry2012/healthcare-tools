@@ -21,9 +21,9 @@ The agent gets three tools through the gateway bearer: `get_doctor_availability`
 | Header | When | Why |
 |---|---|---|
 | `X-Call-Id` | every request | Correlation, call-bound write keys, summary identity |
-| `X-Caller-Number`, `X-Caller-Verification` | every request when known | Authority to list/change appointments; absent means IDENTITY_UNAVAILABLE |
+| `X-Caller-Number`, `X-Caller-Verification` | every request when known | Authority to list/change appointments. The platform must state what it verified (`SIP_CALLER_ID`, `OTP`, …): a number without a verification header is unverified and gets IDENTITY_UNAVAILABLE |
 | `X-Turn-Context` | every request | The caller's original words of the current turn, which the adapter forwards to the knowledge service for the required routing decision. Without it availability and CREATE return ROUTING_UNAVAILABLE |
-| `X-Operation-Id` | every CREATE/CANCEL/RESCHEDULE | A stable logical id per confirmed intent. Retrying the same intent reuses it (replay); a new intent gets a new id. Keep the mapping in the platform's call state |
+| `X-Operation-Id` | every CREATE/CANCEL/RESCHEDULE | A stable logical id per confirmed intent. Retrying the same intent reuses it (replay); any changed payload under the same id, including a changed doctor or appointment, is refused as a conflict; a new intent gets a new id. Keep the mapping in the platform's call state |
 | `X-Call-Started-At`, `X-Call-Duration-Seconds` | the call-end summary | Authoritative timing; never from the model |
 
 Tool filtering in the LiveKit SDK (`MCPServerHTTP(..., allowed_tools=[...])`) is convenience; the
@@ -37,10 +37,13 @@ When the call ends (including abrupt disconnect), the platform invokes `record_c
 record: `intent`, `outcome`, `summaryText`, optional `callerName`, `callerMobile` (only when the
 caller gave it), `language`, `doctorId`, `appointmentId`, `transferredTo`. For the UNKNOWN callback
 flow: `outcome=CALLBACK_NOTED`, `callerName`, `callerMobile`, context in `summaryText`, no
-`appointmentId`/`transferredTo`. Build the payload once and resend it unchanged on retry; the result
-is `STORED`, `REPLAYED`, `UNCERTAIN` (retry later with the same payload), `COULD_NOT_RECORD` or
-`REJECTED`. The platform owns the finalization queue and retries; the adapter is stateless. Call
-summaries are outside the voice response budget.
+`appointmentId`/`transferredTo`, plus `requestedDate` so the date survives the 500-character limit.
+Build the payload once and resend it unchanged on retry. Act on `nextStep`: `DONE` (`STORED`/`REPLAYED`),
+`RETRY_SAME_PAYLOAD` (`UNCERTAIN`, or `COULD_NOT_RECORD` for a transient owner failure, honouring
+`retryAfterSeconds`), `RECORD_FAILED` (credential problem: alert operations, keep the payload),
+`FIX_PLATFORM_INPUT` (`INVALID_REQUEST`/`REJECTED`/`CONFLICT`: the platform's inputs are wrong). The
+platform owns the finalization queue and retries; the adapter is stateless. Call summaries are outside
+the voice response budget.
 
 ## Conversation rules the agent follows
 

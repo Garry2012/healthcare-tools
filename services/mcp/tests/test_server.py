@@ -106,9 +106,14 @@ async def test_the_whole_journey_over_http(served):
         today = (await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "today"})
                  ).structured_content
         assert today["outcome"] == "AVAILABILITY" and len(today["doctors"][0]["board"]) == 2
-        noted = (await c.call_tool("manage_booking", {
+        unknown_day = (await c.call_tool("manage_booking", {
             "action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101", "doctorId": "doc_garima",
             "visitDate": "2026-10-02", "preferredTime": "09:30", "reasonVerbatim": "fever", "callerConfirmed": True,
+        })).structured_content
+        assert unknown_day["outcome"] == "CALLBACK_REQUIRED"  # the server refuses a create on an UNKNOWN date
+        noted = (await c.call_tool("manage_booking", {
+            "action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101", "doctorId": "doc_garima",
+            "visitDate": "2026-10-01", "preferredTime": "09:30", "reasonVerbatim": "fever", "callerConfirmed": True,
         })).structured_content
         assert noted["outcome"] == "NOTED"
         appointment_id = noted["appointment"]["appointmentId"]
@@ -165,7 +170,7 @@ async def test_concurrent_calls_keep_their_own_identity(served):
         async with client(base, call_id=call_id, caller=caller, operation_id=f"op-{call_id}") as c:
             await c.call_tool("manage_booking", {
                 "action": "CREATE", "patientName": f"Patient {call_id}", "patientMobile": caller[3:],
-                "doctorId": "doc_garima", "visitDate": "2026-10-02", "callerConfirmed": True})
+                "doctorId": "doc_garima", "visitDate": "2026-10-01", "callerConfirmed": True})
             return (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content
 
     results = await asyncio.gather(*(one(f"call-{i}", f"+91900000010{i}") for i in range(1, 6)))
@@ -175,7 +180,10 @@ async def test_concurrent_calls_keep_their_own_identity(served):
     assert {a["callId"] for a in h.ops_state.appointments.values()} == {f"call-{i}" for i in range(1, 6)}
 
 
-async def test_dependency_status_is_separate_from_local_readiness(served):
+async def test_dependency_status_is_separate_from_local_readiness(served, monkeypatch):
+    from frontdesk_mcp import server as server_module
+
+    monkeypatch.setattr(server_module, "DEPENDENCY_REFRESH_MIN_INTERVAL", 0.0)  # the throttle has its own test
     base, h = served
     async with httpx.AsyncClient() as http:
         healthy = (await http.get(f"{base}/dependencies")).json()
@@ -234,3 +242,44 @@ def test_instructions_cover_the_fixed_policies(make_settings):
 def test_principal_contextvar_is_not_set_by_headers(make_settings):
     ctx = context.from_headers({"x-principal": "lifecycle", "principal": "lifecycle"}, make_settings())
     assert context.principal_var.get() is None and not hasattr(ctx, "principal")
+
+
+# ------------------------------------------------------------------ review fixes (1 Oct 2026)
+
+
+async def test_dependency_refresh_is_single_flight_and_throttled(served):
+    """Review fix: an unauthenticated ?refresh=1 must not be able to drive owner traffic per hit."""
+    base, h = served
+    before = len([r for r in h.requests if r.url.path.endswith("/departments")])
+    async with httpx.AsyncClient() as http:
+        await asyncio.gather(*(http.get(f"{base}/dependencies", params={"refresh": "1"}) for _ in range(8)))
+        await http.get(f"{base}/dependencies", params={"refresh": "1"})
+    after = len([r for r in h.requests if r.url.path.endswith("/departments")])
+    assert after - before <= 1  # one upstream check for nine refresh requests inside the minimum interval
+
+
+async def test_results_carry_an_output_schema_and_structured_content_without_sdk_revalidation(served):
+    """Review fix: the SDK re-validated every result against a 6 KB schema (~16 ms CPU per call). Results
+    are returned as CallToolResult (via ToolResult.meta) so the SDK trusts the pydantic-validated content;
+    the schema is still advertised for clients."""
+    base, _ = served
+    async with client(base) as c:
+        tools = {t.name: t for t in await c.list_tools()}
+        assert tools["get_doctor_availability"].outputSchema["properties"]["outcome"]
+        result = await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "today"})
+    assert result.structured_content["outcome"] == "AVAILABILITY"
+    assert result.meta == {"schemaVersion": prompt.SCHEMA_VERSION}
+
+
+def test_an_external_suite_exists_for_owner_designated_services():
+    """scripts/test.sh runs `pytest -m external` when OPS_E2E_BASE_URL is set; the marker must select tests."""
+    import subprocess
+    import sys
+
+    out = subprocess.run([sys.executable, "-m", "pytest", "tests", "-m", "external", "--collect-only", "-q",
+                          "-p", "no:cacheprovider"], capture_output=True, text=True, check=False)
+    import re
+
+    assert "test_external.py" in out.stdout
+    collected = re.search(r"(\d+)(?:/\d+)? tests? collected", out.stdout)
+    assert collected and int(collected.group(1)) >= 3, out.stdout[-300:]

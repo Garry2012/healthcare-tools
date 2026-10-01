@@ -45,7 +45,7 @@ async def test_callback_summary_is_stored_with_trusted_timing_and_a_frozen_body(
     assert body == {
         "callId": "call-1", "startedAt": "2026-10-01T09:58:00+05:30", "durationSeconds": 184, "language": "KN",
         "callerMobile": "9000000101", "intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED", "doctorId": "doc_garima",
-        "summaryText": "Caller: Lakshmi Rao. Callback requested. "
+        "summaryText": "Caller: Lakshmi Rao. Callback requested. Requested: doc_garima. "
                        "Asked for Dr. Garima tomorrow morning; board status UNKNOWN.",
     }
     assert "appointmentId" not in body and "transferredTo" not in body
@@ -218,3 +218,44 @@ async def test_no_principal_means_no_tools():
         assert await client.list_tools() == []
         refused = await client.call_tool("search_knowledge", {}, raise_on_error=False)
         assert refused.is_error
+
+
+# ------------------------------------------------------------------ review fixes (1 Oct 2026)
+
+
+async def test_callback_essentials_survive_truncation_as_structured_prefix(h):
+    """Review fix: the requested date and doctor must not live only in the truncatable free text."""
+    long_text = "Caller explained a long history. " * 40
+    result = await record(h, **{**CALLBACK, "summaryText": long_text, "requestedDate": "2026-10-05"})
+    assert result.outcome == "STORED"
+    text = json.loads(posted(h)[0].content)["summaryText"]
+    assert len(text) <= 500
+    assert text.startswith("Caller: Lakshmi Rao. Callback requested. Requested: 2026-10-05 with doc_garima. ")
+
+
+async def test_transient_summary_failures_tell_the_platform_to_retry(h):
+    h.ops_state.fail_next.append(("/call-summaries", 503, {"Retry-After": "30"}))
+    result = await record(h, **CALLBACK)
+    assert result.outcome == "COULD_NOT_RECORD" and result.nextStep == "RETRY_SAME_PAYLOAD"
+    assert result.retryAfterSeconds == 30
+
+
+async def test_credential_failure_is_terminal_for_the_platform(h, make_settings):
+    hh = harness.build(make_settings(ops_client_secret="wrong"))
+    try:
+        result = await record(hh, hh.ctx(**LIFECYCLE), **CALLBACK)
+        assert result.outcome == "COULD_NOT_RECORD" and result.nextStep == "RECORD_FAILED" and result.detail == "AUTH"
+    finally:
+        await hh.aclose()
+
+
+async def test_transferred_to_is_free_text_up_to_64_characters(h):
+    ok = await record(h, intent="INSURANCE", outcome="TRANSFERRED", transferredTo="Insurance desk (ground floor)",
+                      summaryText="Cashless query.")
+    assert ok.outcome == "STORED"
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):  # the tool schema (max_length=64) refuses longer values before the service
+        summary.SummaryRequest(intent="INSURANCE", outcome="TRANSFERRED", transferredTo="x" * 65, summaryText="x")
+    blank = await record(h, h.ctx(**{**LIFECYCLE, "call_id": "call-2"}), intent="INSURANCE", outcome="TRANSFERRED",
+                         transferredTo="   ", summaryText="Cashless query.")
+    assert blank.outcome == "INVALID_REQUEST" and "transferredTo" in blank.fields

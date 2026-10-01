@@ -34,7 +34,8 @@ async def test_the_question_and_call_id_reach_the_service_unchanged(h):
     request = [r for r in h.requests if r.url.host == "knowledge-stub.test"][-1]
     import json
     body = json.loads(request.content)
-    assert body == {"question": "  Is There Parking?  ", "language": "en", "callId": "call-1"}
+    assert body == {"question": "  Is There Parking?  ", "language": "en", "callId": "call-1",
+                    "turn": {"utterance": "is Dr Garima in today", "language": "en"}}
 
 
 async def test_desk_transfer_answers_carry_the_destination(h):
@@ -79,3 +80,14 @@ async def test_an_empty_question_is_invalid_without_a_call(h):
     result = await ask(h, "   ")
     assert result.outcome == "INVALID_REQUEST"
     assert not [r for r in h.requests if r.url.host == "knowledge-stub.test"]
+
+
+async def test_the_trusted_turn_travels_with_the_question(h):
+    """Review fix: the model's question may omit the danger sign the caller actually said."""
+    await ask(h, "where is cardiology", "en", h.ctx(turn="my father has chest pain, where is cardiology?"))
+    import json
+    body = json.loads([r for r in h.requests if r.url.host == "knowledge-stub.test"][-1].content)
+    assert body["turn"] == {"utterance": "my father has chest pain, where is cardiology?", "language": "en"}
+    await ask(h, "parking", "en", h.ctx(turn=None))
+    body = json.loads([r for r in h.requests if r.url.host == "knowledge-stub.test"][-1].content)
+    assert "turn" not in body

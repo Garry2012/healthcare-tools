@@ -53,11 +53,14 @@ class Settings(BaseSettings):
     accepted_caller_verification: str = "SIP_CALLER_ID"
 
     # --- one total deadline per tool invocation (pool wait + auth + every call + any retry) -------
-    read_deadline_seconds: float = Field(default=2.0, gt=0, le=30)
-    write_deadline_seconds: float = Field(default=4.0, gt=0, le=30)
+    # Derived from the ~1 s caller-response budget (TARGET-STATE.md): a read must leave room for the model's
+    # answer and TTS; a confirmed write may run a little longer; summaries run after the call.
+    read_deadline_seconds: float = Field(default=1.2, gt=0, le=30)
+    write_deadline_seconds: float = Field(default=2.5, gt=0, le=30)
     summary_deadline_seconds: float = Field(default=8.0, gt=0, le=60)
-    request_timeout_seconds: float = Field(default=1.5, gt=0, le=30)  # cap for any single HTTP exchange
+    request_timeout_seconds: float = Field(default=0.8, gt=0, le=30)  # cap for any single HTTP exchange
     token_refresh_margin_seconds: int = Field(default=60, ge=0, le=3600)
+    token_refresh_check_seconds: float = Field(default=15.0, gt=0, le=3600)  # background refresher cadence
     directory_cache_seconds: int = Field(default=300, ge=0, le=86400)
     directory_page_size: int = Field(default=25, ge=1, le=100)  # bounded search/department fan-out
     directory_cache_max_entries: int = Field(default=512, ge=1, le=100_000)
@@ -127,6 +130,8 @@ class Settings(BaseSettings):
     def _guards(self) -> Settings:
         packs.load(self.domain_pack)
         if self.env != "development":
+            if self.mcp_dev_caller_number:
+                raise ValueError("MCP_DEV_CALLER_NUMBER is allowed only when ENV=development")
             if not (self.ops_client_id and self.ops_client_secret.get_secret_value()):
                 raise ValueError("OPS_CLIENT_ID and OPS_CLIENT_SECRET are required outside development")
             if not self.knowledge_base_url:
@@ -138,8 +143,6 @@ class Settings(BaseSettings):
                     raise ValueError(f"{name} must use https:// when ENV=production")
                 if any(marker in url.lower() for marker in STUB_MARKERS):
                     raise ValueError(f"{name} points at a stub/mock endpoint; production needs the owner's service")
-            if self.mcp_dev_caller_number:
-                raise ValueError("MCP_DEV_CALLER_NUMBER must not be set when ENV=production")
             gateway = self.mcp_bearer_token.get_secret_value()
             lifecycle = self.mcp_lifecycle_bearer_token.get_secret_value()
             if not gateway:

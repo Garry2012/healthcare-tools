@@ -46,6 +46,9 @@ class RouteRequest(_Model):
     language: str
     callId: str | None = None  # noqa: N815 - wire names
     turnId: str | None = None  # noqa: N815
+    # Other caller words relevant to the decision that are not in this turn (e.g. the reason for the visit
+    # given earlier and relayed by the agent). The service decides over all of them.
+    additionalText: list[str] | None = None  # noqa: N815
 
 
 class RouteResponse(_Model):
@@ -55,10 +58,18 @@ class RouteResponse(_Model):
     provenance: str | None = None
 
 
+class TurnEcho(_Model):
+    utterance: str
+    language: str
+
+
 class AnswerRequest(_Model):
     question: str
     language: str
     callId: str | None = None  # noqa: N815
+    # The caller's original words for this turn (trusted), so a danger sign the model's question omits still
+    # reaches the service that decides routing.
+    turn: TurnEcho | None = None
 
 
 class AnswerResponse(_Model):

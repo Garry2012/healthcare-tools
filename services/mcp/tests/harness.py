@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 from dataclasses import dataclass
@@ -31,7 +30,7 @@ def turn_header(utterance: str, language: str = "en", turn_id: str | None = None
 
 
 def headers(*, call_id: str | None = "call-1", caller: str | None = CALLER, turn: str | None = "is Dr Garima in today",
-            language: str = "en", operation_id: str | None = None, verification: str | None = None,
+            language: str = "en", operation_id: str | None = None, verification: str | None = "SIP_CALLER_ID",
             started_at: str | None = None, duration: str | None = None) -> dict[str, str]:
     out: dict[str, str] = {}
     if call_id:
@@ -89,13 +88,9 @@ def build(settings, now: datetime = NOW, ops_secret: str = "ops-secret") -> Harn
             self.inner = httpx.ASGITransport(app=app)
 
         async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-            """In-process ASGI ignores timeouts; enforce the request's read timeout so deadlines are real."""
+            """In-process ASGI ignores httpx timeouts; the clients' own asyncio.timeout caps the exchange."""
             requests.append(request)
-            timeout = (request.extensions.get("timeout") or {}).get("read")
-            try:
-                return await asyncio.wait_for(self.inner.handle_async_request(request), timeout)
-            except TimeoutError as exc:
-                raise httpx.ReadTimeout("stub too slow", request=request) from exc
+            return await self.inner.handle_async_request(request)
 
     prefix = httpx.URL(settings.ops_base_url).path.rstrip("/")
     ops = OpsClient(settings, transport=Recording(ops_stub.create_app(ops_state, prefix=prefix)))

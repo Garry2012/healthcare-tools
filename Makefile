@@ -30,7 +30,7 @@ build: ## Build the production image (stubs and fixtures are not in it)
 	docker build -t frontdesk-mcp:dev $(MCP)
 
 schema: ## Print the pinned tool surface (compare with tests/contracts/mcp-tools.snapshot.json)
-	cd $(MCP) && eval "$$(../../scripts/rollout-env.sh ../../rollouts/$${PROVIDER_ID:-demo-hospital})" && \
+	@cd $(MCP) && eval "$$(../../scripts/rollout-env.sh ../../rollouts/$${PROVIDER_ID:-demo-hospital})" && \
 	  ENV=development OPS_BASE_URL=http://127.0.0.1:8200/api/v1 uv run frontdesk-mcp schema
 
 demo: ## In-process walk-through of the four tools against the stubs (dev/demo.py)

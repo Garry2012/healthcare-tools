@@ -57,6 +57,9 @@ class OpsStubState:
     malformed_next: list[str] = field(default_factory=list)  # path prefixes answering {"unexpected": true}
     commit_then: dict[str, int] = field(default_factory=dict)  # path prefix → status returned AFTER committing
     delay_seconds: float = 0.0
+    delay_for_prefix: dict[str, float] = field(default_factory=dict)  # per-path latency injection
+    reject_next_create: list[dict[str, str]] | None = None  # one 400 VALIDATION_FAILED with these details
+    omit_missing_entries: bool = False  # scenario: an owner that returns no row instead of UNKNOWN
     counter: int = 0
 
     def today(self) -> date:
@@ -130,6 +133,9 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
     async def scenario(request: Request) -> Response | None:
         if state.delay_seconds:
             await asyncio.sleep(state.delay_seconds)
+        for prefix, seconds in state.delay_for_prefix.items():
+            if relative_path(request).startswith(prefix) and request.method == "POST":
+                await asyncio.sleep(seconds)
         for i, (prefix, status, headers) in enumerate(state.fail_next):
             if relative_path(request).startswith(prefix):
                 del state.fail_next[i]
@@ -259,7 +265,10 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         items: list[dict[str, Any]] = []
         for doctor in doctors:
             rows = [r for r in entries_for(iso) if r["doctorId"] == doctor["id"]]
-            items.extend(board_entry(r, iso, now) for r in rows) if rows else items.append(unknown_entry(doctor, iso))
+            if rows:
+                items.extend(board_entry(r, iso, now) for r in rows)
+            elif not state.omit_missing_entries:
+                items.append(unknown_entry(doctor, iso))
         return JSONResponse({"date": iso, "items": items})
 
     def body_hash(body: Any) -> str:
@@ -323,6 +332,9 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         return issues
 
     def create_appointment(body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        if state.reject_next_create is not None:
+            details, state.reject_next_create = state.reject_next_create, None
+            return 400, {"error": {"code": "VALIDATION_FAILED", "message": "rejected by scenario", "details": details}}
         if issues := validate_create(body):
             return 400, {"error": {"code": "VALIDATION_FAILED", "message": "invalid appointment", "details": issues}}
         now = state.clock.now().isoformat(timespec="seconds")

@@ -143,8 +143,8 @@ async def test_one_deadline_covers_auth_and_the_call(make_settings):
             return httpx.Response(200, json=TOKEN)
         return httpx.Response(200, json={"items": []})
 
-    client = ops_client.OpsClient(make_settings(), transport=httpx.MockTransport(slow_handler),
-                                  monotonic=lambda: now[0])
+    client = ops_client.OpsClient(make_settings(request_timeout_seconds=1.5),
+                                  transport=httpx.MockTransport(slow_handler), monotonic=lambda: now[0])
     async with client:
         with pytest.raises(ops_client.Unavailable) as exc:
             await client.list_departments(Deadline(2.0, monotonic=lambda: now[0]))
@@ -311,3 +311,117 @@ async def test_availability_requires_exactly_one_target(make_settings):
             await client.get_availability(dl(), date="today")
         with pytest.raises(ValueError):
             await client.get_availability(dl(), date="today", doctor_id="d", department="x")
+
+
+# ------------------------------------------------------------------ review fixes (1 Oct 2026)
+
+
+@pytest.mark.parametrize("second", [
+    httpx.ConnectError("refused"),
+    httpx.Response(503, json={"error": {"code": "INTERNAL", "message": "x"}}),
+    httpx.Response(429, json={"error": {"code": "RATE_LIMITED", "message": "x"}}),
+    httpx.Response(500, text="boom"),
+    httpx.Response(401, json={"error": {"code": "UNAUTHORIZED", "message": "x"}}),
+    httpx.Response(409, json={"error": {"code": "CONFLICT", "message": "already cancelled"}}),
+    httpx.Response(404, json={"error": {"code": "NOT_FOUND", "message": "x"}}),
+])
+async def test_any_failure_after_a_sent_write_is_uncertain_not_definite(make_settings, second):
+    """Attempt 1 reached the server and got no answer; whatever attempt 2 says, the first may have committed."""
+    up = Upstream(token_responses=[TOKEN, TOKEN], responses=[httpx.ReadTimeout("slow"), second, second])
+    async with client_for(make_settings(), up) as client:
+        with pytest.raises(ops_client.UncertainWrite):
+            await client.create_appointment({"x": 1}, "key", dl(4.0))
+
+
+async def test_a_decoding_error_after_send_is_uncertain_and_on_a_read_unavailable(make_settings):
+    up = Upstream(responses=[httpx.DecodingError("bad gzip"), httpx.DecodingError("bad gzip")])
+    async with client_for(make_settings(), up) as client:
+        with pytest.raises(ops_client.UncertainWrite):
+            await client.create_appointment({"x": 1}, "key", dl(4.0))
+    up = Upstream(responses=[httpx.DecodingError("bad gzip")])
+    async with client_for(make_settings(), up) as client:
+        with pytest.raises(ops_client.Unavailable):
+            await client.list_departments(dl())
+
+
+async def test_the_deadline_is_a_wall_clock_total_even_against_a_dribbling_server(make_settings):
+    """A server that keeps sending one byte at a time never trips httpx's per-read timeout; the invocation
+    deadline must cut it off anyway."""
+    import asyncio
+    import time
+
+    async def dribble(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 400\r\n\r\n")
+        await writer.drain()
+        try:
+            for _ in range(400):
+                writer.write(b" ")
+                await writer.drain()
+                await asyncio.sleep(0.2)
+        except (ConnectionError, asyncio.CancelledError):
+            pass
+        finally:
+            writer.close()
+
+    server = await asyncio.start_server(dribble, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    settings = make_settings(ops_base_url=f"http://127.0.0.1:{port}/api/v1", read_deadline_seconds=1.0,
+                             write_deadline_seconds=1.0, summary_deadline_seconds=1.0, request_timeout_seconds=1.0)
+    client = ops_client.OpsClient(settings)
+    client.tokens._token, client.tokens._expires_at = "warm", time.monotonic() + 3600
+    try:
+        started = time.monotonic()
+        with pytest.raises(ops_client.Unavailable) as exc:
+            await client.list_departments(Deadline(1.0))
+        assert time.monotonic() - started < 2.0 and exc.value.reason in ("DEADLINE", "TIMEOUT")
+        started = time.monotonic()
+        with pytest.raises(ops_client.UncertainWrite):
+            await client.create_appointment({"x": 1}, "k", Deadline(1.0))
+        assert time.monotonic() - started < 2.5
+    finally:
+        await client.aclose()
+        server.close()
+        await server.wait_closed()
+
+
+async def test_token_is_warmed_at_startup_and_refreshed_in_the_background(make_settings):
+    import asyncio
+
+    now = [1000.0]
+    up = Upstream(token_responses=[{**TOKEN, "expires_in": 100}, {**TOKEN, "access_token": "tok-2"}],
+                  responses=[httpx.Response(200, json={"items": []})])
+    client = client_for(make_settings(token_refresh_margin_seconds=60), up, monotonic=lambda: now[0])
+    await client.start()
+    assert len([r for r in up.requests if r.url.path.endswith("/auth/token")]) == 1  # warmed before any call
+    now[0] += 45  # 55 s left: inside the margin → the refresher should fetch a new token without a caller
+    await client.refresh_if_due()
+    assert client.tokens._token == "tok-2"
+    await client.list_departments(dl(monotonic=lambda: now[0]))
+    assert up.api_requests()[0].headers["authorization"] == "Bearer tok-2"
+    await client.aclose()
+    assert isinstance(client.start, type(client.aclose)) or asyncio.iscoroutinefunction(client.start)
+
+
+async def test_startup_warm_failure_does_not_prevent_serving(make_settings):
+    up = Upstream(token_responses=[httpx.Response(503, text="down"), TOKEN],
+                  responses=[httpx.Response(200, json={"items": []})])
+    client = client_for(make_settings(), up)
+    await client.start()  # logs and carries on
+    assert (await client.list_departments(dl())).items == []
+    await client.aclose()
+
+
+async def test_waiting_for_the_token_lock_is_bounded_by_the_callers_deadline(make_settings):
+    import asyncio
+
+    up = Upstream(responses=[httpx.Response(200, json={"items": []})])
+    client = client_for(make_settings(), up)
+    await client.tokens._lock.acquire()  # someone else is refreshing and never finishes
+    try:
+        with pytest.raises(ops_client.Unavailable) as exc:
+            await asyncio.wait_for(client.list_departments(Deadline(0.3)), timeout=2)
+        assert exc.value.reason == "DEADLINE"
+    finally:
+        client.tokens._lock.release()
+        await client.aclose()

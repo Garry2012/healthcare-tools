@@ -1,14 +1,21 @@
 """get_doctor_availability: one invocation composes the required routing decision, directory lookup,
 doctor profile and live board for the requested date. Board status qualifies usual hours (never the
-reverse); UNKNOWN stops the appointment journey (callback only); a failed board is a service error.
-No slots, capacity, token numbers or arrival times are ever computed here."""
+reverse); any UNKNOWN session in scope stops the appointment journey (callback only); a failed board is a
+service error; a board that omits the doctor is treated as UNKNOWN. No slots, capacity, token numbers or
+arrival times are ever computed here.
+
+Concurrency: the routing decision is awaited first but every read that does not depend on it starts at
+the same time (directory search, or profile ∥ board when the doctor is known, or doctors ∥ board when the
+department is known). If routing does not clear, the reads are cancelled and nothing is presented."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import re
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,6 +31,8 @@ from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unava
 logger = logging.getLogger(__name__)
 
 WEEKDAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+READ_ERRORS = (Unavailable, Malformed, Rejected, InvalidIdentifier)
 
 
 class AvailabilityRequest(BaseModel):
@@ -48,6 +57,14 @@ class _Routing:
         return self.decision is not None and self.decision.decision in kc.CLEARANCE
 
 
+def _routing_out(decision: kc.RouteResponse | None) -> outcomes.Routing | None:
+    if decision is None:
+        return None
+    speak = outcomes.Speech(text=decision.speak.text, language=decision.speak.language) if decision.speak else None
+    return outcomes.Routing(decision=decision.decision, speak=speak,
+                            department=decision.department.name if decision.department else None)
+
+
 def _routing_outcome(routing: _Routing, today: str) -> outcomes.AvailabilityResult:
     if routing.decision is None:
         return outcomes.AvailabilityResult(outcome="ROUTING_UNAVAILABLE", nextStep="TRANSFER_DESK",
@@ -59,12 +76,19 @@ def _routing_outcome(routing: _Routing, today: str) -> outcomes.AvailabilityResu
                                        routing=_routing_out(decision))
 
 
-def _routing_out(decision: kc.RouteResponse | None) -> outcomes.Routing | None:
-    if decision is None:
-        return None
-    speak = outcomes.Speech(text=decision.speak.text, language=decision.speak.language) if decision.speak else None
-    return outcomes.Routing(decision=decision.decision, speak=speak,
-                            department=decision.department.name if decision.department else None)
+def _normalised(name: str) -> str:
+    return " ".join(name.casefold().split())
+
+
+def _choice(d: contract.Department) -> outcomes.DepartmentChoice:
+    return outcomes.DepartmentChoice(id=d.id, name=d.name)
+
+
+async def _cancel(task: asyncio.Task | None) -> None:
+    if task is not None and not task.done():
+        task.cancel()
+        with contextlib.suppress(BaseException):
+            await task
 
 
 class AvailabilityService:
@@ -119,51 +143,73 @@ class AvailabilityService:
                                                facilityToday=today_iso, detail=date_detail)
         base = {"facilityToday": today_iso, "requestedDate": requested.isoformat(),
                 "weekday": WEEKDAYS[requested.weekday()]}
+        date_param = "today" if requested == today else requested.isoformat()
 
-        # The routing decision and the first directory read are independent: overlap them.
-        routing, directory = await asyncio.gather(self.routing(ctx, deadline),
-                                                  self._prefetch(request, deadline), return_exceptions=True)
-        if isinstance(routing, BaseException):  # defensive: routing() maps its own failures
-            routing = _Routing(None, "ROUTING_UNAVAILABLE")
+        # Routing is awaited first; the reads that do not depend on it run meanwhile and are dropped if it
+        # does not clear. Nothing routine is presented before the decision.
+        routing_task = asyncio.create_task(self.routing(ctx, deadline))
+        prefetch = asyncio.create_task(self._prefetch(request, date_param, deadline))
+        routing = await routing_task
         if not routing.cleared:
+            await _cancel(prefetch)
             return _routing_outcome(routing, today_iso)
         routing_out = _routing_out(routing.decision)
-        if isinstance(directory, BaseException):
-            return self._service_error(directory, base, routing_out)
-
         try:
-            target = await self._resolve(request, routing.decision, directory, deadline, base, routing_out)
-            if isinstance(target, outcomes.AvailabilityResult):
-                return target
-            kind, ident = target
-            if kind == "doctor":
-                return await self._doctor(ident, requested, today, now, request.session, deadline, base, routing_out)
-            return await self._department(ident, requested, today, now, request, deadline, base, routing_out)
-        except (Unavailable, Malformed, Rejected, InvalidIdentifier) as exc:
+            fetched = await prefetch
+            return await self._compose(request, routing.decision, fetched, requested, today, now, date_param,
+                                       deadline, base, routing_out)
+        except READ_ERRORS as exc:
             return self._service_error(exc, base, routing_out)
 
     # ------------------------------------------------------------------ helpers
 
     @staticmethod
     def _requested_date(value: str, today: date) -> tuple[date | None, str | None]:
-        if value.strip().lower() == "today":
+        text = value.strip()
+        if text.lower() == "today":
             return today, None
+        if not ISO_DATE.fullmatch(text):
+            return None, "DATE_FORMAT"
         try:
-            parsed = date.fromisoformat(value.strip())
+            parsed = date.fromisoformat(text)
         except ValueError:
             return None, "DATE_FORMAT"
         if parsed < today:
             return None, "PAST_DATE"
         return parsed, None
 
-    async def _prefetch(self, request: AvailabilityRequest, deadline: Deadline):
-        """What the directory can answer before the routing decision is known."""
+    async def _prefetch(self, request: AvailabilityRequest, date_param: str, deadline: Deadline) -> dict[str, Any]:
+        """Everything the directory can answer before the routing decision is known."""
         if request.doctorId:
-            return None
+            profile, board = await asyncio.gather(self.profile(request.doctorId, deadline),
+                                                  self._board(deadline, date_param=date_param,
+                                                              doctor_id=request.doctorId), return_exceptions=True)
+            return {"kind": "doctor", "doctor_id": request.doctorId, "profile": profile, "board": board}
         if request.doctorName:
-            return await self.ops.search_doctors(deadline, query=request.doctorName, gender=request.gender,
+            page = await self.ops.search_doctors(deadline, query=request.doctorName, gender=request.gender,
                                                  limit=self.settings.directory_page_size)
-        return await self.departments(deadline)
+            return {"kind": "search", "page": page}
+        departments = await self.departments(deadline)
+        result: dict[str, Any] = {"kind": "departments", "departments": departments}
+        wanted = request.departmentId or request.departmentName
+        if wanted:
+            matches = self._match_department(departments, request.departmentId, request.departmentName)
+            result["matches"] = matches
+            if len(matches) == 1 and matches[0].hasConsultant:
+                page, board = await asyncio.gather(
+                    self.ops.search_doctors(deadline, department=matches[0].id, gender=request.gender,
+                                            limit=self.settings.directory_page_size),
+                    self._board(deadline, date_param=date_param, department=matches[0].id), return_exceptions=True)
+                result.update(page=page, board=board)
+        return result
+
+    @staticmethod
+    def _match_department(departments, department_id, department_name) -> list[contract.Department]:
+        active = [d for d in departments if d.active]
+        if department_id:
+            return [d for d in active if d.id == department_id]
+        needle = _normalised(department_name or "")
+        return [d for d in active if _normalised(d.name) == needle]  # exact only: never guess a department
 
     def _service_error(self, exc: BaseException, base: dict, routing_out) -> outcomes.AvailabilityResult:
         retry = exc.retry_after if isinstance(exc, Unavailable) else None
@@ -179,48 +225,6 @@ class AvailabilityService:
         return outcomes.AvailabilityResult(outcome="COULD_NOT_CHECK", nextStep="SAY_COULD_NOT_CHECK", **base,
                                            detail=detail, retryAfterSeconds=retry, routing=routing_out)
 
-    async def _resolve(self, request, decision, directory, deadline, base, routing_out):
-        if request.doctorId:
-            return "doctor", request.doctorId
-        if request.doctorName:
-            page: contract.DoctorPage = directory
-            if not page.items:
-                return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="ASK_TO_REPHRASE", **base,
-                                                   routing=routing_out)
-            if len(page.items) == 1 and page.total <= 1:
-                return "doctor", page.items[0].id
-            choices = [outcomes.DoctorChoice(doctorId=d.id, name=d.name, departments=[r.name for r in d.departments],
-                                             gender=d.gender) for d in page.items]
-            return outcomes.AvailabilityResult(outcome="CLARIFICATION_NEEDED", nextStep="ASK_WHICH_DOCTOR", **base,
-                                               choices=choices, complete=page.total <= len(page.items),
-                                               totalMatches=page.total, routing=routing_out)
-        departments: list[contract.Department] = [d for d in directory if d.active]
-        wanted_id, wanted_name = request.departmentId, request.departmentName
-        if not wanted_id and not wanted_name and decision.department is not None:
-            wanted_name = decision.department.name
-        if not wanted_id and not wanted_name:
-            return outcomes.AvailabilityResult(outcome="INVALID_REQUEST", nextStep="ASK_TO_REPHRASE", **base,
-                                               detail="TARGET_REQUIRED", routing=routing_out)
-        if wanted_id:
-            matches = [d for d in departments if d.id == wanted_id]
-        else:
-            needle = " ".join(wanted_name.casefold().split())
-            matches = [d for d in departments if d.name.casefold() == needle]
-            if not matches:
-                matches = [d for d in departments if needle in d.name.casefold() or d.name.casefold() in needle]
-        offered = [outcomes.DepartmentChoice(id=d.id, name=d.name) for d in departments if d.hasConsultant]
-        if len(matches) != 1:
-            return outcomes.AvailabilityResult(outcome="CLARIFICATION_NEEDED", nextStep="ASK_WHICH_DEPARTMENT",
-                                               **base, departmentChoices=offered, routing=routing_out,
-                                               detail="DEPARTMENT_AMBIGUOUS" if matches else "DEPARTMENT_UNMATCHED")
-        department = matches[0]
-        if not department.hasConsultant:
-            return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="TRANSFER_DESK", **base,
-                                               detail="NO_CONSULTANT", routing=routing_out,
-                                               department=outcomes.DepartmentChoice(id=department.id,
-                                                                                    name=department.name))
-        return "department", department
-
     async def _board(self, deadline: Deadline, *, date_param: str, doctor_id: str | None = None,
                      department: str | None = None) -> contract.AvailabilityBoard:
         try:
@@ -230,13 +234,57 @@ class AvailabilityService:
             exc.stage = "board"  # type: ignore[attr-defined]
             raise
 
-    async def _doctor(self, doctor_id, requested, today, now, session, deadline, base, routing_out):
-        date_param = "today" if requested == today else requested.isoformat()
-        profile_task = asyncio.create_task(self.profile(doctor_id, deadline))
-        board_task = asyncio.create_task(self._board(deadline, date_param=date_param, doctor_id=doctor_id))
-        profile, board = await asyncio.gather(profile_task, board_task, return_exceptions=True)
+    async def _compose(self, request, decision, fetched, requested, today, now, date_param, deadline, base,
+                       routing_out) -> outcomes.AvailabilityResult:
+        if fetched["kind"] == "doctor":
+            return self._doctor(fetched["doctor_id"], fetched["profile"], fetched["board"], requested, today, now,
+                                request.session, base, routing_out)
+        if fetched["kind"] == "search":
+            page: contract.DoctorPage = fetched["page"]
+            if not page.items:
+                return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="ASK_TO_REPHRASE", **base,
+                                                   routing=routing_out)
+            if len(page.items) == 1 and page.total <= 1:
+                doctor_id = page.items[0].id
+                profile, board = await asyncio.gather(self.profile(doctor_id, deadline),
+                                                      self._board(deadline, date_param=date_param, doctor_id=doctor_id),
+                                                      return_exceptions=True)
+                return self._doctor(doctor_id, profile, board, requested, today, now, request.session, base,
+                                    routing_out)
+            choices = [outcomes.DoctorChoice(doctorId=d.id, name=d.name, departments=[r.name for r in d.departments],
+                                             gender=d.gender) for d in page.items]
+            return outcomes.AvailabilityResult(outcome="CLARIFICATION_NEEDED", nextStep="ASK_WHICH_DOCTOR", **base,
+                                               choices=choices, complete=page.total <= len(page.items),
+                                               totalMatches=page.total, routing=routing_out)
+        departments: list[contract.Department] = fetched["departments"]
+        offered = [_choice(d) for d in departments if d.active and d.hasConsultant]
+        matches = fetched.get("matches")
+        if matches is None:  # no target given: use the routed department, if any
+            if decision.department is None:
+                return outcomes.AvailabilityResult(outcome="INVALID_REQUEST", nextStep="ASK_TO_REPHRASE", **base,
+                                                   detail="TARGET_REQUIRED", routing=routing_out)
+            matches = self._match_department(departments, None, decision.department.name)
+        if len(matches) != 1:
+            return outcomes.AvailabilityResult(outcome="CLARIFICATION_NEEDED", nextStep="ASK_WHICH_DEPARTMENT", **base,
+                                               departmentChoices=offered, routing=routing_out,
+                                               detail="DEPARTMENT_AMBIGUOUS" if matches else "DEPARTMENT_UNMATCHED")
+        department = matches[0]
+        if not department.hasConsultant:
+            return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="TRANSFER_DESK", **base,
+                                               detail="NO_CONSULTANT", routing=routing_out,
+                                               department=_choice(department))
+        if "page" in fetched:
+            page, board = fetched["page"], fetched["board"]
+        else:
+            page, board = await asyncio.gather(
+                self.ops.search_doctors(deadline, department=department.id, gender=request.gender,
+                                        limit=self.settings.directory_page_size),
+                self._board(deadline, date_param=date_param, department=department.id), return_exceptions=True)
+        return self._department(department, page, board, requested, today, now, request.session, base, routing_out)
+
+    def _doctor(self, doctor_id, profile, board, requested, today, now, session, base, routing_out):
         if isinstance(board, BaseException):
-            if isinstance(profile, BaseException) and isinstance(profile, Rejected) and profile.code == "NOT_FOUND":
+            if isinstance(profile, Rejected) and profile.code == "NOT_FOUND":
                 raise profile
             raise board
         detail = None
@@ -253,32 +301,39 @@ class AvailabilityService:
         entries = [e for e in board.items if e.doctorId == doctor_id]
         matched = None
         if session:
-            scoped = [e for e in entries if e.session and e.session.casefold() == session.strip().casefold()]
+            scoped = [e for e in entries if e.session and _normalised(e.session) == _normalised(session)]
             matched = bool(scoped)
             if scoped:
-                entries = scoped
+                entries = scoped  # an unmatched session keeps the whole board in scope: the caller may mean any
+        if not entries and detail is None:
+            detail = "BOARD_ENTRY_MISSING"  # the owner returned no row: that is UNKNOWN, never bookable hours
         name = profile.name if profile else (entries[0].doctorName if entries else doctor_id)
         doctor = self._overlay(profile, name, doctor_id, entries, requested, today, now)
         return self._finish([doctor], base, routing_out, session_matched=matched, detail=detail,
                             default_step="OFFER_APPOINTMENT_REQUEST")
 
-    async def _department(self, department, requested, today, now, request, deadline, base, routing_out):
-        date_param = "today" if requested == today else requested.isoformat()
-        page, board = await asyncio.gather(
-            self.ops.search_doctors(deadline, department=department.id, gender=request.gender,
-                                    limit=self.settings.directory_page_size),
-            self._board(deadline, date_param=date_param, department=department.id))
+    def _department(self, department, page, board, requested, today, now, session, base, routing_out):
+        if isinstance(board, BaseException):
+            raise board
+        if isinstance(page, BaseException):
+            raise page
         doctors = []
         for summary in page.items:
             entries = [e for e in board.items if e.doctorId == summary.id]
+            if session:
+                entries = [e for e in entries if e.session and _normalised(e.session) == _normalised(session)]
+                if not entries:
+                    continue  # this doctor has no such session; not UNKNOWN, simply not in scope
             doctors.append(self._overlay(None, summary.name, summary.id, entries, requested, today, now,
                                          summary=summary))
-        dept_out = outcomes.DepartmentChoice(id=department.id, name=department.name)
+        dept_out = _choice(department)
         if not doctors:
             return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="TRANSFER_DESK", **base,
-                                               department=dept_out, detail="NO_DOCTORS", routing=routing_out)
+                                               department=dept_out, routing=routing_out,
+                                               detail="NO_SESSION" if session and page.items else "NO_DOCTORS")
         return self._finish(doctors, base, routing_out, default_step="ASK_WHICH_DOCTOR", department=dept_out,
-                            complete=page.total <= len(page.items), total=page.total)
+                            complete=page.total <= len(page.items), total=page.total,
+                            session_matched=bool(session) or None)
 
     def _overlay(self, profile, name, doctor_id, entries, requested, today, now,
                  summary=None) -> outcomes.DoctorAvailability:
@@ -294,8 +349,8 @@ class AvailabilityService:
             expired=self._expired(e, requested, today, now)) for e in entries]
         unknown = [e.session or "" for e in entries if e.status == "UNKNOWN"]
         attendance = source.attendanceType if source else "REGULAR"
-        if entries and all(e.status == "UNKNOWN" for e in entries):
-            journey = "CALLBACK_ONLY"
+        if not entries or unknown:
+            journey = "CALLBACK_ONLY"  # any UNKNOWN session in scope, or no row at all, stops the journey
         elif attendance == "ON_CALL" and not any(e.status in ("IN", "LATE") for e in entries):
             journey = "DESK"
         else:
@@ -304,7 +359,7 @@ class AvailabilityService:
             doctorId=doctor_id, name=name, departments=[r.name for r in source.departments] if source else [],
             attendanceType=attendance, gender=source.gender if source else None,
             dataConfirmed=profile.dataConfirmed if profile else None, usualSessions=usual, board=board,
-            unknownSessions=[s for s in unknown], journey=journey)
+            unknownSessions=unknown, journey=journey)
 
     @staticmethod
     def _expired(entry: contract.AvailabilityEntry, requested: date, today: date, now: datetime) -> bool:

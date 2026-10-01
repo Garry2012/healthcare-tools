@@ -18,10 +18,10 @@ Implementation evidence: `docs/handover/mcp-only/implementation/`.
 ## Rules the code will not tell you
 - No business rules here: no scheduling, slot, capacity, interpretation, knowledge or clinical logic; no database, queue or local fallback backend. The adapter validates, authenticates, forwards trusted context, applies deadlines, maps statuses and composes contracted reads.
 - Trusted context (`X-Call-Id`, `X-Caller-Number`, `X-Caller-Verification`, `X-Turn-Context`, `X-Operation-Id`, `X-Call-Started-At`, `X-Call-Duration-Seconds`) comes only from request headers. The principal (gateway vs call-end lifecycle) comes only from the bearer. Never from tool arguments.
-- Availability and CREATE wait for a current routing clearance from the knowledge service on the trusted turn. Missing context, outage or an unknown response is never clearance.
+- Availability and CREATE wait for a current routing clearance from the knowledge service on the trusted turn plus the caller's relayed words (`reasonVerbatim`); CANCEL/RESCHEDULE route their reason when given. Missing context, outage or an unknown response is never clearance. Independent reads overlap the check and are cancelled if it does not clear.
 - UNKNOWN board (today or later) stops the appointment journey: collect name and callback number, say someone will call back, record a CALLBACK_NOTED summary. No booking, transfer, alternate or task. A failed board read is COULD_NOT_CHECK, not UNKNOWN.
-- A create is NOTED, never confirmed. Writes need `callerConfirmed`, call id and operation id; the body is frozen and keyed by `sha256(tenant|call|action|target|operation)`. UNCERTAIN is a distinct outcome; one same-key retry at most, within the invocation deadline.
-- Caller authority for LIST/CANCEL/RESCHEDULE is the verified caller number under the configured country rule. A dictated mobile is contact data. No prefix stripping, never "the last ten digits".
+- A create is NOTED, never confirmed. Writes need `callerConfirmed`, call id and operation id; the body is frozen and keyed by `sha256(tenant|call|action|operation)` (no target: a changed target conflicts). A create also reads the live board for the visit date (in parallel with routing) and refuses an UNKNOWN date with the callback-only outcome. UNCERTAIN is a distinct outcome: once a write attempt may have reached the owner, no later failure is reported as definite. One same-key retry at most, within the invocation deadline.
+- Caller authority for LIST/CANCEL/RESCHEDULE is the verified caller number under the configured country rule, with an explicit `X-Caller-Verification` in the accepted set; a bare number is unverified. A dictated mobile is contact data. No prefix stripping, never "the last ten digits".
 - `record_call_summary` is reachable only with the lifecycle bearer; MCP stays stateless; the platform owns durable finalization and retries.
 - Results and logs never carry caller numbers, patient names, reasons, raw upstream prose or secrets. Request-URL loggers stay at WARNING.
 - Contract changes are reviewed changes: the pinned snapshot, its hash, the overlay and `contract.py` literals are asserted by tests. Stubs (`services/mcp/dev/`) are fixtures, never engines; production refuses stub/mock hosts.
@@ -30,4 +30,4 @@ Implementation evidence: `docs/handover/mcp-only/implementation/`.
 ## Gotchas
 - Don't `source` rollout.env; use `scripts/rollout-env.sh`.
 - Test conftest strips every `Settings` field from the environment; pass overrides via `make_settings(...)`.
-- In-process stub transports enforce request timeouts (tests/harness.py) so deadline tests are real.
+- The clients cap every exchange with `asyncio.timeout` (httpx timeouts are per phase); in-process stub tests rely on that, and `test_ops_client.py` has a real-TCP dribbling-server test.

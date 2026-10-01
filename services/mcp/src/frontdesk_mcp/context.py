@@ -117,11 +117,10 @@ def from_headers(headers: Mapping[str, str], settings: Settings) -> CallContext:
     call_id = _ident(lower.get("x-call-id"), "x-call-id")
     call_id_var.set(call_id)
     caller = lower.get("x-caller-number") or None
-    if not caller and settings.env != "production" and settings.mcp_dev_caller_number:
-        caller = settings.mcp_dev_caller_number
+    # The platform must say what it verified; a bare number authorises nothing (absent means unverified).
     verification = lower.get("x-caller-verification") or None
-    if caller and verification is None:
-        verification = "SIP_CALLER_ID"  # a forwarded SIP number asserts exactly that, nothing stronger
+    if not caller and settings.env == "development" and settings.mcp_dev_caller_number:
+        caller, verification = settings.mcp_dev_caller_number, "SIP_CALLER_ID"  # development convenience only
     return CallContext(
         call_id=call_id,
         caller_number=caller,

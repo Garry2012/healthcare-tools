@@ -83,7 +83,7 @@
   "routing": {
     "_comment": "PROVISIONAL knowledge fixtures: scripted utterances → the decision Shobhit's service would return. Exact-match table, not a classifier. Replace with his published contract.",
     "decisions": [
-      {"utterances": ["ಎದೆ ನೋವು ಜಾಸ್ತಿ ಇದೆ", "ಅಪ್ಪನಿಗೆ chest pain", "सीने में दर्द हो रहा है", "seene mein dard", "stomach pain and vomiting blood", "khansi mein khoon aa raha hai", "back pain, cannot move legs", "Dr Garima, I have chest pain", "is dr garima there, my father has chest pain"],
+      {"utterances": ["ಎದೆ ನೋವು ಜಾಸ್ತಿ ಇದೆ", "ಅಪ್ಪನಿಗೆ chest pain", "सीने में दर्द हो रहा है", "seene mein dard", "stomach pain and vomiting blood", "khansi mein khoon aa raha hai", "back pain, cannot move legs", "Dr Garima, I have chest pain", "is dr garima there, my father has chest pain", "chest pain, my left arm is numb"],
        "decision": "EMERGENCY_TRANSFER", "speak": {"text": "This may be an emergency. I am connecting you to the emergency desk now.", "language": "en"}},
       {"utterances": ["severe stomach pain", "ತುಂಬಾ ತಲೆ ನೋವು"], "decision": "DESK_TRANSFER",
        "speak": {"text": "Let me connect you to the front desk so a person can help.", "language": "en"}},

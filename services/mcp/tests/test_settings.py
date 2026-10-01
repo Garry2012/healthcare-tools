@@ -108,3 +108,8 @@ def test_accepted_caller_verification_is_a_set(make_settings):
 def test_unknown_pack_is_refused(make_settings):
     with pytest.raises(ValueError, match="Unknown DOMAIN_PACK"):
         make_settings(domain_pack="nonexistent")
+
+
+def test_default_deadlines_fit_inside_a_one_second_turn_budget(make_settings):
+    s = make_settings()
+    assert s.read_deadline_seconds <= 1.2 and s.write_deadline_seconds <= 2.5 and s.request_timeout_seconds <= 0.8

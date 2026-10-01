@@ -52,9 +52,11 @@ def test_absent_headers_are_absent_not_defaulted(make_settings):
     assert ctx.caller_verification is None
 
 
-def test_a_forwarded_number_without_a_verification_header_asserts_sip_caller_id(make_settings):
+def test_a_forwarded_number_without_a_verification_header_is_unverified(make_settings):
+    """The platform must assert what it verified; a bare number authorises nothing (review finding)."""
     ctx = context.from_headers({"x-caller-number": "+919000000101"}, make_settings())
-    assert ctx.caller_verification == "SIP_CALLER_ID"
+    assert ctx.caller_number == "+919000000101" and ctx.caller_verification is None
+    assert identity.authorised_mobile(ctx, make_settings()) is None
 
 
 @pytest.mark.parametrize("header,value", [
@@ -68,10 +70,15 @@ def test_malformed_trusted_headers_are_treated_as_absent(make_settings, header, 
     assert getattr(ctx, context.FIELD_OF_HEADER[header]) is None
 
 
-def test_dev_caller_number_applies_only_outside_production(make_settings):
+def test_dev_caller_number_applies_only_in_development_and_counts_as_sip_caller_id(make_settings):
     dev = make_settings(env="development", mcp_dev_caller_number="+919000000999")
-    assert context.from_headers({}, dev).caller_number == "+919000000999"
+    ctx = context.from_headers({}, dev)
+    assert ctx.caller_number == "+919000000999" and ctx.caller_verification == "SIP_CALLER_ID"
     assert context.from_headers({"x-caller-number": "+919000000101"}, dev).caller_number == "+919000000101"
+    with pytest.raises(ValueError, match="MCP_DEV_CALLER_NUMBER"):
+        make_settings(env="staging", mcp_dev_caller_number="+919000000999")
+    with pytest.raises(ValueError, match="MCP_DEV_CALLER_NUMBER"):
+        make_settings(env="test", mcp_dev_caller_number="+919000000999")
 
 
 def test_contract_mobile_requires_the_configured_country_and_ten_digits():
@@ -91,7 +98,8 @@ def test_authorised_mobile_needs_number_and_accepted_verification(make_settings)
     assert identity.authorised_mobile(unverified, settings) is None
     absent = context.from_headers({}, settings)
     assert identity.authorised_mobile(absent, settings) is None
-    foreign = context.from_headers({"x-caller-number": "+449000000101"}, settings)
+    foreign = context.from_headers({"x-caller-number": "+449000000101", "x-caller-verification": "SIP_CALLER_ID"},
+                                   settings)
     assert identity.authorised_mobile(foreign, settings) is None
     strict = make_settings(accepted_caller_verification="OTP")
     assert identity.authorised_mobile(ok, strict) is None

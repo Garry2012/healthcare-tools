@@ -34,6 +34,8 @@ if docker info >/dev/null 2>&1; then
   if docker run --rm --entrypoint python frontdesk-mcp:ci -c "import pytest" >/dev/null 2>&1; then
     echo "production image contains development dependencies" >&2; exit 1
   fi
+  echo "== development stubs image build (compose profile stubs)"
+  docker build -q -f dev/Dockerfile -t frontdesk-stubs:ci . >/dev/null
 else
   echo "== no docker daemon: image build skipped (CI runs it)"
 fi

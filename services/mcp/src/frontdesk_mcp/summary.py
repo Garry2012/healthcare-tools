@@ -39,7 +39,9 @@ class SummaryRequest(BaseModel):
     language: str | None = Field(default=None, max_length=16)
     doctorId: str | None = Field(default=None, max_length=64)  # noqa: N815
     appointmentId: str | None = Field(default=None, max_length=64)  # noqa: N815
-    transferredTo: str | None = Field(default=None, max_length=64)  # noqa: N815
+    transferredTo: str | None = Field(default=None, max_length=64, description="Free text, ≤64 characters.")  # noqa: N815
+    requestedDate: str | None = Field(  # noqa: N815
+        default=None, max_length=10, description="YYYY-MM-DD the caller asked about (kept whole in the summary text).")
 
 
 def summary_key(provider: str, call_id: str) -> str:
@@ -53,13 +55,18 @@ def contract_language(tag: str | None) -> str | None:
     return {"en": "EN", "kn": "KN", "hi": "HI"}.get(primary)
 
 
-def compose_text(caller_name: str | None, callback: bool, free_text: str) -> str:
-    """Name and the callback marker are essential and kept whole; only the free text is shortened."""
+def compose_text(caller_name: str | None, callback: bool, free_text: str, requested_date: str | None = None,
+                 doctor_id: str | None = None) -> str:
+    """Name, the callback marker and the requested date/doctor are essential and kept whole; only the free
+    text is shortened. The number travels in the structured callerMobile field."""
     prefix = ""
     if caller_name:
         prefix += f"Caller: {caller_name.strip()}. "
     if callback:
         prefix += "Callback requested. "
+        if requested_date or doctor_id:
+            what = " with ".join(part for part in (requested_date, doctor_id) if part)
+            prefix += f"Requested: {what}. "
     free = " ".join(free_text.split())
     room = SUMMARY_MAX - len(prefix)
     if len(free) > room:
@@ -88,10 +95,14 @@ class SummaryService:
                 fields.append("transferredTo")
         if request.transferredTo and request.outcome not in _TRANSFERS:
             fields.append("transferredTo")
-        for name in ("doctorId", "appointmentId", "transferredTo"):
+        for name in ("doctorId", "appointmentId"):
             value = getattr(request, name)
             if value and not _ID.fullmatch(value):
                 fields.append(name)
+        if request.transferredTo is not None and not 1 <= len(request.transferredTo.strip()) <= 64:
+            fields.append("transferredTo")
+        if request.requestedDate and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", request.requestedDate):
+            fields.append("requestedDate")
         if not request.summaryText.strip():
             fields.append("summaryText")
         return sorted(set(fields))
@@ -112,7 +123,8 @@ class SummaryService:
             body["doctorId"] = request.doctorId
         if request.appointmentId:
             body["appointmentId"] = request.appointmentId
-        body["summaryText"] = compose_text(request.callerName, request.outcome == "CALLBACK_NOTED", request.summaryText)
+        body["summaryText"] = compose_text(request.callerName, request.outcome == "CALLBACK_NOTED", request.summaryText,
+                                           request.requestedDate, request.doctorId)
         return body
 
     async def record(self, ctx: CallContext, request: SummaryRequest) -> outcomes.SummaryResult:
@@ -140,7 +152,9 @@ class SummaryService:
             return outcomes.SummaryResult(outcome="UNCERTAIN", nextStep="RETRY_SAME_PAYLOAD",
                                           detail="MALFORMED_SUCCESS")
         except Unavailable as exc:
-            return outcomes.SummaryResult(outcome="COULD_NOT_RECORD", nextStep="RECORD_FAILED", detail=exc.reason,
+            # Transient: the platform keeps the frozen payload and retries later; only a credential problem is final.
+            step = "RECORD_FAILED" if exc.reason == "AUTH" else "RETRY_SAME_PAYLOAD"
+            return outcomes.SummaryResult(outcome="COULD_NOT_RECORD", nextStep=step, detail=exc.reason,
                                           retryAfterSeconds=exc.retry_after)
         return outcomes.SummaryResult(outcome="STORED" if status == 201 else "REPLAYED", nextStep="DONE",
                                       summaryId=stored.id)

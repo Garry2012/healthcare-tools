@@ -10,7 +10,7 @@ the adapter; they are not evidence about Manoj's or Shobhit's services.
 | `make test-fast` | ruff; hermetic suites: contract snapshot/overlay/types, settings and production guards, trusted context and identity, operational and knowledge clients, stubs validated against the OpenAPI schemas, the four tools, the assembled server over HTTP (uvicorn) | ~10 s | uv |
 | `make test-e2e` | `python -m frontdesk_stubs` and `frontdesk-mcp serve` as real processes over TCP; the release smoke; a full journey with trusted headers and the lifecycle bearer | ~5 s | uv |
 | `./scripts/test.sh` (= `make test`) | all of the above plus the source/wheel build and, with a Docker daemon, the production image (asserting it contains neither stubs nor dev dependencies) | ~1–2 min | uv (+ Docker) |
-| `OPS_E2E_BASE_URL=… ./scripts/test.sh` | additionally the suites marked `external` against owner-designated test services | — | owner test tenant and machine credentials |
+| `OPS_E2E_BASE_URL=… OPS_E2E_CLIENT_ID=… OPS_E2E_CLIENT_SECRET=… ./scripts/test.sh` | additionally `tests/test_external.py` (marker `external`) against owner-designated test services: machine token, directory reads, the availability tool, knowledge (`KNOWLEDGE_E2E_*`), and the synthetic write journey only with `OPS_E2E_ALLOW_WRITES=1` on a designated test tenant. A missing variable fails the suite; nothing skips silently | — | owner test tenant and machine credentials |
 
 Expect `== all suites passed`. CI runs `./scripts/test.sh` on every pull request and on `main`.
 
@@ -25,11 +25,13 @@ clock, so a result never depends on when you run it.
   board; ON_CALL; session scoping; ambiguity and incompleteness; department queries with one board call;
   no consultant; routing decisions from the trusted turn; routing outage/malformed/missing/slow never
   clear; directory/profile cached, board not.
-- **Booking:** NOTED with frozen body and bound key; confirmation; call/operation context; routing gate
-  before a create; same-intent replay; changed payload conflict; concurrent same intent; validation
-  before any call; owner rejection; lost response → UNCERTAIN then reconciliation by the same key;
-  unavailable, malformed, auth; trusted number for LIST/CANCEL/RESCHEDULE with model override ignored;
-  stricter verification policy; neutral not-found for another caller's appointment; path ids guarded.
+- **Booking:** NOTED with frozen body and target-free key; confirmation; call/operation context; routing gate
+  over the trusted turn plus `reasonVerbatim` before a create (and for a cancel/reschedule reason); live-board
+  check before a create (UNKNOWN date → callback-only, board failure → COULD_NOT_RECORD) overlapping routing;
+  same-intent replay; changed payload or target → conflict; concurrent same intent; validation before any call;
+  owner rejection; lost response → UNCERTAIN then reconciliation by the same key; any failure after a sent
+  attempt → UNCERTAIN; unavailable, malformed, auth; trusted number only (bare number unverified, dictated
+  number never used); stricter verification policy; neutral not-found for another caller's appointment.
 - **Knowledge:** verbatim answers, clarification, desk routing, no answer; failures never answers.
 - **Summaries:** trusted timing; frozen body; replay; CALLBACK_NOTED rules; 500 characters without
   losing name/number; language mapping; transfer field rules; hang-up outcomes; failed persistence;

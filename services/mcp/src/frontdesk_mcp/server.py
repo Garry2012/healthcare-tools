@@ -6,6 +6,7 @@ on the server, and enforced by access.LifecycleGate; no header can claim it."""
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hmac
 import json
@@ -32,6 +33,7 @@ from .ops_client import UpstreamError
 logger = logging.getLogger(__name__)
 DEPENDENCY_CHECK_SECONDS = 1.0
 DEPENDENCY_CACHE_SECONDS = 15.0
+DEPENDENCY_REFRESH_MIN_INTERVAL = 5.0  # ?refresh=1 is unauthenticated: never more than one upstream check per 5 s
 
 
 class JsonFormatter(logging.Formatter):
@@ -126,11 +128,18 @@ class DependencyStatus:
     def __init__(self, services: tools.Services) -> None:
         self.services = services
         self._cached: tuple[float, dict, int] | None = None
+        self._lock = asyncio.Lock()  # single flight: concurrent probes share one upstream check
 
     async def check(self, *, refresh: bool = False) -> tuple[dict, int]:
-        now = time.monotonic()
-        if not refresh and self._cached and now - self._cached[0] < DEPENDENCY_CACHE_SECONDS:
-            return self._cached[1], self._cached[2]
+        async with self._lock:
+            now = time.monotonic()
+            if self._cached:
+                age = now - self._cached[0]
+                if age < (DEPENDENCY_REFRESH_MIN_INTERVAL if refresh else DEPENDENCY_CACHE_SECONDS):
+                    return self._cached[1], self._cached[2]
+            return await self._probe(now)
+
+    async def _probe(self, now: float) -> tuple[dict, int]:
         status = 200
         try:
             await self.services.ops.list_departments(Deadline(DEPENDENCY_CHECK_SECONDS))
@@ -171,6 +180,7 @@ def create_app(settings: Settings | None = None, *, ops_transport: httpx.AsyncBa
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
         logger.info("service_started", extra={"fields": {"env": settings.env, "pack": settings.domain_pack,
                                                          "schemaVersion": prompt.SCHEMA_VERSION}})
+        await services.ops.start()  # warm machine token now, keep it warm in the background
         try:
             async with mcp_app.lifespan(app):
                 yield

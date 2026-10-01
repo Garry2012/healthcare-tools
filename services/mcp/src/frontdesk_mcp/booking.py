@@ -2,14 +2,18 @@
 
 Authority to list or change comes from the trusted caller identity; the dictated patient mobile is
 contact data only. A write needs the caller's confirmation, trusted call and operation context and
-(for a create) a current routing clearance. The outgoing body is frozen and keyed by
-sha256(tenant|call|action|target|operation) so a retry replays and a changed payload conflicts.
+(for a create) a current routing clearance over the trusted turn plus the caller's relayed words, and a
+live-board check that refuses an UNKNOWN date with the callback-only outcome. The outgoing body is
+frozen and keyed by sha256(tenant|call|action|operation) so a retry replays and any changed payload,
+including a changed target, conflicts at the owner.
 Outcomes keep validated success, definite rejection, state/idempotency conflict and uncertain
 completion distinct. A successful create is NOTED: recorded, never a reserved time.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hashlib
 import logging
 import re
@@ -30,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 Action = Literal["CREATE", "LIST", "CANCEL", "RESCHEDULE"]
 _ID = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 class BookingRequest(BaseModel):
@@ -56,9 +61,10 @@ class BookingRequest(BaseModel):
     callerConfirmed: bool = False  # noqa: N815
 
 
-def operation_key(provider: str, call_id: str, action: str, target: str, operation_id: str) -> str:
-    """Opaque, 64 characters, bound to tenant, call, action, target and the platform's operation id."""
-    return hashlib.sha256("|".join((provider, call_id, action, target, operation_id)).encode("utf-8")).hexdigest()
+def operation_key(provider: str, call_id: str, action: str, operation_id: str) -> str:
+    """Opaque, 64 characters, bound to tenant, call, action and the platform's operation id. The target is
+    deliberately not part of the key: a retry that changed doctor or appointment must conflict, not fork."""
+    return hashlib.sha256("|".join((provider, call_id, action, operation_id)).encode("utf-8")).hexdigest()
 
 
 def _appointment_out(a: contract.Appointment) -> outcomes.AppointmentOut:
@@ -72,8 +78,12 @@ def _iso(value: str | None, today: date, field: str, issues: list[str], *, requi
         if required:
             issues.append(field)
         return None
+    text = value.strip()
+    if not _ISO.fullmatch(text):
+        issues.append(field)
+        return None
     try:
-        parsed = date.fromisoformat(value.strip())
+        parsed = date.fromisoformat(text)
     except ValueError:
         issues.append(field)
         return None
@@ -151,13 +161,15 @@ class BookingService:
                                           detail=exc.reason, retryAfterSeconds=exc.retry_after)
         raise exc
 
-    async def _routing(self, ctx: CallContext, deadline: Deadline) -> outcomes.BookingResult | None:
-        """A create waits for a current clearance on the trusted turn; nothing else is clearance."""
+    async def _routing(self, ctx: CallContext, deadline: Deadline,
+                       extra_text: list[str] | None = None) -> outcomes.BookingResult | None:
+        """A write waits for a current clearance over the trusted turn plus the caller's relayed words
+        (reason for the visit); nothing else is clearance."""
         if ctx.turn is None:
             return outcomes.BookingResult(outcome="ROUTING_UNAVAILABLE", nextStep="TRANSFER_DESK",
                                           detail="TURN_CONTEXT_MISSING")
         try:
-            decision = await self.knowledge.route(ctx.turn, ctx, deadline)
+            decision = await self.knowledge.route(ctx.turn, ctx, deadline, additional_text=extra_text)
         except KnowledgeUnavailable as exc:
             detail = {"NOT_CONFIGURED": "ROUTING_NOT_CONFIGURED", "MALFORMED": "ROUTING_MALFORMED",
                       "UNAVAILABLE": "ROUTING_UNAVAILABLE"}[exc.reason]
@@ -214,10 +226,28 @@ class BookingService:
         if gate := self._write_gate(ctx, request):
             return gate
         deadline = Deadline(self.settings.write_deadline_seconds)
-        if blocked := await self._routing(ctx, deadline):
+        date_param = "today" if visit_date == today.isoformat() else visit_date
+        board_task = asyncio.create_task(self.ops.get_availability(
+            deadline, date=date_param, doctor_id=request.doctorId, department=request.departmentId))
+        blocked = await self._routing(ctx, deadline, [request.reasonVerbatim] if request.reasonVerbatim else None)
+        if blocked:
+            board_task.cancel()
+            with contextlib.suppress(BaseException):
+                await board_task
             return blocked
+        try:
+            board = await board_task
+        except (Unavailable, Malformed) as exc:
+            retry = exc.retry_after if isinstance(exc, Unavailable) else None
+            detail = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else "BOARD_UNAVAILABLE"
+            return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",
+                                          detail=detail, retryAfterSeconds=retry)
+        except Rejected as exc:
+            return self._failure(exc, write=True)
+        if self._board_is_unknown(board, request.doctorId):
+            return outcomes.BookingResult(outcome="CALLBACK_REQUIRED", nextStep="ASK_CALLBACK_DETAILS",
+                                          callback=outcomes.Callback(), detail="BOARD_UNKNOWN")
         body: dict[str, Any] = {"patientName": request.patientName.strip(), "mobile": request.patientMobile}
-        target = request.doctorId or request.departmentId
         if request.doctorId:
             body["doctorId"] = request.doctorId
         else:
@@ -228,12 +258,23 @@ class BookingService:
         if request.reasonVerbatim:
             body["reasonVerbatim"] = request.reasonVerbatim
         body["callId"] = ctx.call_id
-        key = operation_key(self.settings.provider_id, ctx.call_id, "CREATE", target, ctx.operation_id)
+        key = operation_key(self.settings.provider_id, ctx.call_id, "CREATE", ctx.operation_id)
         try:
             _, appointment = await self.ops.create_appointment(body, key, deadline)
         except (Rejected, Malformed, Unavailable, UncertainWrite) as exc:
             return self._failure(exc, write=True)
         return self._written(appointment, "SAY_REQUEST_NOTED")
+
+    @staticmethod
+    def _board_is_unknown(board: contract.AvailabilityBoard, doctor_id: str | None) -> bool:
+        """Doctor target: any UNKNOWN session (or no row) on that date. Department target: every doctor UNKNOWN."""
+        if doctor_id:
+            entries = [e for e in board.items if e.doctorId == doctor_id]
+            return not entries or any(e.status == "UNKNOWN" for e in entries)
+        by_doctor: dict[str, list[str]] = {}
+        for e in board.items:
+            by_doctor.setdefault(e.doctorId, []).append(e.status)
+        return not by_doctor or all("UNKNOWN" in statuses for statuses in by_doctor.values())
 
     async def _change(self, ctx: CallContext, request: BookingRequest) -> outcomes.BookingResult:
         today = local_now(self.clock, self.settings.zone).date()
@@ -255,13 +296,15 @@ class BookingService:
         if mobile is None:
             return self._identity_unavailable()
         deadline = Deadline(self.settings.write_deadline_seconds)
+        if request.reasonVerbatim:  # the caller's words for the change are routed too; no words, no hop
+            if blocked := await self._routing(ctx, deadline, [request.reasonVerbatim]):
+                return blocked
         body: dict[str, Any] = {"callerMobile": mobile}
         if request.action == "CANCEL":
             if request.reasonVerbatim:
                 body["reason"] = request.reasonVerbatim
             body["callId"] = ctx.call_id
-            key = operation_key(self.settings.provider_id, ctx.call_id, "CANCEL", request.appointmentId,
-                                ctx.operation_id)
+            key = operation_key(self.settings.provider_id, ctx.call_id, "CANCEL", ctx.operation_id)
             call = self.ops.cancel_appointment(request.appointmentId, body, key, deadline)
             step = "SAY_CANCELLED"
         else:
@@ -269,8 +312,7 @@ class BookingService:
             if new_time:
                 body["newExpectedTime"] = new_time
             body["callId"] = ctx.call_id
-            key = operation_key(self.settings.provider_id, ctx.call_id, "RESCHEDULE", request.appointmentId,
-                                ctx.operation_id)
+            key = operation_key(self.settings.provider_id, ctx.call_id, "RESCHEDULE", ctx.operation_id)
             call = self.ops.reschedule_appointment(request.appointmentId, body, key, deadline)
             step = "SAY_CHANGED"
         try:

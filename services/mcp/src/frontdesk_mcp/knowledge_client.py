@@ -4,6 +4,7 @@ configuration or unknown response shape is an explicit unavailable result, never
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Literal
 
@@ -46,10 +47,11 @@ class KnowledgeClient:
             raise KnowledgeUnavailable("NOT_CONFIGURED")
         try:
             timeout = deadline.timeout(self.settings.request_timeout_seconds)
-            response = await self.http.post(path, json=body, timeout=timeout)
+            async with asyncio.timeout(timeout):  # wall-clock cap: httpx's timeout is per phase/chunk
+                response = await self.http.post(path, json=body, timeout=timeout)
         except DeadlineExceeded as exc:
             raise KnowledgeUnavailable("UNAVAILABLE") from exc
-        except httpx.TransportError as exc:
+        except (httpx.RequestError, TimeoutError) as exc:
             logger.warning("knowledge_unreachable", extra={"fields": {"path": path, "error": type(exc).__name__}})
             raise KnowledgeUnavailable("UNAVAILABLE") from exc
         if response.status_code in (401, 403):
@@ -66,12 +68,15 @@ class KnowledgeClient:
             raise KnowledgeUnavailable("MALFORMED")
         return data
 
-    async def route(self, turn: TurnContext, ctx: CallContext, deadline: Deadline) -> kc.RouteResponse:
+    async def route(self, turn: TurnContext, ctx: CallContext, deadline: Deadline,
+                    additional_text: list[str] | None = None) -> kc.RouteResponse:
         body: dict = {"utterance": turn.utterance, "language": turn.language}
         if ctx.call_id:
             body["callId"] = ctx.call_id
         if turn.turn_id:
             body["turnId"] = turn.turn_id
+        if additional_text:
+            body["additionalText"] = [t for t in additional_text if t and t.strip()]
         data = await self._post(kc.ROUTE_PATH, body, deadline)
         try:
             return kc.RouteResponse.model_validate(data)
@@ -83,6 +88,8 @@ class KnowledgeClient:
         body: dict = {"question": question, "language": language}
         if ctx.call_id:
             body["callId"] = ctx.call_id
+        if ctx.turn is not None:
+            body["turn"] = {"utterance": ctx.turn.utterance, "language": ctx.turn.language}
         data = await self._post(kc.ANSWER_PATH, body, deadline)
         try:
             return kc.AnswerResponse.model_validate(data)

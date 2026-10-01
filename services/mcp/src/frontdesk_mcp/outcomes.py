@@ -130,13 +130,13 @@ class AppointmentOut(_Out):
 
 BookingOutcome = Literal[
     "NOTED", "CHANGED", "CANCELLED", "FOUND", "NOT_FOUND", "REJECTED", "CONFLICT", "UNCERTAIN",
-    "IDENTITY_UNAVAILABLE", "ROUTING_REQUIRED", "ROUTING_UNAVAILABLE", "CONFIRMATION_REQUIRED",
+    "IDENTITY_UNAVAILABLE", "ROUTING_REQUIRED", "ROUTING_UNAVAILABLE", "CALLBACK_REQUIRED", "CONFIRMATION_REQUIRED",
     "OPERATION_CONTEXT_MISSING", "COULD_NOT_RECORD", "COULD_NOT_CHECK", "INVALID_REQUEST",
 ]
 BookingNextStep = Literal[
     "SAY_REQUEST_NOTED", "SAY_CHANGED", "SAY_CANCELLED", "OFFER_CHOICES", "SAY_NOT_FOUND", "ASK_TO_CORRECT",
     "SAY_UNCERTAIN_AND_TRANSFER", "TRANSFER_DESK", "TRANSFER_EMERGENCY", "ASK_ROUTING_CLARIFICATION",
-    "ASK_CONFIRMATION", "SAY_COULD_NOT_RECORD", "SAY_COULD_NOT_CHECK",
+    "ASK_CALLBACK_DETAILS", "ASK_CONFIRMATION", "SAY_COULD_NOT_RECORD", "SAY_COULD_NOT_CHECK",
 ]
 
 
@@ -147,6 +147,7 @@ class BookingResult(_Out):
     appointments: list[AppointmentOut] = []
     fields: list[str] = Field(default=[], description="Request fields that were invalid or rejected.")
     routing: Routing | None = None
+    callback: Callback | None = None
     detail: str | None = None
     retryAfterSeconds: int | None = None  # noqa: N815
 

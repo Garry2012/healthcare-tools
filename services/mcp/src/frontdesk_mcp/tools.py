@@ -13,10 +13,11 @@ from typing import Annotated, Any, Literal
 import httpx
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
+from fastmcp.tools.tool import ToolResult
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from . import availability, booking, context, contract, knowledge, outcomes, summary
+from . import availability, booking, context, contract, knowledge, outcomes, prompt, summary
 from .access import LIFECYCLE_TAG
 from .cache import DirectoryCache
 from .clock import Clock, SystemClock
@@ -88,15 +89,20 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
     def ctx() -> context.CallContext:
         return context.from_headers(get_http_headers(), settings)
 
-    def observed(name: str, result: Any) -> Any:
-        """One line per tool call: tool, outcome, next step. Never arguments, names or numbers."""
+    def observed(name: str, result: BaseModel) -> ToolResult:
+        """One line per tool call: tool, outcome, next step. Never arguments, names or numbers.
+
+        The result is pydantic-validated already; returning a ToolResult with `meta` makes FastMCP hand the SDK a
+        CallToolResult, which the SDK does not re-validate against the (large) output schema on every call."""
         logger.info("tool_result", extra={"fields": {"tool": name, "outcome": result.outcome,
                                                      "nextStep": getattr(result, "nextStep", None)}})
-        return result
+        return ToolResult(structured_content=result.model_dump(mode="json"),
+                          meta={"schemaVersion": prompt.SCHEMA_VERSION})
 
     @mcp.tool(
         name="get_doctor_availability",
         description=pack.tools["get_doctor_availability"].description,
+        output_schema=outcomes.AvailabilityResult.model_json_schema(),
         annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
     )
     async def get_doctor_availability(  # noqa: N803 - parameter names are the wire names the model sees
@@ -107,7 +113,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         departmentId: Ident = None,
         session: Annotated[str | None, Field(max_length=40)] = None,
         gender: Literal["FEMALE", "MALE"] | None = None,
-    ) -> outcomes.AvailabilityResult:
+    ) -> ToolResult:
         request = availability.AvailabilityRequest(date=date, doctorName=doctorName, doctorId=doctorId,
                                                    departmentName=departmentName, departmentId=departmentId,
                                                    session=session, gender=gender)
@@ -118,6 +124,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
     @mcp.tool(
         name="manage_booking",
         description=pack.tools["manage_booking"].description,
+        output_schema=outcomes.BookingResult.model_json_schema(),
         # Mixed actions: LIST reads, CANCEL destroys, CREATE/RESCHEDULE write. Replays are keyed, so idempotent.
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True,
                                     openWorldHint=False),
@@ -138,7 +145,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         toDate: IsoDate = None,
         status: contract.AppointmentStatus | None = None,
         callerConfirmed: bool = False,
-    ) -> outcomes.BookingResult:
+    ) -> ToolResult:
         request = booking.BookingRequest(
             action=action, patientName=patientName, patientMobile=patientMobile, doctorId=doctorId,
             departmentId=departmentId, visitDate=visitDate, preferredTime=preferredTime, reasonVerbatim=reasonVerbatim,
@@ -151,12 +158,13 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
     @mcp.tool(
         name="search_knowledge",
         description=pack.tools["search_knowledge"].description,
+        output_schema=outcomes.KnowledgeResult.model_json_schema(),
         annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
     )
     async def search_knowledge(
         question: Annotated[str, Field(max_length=500)],
         language: Annotated[str, Field(max_length=16)],
-    ) -> outcomes.KnowledgeResult:
+    ) -> ToolResult:
         request = knowledge.KnowledgeRequest(question=question, language=language)
         return observed("search_knowledge", await services.search.search(ctx(), request))
 
@@ -166,6 +174,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         name="record_call_summary",
         description=pack.tools["record_call_summary"].description,
         tags={LIFECYCLE_TAG},
+        output_schema=outcomes.SummaryResult.model_json_schema(),
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
                                     openWorldHint=False),
     )
@@ -178,11 +187,13 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         language: Annotated[str | None, Field(max_length=16)] = None,
         doctorId: Ident = None,
         appointmentId: Ident = None,
-        transferredTo: Ident = None,
-    ) -> outcomes.SummaryResult:
+        transferredTo: Annotated[str | None, Field(max_length=64)] = None,
+        requestedDate: IsoDate = None,
+    ) -> ToolResult:
         request = summary.SummaryRequest(intent=intent, outcome=outcome, summaryText=summaryText, callerName=callerName,
                                          callerMobile=callerMobile, language=language, doctorId=doctorId,
-                                         appointmentId=appointmentId, transferredTo=transferredTo)
+                                         appointmentId=appointmentId, transferredTo=transferredTo,
+                                         requestedDate=requestedDate)
         return observed("record_call_summary", await services.summary.record(ctx(), request))
 
     _apply_pack_text(record_call_summary, pack.tools["record_call_summary"])

@@ -16,7 +16,7 @@ from frontdesk_mcp.ops_client import InvalidIdentifier  # noqa: F401 - documents
 from . import harness
 
 CREATE = {"action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101", "doctorId": "doc_garima",
-          "visitDate": "2026-10-02", "preferredTime": "09:30", "reasonVerbatim": "fever for three days",
+          "visitDate": "2026-10-01", "preferredTime": "09:30", "reasonVerbatim": "fever for three days",
           "callerConfirmed": True}
 
 
@@ -42,16 +42,16 @@ def sent(h, path_suffix: str) -> list:
 async def test_create_is_noted_with_a_frozen_body_and_a_bound_key(h):
     result = await run(h, **CREATE)
     assert result.outcome == "NOTED" and result.nextStep == "SAY_REQUEST_NOTED"
-    assert result.appointment.status == "NOTED" and result.appointment.visitDate == "2026-10-02"
+    assert result.appointment.status == "NOTED" and result.appointment.visitDate == "2026-10-01"
     assert result.appointment.expectedTime == "09:30" and result.appointment.doctorId == "doc_garima"
     dumped = result.model_dump_json()
     assert "9000000101" not in dumped and "fever" not in dumped  # contact and reason never echoed to the model
     [request] = sent(h, "/appointments")
     body = json.loads(request.content)
     assert body == {"patientName": "Lakshmi Rao", "mobile": "9000000101", "doctorId": "doc_garima",
-                    "visitDate": "2026-10-02", "expectedTime": "09:30", "reasonVerbatim": "fever for three days",
+                    "visitDate": "2026-10-01", "expectedTime": "09:30", "reasonVerbatim": "fever for three days",
                     "callId": "call-1"}
-    expected = hashlib.sha256(b"demo-hospital|call-1|CREATE|doc_garima|op-1").hexdigest()
+    expected = hashlib.sha256(b"demo-hospital|call-1|CREATE|op-1").hexdigest()  # no target: changed target conflicts
     assert request.headers["idempotency-key"] == expected and len(expected) == 64
 
 
@@ -115,6 +115,7 @@ async def test_concurrent_same_intent_attempts_record_one_appointment(h):
     ({"departmentId": "dept_genmed"}, "doctorId"),
     ({"doctorId": None}, "doctorId"),
     ({"visitDate": "2026-09-30"}, "visitDate"),
+    ({"visitDate": "20261001"}, "visitDate"),
     ({"visitDate": "tomorrow"}, "visitDate"),
     ({"preferredTime": "9:30"}, "preferredTime"),
     ({"patientName": ""}, "patientName"),
@@ -126,7 +127,7 @@ async def test_create_input_is_validated_before_any_call(h, override, field):
 
 
 async def test_owner_validation_failure_is_a_typed_rejection(h):
-    h.ops_state.data["doctors"] = [d for d in h.ops_state.data["doctors"] if d["id"] != "doc_garima"]
+    h.ops_state.reject_next_create = [{"field": "doctorId", "issue": "unknown doctor"}]
     result = await run(h, **CREATE)
     assert result.outcome == "REJECTED" and result.fields == ["doctorId"] and result.nextStep == "ASK_TO_CORRECT"
     assert "fever" not in result.model_dump_json()
@@ -164,7 +165,7 @@ async def test_total_deadline_bounds_a_slow_write(make_settings):
     hh = harness.build(make_settings(read_deadline_seconds=0.3, write_deadline_seconds=0.4,
                                      summary_deadline_seconds=0.5, request_timeout_seconds=0.2))
     try:
-        hh.ops_state.delay_seconds = 2
+        hh.ops_state.delay_for_prefix["/appointments"] = 2  # only the write is slow; the board check is fast
         result = await run(hh, **CREATE)
         assert result.outcome == "UNCERTAIN"
     finally:
@@ -183,7 +184,7 @@ async def test_list_uses_the_trusted_number_only(h):
 
 @pytest.mark.parametrize("ctx_kwargs", [
     {"caller": None}, {"caller": "+449000000101"}, {"caller": "+919000000101", "verification": "NONE"},
-    {"caller": "9000000101"},
+    {"caller": "9000000101"}, {"caller": "+919000000101", "verification": None},  # bare number: unverified
 ])
 async def test_list_cancel_reschedule_need_an_authorised_number(h, ctx_kwargs):
     for args in ({"action": "LIST"}, {"action": "CANCEL", "appointmentId": "appt_0001", "callerConfirmed": True},
@@ -266,4 +267,94 @@ async def test_cancel_key_is_bound_to_the_appointment_and_operation(h):
     appointment_id = created.appointment.appointmentId
     await run(h, h.ctx(operation_id="op-2"), action="CANCEL", appointmentId=appointment_id, callerConfirmed=True)
     key = sent(h, "/cancel")[0].headers["idempotency-key"]
-    assert key == hashlib.sha256(f"demo-hospital|call-1|CANCEL|{appointment_id}|op-2".encode()).hexdigest()
+    assert key == hashlib.sha256(b"demo-hospital|call-1|CANCEL|op-2").hexdigest()
+
+
+async def test_a_dictated_number_never_reaches_a_lookup_or_change(h):
+    """Family/other-number access is refused in this release: the only number used for LIST/CANCEL/RESCHEDULE
+    is the verified caller's; a dictated patientMobile is contact data on CREATE and ignored elsewhere."""
+    await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "patientMobile": "9000000777"})  # booking for a relative
+    listed = await run(h, h.ctx(), action="LIST", patientMobile="9000000777")
+    assert listed.outcome == "NOT_FOUND"  # nothing under the caller's own verified number
+    cancel = await run(h, h.ctx(operation_id="op-2"), action="CANCEL", appointmentId="appt_0001",
+                       patientMobile="9000000777", callerConfirmed=True)
+    assert cancel.outcome == "NOT_FOUND"
+    for r in h.requests:
+        if "/appointments" in r.url.path and r.method == "GET":
+            assert r.url.params["mobile"] == "9000000101"
+        if r.url.path.endswith("/cancel"):
+            assert json.loads(r.content)["callerMobile"] == "9000000101"
+
+
+# ------------------------------------------------------------------ review fixes (1 Oct 2026)
+
+
+async def test_a_changed_target_under_the_same_operation_is_a_conflict_not_a_second_appointment(h):
+    await run(h, h.ctx(operation_id="op-1"), **CREATE)
+    changed = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "doctorId": "doc_arjun_menon"})
+    assert changed.outcome == "CONFLICT" and changed.detail == "IDEMPOTENCY_CONFLICT"
+    assert len(h.ops_state.appointments) == 1
+
+
+async def test_the_callers_reason_reaches_routing_before_a_create(h):
+    """Review fix: the trusted turn may be just 'yes'; the reason the caller gave earlier must be routed too."""
+    result = await run(h, h.ctx(operation_id="op-1", turn="yes"),
+                       **{**CREATE, "reasonVerbatim": "chest pain, my left arm is numb"})
+    assert result.outcome == "ROUTING_REQUIRED" and result.nextStep == "TRANSFER_EMERGENCY"
+    assert sent(h, "/appointments") == []
+    routed = h.knowledge_state.routed[-1]
+    assert routed["utterance"] == "yes" and routed["additionalText"] == ["chest pain, my left arm is numb"]
+
+
+async def test_a_cancel_or_reschedule_reason_is_routed_too_but_absence_costs_nothing(h):
+    created = await run(h, h.ctx(operation_id="op-1"), **CREATE)
+    before = len(h.knowledge_state.routed)
+    plain = await run(h, h.ctx(operation_id="op-2"), action="RESCHEDULE",
+                      appointmentId=created.appointment.appointmentId, newVisitDate="2026-10-03", callerConfirmed=True)
+    assert plain.outcome == "CHANGED" and len(h.knowledge_state.routed) == before  # no free text, no routing call
+    danger = await run(h, h.ctx(operation_id="op-3"), action="CANCEL", appointmentId=created.appointment.appointmentId,
+                       reasonVerbatim="chest pain, my left arm is numb", callerConfirmed=True)
+    assert danger.outcome == "ROUTING_REQUIRED" and sent(h, "/cancel") == []
+
+
+async def test_create_checks_the_board_server_side_and_refuses_an_unknown_date(h):
+    """Review fix: the callback-only rule must not depend on the model obeying nextStep."""
+    tomorrow = await run(h, **{**CREATE, "visitDate": "2026-10-02"})  # fixture board: tomorrow is UNKNOWN
+    assert tomorrow.outcome == "CALLBACK_REQUIRED" and tomorrow.nextStep == "ASK_CALLBACK_DETAILS"
+    assert tomorrow.callback.summaryOutcome == "CALLBACK_NOTED" and sent(h, "/appointments") == []
+    h.ops_state.set_board("2026-10-02", [{"doctorId": "doc_garima", "session": "Morning", "status": "NOT_CONFIRMED",
+                                          "expectedTime": "09:00", "updatedMinutesAgo": 5}])
+    noted = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "visitDate": "2026-10-02"})
+    assert noted.outcome == "NOTED"
+    boards = [r for r in h.requests if r.url.path.endswith("/availability")]
+    assert boards and boards[0].url.params["doctorId"] == "doc_garima" and boards[0].url.params["date"] == "2026-10-02"
+
+
+async def test_create_for_a_department_refuses_only_when_every_doctor_is_unknown(h):
+    ortho = await run(h, **{**CREATE, "doctorId": None, "departmentId": "dept_ortho"})  # Rohan: missing → UNKNOWN
+    assert ortho.outcome == "CALLBACK_REQUIRED" and sent(h, "/appointments") == []
+    cardio = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "doctorId": None, "departmentId": "dept_cardio"})
+    assert cardio.outcome == "NOTED"  # Anil IN, Ravi UNKNOWN: the department still has a confirmed doctor
+
+
+async def test_a_failed_board_read_blocks_the_create_honestly(h):
+    h.ops_state.fail_next.append(("/availability", 503, {}))
+    result = await run(h, **CREATE)
+    assert result.outcome == "COULD_NOT_RECORD" and result.detail == "BOARD_UNAVAILABLE"
+    assert sent(h, "/appointments") == []
+
+
+async def test_board_check_overlaps_the_routing_check(make_settings):
+    import time
+
+    hh = harness.build(make_settings(read_deadline_seconds=2.0, write_deadline_seconds=2.5,
+                                     request_timeout_seconds=1.5))
+    try:
+        hh.knowledge_state.delay_seconds = 0.3
+        hh.ops_state.delay_seconds = 0.3
+        started = time.monotonic()
+        result = await run(hh, hh.ctx(operation_id="op-1"), **CREATE)
+        elapsed = time.monotonic() - started
+        assert result.outcome == "NOTED" and elapsed < 0.95, elapsed  # routing ∥ board (0.3) + write (0.3) + token
+    finally:
+        await hh.aclose()
