@@ -257,8 +257,8 @@ async def test_no_retry_when_the_budget_is_spent(make_settings):
 
 
 @pytest.mark.parametrize("status,expected", [(502, ops_client.UncertainWrite), (504, ops_client.UncertainWrite),
-                                             (500, ops_client.Unavailable), (503, ops_client.Unavailable)])
-async def test_gateway_errors_after_a_write_was_sent_are_uncertain(make_settings, status, expected):
+                                             (500, ops_client.UncertainWrite), (503, ops_client.UncertainWrite)])
+async def test_server_errors_after_a_write_was_sent_are_uncertain(make_settings, status, expected):
     up = Upstream(responses=[httpx.Response(status, text="x")] * 2)
     async with client_for(make_settings(), up) as client:
         with pytest.raises(expected):
@@ -426,3 +426,88 @@ async def test_waiting_for_the_token_lock_is_bounded_by_the_callers_deadline(mak
     finally:
         client.tokens._lock.release()
         await client.aclose()
+
+
+# ------------------------------------------------------------------ re-review (clients)
+
+
+async def test_summary_writes_use_their_own_cap_not_the_in_call_share(make_settings):
+    """A slow-but-healthy owner (400 ms) must not make every call summary UNCERTAIN: the summary path runs
+    after the call with its own 8 s budget and per-exchange cap."""
+    import asyncio
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.4)
+        if request.url.path.endswith("/auth/token"):
+            return httpx.Response(200, json=TOKEN)
+        return httpx.Response(201, json={"id": "cs_1", "callId": "c", "startedAt": "2026-10-01T10:00:00+05:30",
+                                         "intent": "OTHER", "outcome": "ABANDONED",
+                                         "createdAt": "2026-10-01T10:03:00+05:30"})
+
+    class SlowTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            return await slow(request)
+
+    settings = make_settings()
+    assert settings.request_timeout_seconds == pytest.approx(0.30)
+    async with ops_client.OpsClient(settings, transport=SlowTransport()) as client:
+        deadline = Deadline(settings.summary_deadline_seconds, cap=settings.summary_deadline_seconds)
+        status, stored = await client.create_call_summary({"x": 1}, "k", deadline)
+    assert status == 201 and stored.id == "cs_1"
+
+
+async def test_background_token_refresh_has_its_own_timeout(make_settings):
+    import asyncio
+
+    class SlowToken(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            await asyncio.sleep(0.4)
+            return httpx.Response(200, json=TOKEN)
+
+    settings = make_settings()
+    assert settings.token_refresh_timeout_seconds >= 2.0
+    client = ops_client.OpsClient(settings, transport=SlowToken())
+    await client.start()  # warm-up must tolerate a 400 ms token endpoint even though the in-call cap is 0.30 s
+    assert client.tokens.usable
+    await client.aclose()
+
+
+async def test_a_usable_token_is_returned_without_waiting_for_a_refresh_in_progress(make_settings):
+    import asyncio
+    import time
+
+    up = Upstream(responses=[httpx.Response(200, json={"items": []})])
+    client = client_for(make_settings(), up)
+    client.tokens._token, client.tokens._expires_at = "still-valid", time.monotonic() + 30  # inside the margin
+    await client.tokens._lock.acquire()  # a refresh is running elsewhere
+    try:
+        result = await asyncio.wait_for(client.list_departments(Deadline(0.3)), timeout=1)
+        assert result.items == [] and up.api_requests()[0].headers["authorization"] == "Bearer still-valid"
+    finally:
+        client.tokens._lock.release()
+        await client.aclose()
+
+
+async def test_same_key_retry_happens_when_the_first_attempt_failed_instantly(make_settings):
+    """A stale keep-alive connection fails in a millisecond; with 0.30 s left the same-key retry must run."""
+    up = Upstream(responses=[httpx.RemoteProtocolError("stale connection"), httpx.Response(201, json=APPT)])
+    async with client_for(make_settings(), up) as client:
+        status, appt = await client.create_appointment({"x": 1}, "key", Deadline(0.30))
+    assert status == 201 and len(up.api_requests()) == 2
+    assert {r.headers["idempotency-key"] for r in up.api_requests()} == {"key"}
+
+
+@pytest.mark.parametrize("status", [500, 503])
+async def test_a_5xx_on_a_sent_write_is_uncertain_even_on_the_first_attempt(make_settings, status):
+    """The owner may have committed before failing; nothing in the contract says a 5xx means 'not stored'."""
+    up = Upstream(responses=[httpx.Response(status, json={"error": {"code": "INTERNAL", "message": "x"}})] * 2)
+    async with client_for(make_settings(), up) as client:
+        with pytest.raises(ops_client.UncertainWrite):
+            await client.create_appointment({"x": 1}, "key", dl(4.0))
+
+
+async def test_a_429_before_processing_stays_a_definite_unavailable(make_settings):
+    up = Upstream(responses=[httpx.Response(429, json={"error": {"code": "RATE_LIMITED", "message": "x"}})] * 2)
+    async with client_for(make_settings(), up) as client:
+        with pytest.raises(ops_client.Unavailable):
+            await client.create_appointment({"x": 1}, "key", dl(4.0))

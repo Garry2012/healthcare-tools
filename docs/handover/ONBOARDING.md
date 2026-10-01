@@ -13,7 +13,7 @@ its owner-service endpoints. Onboarding changes no code.
 3. **Verification policy.** Agree with Manoj and the voice platform which `X-Caller-Verification`
    assertions authorise appointment lookups/changes; set `ACCEPTED_CALLER_VERIFICATION` accordingly
    (default `SIP_CALLER_ID`).
-4. **Deploy and register.** `deploy/azure/deploy.sh rollouts/<id>` then `deploy/contextforge/register.py`
+4. **Deploy and register.** `deploy/azure/deploy.sh rollouts/<id> --profile live` then `deploy/contextforge/register.py`
    (`AZURE.md`, `CONTEXTFORGE.md`). The smoke must pass against the owners' designated test tenant
    before the hospital's own.
 5. **Voice platform.** The platform must forward the trusted headers and invoke `record_call_summary`

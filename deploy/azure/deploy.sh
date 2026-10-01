@@ -27,13 +27,18 @@ DRY="" PROFILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
-    --profile) PROFILE="${2:-}"; shift 2 ;;
+    --profile) [[ $# -ge 2 ]] || { echo "--profile needs a value: live or mock" >&2; exit 2; }; PROFILE="$2"; shift 2 ;;
     *) usage ;;
   esac
 done
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 [[ -n "$PROFILE" ]] || { echo "--profile <live|mock> is required (deploy/environments/)" >&2; exit 2; }
-eval "$("$ROOT/scripts/env.sh" "$PROFILE")"
+# The profile is the only source of the target: forget anything inherited from the shell first, and stop if the
+# profile cannot be loaded (eval alone would ignore env.sh's exit code and carry on with stale exports).
+unset OPS_BASE_URL OPS_E2E_MODE AZ_SUBSCRIPTION_ID AZ_RESOURCE_GROUP AZ_CONTAINERAPPS_ENV AZ_LOG_WORKSPACE AZ_ACR \
+  AZ_KEYVAULT AZ_IDENTITY AZ_MCP_APP
+PROFILE_EXPORTS="$("$ROOT/scripts/env.sh" "$PROFILE")" || { echo "profile $PROFILE not usable; stopping" >&2; exit 2; }
+eval "$PROFILE_EXPORTS"
 
 show() { printf '+ %s\n' "$*" | sed -E 's/(--admin-password |--value )[^ ]*/\1***/g' >&2; }
 run() { if [[ -n "$DRY" ]]; then show "$@"; else "$@"; fi; }
@@ -61,8 +66,8 @@ ROLLOUT_ENV=()
 while IFS= read -r line || [[ -n "$line" ]]; do ROLLOUT_ENV+=("$line"); done < <(read_env "$ROLLOUT/rollout.env")
 P="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^PROVIDER_ID=//p')"
 [[ -n "$P" ]] || { echo "rollout.env must set PROVIDER_ID" >&2; exit 2; }
-: "${OPS_BASE_URL:?the profile must set OPS_BASE_URL (Manoj's deployed API base, https://host/api/v1)}"
-: "${KNOWLEDGE_BASE_URL:?set KNOWLEDGE_BASE_URL (profile or environment) to Shobhit's deployed service base}"
+: "${OPS_BASE_URL:?the profile must set OPS_BASE_URL (the operational API base, https://host/api/v1)}"
+: "${KNOWLEDGE_BASE_URL:?set KNOWLEDGE_BASE_URL (profile or environment) to the knowledge service base}"
 : "${AZ_SUBSCRIPTION_ID:?the profile must name the subscription}"
 : "${AZ_RESOURCE_GROUP:?the profile must name the resource group; this script never defaults to rg-frontdesk-<provider>}"
 for url in "$OPS_BASE_URL" "$KNOWLEDGE_BASE_URL"; do
@@ -81,8 +86,10 @@ step "validate the adapter configuration offline (settings, pack, tool schema)"
 
 # --- the Azure target comes from the profile; the signed-in subscription must match -------------
 SUB="$(out az account show --query id -o tsv)"
-if [[ -z "$DRY" && "$SUB" != "$AZ_SUBSCRIPTION_ID" ]]; then
-  echo "signed-in subscription $SUB is not the profile's $AZ_SUBSCRIPTION_ID; run 'az account set' first" >&2; exit 2
+[[ -n "$DRY" && -n "${DEPLOY_DRY_SUBSCRIPTION:-}" ]] && SUB="$DEPLOY_DRY_SUBSCRIPTION"  # tests simulate the login
+if [[ ( -z "$DRY" || -n "${DEPLOY_DRY_SUBSCRIPTION:-}" ) && "$SUB" != "$AZ_SUBSCRIPTION_ID" ]]; then
+  echo "signed-in subscription $SUB is not the profile subscription $AZ_SUBSCRIPTION_ID; run az account set first" >&2
+  exit 2
 fi
 LOC="${AZ_LOCATION:-centralindia}"
 RG="$AZ_RESOURCE_GROUP"
@@ -95,26 +102,24 @@ ID_NAME="${AZ_IDENTITY:?profile must name the managed identity}"
 APP="${AZ_MCP_APP:-mcp-$P}"
 
 # --- 2. shared infrastructure (kept if present) and the image ------------------------------------
-step "infrastructure: $RG in $LOC (must already exist: shared group named by the profile)"
-exists az group show -n "$RG" || [[ -n "$DRY" ]] || { echo "resource group $RG not found; this script does not create groups" >&2; exit 2; }
-exists az monitor log-analytics workspace show -g "$RG" -n "$LAW" ||
-  run az monitor log-analytics workspace create -g "$RG" -n "$LAW" -l "$LOC" -o none
-if ! exists az containerapp env show -g "$RG" -n "$ENV_NAME"; then
-  LAW_ID="$(out az monitor log-analytics workspace show -g "$RG" -n "$LAW" --query customerId -o tsv)"
-  LAW_KEY="$(out az monitor log-analytics workspace get-shared-keys -g "$RG" -n "$LAW" --query primarySharedKey -o tsv)"
-  run az containerapp env create -g "$RG" -n "$ENV_NAME" -l "$LOC" \
-    --logs-workspace-id "$LAW_ID" --logs-workspace-key "$LAW_KEY" -o none
-fi
-exists az acr show -n "$ACR" || run az acr create -g "$RG" -n "$ACR" --sku Basic -o none
+step "shared infrastructure named by the profile must already exist (this script creates none of it)"
+require() {  # require DESCRIPTION az-show-command...: the shared resource must exist; dry runs only list the check
+  local what="$1"; shift
+  if [[ -n "$DRY" ]]; then show "$@"; return 0; fi
+  "$@" >/dev/null 2>&1 || { echo "$what not found; shared infrastructure is not created by this script" >&2; exit 2; }
+}
+require "resource group $RG" az group show -n "$RG"
+require "log workspace $LAW" az monitor log-analytics workspace show -g "$RG" -n "$LAW"
+require "container apps environment $ENV_NAME" az containerapp env show -g "$RG" -n "$ENV_NAME"
+require "registry $ACR" az acr show -n "$ACR"
 
 step "image frontdesk-mcp:$TAG (services/mcp only: no stubs, no fixtures)"
 run az acr build -r "$ACR" -t "frontdesk-mcp:$TAG" "$ROOT/services/mcp" -o none
 MCP_IMAGE="$ACR.azurecr.io/frontdesk-mcp:$TAG"
 
 # --- 3. Key Vault secrets and the identity that reads them ---------------------------------------
-step "secrets: $KV"
-exists az keyvault show -n "$KV" ||
-  run az keyvault create -g "$RG" -n "$KV" -l "$LOC" --enable-rbac-authorization true -o none
+step "secrets: $KV (shared vault named by the profile)"
+require "key vault $KV" az keyvault show -n "$KV"
 KV_ID="$(out az keyvault show -n "$KV" --query id -o tsv)"
 ME="$(out az ad signed-in-user show --query id -o tsv)"
 run az role assignment create --assignee "$ME" --role "Key Vault Secrets Officer" --scope "$KV_ID" -o none
@@ -153,7 +158,7 @@ secret ops-client-secret supplied OPS_CLIENT_SECRET >/dev/null
 secret knowledge-token supplied KNOWLEDGE_BEARER_TOKEN >/dev/null
 [[ "$MCP_TOKEN" != "$LIFECYCLE_TOKEN" ]] || { echo "gateway and lifecycle bearers must differ" >&2; exit 1; }
 
-exists az identity show -g "$RG" -n "$ID_NAME" || run az identity create -g "$RG" -n "$ID_NAME" -o none
+require "managed identity $ID_NAME" az identity show -g "$RG" -n "$ID_NAME"
 ID="$(out az identity show -g "$RG" -n "$ID_NAME" --query id -o tsv)"
 PRINCIPAL="$(out az identity show -g "$RG" -n "$ID_NAME" --query principalId -o tsv)"
 run az role assignment create --assignee-object-id "$PRINCIPAL" --assignee-principal-type ServicePrincipal \

@@ -38,9 +38,15 @@ class DeadlineExceeded(Exception):
 
 
 class Deadline:
-    def __init__(self, seconds: float, monotonic: Callable[[], float] = time.monotonic) -> None:
+    """One wall-clock budget for an invocation. `cap` is the ceiling for any single exchange; when None the
+    caller's default (the in-call per-exchange cap) applies. After-call work (summaries) and background work
+    (token refresh) pass their own cap so the in-call share never throttles them."""
+
+    def __init__(self, seconds: float, monotonic: Callable[[], float] = time.monotonic,
+                 cap: float | None = None) -> None:
         self._monotonic = monotonic
         self._end = monotonic() + seconds
+        self.cap = cap
 
     def remaining(self) -> float:
         return self._end - self._monotonic()
@@ -50,8 +56,9 @@ class Deadline:
         return self.remaining() <= 0
 
     def timeout(self, cap: float) -> float:
-        """Timeout for the next HTTP exchange: never more than the cap, never past the deadline."""
+        """Timeout for the next HTTP exchange: never more than the cap (the deadline's own cap wins when set),
+        never past the deadline."""
         left = self.remaining()
         if left <= 0:
             raise DeadlineExceeded
-        return min(left, cap)
+        return min(left, self.cap if self.cap is not None else cap)

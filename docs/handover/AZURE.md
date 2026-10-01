@@ -35,7 +35,7 @@ existing secret from the environment; replace them explicitly once Manoj registe
 | Image | `frontdesk-mcp:<git sha>` | Built from `services/mcp` only: no stubs, no fixtures, no dev dependencies |
 | Key Vault | named by the profile (`kv-fd-demo-hospi-0574c1`) | `mcp-token` and `mcp-lifecycle-token` generated once; `ops-client-id`, `ops-client-secret`, `knowledge-token` supplied by the owners (replace explicitly; see above) |
 | Managed identity | `id-frontdesk-<p>` | Key Vault Secrets User + AcrPull |
-| Container App | `mcp-<p>` | External ingress on 8100, 1–3 replicas, readiness `/ready` (local), liveness `/health` |
+| Container App | named by the profile (`mcp-demo-hospital-canary` until the voice platform cuts over) | External ingress on 8100, 1–3 replicas, readiness `/ready` (local), liveness `/health` |
 
 Settings come from `rollout.env` (tenant identity) plus the owner URLs; secrets are Key Vault
 references. `--replace-env-vars` on update, so a removed setting falls back to its default.
@@ -75,7 +75,7 @@ az containerapp logs show -g $RG -n mcp-$P --follow
 
 ## Upgrades and rollback
 
-Re-run `deploy/azure/deploy.sh <rollout>` for a new adapter version or a settings change. Pin
+Re-run `deploy/azure/deploy.sh <rollout> --profile live` for a new adapter version or a settings change. Pin
 together: image tag, `prompt.SCHEMA_VERSION`, the gateway registration (re-run `register.py` so the
 gateway rediscovers tools) and the owner contract revision. Rollback is
 `az containerapp revision activate` of the previous revision (or `deploy.sh` with `TAG=<previous>`)

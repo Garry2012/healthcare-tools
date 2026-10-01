@@ -49,16 +49,16 @@ the voice response budget.
 
 `get_doctor_availability` returns board sessions per doctor. When a doctor has several sessions that day,
 pass the chosen one as `session` on `manage_booking` CREATE (or a `preferredTime` inside its window); the
-adapter re-reads the live board for the visit date with the same scope and refuses an UNKNOWN session with the
-callback-only outcome, or returns `CLARIFICATION_NEEDED` / `ASK_WHICH_SESSION` (with the day's sessions) when
-the scope cannot be established and statuses are mixed.
+adapter re-reads the live board for the visit date with the same scope rule as availability and refuses an
+UNKNOWN (or missing) session with the callback-only outcome; a preferred time outside the chosen session's window
+is rejected. The same check runs for a RESCHEDULE on the new date.
 
 ## Latency budget the adapter enforces
 
 The adapter derives its read deadline from `VOICE_RESPONSE_BUDGET_SECONDS` (1.0) minus
-`RESERVED_STAGE_SECONDS` (0.65 for endpointing/STT, model tool choice, model answer, TTS start and headroom):
-0.35 s for the whole tool round trip including the gateway, 0.6 s for a confirmed write. A tool that cannot
-finish inside that returns COULD_NOT_CHECK / UNCERTAIN promptly rather than holding the turn. These are design
+`RESERVED_STAGE_SECONDS` (0.65 for endpointing/STT, model tool choice, model answer, TTS start and headroom) minus
+`GATEWAY_OVERHEAD_SECONDS` (0.05): 0.30 s for every in-call tool, reads and confirmed writes alike. A tool
+that cannot finish inside that returns COULD_NOT_CHECK / UNCERTAIN promptly rather than holding the turn. These are design
 allocations to validate on the real path; diagnostic overrides (`READ_DEADLINE_SECONDS`, …) are explicit.
 
 ## Conversation rules the agent follows

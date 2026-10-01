@@ -12,7 +12,9 @@ the adapter; they are not evidence about Manoj's or Shobhit's services.
 | `./scripts/test.sh` (= `make test`) | all of the above plus the source/wheel build and, with a Docker daemon, the production image (asserting it contains neither stubs nor dev dependencies) | ~1–2 min | uv (+ Docker) |
 | `eval "$(scripts/env.sh mock\|live)"; export OPS_E2E_CLIENT_ID=… OPS_E2E_CLIENT_SECRET=…; ./scripts/test.sh` | additionally the `external` gates: `tests/test_external.py` (owner API reads; the deterministic create→list→reschedule→cancel→summary journey and the negative UNKNOWN case only with `OPS_E2E_ALLOW_WRITES=1`, `OPS_E2E_WRITE_TENANT`, `OPS_E2E_DOCTOR_ID`, `OPS_E2E_UNKNOWN_DATE` on a designated synthetic live tenant; knowledge with `KNOWLEDGE_E2E_*`) and `tests/test_external_transport.py` (the deployed adapter over real MCP transport with `MCP_E2E_URL`, `MCP_E2E_BEARER`, `MCP_E2E_LIFECYCLE_BEARER`). A missing input fails the test with `BLOCKED: …`; nothing skips silently. Report which layer ran | — | owner test tenant and machine credentials; a deployed adapter |
 
-Expect `== all suites passed`. CI runs `./scripts/test.sh` on every pull request and on `main`.
+Expect `== all suites passed` for the local run. CI runs `./scripts/test.sh` on every pull request and on `main`.
+With a profile loaded the script also runs the `external` gates and exits non-zero whenever any gate is BLOCKED
+(by design: with the mock profile today the write, knowledge and deployed-transport gates are BLOCKED).
 
 The hermetic suites run at a fixed moment (Thursday 1 October 2026, 10:00 IST) through an injected
 clock, so a result never depends on when you run it.

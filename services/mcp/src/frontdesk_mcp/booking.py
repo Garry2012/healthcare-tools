@@ -22,8 +22,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import contract, identity, outcomes
+from . import board_scope, contract, identity, outcomes
 from . import knowledge_contract as kc
+from .cache import DirectoryCache
 from .clock import Clock, Deadline, local_now
 from .config import Settings
 from .context import CallContext
@@ -33,6 +34,7 @@ from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unava
 logger = logging.getLogger(__name__)
 
 Action = Literal["CREATE", "LIST", "CANCEL", "RESCHEDULE"]
+WEEKDAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 _ID = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 _ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -104,11 +106,25 @@ def _time(value: str | None, field: str, issues: list[str]) -> str | None:
 
 
 class BookingService:
-    def __init__(self, ops: OpsClient, knowledge: KnowledgeClient, settings: Settings, clock: Clock) -> None:
+    def __init__(self, ops: OpsClient, knowledge: KnowledgeClient, settings: Settings, clock: Clock,
+                 cache: DirectoryCache | None = None) -> None:
         self.ops = ops
         self.knowledge = knowledge
         self.settings = settings
         self.clock = clock
+        self.cache = cache or DirectoryCache(settings)
+
+    async def _profile(self, doctor_id: str, deadline: Deadline) -> contract.DoctorDetail | None:
+        """Cached profile for the session-scope rule; a failure here is not fatal (the board decides)."""
+        cached = self.cache.get(("doctor", doctor_id))
+        if cached is not None:
+            return cached
+        try:
+            detail = await self.ops.get_doctor(doctor_id, deadline)
+        except (Unavailable, Malformed, Rejected, InvalidIdentifier):
+            return None
+        self.cache.set(("doctor", doctor_id), detail)
+        return detail
 
     async def manage(self, ctx: CallContext, request: BookingRequest) -> outcomes.BookingResult:
         if request.action == "LIST":
@@ -230,12 +246,17 @@ class BookingService:
         date_param = "today" if visit_date == today.isoformat() else visit_date
         board_task = asyncio.create_task(self.ops.get_availability(
             deadline, date=date_param, doctor_id=request.doctorId, department=request.departmentId))
+        profile_task = (asyncio.create_task(self._profile(request.doctorId, deadline))
+                        if request.doctorId and request.session else None)
         blocked = await self._routing(ctx, deadline, [request.reasonVerbatim] if request.reasonVerbatim else None)
         if blocked:
-            board_task.cancel()
-            with contextlib.suppress(BaseException):
-                await board_task
+            for task in (board_task, profile_task):
+                if task is not None:
+                    task.cancel()
+                    with contextlib.suppress(BaseException):
+                        await task
             return blocked
+        profile = await profile_task if profile_task is not None else None
         try:
             board = await board_task
         except (Unavailable, Malformed) as exc:
@@ -245,7 +266,9 @@ class BookingService:
                                           detail=detail, retryAfterSeconds=retry)
         except Rejected as exc:
             return self._failure(exc, write=True)
-        if blocked := self._board_gate(board, request):
+        weekday = WEEKDAYS[date.fromisoformat(visit_date).weekday()]
+        usual = board_scope.usual_sessions_on(profile, weekday)
+        if blocked := self._board_gate(board, request.doctorId, request.session, preferred, usual):
             return blocked
         body: dict[str, Any] = {"patientName": request.patientName.strip(), "mobile": request.patientMobile}
         if request.doctorId:
@@ -266,52 +289,32 @@ class BookingService:
         return self._written(appointment, "SAY_REQUEST_NOTED")
 
     @staticmethod
-    def _board_gate(board: contract.AvailabilityBoard, request: BookingRequest) -> outcomes.BookingResult | None:
-        """Live-board check before a create, with the same session scope as get_doctor_availability.
-
-        Doctor target: the scope is the session the caller chose (`session`), else the session whose window holds
-        the preferred time, else the whole day. Any UNKNOWN or missing row in scope → callback only; a day with
-        mixed statuses and no resolvable scope → ask which session. Department target: every doctor UNKNOWN →
-        callback."""
+    def _board_gate(board: contract.AvailabilityBoard, doctor_id: str | None, session: str | None,
+                    preferred_time: str | None, usual_today: list[str]) -> outcomes.BookingResult | None:
+        """Live-board check before a write, with exactly the session scope get_doctor_availability uses
+        (board_scope.scope_board). Doctor target: an UNKNOWN or missing row in scope → callback only; a preferred
+        time outside the chosen session's window → invalid. Department target: the same scope per doctor; when no
+        doctor in scope is free of UNKNOWN → callback only."""
         callback = outcomes.BookingResult(outcome="CALLBACK_REQUIRED", nextStep="ASK_CALLBACK_DETAILS",
                                           callback=outcomes.Callback(), detail="BOARD_UNKNOWN")
-        if not request.doctorId:
-            by_doctor: dict[str, list[str]] = {}
-            for e in board.items:
-                by_doctor.setdefault(e.doctorId, []).append(e.status)
-            if not by_doctor or all("UNKNOWN" in statuses for statuses in by_doctor.values()):
-                return callback
-            return None
-        entries = [e for e in board.items if e.doctorId == request.doctorId]
-        if not entries:
-            return callback
-        scoped = entries
-        resolved = False
-        if request.session:
-            wanted = " ".join(request.session.casefold().split())
-            labelled = [e for e in entries if e.session and " ".join(e.session.casefold().split()) == wanted]
-            if labelled:
-                scoped = labelled + [e for e in entries if not e.session]  # unlabelled rows cannot be scoped away
-                resolved = True
-        elif request.preferredTime and len(entries) > 1:
-            holding = [e for e in entries if e.expectedTime and e.expectedEndTime
-                       and e.expectedTime <= request.preferredTime <= e.expectedEndTime]
-            if len(holding) == 1:
-                scoped = holding + [e for e in entries if not e.session]
-                resolved = True
-            else:
-                # no window holds the time: sessions whose windows are known cannot be meant; the rest stay in scope
-                unplaced = [e for e in entries if not (e.expectedTime and e.expectedEndTime)]
-                scoped, resolved = (unplaced, True) if unplaced else (entries, False)
-        statuses = {e.status for e in scoped}
-        if not resolved and len(scoped) > 1 and "UNKNOWN" in statuses and statuses != {"UNKNOWN"}:
-            return outcomes.BookingResult(
-                outcome="CLARIFICATION_NEEDED", nextStep="ASK_WHICH_SESSION", detail="SESSION_SCOPE_UNRESOLVED",
-                sessions=[outcomes.SessionStatus(session=e.session, status=e.status, expectedTime=e.expectedTime,
-                                                 expectedEndTime=e.expectedEndTime) for e in entries])
-        if "UNKNOWN" in statuses:
-            return callback
-        return None
+        if doctor_id:
+            entries = [e for e in board.items if e.doctorId == doctor_id]
+            scope = board_scope.scope_board(entries, session=session, preferred_time=preferred_time,
+                                            usual_today=usual_today)
+            if scope.time_outside_window:
+                return outcomes.BookingResult(outcome="INVALID_REQUEST", nextStep="ASK_TO_CORRECT",
+                                              fields=["preferredTime"], detail="TIME_OUTSIDE_SESSION")
+            return callback if scope.unknown else None
+        by_doctor: dict[str, list[contract.AvailabilityEntry]] = {}
+        for e in board.items:
+            by_doctor.setdefault(e.doctorId, []).append(e)
+        offered = False
+        for entries in by_doctor.values():
+            if not board_scope.in_scope_for_department(entries, session):
+                continue
+            if not board_scope.scope_board(entries, session=session, preferred_time=preferred_time).unknown:
+                offered = True
+        return None if offered else callback
 
     async def _change(self, ctx: CallContext, request: BookingRequest) -> outcomes.BookingResult:
         today = local_now(self.clock, self.settings.zone).date()
@@ -336,6 +339,9 @@ class BookingService:
         if request.reasonVerbatim:  # the caller's words for the change are routed too; no words, no hop
             if blocked := await self._routing(ctx, deadline, [request.reasonVerbatim]):
                 return blocked
+        if request.action == "RESCHEDULE":
+            if blocked := await self._reschedule_gate(mobile, request, new_date, new_time, today, deadline):
+                return blocked
         body: dict[str, Any] = {"callerMobile": mobile}
         if request.action == "CANCEL":
             if request.reasonVerbatim:
@@ -359,6 +365,38 @@ class BookingService:
                 return self._invalid(["appointmentId"])
             return self._failure(exc, write=True)
         return self._written(appointment, step)
+
+    async def _reschedule_gate(self, mobile: str, request: BookingRequest, new_date: str, new_time: str | None,
+                               today: date, deadline: Deadline) -> outcomes.BookingResult | None:
+        """A move lands on a date too: find the caller's appointment, then apply the same board rule to the new
+        date for its doctor (or department). An appointment the owner does not list for this caller is left to
+        the owner's neutral not-found."""
+        try:
+            listed = await self.ops.find_appointments(deadline, mobile=mobile)
+        except (Rejected, Malformed, Unavailable) as exc:
+            if isinstance(exc, Rejected):
+                return self._failure(exc, write=True)
+            retry = exc.retry_after if isinstance(exc, Unavailable) else None
+            return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",
+                                          detail="BOARD_UNAVAILABLE", retryAfterSeconds=retry)
+        current = next((a for a in listed.items if a.id == request.appointmentId), None)
+        if current is None or not (current.doctorId or current.department):
+            return None
+        date_param = "today" if new_date == today.isoformat() else new_date
+        try:
+            board = await self.ops.get_availability(deadline, date=date_param, doctor_id=current.doctorId,
+                                                    department=None if current.doctorId else current.department)
+        except (Rejected, Malformed, Unavailable) as exc:
+            if isinstance(exc, Rejected):
+                return self._failure(exc, write=True)
+            retry = exc.retry_after if isinstance(exc, Unavailable) else None
+            return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",
+                                          detail="BOARD_UNAVAILABLE", retryAfterSeconds=retry)
+        usual: list[str] = []
+        if current.doctorId and request.session:
+            profile = await self._profile(current.doctorId, deadline)
+            usual = board_scope.usual_sessions_on(profile, WEEKDAYS[date.fromisoformat(new_date).weekday()])
+        return self._board_gate(board, current.doctorId, request.session, new_time, usual)
 
     @staticmethod
     def _written(appointment: contract.Appointment, step: str) -> outcomes.BookingResult:

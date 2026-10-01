@@ -16,6 +16,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   [[ -z "${line// }" || "$line" == \#* ]] && continue
   key="${line%%=*}" value="${line#*=}"
   [[ "$key" == OPS_BASE_URL ]] && ops="$value"
+  [[ -z "$value" ]] && continue  # a blank profile value never overwrites what the shell already exported
   lines+=("$(printf 'export %s=%q' "$key" "$value")")
 done < "$file"
 if [[ -z "$ops" ]]; then

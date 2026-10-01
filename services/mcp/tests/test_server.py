@@ -122,6 +122,13 @@ async def test_the_whole_journey_over_http(served):
         answer = (await c.call_tool("search_knowledge", {"question": "parking", "language": "en"})).structured_content
         assert answer["outcome"] == "ANSWERED"
     async with client(base, operation_id="op-2") as c:
+        unknown_move = (await c.call_tool("manage_booking", {"action": "RESCHEDULE", "appointmentId": appointment_id,
+                                                             "newVisitDate": "2026-10-03", "callerConfirmed": True})
+                        ).structured_content
+        assert unknown_move["outcome"] == "CALLBACK_REQUIRED"  # the new date's board is UNKNOWN in the fixture
+        h.ops_state.set_board("2026-10-03", [{"doctorId": "doc_garima", "session": "Morning",
+                                              "status": "NOT_CONFIRMED", "expectedTime": "09:00",
+                                              "expectedEndTime": "12:00", "updatedMinutesAgo": 1}])
         moved = (await c.call_tool("manage_booking", {"action": "RESCHEDULE", "appointmentId": appointment_id,
                                                       "newVisitDate": "2026-10-03", "callerConfirmed": True})
                  ).structured_content

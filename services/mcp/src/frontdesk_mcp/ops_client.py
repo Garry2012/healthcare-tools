@@ -82,8 +82,11 @@ def _rejection(response: httpx.Response) -> Rejected:
     return Rejected(response.status_code, error.code, tuple(d.field for d in error.details if d.field))
 
 
-# A same-key retry needs at least this much budget left; less than that is an uncertain result, promptly.
-MIN_RETRY_BUDGET_SECONDS = 0.5
+# A same-key retry runs only when the remaining budget can plausibly fit it: at least MIN_RETRY_FLOOR and at
+# least RETRY_HEADROOM × the time the first attempt took (an instant failure such as a stale keep-alive gets its
+# retry; a slow one does not burn the rest of the turn).
+MIN_RETRY_FLOOR_SECONDS = 0.05
+RETRY_HEADROOM = 1.5
 # Timeouts/errors that happen before the request body could have reached the server.
 _NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.UnsupportedProtocol, httpx.ProxyError)
 
@@ -115,6 +118,8 @@ class TokenCache:
     async def get(self, deadline: Deadline) -> str:
         if self._fresh():
             return self._token  # type: ignore[return-value]
+        if self.usable and self._lock.locked():
+            return self._token  # type: ignore[return-value]  # a refresh is in flight; the current token still works
         try:
             async with asyncio.timeout(deadline.timeout(self._settings.request_timeout_seconds)):
                 await self._lock.acquire()  # single flight: concurrent cold callers wait for one exchange
@@ -141,7 +146,8 @@ class TokenCache:
             if self._fresh():
                 return
             try:
-                await self._refresh(Deadline(self._settings.request_timeout_seconds, self._monotonic))
+                budget = self._settings.token_refresh_timeout_seconds  # background work: not the in-call cap
+                await self._refresh(Deadline(budget, self._monotonic, cap=budget))
             except Unavailable as exc:
                 logger.warning("ops_token_refresh_deferred", extra={"fields": {"reason": exc.reason}})
 
@@ -268,6 +274,7 @@ class OpsClient:
         headers = {"Idempotency-Key": key}
         sent = False  # once an attempt may have reached the owner, no later failure is definite
         for attempt in (1, 2):
+            started = deadline.remaining()
             try:
                 token = await self.tokens.get(deadline)
                 response = await self._exchange("POST", path, deadline, json_body=body, headers=headers, token=token)
@@ -286,13 +293,13 @@ class OpsClient:
                 logger.warning("ops_unreachable", extra={"fields": {"path": path, "attempt": attempt}})
                 if sent:
                     raise UncertainWrite from exc
-                if attempt == 2 or deadline.remaining() < MIN_RETRY_BUDGET_SECONDS:
+                if attempt == 2 or not self._can_retry(deadline, started):
                     raise Unavailable("TRANSPORT") from exc
                 continue
             except httpx.RequestError as exc:  # timeouts, read/decoding errors: the request left
                 sent = True
                 logger.warning("ops_write_unanswered", extra={"fields": {"path": path, "attempt": attempt}})
-                if attempt == 2 or deadline.remaining() < MIN_RETRY_BUDGET_SECONDS:
+                if attempt == 2 or not self._can_retry(deadline, started):
                     raise UncertainWrite from exc
                 continue
             if response.status_code in (502, 504):
@@ -302,8 +309,19 @@ class OpsClient:
                 logger.warning("ops_write_retry_inconclusive", extra={"fields": {"path": path,
                                                                                  "status": response.status_code}})
                 raise UncertainWrite
+            if response.status_code >= 500:
+                # The owner answered with a server error after receiving the write: nothing in the contract says
+                # it did not commit first. Uncertain, never a definite failure.
+                logger.warning("ops_write_server_error",
+                               extra={"fields": {"path": path, "status": response.status_code}})
+                raise UncertainWrite
             return response.status_code, self._body(response, path)
         raise UncertainWrite  # unreachable: the loop always returns or raises
+
+    @staticmethod
+    def _can_retry(deadline: Deadline, remaining_at_start: float) -> bool:
+        elapsed = max(0.0, remaining_at_start - deadline.remaining())
+        return deadline.remaining() >= max(MIN_RETRY_FLOOR_SECONDS, RETRY_HEADROOM * elapsed)
 
     def _body(self, response: httpx.Response, path: str) -> Any:
         status = response.status_code

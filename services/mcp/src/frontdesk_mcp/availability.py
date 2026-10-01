@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import contract, outcomes
+from . import board_scope, contract, outcomes
 from . import knowledge_contract as kc
 from .cache import DirectoryCache
 from .clock import Clock, Deadline, local_now
@@ -188,6 +188,12 @@ class AvailabilityService:
         if request.doctorName:
             page = await self.ops.search_doctors(deadline, query=request.doctorName, gender=request.gender,
                                                  limit=self.settings.directory_page_size)
+            if len(page.items) == 1 and page.total <= 1:  # the doctor is known now: do not wait for routing
+                doctor_id = page.items[0].id
+                profile, board = await asyncio.gather(self.profile(doctor_id, deadline),
+                                                      self._board(deadline, date_param=date_param, doctor_id=doctor_id),
+                                                      return_exceptions=True)
+                return {"kind": "doctor", "doctor_id": doctor_id, "profile": profile, "board": board}
             return {"kind": "search", "page": page}
         departments = await self.departments(deadline)
         result: dict[str, Any] = {"kind": "departments", "departments": departments}
@@ -244,13 +250,6 @@ class AvailabilityService:
             if not page.items:
                 return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="ASK_TO_REPHRASE", **base,
                                                    routing=routing_out)
-            if len(page.items) == 1 and page.total <= 1:
-                doctor_id = page.items[0].id
-                profile, board = await asyncio.gather(self.profile(doctor_id, deadline),
-                                                      self._board(deadline, date_param=date_param, doctor_id=doctor_id),
-                                                      return_exceptions=True)
-                return self._doctor(doctor_id, profile, board, requested, today, now, request.session, base,
-                                    routing_out)
             choices = [outcomes.DoctorChoice(doctorId=d.id, name=d.name, departments=[r.name for r in d.departments],
                                              gender=d.gender) for d in page.items]
             return outcomes.AvailabilityResult(outcome="CLARIFICATION_NEEDED", nextStep="ASK_WHICH_DOCTOR", **base,
@@ -295,23 +294,22 @@ class AvailabilityService:
                 detail, profile = "PROFILE_UNAVAILABLE", None
             else:
                 raise profile
-        if profile is None and not board.items:
-            return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="ASK_TO_REPHRASE", **base,
-                                               routing=routing_out)
         entries = [e for e in board.items if e.doctorId == doctor_id]
-        matched = None
-        if session:
-            labelled = [e for e in entries if e.session and _normalised(e.session) == _normalised(session)]
-            matched = bool(labelled)
-            if labelled:
-                # Rows without a label (the owner's UNKNOWN/missing shape) cannot be scoped away: they stay in scope
-                # next to the matched session. An unmatched session keeps the whole board: the caller may mean any.
-                entries = labelled + [e for e in entries if not e.session]
-        if not entries and detail is None:
+        if profile is None and not entries:
+            # The profile read failed and the owner returned no row: nothing is known. A failed read is never a
+            # definite "no such doctor".
+            return outcomes.AvailabilityResult(outcome="COULD_NOT_CHECK", nextStep="SAY_COULD_NOT_CHECK", **base,
+                                               detail="PROFILE_UNAVAILABLE", routing=routing_out)
+        weekday = WEEKDAYS[requested.weekday()]
+        scope = board_scope.scope_board(entries, session=session,
+                                        usual_today=board_scope.usual_sessions_on(profile, weekday))
+        if scope.missing_session:
+            detail = "SESSION_ROW_MISSING"  # the contract promises a row per session; its absence is UNKNOWN
+        elif not entries and detail is None:
             detail = "BOARD_ENTRY_MISSING"  # the owner returned no row: that is UNKNOWN, never bookable hours
         name = profile.name if profile else (entries[0].doctorName if entries else doctor_id)
-        doctor = self._overlay(profile, name, doctor_id, entries, requested, today, now)
-        return self._finish([doctor], base, routing_out, session_matched=matched, detail=detail,
+        doctor = self._overlay(profile, name, doctor_id, scope, requested, today, now)
+        return self._finish([doctor], base, routing_out, session_matched=scope.matched, detail=detail,
                             default_step="OFFER_APPOINTMENT_REQUEST")
 
     def _department(self, department, page, board, requested, today, now, session, base, routing_out):
@@ -322,14 +320,10 @@ class AvailabilityService:
         doctors = []
         for summary in page.items:
             entries = [e for e in board.items if e.doctorId == summary.id]
-            if session:
-                # A labelled row for another session is evidence the doctor is not in this session. A row
-                # without a label (the owner's UNKNOWN/missing shape) cannot be scoped away: it stays in scope.
-                scoped = [e for e in entries if not e.session or _normalised(e.session) == _normalised(session)]
-                if not scoped and entries:
-                    continue  # only other sessions: not UNKNOWN, simply not in scope
-                entries = scoped
-            doctors.append(self._overlay(None, summary.name, summary.id, entries, requested, today, now,
+            if not board_scope.in_scope_for_department(entries, session):
+                continue  # only rows for other sessions: not UNKNOWN, simply not in this session
+            scope = board_scope.scope_board(entries, session=session)
+            doctors.append(self._overlay(None, summary.name, summary.id, scope, requested, today, now,
                                          summary=summary))
         dept_out = _choice(department)
         if not doctors:
@@ -340,8 +334,9 @@ class AvailabilityService:
                             complete=page.total <= len(page.items), total=page.total,
                             session_matched=bool(session) or None)
 
-    def _overlay(self, profile, name, doctor_id, entries, requested, today, now,
+    def _overlay(self, profile, name, doctor_id, scope: board_scope.Scope, requested, today, now,
                  summary=None) -> outcomes.DoctorAvailability:
+        entries = scope.entries
         source = profile or summary
         weekday = WEEKDAYS[requested.weekday()]
         usual = None
@@ -352,10 +347,10 @@ class AvailabilityService:
             session=e.session, status=e.status, expectedTime=e.expectedTime, expectedEndTime=e.expectedEndTime,
             delayMinutes=e.delayMinutes, note=e.note, isStale=e.isStale,
             expired=self._expired(e, requested, today, now)) for e in entries]
-        unknown = [e.session or "" for e in entries if e.status == "UNKNOWN"]
+        unknown = scope.unknown_sessions
         attendance = source.attendanceType if source else "REGULAR"
-        if not entries or unknown:
-            journey = "CALLBACK_ONLY"  # any UNKNOWN session in scope, or no row at all, stops the journey
+        if scope.unknown:
+            journey = "CALLBACK_ONLY"  # any UNKNOWN row in scope, a missing promised row, or no row at all
         elif attendance == "ON_CALL" and not any(e.status in ("IN", "LATE") for e in entries):
             journey = "DESK"
         else:

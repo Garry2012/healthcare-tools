@@ -150,3 +150,29 @@ def test_every_in_call_tool_deadline_fits_the_voice_budget_including_the_gateway
     with pytest.raises(ValueError, match="budget"):
         make_settings(write_deadline_seconds=0.9)  # an in-call override cannot exceed the tool's share
     assert make_settings(write_deadline_seconds=0.9, allow_budget_overrides=True).write_deadline_seconds == 0.9
+
+
+# ------------------------------------------------------------------ re-review (config)
+
+
+def test_budget_override_flag_is_parsed_as_a_boolean_from_the_environment(monkeypatch):
+    from .conftest import ENDPOINTS, ROLLOUT
+
+    for key in ("READ_DEADLINE_SECONDS", "WRITE_DEADLINE_SECONDS", "ALLOW_BUDGET_OVERRIDES"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("READ_DEADLINE_SECONDS", "2")
+    monkeypatch.setenv("WRITE_DEADLINE_SECONDS", "2")
+    for falsy in ("false", "0", "no", "False"):
+        monkeypatch.setenv("ALLOW_BUDGET_OVERRIDES", falsy)
+        with pytest.raises(ValueError, match="budget"):
+            Settings(**ROLLOUT, **ENDPOINTS, env="test")
+    monkeypatch.setenv("ALLOW_BUDGET_OVERRIDES", "true")
+    assert Settings(**ROLLOUT, **ENDPOINTS, env="test").read_deadline_seconds == 2.0
+
+
+def test_lifecycle_and_gateway_bearers_must_differ_outside_development(make_settings):
+    with pytest.raises(ValueError, match="MCP_LIFECYCLE_BEARER_TOKEN"):
+        make_settings(env="staging", mcp_bearer_token="same", mcp_lifecycle_bearer_token="same")
+    with pytest.raises(ValueError, match="MCP_LIFECYCLE_BEARER_TOKEN"):
+        make_settings(env="test", mcp_bearer_token="same", mcp_lifecycle_bearer_token="same")
+    assert make_settings(env="development", mcp_bearer_token="", mcp_lifecycle_bearer_token="").env == "development"

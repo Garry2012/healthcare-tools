@@ -21,14 +21,20 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOST: 0.0.0.0
       PORT: "8100"
-      OPS_BASE_URL: ${OPS_BASE_URL:-http://ops-stub:8200/api/v1}
+      # COMPOSE_* so an OPS_BASE_URL exported by `scripts/env.sh` never silently repoints the dev stack
+      OPS_BASE_URL: ${COMPOSE_OPS_BASE_URL:-http://ops-stub:8200/api/v1}
       OPS_CLIENT_ID: ${OPS_CLIENT_ID}
       OPS_CLIENT_SECRET: ${OPS_CLIENT_SECRET}
-      KNOWLEDGE_BASE_URL: ${KNOWLEDGE_BASE_URL:-http://knowledge-stub:8300}
+      KNOWLEDGE_BASE_URL: ${COMPOSE_KNOWLEDGE_BASE_URL:-http://knowledge-stub:8300}
       KNOWLEDGE_BEARER_TOKEN: ${KNOWLEDGE_BEARER_TOKEN}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
       MCP_LIFECYCLE_BEARER_TOKEN: ${MCP_LIFECYCLE_BEARER_TOKEN}
       MCP_DEV_CALLER_NUMBER: ${MCP_DEV_CALLER_NUMBER:-}
+      VOICE_RESPONSE_BUDGET_SECONDS: ${VOICE_RESPONSE_BUDGET_SECONDS:-1.0}
+      RESERVED_STAGE_SECONDS: ${RESERVED_STAGE_SECONDS:-0.65}
+      GATEWAY_OVERHEAD_SECONDS: ${GATEWAY_OVERHEAD_SECONDS:-0.05}
+      ALLOW_BUDGET_OVERRIDES: ${ALLOW_BUDGET_OVERRIDES:-false}
+      ACCEPTED_CALLER_VERIFICATION: ${ACCEPTED_CALLER_VERIFICATION:-SIP_CALLER_ID}
     ports: ["127.0.0.1:${MCP_HOST_PORT:-8100}:8100"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=2).status == 200 else 1)"]

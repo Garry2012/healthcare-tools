@@ -136,7 +136,8 @@ class SummaryService:
             return outcomes.SummaryResult(outcome="INVALID_REQUEST", nextStep="FIX_PLATFORM_INPUT", fields=fields)
         body = self.build_body(ctx, request)
         key = summary_key(self.settings.provider_id, ctx.call_id)
-        deadline = Deadline(self.settings.summary_deadline_seconds)
+        # After the call: its own budget and per-exchange cap, never the in-call share.
+        deadline = Deadline(self.settings.summary_deadline_seconds, cap=self.settings.summary_deadline_seconds)
         try:
             status, stored = await self.ops.create_call_summary(body, key, deadline)
         except Rejected as exc:
@@ -156,5 +157,15 @@ class SummaryService:
             step = "RECORD_FAILED" if exc.reason == "AUTH" else "RETRY_SAME_PAYLOAD"
             return outcomes.SummaryResult(outcome="COULD_NOT_RECORD", nextStep=step, detail=exc.reason,
                                           retryAfterSeconds=exc.retry_after)
-        return outcomes.SummaryResult(outcome="STORED" if status == 201 else "REPLAYED", nextStep="DONE",
-                                      summaryId=stored.id)
+        if status == 201:
+            return outcomes.SummaryResult(outcome="STORED", nextStep="DONE", summaryId=stored.id)
+        # 200: the owner returned the summary that already exists under this callId, unchanged. Only when it is
+        # ours (same intent and outcome, same callback number when we sent one) is it a replay of our write.
+        extra = stored.model_extra or {}
+        mine = (stored.intent == request.intent and stored.outcome == request.outcome
+                and (not request.callerMobile or extra.get("callerMobile") == request.callerMobile))
+        if not mine:
+            logger.warning("summary_call_id_already_used", extra={"fields": {"stored_outcome": stored.outcome}})
+            return outcomes.SummaryResult(outcome="CONFLICT", nextStep="FIX_PLATFORM_INPUT",
+                                          detail="CALL_ID_ALREADY_USED")
+        return outcomes.SummaryResult(outcome="REPLAYED", nextStep="DONE", summaryId=stored.id)

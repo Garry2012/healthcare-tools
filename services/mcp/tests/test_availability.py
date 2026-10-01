@@ -418,3 +418,41 @@ async def test_doctor_session_query_keeps_an_unlabelled_unknown_row_next_to_a_ma
     assert result.callback.summaryOutcome == "CALLBACK_NOTED"
     department = await ask(h, departmentName="General Medicine", session="Morning")
     assert department.outcome == "CALLBACK_REQUIRED"
+
+
+# ------------------------------------------------------------------ re-review (scope / profile failure)
+
+
+async def test_a_missing_row_for_a_usual_session_today_is_unknown(h):
+    h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "session": "Afternoon", "status": "IN",
+                                          "expectedTime": "15:00", "expectedEndTime": "17:00", "updatedMinutesAgo": 1}])
+    result = await ask(h, doctorId="doc_garima", session="Morning")
+    assert result.outcome == "CALLBACK_REQUIRED" and result.detail == "SESSION_ROW_MISSING"
+    afternoon = await ask(h, doctorId="doc_garima", session="Afternoon")
+    assert afternoon.outcome == "AVAILABILITY"
+    saturday = await ask(h, doctorId="doc_garima", date="2026-10-03", session="Morning")  # not a usual Saturday session
+    assert saturday.outcome == "CALLBACK_REQUIRED"  # the whole future board is UNKNOWN anyway in the fixture
+
+
+async def test_profile_failure_with_no_board_row_is_could_not_check_not_not_found(h):
+    h.ops_state.omit_missing_entries = True
+    h.ops_state.set_board("2026-10-01", [])
+    h.ops_state.fail_next.append(("/doctors/doc_garima", 503, {}))
+    result = await ask(h, doctorId="doc_garima")
+    assert result.outcome == "COULD_NOT_CHECK" and result.detail == "PROFILE_UNAVAILABLE"
+
+
+async def test_single_match_search_starts_profile_and_board_before_routing_finishes(make_settings):
+    import time
+
+    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
+                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
+    try:
+        hh.knowledge_state.delay_seconds = 0.4
+        hh.ops_state.delay_seconds = 0.2  # search 0.2 then profile ∥ board 0.2 = 0.4, overlapping routing 0.4
+        started = time.monotonic()
+        result = await ask(hh, doctorName="garima")
+        elapsed = time.monotonic() - started
+        assert result.outcome == "AVAILABILITY" and elapsed < 0.55, elapsed  # serial after routing would be ≥ 0.6
+    finally:
+        await hh.aclose()

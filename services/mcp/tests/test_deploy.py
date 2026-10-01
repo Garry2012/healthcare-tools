@@ -203,17 +203,29 @@ def test_deployment_targets_only_the_profiles_resource_group_and_never_creates_o
     assert out.returncode == 0, out.stderr[-1500:]
     assert "rg-frontdesk-demo-hospital" not in out.stderr and "az group create" not in out.stderr
     assert "-g healthcare-rg" in out.stderr
+    for created in ("az acr create", "az keyvault create", "az identity create", "az containerapp env create",
+                    "log-analytics workspace create"):
+        assert created not in out.stderr, created  # shared infrastructure is required, never created
+    inherited = _dry_run(tmp_path, OPS_BASE_URL="https://stale.example/api/v1", AZ_RESOURCE_GROUP="rg-stale")
+    assert "stale" not in inherited.stderr  # the profile replaces inherited values
+    mismatch = _dry_run(tmp_path, DEPLOY_DRY_SUBSCRIPTION="00000000-0000-0000-0000-000000000000")
+    assert mismatch.returncode != 0 and "subscription" in mismatch.stderr
     without_profile = subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"),
                                       "--dry-run"], capture_output=True, text=True, check=False, cwd=DEPLOY.parent)
     assert without_profile.returncode != 0 and "--profile" in without_profile.stderr
 
 
 def test_the_live_profile_is_refused_while_its_base_url_is_blank_and_mock_cannot_deploy(tmp_path):
+    import os
     import subprocess
 
     env_sh = DEPLOY.parent / "scripts/env.sh"
     live = subprocess.run([str(env_sh), "live"], capture_output=True, text=True, check=False)
     assert live.returncode == 3 and live.stdout == "" and "awaiting" in live.stderr
+    aborted = subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"),
+                              "--profile", "live", "--dry-run"], capture_output=True, text=True, check=False,
+                             cwd=DEPLOY.parent, env={**os.environ, "OPS_BASE_URL": "https://inherited.example/api/v1"})
+    assert aborted.returncode != 0 and "az containerapp" not in aborted.stderr  # eval must not swallow the refusal
     mock = subprocess.run([str(env_sh), "mock"], capture_output=True, text=True, check=False)
     assert mock.returncode == 0 and "healthcare-contract-mock" in mock.stdout and "OPS_E2E_MODE=mock" in mock.stdout
     assert "AZ_RESOURCE_GROUP=healthcare-rg" in mock.stdout and "4e1c081a-9a6a-4e16-9da2-90217c22378b" in mock.stdout

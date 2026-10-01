@@ -15,6 +15,7 @@ Layers and their variables (set what you are testing; the report must name the l
 
 from __future__ import annotations
 
+import contextlib
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -68,10 +69,8 @@ async def ops(settings):
     # Cold-start warm-up (not a gate, not counted): the public mock and a scaled-to-zero backend can take >5 s on
     # the first request; the gates below then run against a warm service with their normal caps.
     async with httpx.AsyncClient(timeout=30) as http:
-        try:
+        with contextlib.suppress(httpx.HTTPError):  # the gates below decide; this only wakes the service
             await http.get(f"{settings.ops_base_url}/departments")
-        except httpx.HTTPError:
-            pass
     client = OpsClient(settings)
     await client.start()
     yield client
@@ -116,13 +115,13 @@ async def test_availability_tool_end_to_end_against_the_service(settings):
                                    settings)
         department = os.environ.get("OPS_E2E_DEPARTMENT", "General Medicine")
         result = await service.get(ctx, availability.AvailabilityRequest(date="today", departmentName=department))
-        if os.environ.get("KNOWLEDGE_E2E_BASE_URL"):
-            assert result.outcome in ("AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND"), result
-        else:
-            assert result.outcome == "ROUTING_UNAVAILABLE" and result.detail == "ROUTING_UNAVAILABLE", result
-        if which == "mock":
-            # the Prism mock lists one department ("Orthopaedics") regardless of the query
-            assert result.facilityToday
+        if not os.environ.get("KNOWLEDGE_E2E_BASE_URL"):
+            # Without a knowledge host the tool must refuse (no clearance). That is the safe behaviour, but it
+            # verifies nothing about the operational API, so this gate is BLOCKED, not passed.
+            assert result.outcome == "ROUTING_UNAVAILABLE", result
+            pytest.fail("BLOCKED: KNOWLEDGE_E2E_BASE_URL is not set; the availability tool cannot be verified "
+                        f"end to end against the {which} operational service without a routing decision")
+        assert result.outcome in ("AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND"), result
     finally:
         await ops.aclose()
         await kb.aclose()
@@ -195,13 +194,14 @@ async def test_negative_unknown_date_is_callback_only_and_writes_nothing(setting
         call_id = f"ext-{uuid.uuid4().hex[:8]}"
         ctx = context.from_headers(harness.headers(call_id=call_id, operation_id=f"{call_id}-create",
                                                    turn="appointment please"), settings)
+        window = booking.BookingRequest(action="LIST", fromDate=unknown_date, toDate=unknown_date)
+        before = gates.assert_list_succeeded(await svc.manage(ctx, window))  # the baseline itself must succeed
         result = await svc.manage(ctx, booking.BookingRequest(
             action="CREATE", patientName="Synthetic Test Patient", patientMobile=harness.CALLER[3:],
             doctorId=doctor_id, visitDate=unknown_date, callerConfirmed=True))
         assert result.outcome == "CALLBACK_REQUIRED", result
-        listed = await svc.manage(ctx, booking.BookingRequest(action="LIST", fromDate=unknown_date,
-                                                              toDate=unknown_date))
-        assert all(a.visitDate != unknown_date or a.doctorId != doctor_id for a in listed.appointments)
+        after = gates.assert_list_succeeded(await svc.manage(ctx, window))
+        gates.assert_no_new_appointment(before, after, doctor_id, unknown_date)
     finally:
         await ops.aclose()
         await kb.aclose()

@@ -133,10 +133,13 @@ async def test_a_completed_outcome_survives_an_abrupt_hang_up(h):
 
 
 async def test_failed_persistence_is_not_a_saved_callback(h):
-    h.ops_state.fail_next.append(("/call-summaries", 503, {"Retry-After": "30"}))
+    h.ops_state.fail_next.append(("/call-summaries", 429, {"Retry-After": "30"}))  # refused before processing
     result = await record(h, **CALLBACK)
     assert result.outcome == "COULD_NOT_RECORD" and result.retryAfterSeconds == 30 and result.summaryId is None
     assert len(h.ops_state.summaries) == 0
+    h.ops_state.fail_next.append(("/call-summaries", 503, {}))  # failed after receiving it: may be stored
+    uncertain = await record(h, **CALLBACK)
+    assert uncertain.outcome == "UNCERTAIN" and uncertain.nextStep == "RETRY_SAME_PAYLOAD"
 
 
 async def test_lost_response_is_uncertain_and_the_platform_retry_replays(h):
@@ -234,7 +237,7 @@ async def test_callback_essentials_survive_truncation_as_structured_prefix(h):
 
 
 async def test_transient_summary_failures_tell_the_platform_to_retry(h):
-    h.ops_state.fail_next.append(("/call-summaries", 503, {"Retry-After": "30"}))
+    h.ops_state.fail_next.append(("/call-summaries", 429, {"Retry-After": "30"}))
     result = await record(h, **CALLBACK)
     assert result.outcome == "COULD_NOT_RECORD" and result.nextStep == "RETRY_SAME_PAYLOAD"
     assert result.retryAfterSeconds == 30
@@ -259,3 +262,24 @@ async def test_transferred_to_is_free_text_up_to_64_characters(h):
     blank = await record(h, h.ctx(**{**LIFECYCLE, "call_id": "call-2"}), intent="INSURANCE", outcome="TRANSFERRED",
                          transferredTo="   ", summaryText="Cashless query.")
     assert blank.outcome == "INVALID_REQUEST" and "transferredTo" in blank.fields
+
+
+# ------------------------------------------------------------------ re-review (summary)
+
+
+async def test_a_200_for_a_different_summary_under_the_same_call_id_is_a_conflict_not_done(h):
+    """The owner returns the EXISTING summary unchanged on 200; if it is not ours, the callback was not saved."""
+    other = {**CALLBACK, "outcome": "RESOLVED_BY_AGENT", "intent": "GENERAL_INFO", "summaryText": "FAQ only."}
+    del other["callerMobile"], other["callerName"]
+    first = await record(h, **other)
+    assert first.outcome == "STORED"
+    result = await record(h, **CALLBACK)  # same call id, different summary
+    assert result.outcome == "CONFLICT" and result.nextStep == "FIX_PLATFORM_INPUT"
+    assert result.detail == "CALL_ID_ALREADY_USED" and result.summaryId is None
+
+
+async def test_a_slow_but_healthy_owner_still_stores_the_summary(h):
+    h.ops_state.delay_for_prefix["/call-summaries"] = 0.4  # above the 0.30 s in-call cap; summaries run after the call
+    assert h.settings.request_timeout_seconds == pytest.approx(0.30)
+    result = await record(h, **CALLBACK)
+    assert result.outcome == "STORED"

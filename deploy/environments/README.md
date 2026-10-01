@@ -18,9 +18,13 @@ the git-ignored `.env` or the shell.
 | `live` | **blank until Manoj supplies the full live base URL** (expected with `/api/v1`) | registered machine client (Key Vault `ops-client-id` / `ops-client-secret`) | real-service verification and deployment; status: **awaiting live integration** |
 
 Both profiles identify the Azure target explicitly: subscription `4e1c081a-9a6a-4e16-9da2-90217c22378b`
-and resource group `healthcare-rg`. `deploy/azure/deploy.sh` now requires a profile and refuses to run
-when the signed-in subscription differs or when no resource group is named (it no longer defaults to
-`rg-frontdesk-<provider>`).
+and resource group `healthcare-rg`. `deploy/azure/deploy.sh` requires a profile, forgets any inherited
+`OPS_BASE_URL`/`AZ_*` first, stops if the profile cannot be loaded, refuses a different signed-in
+subscription, never creates or defaults a resource group, and never creates the shared environment,
+registry, vault, log workspace or identity (they must exist). A blank profile value never overwrites a
+value exported in the shell (so `KNOWLEDGE_BASE_URL` can come from the environment until Shobhit's host
+is in the profile). The live profile targets a **canary** app (`mcp-demo-hospital-canary`), because the
+voice platform still calls `mcp-demo-hospital` with the legacy integration.
 
 ## Replacing the dummy ops credentials with accepted ones
 

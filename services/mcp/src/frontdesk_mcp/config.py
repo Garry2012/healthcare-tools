@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     allow_budget_overrides: bool = False
     token_refresh_margin_seconds: int = Field(default=60, ge=0, le=3600)
     token_refresh_check_seconds: float = Field(default=15.0, gt=0, le=3600)  # background refresher cadence
+    token_refresh_timeout_seconds: float = Field(default=5.0, gt=0, le=60)  # background/start-up refresh: not in-call
     directory_cache_seconds: int = Field(default=300, ge=0, le=86400)
     directory_page_size: int = Field(default=25, ge=1, le=100)  # bounded search/department fan-out
     directory_cache_max_entries: int = Field(default=512, ge=1, le=100_000)
@@ -145,12 +146,21 @@ class Settings(BaseSettings):
         for name in ("read_deadline_seconds", "write_deadline_seconds"):
             if data.get(name) is None:
                 data[name] = tool_share
-            elif float(data[name]) > tool_share + 1e-9 and not data.get("allow_budget_overrides"):
-                raise ValueError(f"{name.upper()}={data[name]} exceeds the in-call tool budget of {tool_share} s "
-                                 "(set ALLOW_BUDGET_OVERRIDES=true only for diagnostics)")
         if data.get("request_timeout_seconds") is None:
             data["request_timeout_seconds"] = data["read_deadline_seconds"]
         return data
+
+    @model_validator(mode="after")
+    def _guard_budget_overrides(self) -> Settings:
+        """After validation the flag is a real bool (an environment string "false" is false, not truthy)."""
+        tool_share = round(self.voice_response_budget_seconds - self.reserved_stage_seconds
+                           - self.gateway_overhead_seconds, 3)
+        for name in ("read_deadline_seconds", "write_deadline_seconds"):
+            value = getattr(self, name)
+            if value > tool_share + 1e-9 and not self.allow_budget_overrides:
+                raise ValueError(f"{name.upper()}={value} exceeds the in-call tool budget of {tool_share} s "
+                                 "(set ALLOW_BUDGET_OVERRIDES=true only for diagnostics)")
+        return self
 
     @model_validator(mode="after")
     def _deadlines_nest(self) -> Settings:
@@ -164,6 +174,11 @@ class Settings(BaseSettings):
         if self.env != "development":
             if self.mcp_dev_caller_number:
                 raise ValueError("MCP_DEV_CALLER_NUMBER is allowed only when ENV=development")
+            gateway = self.mcp_bearer_token.get_secret_value()
+            lifecycle = self.mcp_lifecycle_bearer_token.get_secret_value()
+            if lifecycle and lifecycle == gateway:
+                raise ValueError("MCP_LIFECYCLE_BEARER_TOKEN must differ from MCP_BEARER_TOKEN (the lifecycle split is "
+                                 "decided by the bearer)")
             if not (self.ops_client_id and self.ops_client_secret.get_secret_value()):
                 raise ValueError("OPS_CLIENT_ID and OPS_CLIENT_SECRET are required outside development")
             if not self.knowledge_base_url:

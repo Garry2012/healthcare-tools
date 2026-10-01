@@ -55,7 +55,7 @@ class Services:
         cache = DirectoryCache(settings, monotonic)
         return cls(settings, clock, ops, kb, cache,
                    availability.AvailabilityService(ops, kb, cache, settings, clock),
-                   booking.BookingService(ops, kb, settings, clock),
+                   booking.BookingService(ops, kb, settings, clock, cache),
                    knowledge.KnowledgeService(kb, settings),
                    summary.SummaryService(ops, settings))
 
