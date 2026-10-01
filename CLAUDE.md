@@ -1,5 +1,12 @@
 # Front-desk platform (voice agent tools)
 
+> **MCP-only migration handover (1 October 2026):** Read
+> [docs/handover/mcp-only/README.md](docs/handover/mcp-only/README.md) first.
+> The revised plan assigns operational APIs to Manoj and knowledge/routing to Shobhit.
+> Migration is **not implemented**: the code and setup below still describe the legacy
+> three-tool MCP + REST API + PostgreSQL stack. For migration work, the new plan takes
+> precedence over conflicting legacy architecture/rules; do not move backend engines into MCP.
+
 Reusable front-desk API + MCP tools for a LiveKit voice agent; healthcare first, hospitality next.
 Architecture and decisions: `docs/architecture/TARGET.md`. Contract: `docs/frontdesk-api/openapi.yaml`.
 
