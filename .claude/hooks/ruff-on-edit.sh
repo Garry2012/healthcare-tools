@@ -6,8 +6,7 @@ file=$(jq -r '.tool_input.file_path // empty')
 [[ "$file" == *.py ]] || exit 0
 root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"
 case "$file" in
-  "$root"/services/api/*) svc="$root/services/api" ;;
-  "$root"/services/mcp/*) svc="$root/services/mcp" ;;
+  "$root"/services/mcp/*|"$root"/deploy/*) svc="$root/services/mcp" ;;
   *) exit 0 ;;
 esac
 out=$(cd "$svc" && uv run --frozen -q ruff check --no-cache "$file" 2>&1) || { echo "$out" >&2; exit 2; }

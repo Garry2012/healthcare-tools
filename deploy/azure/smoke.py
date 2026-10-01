@@ -1,12 +1,17 @@
-"""Read-only release gate against the deployed MCP adapter (and its internal API).
+"""Read-only release gate against the deployed MCP adapter.
 
-Run with the services/mcp environment. Credentials are environment-only; response bodies
-and exception details are deliberately not printed. No booking or caller identity is created.
+Checks local health/readiness, dependency status, that an unauthenticated request is refused, that the
+gateway bearer sees exactly the three conversational tools and cannot finalize a call, that the lifecycle
+bearer (when given) sees exactly record_call_summary, and that two read-only tool calls return honest,
+non-failure outcomes through the real MCP transport. It never creates an appointment or a summary.
+Credentials are environment-only; response bodies and exception details are not printed.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import os
 import sys
 import uuid
@@ -15,7 +20,15 @@ import httpx
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-EXPECTED_TOOLS = {"find_availability", "manage_booking", "search_knowledge"}
+CONVERSATIONAL_TOOLS = {"get_doctor_availability", "manage_booking", "search_knowledge"}
+LIFECYCLE_TOOLS = {"record_call_summary"}
+AVAILABILITY_OK = {"AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND"}
+KNOWLEDGE_OK = {"ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED"}
+
+
+def turn_context(utterance: str, language: str) -> str:
+    payload = json.dumps({"utterance": utterance, "language": language}, ensure_ascii=False).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
 
 
 async def check_http(http: httpx.AsyncClient, root: str) -> None:
@@ -24,41 +37,60 @@ async def check_http(http: httpx.AsyncClient, root: str) -> None:
         response.raise_for_status()
         if response.json().get("status") != expected:
             raise RuntimeError(f"unexpected {path} response")
-    # In particular, a forgotten MCP bearer configuration must fail the release.
+    dependencies = await http.get(f"{root}/dependencies", params={"refresh": "1"})
+    if dependencies.status_code != 200 or dependencies.json().get("operational", {}).get("status") != "ok":
+        raise RuntimeError("operational dependency is not healthy")  # a release needs working reads
     response = await http.post(f"{root}/mcp/", json={})
     if response.status_code != 401:
         raise RuntimeError("MCP accepted an unauthenticated request")
 
 
-async def check_tools(client: Client, language: str) -> None:
+async def check_tools(client: Client, language: str, department: str) -> None:
     names = {tool.name for tool in await client.list_tools()}
-    if names != EXPECTED_TOOLS:
-        raise RuntimeError("unexpected MCP tool set")
+    if names != CONVERSATIONAL_TOOLS:
+        raise RuntimeError("unexpected conversational MCP tool set")
     cases = (
-        ("find_availability", {"utterance": "availability", "language": language},
-         {"FOUND", "NONE_AVAILABLE", "CLARIFICATION_NEEDED", "TRANSFER"}),
-        ("search_knowledge", {"question": "deployment connectivity check", "language": language},
-         {"ANSWERED", "CLARIFICATION_NEEDED", "NO_ANSWER", "TRANSFER"}),
+        ("get_doctor_availability", {"date": "today", "departmentName": department}, AVAILABILITY_OK),
+        ("search_knowledge", {"question": "deployment connectivity check", "language": language}, KNOWLEDGE_OK),
     )
     for name, arguments, outcomes in cases:
-        result = await client.call_tool(name, arguments)
+        result = await client.call_tool(name, arguments, raise_on_error=False)
         body = result.structured_content
-        # MCP can return HTTP 200 with a tool/API failure envelope. That is not a pass.
+        # MCP can return HTTP 200 with a tool failure envelope. That is not a pass.
         if (result.is_error or not isinstance(body, dict) or body.get("error")
                 or body.get("outcome") not in outcomes):
             raise RuntimeError(f"{name} failed its read-only smoke check")
 
 
-async def smoke(url: str, token: str, language: str) -> None:
+async def check_lifecycle_boundary(conversational: Client, lifecycle: Client | None) -> None:
+    """Server-side enforcement, not client-side hiding: the gateway bearer must be refused."""
+    refused = await conversational.call_tool("record_call_summary", {
+        "intent": "OTHER", "outcome": "ABANDONED", "summaryText": "deployment smoke must be refused"},
+        raise_on_error=False)
+    if not refused.is_error:
+        raise RuntimeError("the conversational bearer could reach the lifecycle tool")
+    if lifecycle is not None:
+        names = {tool.name for tool in await lifecycle.list_tools()}
+        if names != LIFECYCLE_TOOLS:
+            raise RuntimeError("the lifecycle bearer does not see exactly the summary tool")
+
+
+async def smoke(url: str, token: str, lifecycle_token: str | None, language: str, department: str) -> None:
     root = url.removesuffix("/").removesuffix("/mcp")
     async with asyncio.timeout(120):
         async with httpx.AsyncClient(timeout=10) as http:
             await check_http(http, root)
-        transport = StreamableHttpTransport(url, headers={
-            "Authorization": f"Bearer {token}", "X-Call-Id": f"deploy-smoke-{uuid.uuid4().hex}",
-        })
-        async with Client(transport, timeout=20) as client:
-            await check_tools(client, language)
+        call_id = f"deploy-smoke-{uuid.uuid4().hex}"
+        headers = {"Authorization": f"Bearer {token}", "X-Call-Id": call_id,
+                   "X-Turn-Context": turn_context("deployment smoke: department availability today", language)}
+        async with Client(StreamableHttpTransport(url, headers=headers), timeout=20) as conversational:
+            await check_tools(conversational, language, department)
+            if lifecycle_token:
+                lifecycle_headers = {"Authorization": f"Bearer {lifecycle_token}", "X-Call-Id": call_id}
+                async with Client(StreamableHttpTransport(url, headers=lifecycle_headers), timeout=20) as lifecycle:
+                    await check_lifecycle_boundary(conversational, lifecycle)
+            else:
+                await check_lifecycle_boundary(conversational, None)
 
 
 def main() -> int:
@@ -66,13 +98,16 @@ def main() -> int:
         url = os.environ["MCP_URL"]
         token = os.environ["MCP_BEARER_TOKEN"]
         language = os.environ["SMOKE_LANGUAGE"]
+        department = os.environ.get("SMOKE_DEPARTMENT", "General Medicine")
+        lifecycle_token = os.environ.get("MCP_LIFECYCLE_BEARER_TOKEN") or None
         if not url.startswith("https://") or not token or not language:
             raise ValueError("HTTPS URL, token and rollout language are required")
-        asyncio.run(smoke(url, token, language))
+        asyncio.run(smoke(url, token, lifecycle_token, language, department))
     except Exception:  # noqa: BLE001 - CLI boundary: dependency exceptions may contain credentials
-        print("Deployment smoke test failed; inspect API/MCP logs. No success declared.", file=sys.stderr)
+        print("Deployment smoke test failed; inspect MCP logs. No success declared.", file=sys.stderr)
         return 1
-    print("Deployment smoke passed: readiness, authentication, tool discovery, availability and knowledge.")
+    print("Deployment smoke passed: readiness, dependency status, authentication, three conversational tools, "
+          "lifecycle boundary, read-only availability and knowledge checks.")
     return 0
 
 

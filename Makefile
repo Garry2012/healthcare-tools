@@ -1,47 +1,43 @@
-# Front-desk MVP. Everything reads the repository-root .env (copy .env.example first).
+# Front-desk MCP adapter. Everything reads the repository-root .env (copy .env.example first).
 SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
+MCP := services/mcp
 
-.PHONY: up down migrate seed seed-reset rollout-validate rollout-apply test test-fast demo lint logs build
+.PHONY: up up-mcp down test test-fast test-e2e lint build schema demo bench logs
 
-up: ## Start postgres, run migrations, start api and mcp (dev profile)
-	$(COMPOSE) --profile dev up -d --build --wait api mcp
+up: ## Start the adapter against the two local development stubs (profiles mcp + stubs)
+	$(COMPOSE) --profile stubs up -d --build --wait
 
-down: ## Stop the dev stack (data volume kept)
-	$(COMPOSE) --profile dev --profile test down
+up-mcp: ## Start only the adapter, pointed at the owner services configured in .env
+	$(COMPOSE) --profile mcp up -d --build --wait mcp
 
-migrate: ## Alembic upgrade head as the owner role
-	$(COMPOSE) --profile dev run --rm migrate
+down: ## Stop everything
+	$(COMPOSE) --profile stubs --profile mcp down
 
-rollout-validate: ## Offline check of rollouts/$(PROVIDER_ID) (settings, data, dialogues); ROLLOUT=<dir> for another
-	cd services/api && uv run frontdesk-api rollout validate $(abspath $(or $(ROLLOUT),rollouts/$(or $(PROVIDER_ID),demo-hospital)))
-
-rollout-apply: ## Write the running stack's rollout (domain baseline + its data) to its database
-	$(COMPOSE) --profile dev exec api frontdesk-api rollout apply
-
-seed: ## Apply the demo rollout and its dated demo scenario (idempotent; refused in production)
-	$(COMPOSE) --profile dev exec api frontdesk-api seed
-
-seed-reset: ## DESTRUCTIVE: empty every table in the dev database, then seed
-	$(COMPOSE) --profile dev exec api frontdesk-api seed --reset
-
-test: ## Everything (L4): unit + integration + contract + MCP e2e + schemathesis, on a throwaway postgres
+test: ## Everything a reviewer needs on a clean checkout: lint, unit, stub-backed e2e, build (scripts/test.sh)
 	./scripts/test.sh
 
-test-fast: ## Seconds, no database (L1): lint, architecture contracts, API unit + spec, MCP unit
-	cd services/api && uv run ruff check . && uv run lint-imports && uv run pytest tests/unit tests/contract/test_openapi_matches_spec.py -q
-	cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e"
+test-fast: ## Seconds, no processes: lint and the hermetic suites
+	cd $(MCP) && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
 
-demo: ## Kannada search → book → list → reschedule → cancel against the dev stack
-	./scripts/demo.sh
+test-e2e: ## Real processes over TCP: stubs + adapter, release smoke, full journey
+	cd $(MCP) && uv run pytest tests -q -m e2e
 
-lint: ## ruff on both services, and the API's architecture contracts
-	cd services/api && uv run ruff check . && uv run lint-imports
-	cd services/mcp && uv run ruff check . ../../deploy
+lint:
+	cd $(MCP) && uv run ruff check . ../../deploy
 
-build: ## Build both images
-	docker build -t frontdesk-api:dev services/api
-	docker build -t frontdesk-mcp:dev services/mcp
+build: ## Build the production image (stubs and fixtures are not in it)
+	docker build -t frontdesk-mcp:dev $(MCP)
+
+schema: ## Print the pinned tool surface (compare with tests/contracts/mcp-tools.snapshot.json)
+	cd $(MCP) && eval "$$(../../scripts/rollout-env.sh ../../rollouts/$${PROVIDER_ID:-demo-hospital})" && \
+	  ENV=development OPS_BASE_URL=http://127.0.0.1:8200/api/v1 uv run frontdesk-mcp schema
+
+demo: ## In-process walk-through of the four tools against the stubs (dev/demo.py)
+	cd $(MCP) && uv run python dev/demo.py
+
+bench: ## Tool round-trip latency against the in-process stubs, or OPS_E2E_* real hosts (dev/bench.py)
+	cd $(MCP) && uv run python dev/bench.py
 
 logs:
-	$(COMPOSE) --profile dev logs -f api mcp
+	$(COMPOSE) --profile stubs logs -f

@@ -1,74 +1,19 @@
 name: frontdesk-${PROVIDER_ID:-demo-hospital}
 
 # One compose file, two profiles:
-#   dev  : postgres + migrate (one-shot) + api + mcp
-#   test : a throwaway postgres for the integration, contract and MCP suites
+#   mcp   : the MCP adapter alone, pointed at the owner services configured in .env
+#   stubs : the two development stubs (Manoj contract stub under /api/v1, provisional knowledge stub)
+#           for local demos; `make up` runs both profiles with the adapter pointed at the stubs.
 # Secrets and ports come from the repository-root .env (the Makefile passes --env-file .env).
-# The rollout (a provider's instance of a domain) comes from rollouts/$PROVIDER_ID: its settings
-# (rollout.env) as environment, its data files mounted read-only for `seed` and `rollout apply`.
-# Each rollout is its own stack (project name frontdesk-<provider>).
-# Host ports bind to 127.0.0.1 only.
-
-x-db-env: &db-env
-  POSTGRES_DB: ${POSTGRES_DB}
-  POSTGRES_USER: ${POSTGRES_OWNER_USER}
-  POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD}
-  APP_DB_USER: ${APP_DB_USER}
-  APP_DB_PASSWORD: ${APP_DB_PASSWORD}
-
-x-api-env: &api-env
-  ENV: ${ENV:-development}
-  LOG_LEVEL: ${LOG_LEVEL:-INFO}
-  AUTH_TOKENS_JSON: ${AUTH_TOKENS_JSON}
+# The rollout (a provider's tenant settings) comes from rollouts/$PROVIDER_ID/rollout.env.
+# Host ports bind to 127.0.0.1 only. No database, no backend: the owners run their services.
 
 x-provider: &provider
   env_file: ../rollouts/${PROVIDER_ID:-demo-hospital}/rollout.env
 
 services:
-  postgres:
-    profiles: [dev]
-    image: postgres:16-alpine
-    environment: *db-env
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d:ro
-    ports: ["127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_OWNER_USER} -d ${POSTGRES_DB}"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-
-  migrate:
-    profiles: [dev]
-    <<: *provider
-    build: ../services/api
-    command: ["frontdesk-api", "migrate"]
-    environment:
-      <<: *api-env
-      # The owner role: the only credential that may run DDL.
-      DATABASE_URL: postgresql://${POSTGRES_OWNER_USER}:${POSTGRES_OWNER_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    depends_on:
-      postgres: {condition: service_healthy}
-
-  api:
-    profiles: [dev]
-    <<: *provider
-    build: ../services/api
-    environment:
-      <<: *api-env
-      HOST: 0.0.0.0
-      PORT: "8000"
-      DATABASE_URL: postgresql://${APP_DB_USER}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      ROLLOUT_DIR: /app/rollout
-    volumes:
-      - ../rollouts/${PROVIDER_ID:-demo-hospital}:/app/rollout:ro
-    ports: ["127.0.0.1:${API_HOST_PORT:-8000}:8000"]
-    depends_on:
-      migrate: {condition: service_completed_successfully}
-
   mcp:
-    profiles: [dev]
+    profiles: [mcp, stubs]
     <<: *provider
     build: ../services/mcp
     environment:
@@ -76,27 +21,35 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOST: 0.0.0.0
       PORT: "8100"
-      API_BASE_URL: http://api:8000/api/v1
-      API_BEARER_TOKEN: ${API_BEARER_TOKEN}
+      OPS_BASE_URL: ${OPS_BASE_URL:-http://ops-stub:8200/api/v1}
+      OPS_CLIENT_ID: ${OPS_CLIENT_ID}
+      OPS_CLIENT_SECRET: ${OPS_CLIENT_SECRET}
+      KNOWLEDGE_BASE_URL: ${KNOWLEDGE_BASE_URL:-http://knowledge-stub:8300}
+      KNOWLEDGE_BEARER_TOKEN: ${KNOWLEDGE_BEARER_TOKEN}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
+      MCP_LIFECYCLE_BEARER_TOKEN: ${MCP_LIFECYCLE_BEARER_TOKEN}
       MCP_DEV_CALLER_NUMBER: ${MCP_DEV_CALLER_NUMBER:-}
     ports: ["127.0.0.1:${MCP_HOST_PORT:-8100}:8100"]
-    depends_on:
-      api: {condition: service_healthy}
-
-  postgres-test:
-    profiles: [test]
-    image: postgres:16-alpine
-    environment: *db-env
-    tmpfs: [/var/lib/postgresql/data]
-    volumes:
-      - ./postgres/init:/docker-entrypoint-initdb.d:ro
-    ports: ["127.0.0.1:${TEST_POSTGRES_HOST_PORT:-55433}:5432"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_OWNER_USER} -d ${POSTGRES_DB}"]
-      interval: 1s
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=2).status == 200 else 1)"]
+      interval: 5s
       timeout: 3s
-      retries: 30
+      retries: 12
 
-volumes:
-  pgdata:
+  ops-stub:
+    profiles: [stubs]
+    build:
+      context: ../services/mcp
+      dockerfile: dev/Dockerfile
+    command: ["python", "-m", "frontdesk_stubs", "--host", "0.0.0.0", "--ops-port", "8200", "--knowledge-port", "8300",
+              "--ops-prefix", "/api/v1", "--client-id", "${OPS_CLIENT_ID}", "--client-secret", "${OPS_CLIENT_SECRET}",
+              "--knowledge-bearer", "${KNOWLEDGE_BEARER_TOKEN}"]
+    ports: ["127.0.0.1:${OPS_STUB_HOST_PORT:-8200}:8200", "127.0.0.1:${KNOWLEDGE_STUB_HOST_PORT:-8300}:8300"]
+
+  # The knowledge stub runs in the same process as the operational stub; this alias keeps the two
+  # owner URLs distinct in the adapter's configuration, as they will be in every real deployment.
+  knowledge-stub:
+    profiles: [stubs]
+    image: alpine/socat:1.8.0.0
+    command: ["TCP-LISTEN:8300,fork,reuseaddr", "TCP:ops-stub:8300"]
+    depends_on: [ops-stub]

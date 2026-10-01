@@ -58,11 +58,17 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, default=str)
 
 
+# Libraries that log request URLs (which carry ?mobile=... to the owner API) or per-request chatter.
+QUIET_LOGGERS = ("httpx", "httpcore", "uvicorn.access", "mcp", "docket")
+
+
 def configure_logging(level: str, provider: str = "") -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter(provider))
     logging.getLogger().handlers[:] = [handler]
     logging.getLogger().setLevel(level.upper())
+    for name in QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 class BearerAuth:

@@ -198,15 +198,20 @@ async def test_log_lines_carry_the_call_id_not_the_caller(served):
     package = logging.getLogger("frontdesk_mcp")
     handler = Capture()
     package.addHandler(handler)
+    root = logging.getLogger()
+    root.addHandler(handler)
     try:
         async with client(base, call_id="call-log-1") as c:
             await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "today"})
+            await c.call_tool("manage_booking", {"action": "LIST"})  # upstream query carries ?mobile=
     finally:
         package.removeHandler(handler)
+        root.removeHandler(handler)
     results = [line for line in lines if line["msg"] == "tool_result"]
-    assert results and results[-1]["callId"] == "call-log-1" and results[-1]["outcome"] == "AVAILABILITY"
+    assert results and results[0]["callId"] == "call-log-1" and results[0]["outcome"] == "AVAILABILITY"
     assert all(line["provider"] == "demo-hospital" for line in lines)
-    assert "9000000101" not in json.dumps(lines) and "garima" not in json.dumps(lines).lower()
+    assert "9000000101" not in json.dumps(lines), "a caller number reached the logs (httpx request lines?)"
+    assert "garima" not in json.dumps(lines).lower()
 
 
 def test_the_pack_describes_exactly_the_four_tools_and_no_core_rule():

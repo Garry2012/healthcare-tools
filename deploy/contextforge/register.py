@@ -1,33 +1,44 @@
-"""Register frontdesk-mcp with IBM ContextForge as a federated MCP gateway.
+"""Register frontdesk-mcp with IBM ContextForge as a federated MCP gateway and verify the tool surface.
 
-Idempotent: re-running with the same name and URL is a no-op; a changed
-visibility or passthrough-header list is updated in place; a name that already points at a
-different URL is refused. Credentials come only from the environment.
+Idempotent: the same name and URL is a no-op; a changed visibility or passthrough-header list is
+updated in place; a name that already points at a different URL is refused. After registering or
+updating, the gateway's discovered tools are compared with what the adapter itself serves (names and
+input schemas); drift triggers one refresh attempt and then fails the run. Credentials come only from
+the environment.
 
     CONTEXTFORGE_URL             e.g. http://127.0.0.1:4444
     CONTEXTFORGE_TOKEN           an admin JWT, or instead:
     CONTEXTFORGE_ADMIN_EMAIL / CONTEXTFORGE_ADMIN_PASSWORD   (POST /v1/auth/login)
     MCP_PUBLIC_URL               URL ContextForge uses to reach the adapter, ending /mcp/
-    MCP_BEARER_TOKEN             bearer ContextForge presents to the adapter
+    MCP_BEARER_TOKEN             the GATEWAY bearer the adapter expects (never the lifecycle bearer)
     PROVIDER_ID, DOMAIN_PACK     from rollouts/<provider>/rollout.env: one gateway per rollout,
                                  named frontdesk-<provider> (the voice agent's tool prefix)
 
     python deploy/contextforge/register.py --dry-run
     python deploy/contextforge/register.py
+
+ContextForge must run with ENABLE_HEADER_PASSTHROUGH=true so the trusted call headers reach the
+adapter. The gateway entry carries the conversational bearer only: through this gateway the voice
+agent sees three tools; record_call_summary is invoked by the call-end lifecycle with its own bearer.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import sys
 
 import httpx
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
 
-TOOLS = ("find_availability", "manage_booking", "search_knowledge")
-# Call identity travels from the voice platform through the gateway to the adapter.
-PASSTHROUGH = ["X-Call-Id", "X-Caller-Number"]
+TOOLS = ("get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary")
+CONVERSATIONAL = TOOLS[:3]
+# Trusted call context travels from the voice platform through the gateway to the adapter.
+PASSTHROUGH = ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification", "X-Turn-Context", "X-Operation-Id",
+               "X-Call-Started-At", "X-Call-Duration-Seconds"]
 
 
 def env(name: str, *, required: bool = True) -> str:
@@ -41,7 +52,7 @@ def payload(args: argparse.Namespace) -> dict:
     return {
         "name": args.name,
         "url": env("MCP_PUBLIC_URL"),
-        "description": f"Front-desk tools: {', '.join(TOOLS)}",
+        "description": f"Hospital front-desk tools: {', '.join(CONVERSATIONAL)} (call-end: {TOOLS[3]})",
         "transport": "STREAMABLEHTTP",
         "auth_type": "bearer",
         "auth_token": env("MCP_BEARER_TOKEN"),
@@ -71,6 +82,59 @@ def admin_token(client: httpx.Client) -> str:
     return response.json()["access_token"]
 
 
+def _properties(schema: dict | None) -> set[str]:
+    return set(((schema or {}).get("properties") or {}).keys())
+
+
+def drift(served: list[dict], gateway_tools: list[dict], prefix: str) -> list[str]:
+    """Differences between the adapter's conversational tools and what the gateway discovered."""
+    problems: list[str] = []
+    expected = {t["name"]: t for t in served}
+    discovered: dict[str, dict] = {}
+    for tool in gateway_tools:
+        name = str(tool.get("name", ""))
+        if not name.startswith(prefix):
+            continue
+        local = name[len(prefix):].lstrip("-_").replace("-", "_")
+        discovered[local] = tool
+    for name, tool in expected.items():
+        if name not in discovered:
+            problems.append(f"{name}: not discovered by the gateway")
+            continue
+        schema = discovered[name].get("input_schema") or discovered[name].get("inputSchema") or {}
+        if _properties(schema) != _properties(tool.get("inputSchema")):
+            problems.append(f"{name}: gateway input schema differs from the adapter's (stale discovery)")
+    for name in sorted(set(discovered) - set(expected)):
+        problems.append(f"{name.replace('_', '-')}: gateway lists a tool the adapter no longer serves")
+    return problems
+
+
+async def served_tools(url: str, token: str) -> list[dict]:
+    async with Client(StreamableHttpTransport(url, headers={"Authorization": f"Bearer {token}"})) as client:
+        return [{"name": t.name, "inputSchema": t.inputSchema} for t in await client.list_tools()]
+
+
+def verify(client: httpx.Client, gateway_id: str, name: str) -> None:
+    served = asyncio.run(served_tools(env("MCP_PUBLIC_URL"), env("MCP_BEARER_TOKEN")))
+    if sorted(t["name"] for t in served) != sorted(CONVERSATIONAL):
+        raise SystemExit("the adapter does not serve exactly the three conversational tools to the gateway bearer")
+    for attempt in (1, 2):
+        tools = client.get("/v1/tools", params={"include_inactive": "true"})
+        tools.raise_for_status()
+        problems = drift(served, rows(tools.json(), "tools"), name)
+        if not problems:
+            print(f"verified: gateway tools match the adapter ({', '.join(CONVERSATIONAL)})")
+            return
+        if attempt == 1:
+            print("tool drift detected; asking the gateway to rediscover", file=sys.stderr)
+            refresh = client.post(f"/v1/gateways/{gateway_id}/refresh")
+            if refresh.status_code >= 400:  # not every ContextForge version has this endpoint
+                print(f"refresh endpoint unavailable ({refresh.status_code}); toggling the gateway", file=sys.stderr)
+                client.post(f"/v1/gateways/{gateway_id}/toggle", params={"activate": "false"})
+                client.post(f"/v1/gateways/{gateway_id}/toggle", params={"activate": "true"})
+    raise SystemExit("gateway tool surface still differs from the adapter:\n  " + "\n  ".join(problems))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     provider = os.environ.get("PROVIDER_ID", "")
@@ -78,13 +142,15 @@ def main() -> None:
                         help="gateway name, the tool prefix in ContextForge (default frontdesk-$PROVIDER_ID)")
     parser.add_argument("--visibility", choices=("private", "team", "public"), default="private")
     parser.add_argument("--dry-run", action="store_true", help="print the registration payload and exit")
+    parser.add_argument("--skip-verify", action="store_true", help="do not compare discovered tools with the adapter")
     args = parser.parse_args()
     if not args.name:
         parser.error("set PROVIDER_ID (or pass --name): each provider is its own gateway")
 
     body = payload(args)
     if args.dry_run:
-        print(json.dumps({"method": "POST", "path": "/v1/gateways", "json": redacted(body)}, indent=2))
+        print(json.dumps({"method": "POST", "path": "/v1/gateways", "json": redacted(body),
+                          "verify": "GET /v1/tools vs adapter tools/list"}, indent=2))
         return
 
     with httpx.Client(base_url=env("CONTEXTFORGE_URL").rstrip("/"), timeout=30) as client:
@@ -102,21 +168,23 @@ def main() -> None:
                 print(f"updated: {args.name} ({same['id']})")
             else:
                 print(f"already registered: {args.name} ({same['id']})")
-            return
-
-        tools = client.get("/v1/tools", params={"include_inactive": "true"})
-        tools.raise_for_status()
-        existing = {str(t.get("name")) for t in rows(tools.json(), "tools")}
-        predicted = {f"{args.name}-{t.replace('_', '-')}" for t in TOOLS} | {f"{args.name}-{t}" for t in TOOLS}
-        if clash := sorted(existing & predicted):
-            raise SystemExit(f"tool-name collision: {', '.join(clash)}")
-
-        created = client.post("/v1/gateways", json=body)
-        if created.status_code >= 400:
-            print(created.text, file=sys.stderr)
-        created.raise_for_status()
-        result = created.json()
-        print(f"registered: {result.get('name')} ({result.get('id')}), tools: {', '.join(TOOLS)}")
+            gateway_id = str(same["id"])
+        else:
+            tools = client.get("/v1/tools", params={"include_inactive": "true"})
+            tools.raise_for_status()
+            existing = {str(t.get("name")) for t in rows(tools.json(), "tools")}
+            predicted = {f"{args.name}-{t.replace('_', '-')}" for t in TOOLS} | {f"{args.name}-{t}" for t in TOOLS}
+            if clash := sorted(existing & predicted):
+                raise SystemExit(f"tool-name collision: {', '.join(clash)}")
+            created = client.post("/v1/gateways", json=body)
+            if created.status_code >= 400:
+                print(created.text, file=sys.stderr)
+            created.raise_for_status()
+            result = created.json()
+            gateway_id = str(result.get("id"))
+            print(f"registered: {result.get('name')} ({gateway_id}), conversational tools: {', '.join(CONVERSATIONAL)}")
+        if not args.skip_verify:
+            verify(client, gateway_id, args.name)
 
 
 if __name__ == "__main__":
