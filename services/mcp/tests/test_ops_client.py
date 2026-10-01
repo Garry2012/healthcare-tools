@@ -143,7 +143,7 @@ async def test_one_deadline_covers_auth_and_the_call(make_settings):
             return httpx.Response(200, json=TOKEN)
         return httpx.Response(200, json={"items": []})
 
-    client = ops_client.OpsClient(make_settings(request_timeout_seconds=1.5),
+    client = ops_client.OpsClient(make_settings(allow_budget_overrides=True, request_timeout_seconds=1.5),
                                   transport=httpx.MockTransport(slow_handler), monotonic=lambda: now[0])
     async with client:
         with pytest.raises(ops_client.Unavailable) as exc:
@@ -366,8 +366,9 @@ async def test_the_deadline_is_a_wall_clock_total_even_against_a_dribbling_serve
 
     server = await asyncio.start_server(dribble, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
-    settings = make_settings(ops_base_url=f"http://127.0.0.1:{port}/api/v1", read_deadline_seconds=1.0,
-                             write_deadline_seconds=1.0, summary_deadline_seconds=1.0, request_timeout_seconds=1.0)
+    settings = make_settings(ops_base_url=f"http://127.0.0.1:{port}/api/v1", allow_budget_overrides=True,
+                             read_deadline_seconds=1.0, write_deadline_seconds=1.0, summary_deadline_seconds=1.0,
+                             request_timeout_seconds=1.0)
     client = ops_client.OpsClient(settings)
     client.tokens._token, client.tokens._expires_at = "warm", time.monotonic() + 3600
     try:

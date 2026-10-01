@@ -337,8 +337,8 @@ async def test_an_escalating_routing_decision_is_not_delayed_by_a_slow_directory
     """Review fix: the directory prefetch is cancelled, not awaited, once routing says transfer."""
     import time
 
-    hh = harness.build(make_settings(read_deadline_seconds=2.0, write_deadline_seconds=2.5,
-                                     request_timeout_seconds=1.5))
+    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
+                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
     try:
         hh.ops_state.delay_seconds = 1.0
         started = time.monotonic()
@@ -352,8 +352,8 @@ async def test_known_doctor_reads_overlap_the_routing_check(make_settings):
     """Review fix: profile and board start together with routing when the doctor is already known."""
     import time
 
-    hh = harness.build(make_settings(read_deadline_seconds=2.0, write_deadline_seconds=2.5,
-                                     request_timeout_seconds=1.5))
+    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
+                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
     try:
         hh.knowledge_state.delay_seconds = 0.3
         hh.ops_state.delay_seconds = 0.3
@@ -398,3 +398,23 @@ async def test_a_doctor_who_simply_lacks_the_session_is_not_unknown(h):
     ])
     result = await ask(h, departmentName="cardiology", session="Morning")
     assert result.outcome == "AVAILABILITY" and [d.doctorId for d in result.doctors] == ["doc_anil_sharma"]
+
+
+# ------------------------------------------------------------------ architect follow-up 1
+
+
+UNLABELLED_UNKNOWN_BOARD = [
+    {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
+     "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+    {"doctorId": "doc_garima", "status": "UNKNOWN", "updatedMinutesAgo": 1},  # no label: cannot be scoped away
+]
+
+
+async def test_doctor_session_query_keeps_an_unlabelled_unknown_row_next_to_a_matched_session(h):
+    h.ops_state.set_board("2026-10-01", UNLABELLED_UNKNOWN_BOARD)
+    result = await ask(h, doctorId="doc_garima", session="Morning")
+    assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+    assert [(b.session, b.status) for b in result.doctors[0].board] == [("Morning", "IN"), (None, "UNKNOWN")]
+    assert result.callback.summaryOutcome == "CALLBACK_NOTED"
+    department = await ask(h, departmentName="General Medicine", session="Morning")
+    assert department.outcome == "CALLBACK_REQUIRED"

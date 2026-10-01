@@ -60,10 +60,15 @@ class Settings(BaseSettings):
     # the real path, not measured guarantees.
     voice_response_budget_seconds: float = Field(default=1.0, gt=0, le=10)
     reserved_stage_seconds: float = Field(default=0.65, ge=0, le=10)
-    read_deadline_seconds: float | None = Field(default=None, gt=0, le=30)  # default: budget - reserved
-    write_deadline_seconds: float | None = Field(default=None, gt=0, le=30)  # default: read + one exchange, ≤ 0.6
+    gateway_overhead_seconds: float = Field(default=0.05, ge=0, le=5)  # ContextForge hop, outside the adapter
+    # Every tool called during the conversation (reads AND confirmed writes) gets the same share:
+    # budget − reserved − gateway. Explicit values are diagnostic overrides; one that exceeds the share is refused
+    # unless ALLOW_BUDGET_OVERRIDES=true is set deliberately (bench/external runs from a distant laptop).
+    read_deadline_seconds: float | None = Field(default=None, gt=0, le=30)
+    write_deadline_seconds: float | None = Field(default=None, gt=0, le=30)
     summary_deadline_seconds: float = Field(default=8.0, gt=0, le=60)  # after the call: outside the budget
     request_timeout_seconds: float | None = Field(default=None, gt=0, le=30)  # cap per exchange; default: read
+    allow_budget_overrides: bool = False
     token_refresh_margin_seconds: int = Field(default=60, ge=0, le=3600)
     token_refresh_check_seconds: float = Field(default=15.0, gt=0, le=3600)  # background refresher cadence
     directory_cache_seconds: int = Field(default=300, ge=0, le=86400)
@@ -132,15 +137,19 @@ class Settings(BaseSettings):
             return data
         budget = float(data.get("voice_response_budget_seconds", 1.0))
         reserved = float(data.get("reserved_stage_seconds", 0.65))
-        tool_share = round(budget - reserved, 3)
+        gateway = float(data.get("gateway_overhead_seconds", 0.05))
+        tool_share = round(budget - reserved - gateway, 3)
         if tool_share < 0.1:
-            raise ValueError("voice budget minus reserved stages leaves no time for the tool (reserved too large)")
-        if data.get("read_deadline_seconds") is None:
-            data["read_deadline_seconds"] = tool_share
+            raise ValueError("voice budget minus reserved stages and gateway leaves no time for the tool "
+                             "(reserved too large)")
+        for name in ("read_deadline_seconds", "write_deadline_seconds"):
+            if data.get(name) is None:
+                data[name] = tool_share
+            elif float(data[name]) > tool_share + 1e-9 and not data.get("allow_budget_overrides"):
+                raise ValueError(f"{name.upper()}={data[name]} exceeds the in-call tool budget of {tool_share} s "
+                                 "(set ALLOW_BUDGET_OVERRIDES=true only for diagnostics)")
         if data.get("request_timeout_seconds") is None:
             data["request_timeout_seconds"] = data["read_deadline_seconds"]
-        if data.get("write_deadline_seconds") is None:
-            data["write_deadline_seconds"] = min(0.6, round(float(data["read_deadline_seconds"]) + 0.25, 3))
         return data
 
     @model_validator(mode="after")

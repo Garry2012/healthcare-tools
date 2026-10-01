@@ -28,7 +28,7 @@ from frontdesk_mcp.config import Settings
 from frontdesk_mcp.knowledge_client import KnowledgeClient
 from frontdesk_mcp.ops_client import OpsClient
 
-from . import harness
+from . import gates, harness
 from .conftest import ROLLOUT
 
 pytestmark = pytest.mark.external
@@ -55,13 +55,23 @@ def settings() -> Settings:
                     knowledge_base_url=os.environ.get("KNOWLEDGE_E2E_BASE_URL", "https://knowledge.pending.invalid"),
                     knowledge_bearer_token=os.environ.get("KNOWLEDGE_E2E_BEARER_TOKEN", "pending"),
                     mcp_bearer_token="external-gateway", mcp_lifecycle_bearer_token="external-lifecycle",
-                    # diagnostic overrides: the laptop → Azure path is far slower than the in-region budget
-                    read_deadline_seconds=6.0, write_deadline_seconds=8.0, summary_deadline_seconds=12.0,
-                    request_timeout_seconds=5.0)
+                    # diagnostic overrides: the laptop → Azure path is far slower than the in-region budget; these are
+                    # explicitly allowed here and never become production defaults
+                    allow_budget_overrides=True, read_deadline_seconds=6.0, write_deadline_seconds=8.0,
+                    summary_deadline_seconds=12.0, request_timeout_seconds=5.0)
 
 
 @pytest.fixture
 async def ops(settings):
+    import httpx
+
+    # Cold-start warm-up (not a gate, not counted): the public mock and a scaled-to-zero backend can take >5 s on
+    # the first request; the gates below then run against a warm service with their normal caps.
+    async with httpx.AsyncClient(timeout=30) as http:
+        try:
+            await http.get(f"{settings.ops_base_url}/departments")
+        except httpx.HTTPError:
+            pass
     client = OpsClient(settings)
     await client.start()
     yield client
@@ -150,8 +160,8 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
             visitDate=visit, preferredTime="10:00", callerConfirmed=True))
         assert created.outcome == "NOTED", created  # the designated doctor/date must not be UNKNOWN
         appointment_id = created.appointment.appointmentId
-        listed = await svc.manage(ctx("list"), booking.BookingRequest(action="LIST"))
-        assert listed.outcome == "FOUND" and appointment_id in [a.appointmentId for a in listed.appointments]
+        listed = gates.assert_list_succeeded(await svc.manage(ctx("list"), booking.BookingRequest(action="LIST")))
+        assert appointment_id in [a.appointmentId for a in listed]
         moved = await svc.manage(ctx("move"), booking.BookingRequest(
             action="RESCHEDULE", appointmentId=appointment_id,
             newVisitDate=(datetime.fromisoformat(visit).date() + timedelta(days=1)).isoformat(), callerConfirmed=True))

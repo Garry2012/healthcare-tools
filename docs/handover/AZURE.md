@@ -8,23 +8,32 @@ whole procedure as one re-runnable command; this page explains what it does and 
 
 ```bash
 R=rollouts/demo-hospital
-export OPS_BASE_URL=https://<manoj-host>/api/v1 KNOWLEDGE_BASE_URL=https://<shobhit-host>
-export OPS_CLIENT_ID=... OPS_CLIENT_SECRET=... KNOWLEDGE_BEARER_TOKEN=...   # first run only: stored in Key Vault
-deploy/azure/deploy.sh $R --dry-run     # prints every az call; no login needed
-deploy/azure/deploy.sh $R               # creates/updates, waits for the revision, runs the smoke
+# 1. fill deploy/environments/live.env OPS_BASE_URL with the full base URL Manoj supplies (expected …/api/v1);
+#    until then scripts/env.sh refuses the profile: status "awaiting live integration"
+export KNOWLEDGE_BEARER_TOKEN=...                       # first run only: stored in Key Vault (ops creds: see below)
+deploy/azure/deploy.sh $R --profile live --dry-run      # prints every az call; no login needed
+deploy/azure/deploy.sh $R --profile live                # upgrades mcp-demo-hospital in healthcare-rg, runs the smoke
 ```
 
-Production configuration refuses `http://` and any stub/mock hostname (`healthcare-contract-mock`,
-`localhost`, `stub`, `prism`, ...). The script validates the adapter configuration offline first
+The profile (`deploy/environments/live.env`, non-secret, committed) names the subscription
+`4e1c081a-9a6a-4e16-9da2-90217c22378b`, resource group `healthcare-rg`, environment, registry, vault and
+identity; the script refuses to run without `--profile`, when the signed-in subscription differs, and it never
+creates or defaults a resource group. Production configuration refuses `http://` and any stub/mock hostname,
+so `--profile mock` can only dry-run. The script validates the adapter configuration offline first
 (`frontdesk-mcp schema` under `ENV=production`).
+
+**Ops credentials:** `ops-client-id`/`ops-client-secret` currently hold generated dummy values (tagged
+`validation=not-accepted-by-live-api`). `deploy.sh` reads the current vault version and never overwrites an
+existing secret from the environment; replace them explicitly once Manoj registers the client
+(`deploy/environments/README.md`).
 
 ## What it creates or reuses
 
 | Resource | Default name | Notes |
 |---|---|---|
-| Resource group, Log Analytics, Container Apps environment, registry | `rg-frontdesk-<p>`, `law-frontdesk-<p>`, `cae-frontdesk-<p>`, `acrfd<hash>` | Reused when present; override with `AZ_RESOURCE_GROUP`, `AZ_CONTAINERAPPS_ENV`, `AZ_LOG_WORKSPACE`, `AZ_ACR` in `azure.env` (the demo uses the shared `healthcare-rg` set) |
+| Resource group, Log Analytics, Container Apps environment, registry | named by the profile: `healthcare-rg`, `law-frontdesk-demo-hospital`, `cae-frontdesk-demo-hospital`, `acrfd399536` | Shared; must exist; never created by this script |
 | Image | `frontdesk-mcp:<git sha>` | Built from `services/mcp` only: no stubs, no fixtures, no dev dependencies |
-| Key Vault | `kv-fd-<p>-<hash>` | `mcp-token` and `mcp-lifecycle-token` generated once; `ops-client-id`, `ops-client-secret`, `knowledge-token` supplied by the owners on first run |
+| Key Vault | named by the profile (`kv-fd-demo-hospi-0574c1`) | `mcp-token` and `mcp-lifecycle-token` generated once; `ops-client-id`, `ops-client-secret`, `knowledge-token` supplied by the owners (replace explicitly; see above) |
 | Managed identity | `id-frontdesk-<p>` | Key Vault Secrets User + AcrPull |
 | Container App | `mcp-<p>` | External ingress on 8100, 1–3 replicas, readiness `/ready` (local), liveness `/health` |
 

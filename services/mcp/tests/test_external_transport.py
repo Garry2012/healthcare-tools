@@ -20,7 +20,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-from . import harness
+from . import gates, harness
 
 pytestmark = pytest.mark.external
 ROOT = Path(__file__).resolve().parents[3]
@@ -42,16 +42,24 @@ async def test_release_smoke_against_the_deployed_adapter():
         pytest.fail("BLOCKED: MCP_E2E_LIFECYCLE_BEARER not set; conversational checks passed, lifecycle unverified")
 
 
-async def test_trusted_headers_reach_the_deployed_adapter():
-    """A LIST with a verified caller must be answered for that caller (FOUND/NOT_FOUND), not IDENTITY_UNAVAILABLE,
-    proving X-Caller-Number/X-Caller-Verification survive the transport; without them it must be refused."""
+async def test_trusted_headers_are_forwarded_by_the_deployed_transport():
+    """Transport layer only: a verified caller is not refused and a bare call is. Says nothing about the owner
+    (COULD_NOT_CHECK is accepted here and rejected by the backend gate below)."""
     url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
     with_identity = {"Authorization": f"Bearer {bearer}", **harness.headers(call_id=f"gate-{uuid.uuid4().hex[:8]}")}
     async with Client(StreamableHttpTransport(url, headers=with_identity)) as c:
         listed = (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content
-    assert listed["outcome"] in ("FOUND", "NOT_FOUND", "COULD_NOT_CHECK"), listed
-    assert listed["outcome"] != "IDENTITY_UNAVAILABLE"
     without = {"Authorization": f"Bearer {bearer}", "X-Call-Id": f"gate-{uuid.uuid4().hex[:8]}"}
     async with Client(StreamableHttpTransport(url, headers=without)) as c:
         refused = (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content
-    assert refused["outcome"] == "IDENTITY_UNAVAILABLE"
+    gates.assert_identity_forwarded(listed, refused)
+
+
+async def test_backend_lookup_succeeds_through_the_deployed_adapter():
+    """Backend layer: the owner answered a real appointment lookup through the deployment (FOUND/NOT_FOUND).
+    COULD_NOT_CHECK, ROUTING_UNAVAILABLE or a refusal fails this gate."""
+    url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
+    headers = {"Authorization": f"Bearer {bearer}", **harness.headers(call_id=f"gate-{uuid.uuid4().hex[:8]}")}
+    async with Client(StreamableHttpTransport(url, headers=headers)) as c:
+        listed = (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content
+    gates.assert_backend_lookup_succeeded(listed)

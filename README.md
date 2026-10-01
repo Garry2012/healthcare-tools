@@ -36,7 +36,10 @@ make demo                         # walk the four tools against the development 
 cp .env.example .env && make up   # adapter + stubs on 127.0.0.1:8100 / :8200 / :8300
 ```
 
-Register the adapter in ContextForge: `cd services/mcp && uv run python ../../deploy/contextforge/register.py --dry-run`.
+Environments: `eval "$(scripts/env.sh mock)"` (public contract mock, integration tests) or `live` (Manoj's API,
+blank until he supplies the base URL) — see `deploy/environments/README.md`. Deploy with
+`deploy/azure/deploy.sh rollouts/demo-hospital --profile live --dry-run`. Register the adapter in ContextForge:
+`cd services/mcp && uv run python ../../deploy/contextforge/register.py --dry-run`.
 
 | Make target | What it does |
 |---|---|
@@ -49,6 +52,6 @@ Register the adapter in ContextForge: `cd services/mcp && uv run python ../../de
 ```
 services/mcp/   src/frontdesk_mcp (adapter), dev/frontdesk_stubs (fixtures, never deployed), tests/
 rollouts/       demo-hospital/rollout.env: tenant identity (timezone, calling code, languages)
-deploy/         docker-compose.yml, azure/deploy.sh + smoke.py, contextforge/register.py
+deploy/         docker-compose.yml, environments/{mock,live}.env, azure/deploy.sh + smoke.py, contextforge/register.py
 docs/           handover/mcp-only (plan, contracts, implementation evidence), handover/*.md, DECISIONS.md
 ```

@@ -112,7 +112,7 @@ def test_unknown_pack_is_refused(make_settings):
 
 def test_default_deadlines_fit_inside_a_one_second_turn_budget(make_settings):
     s = make_settings()
-    assert s.read_deadline_seconds <= 1.2 and s.write_deadline_seconds <= 2.5 and s.request_timeout_seconds <= 0.8
+    assert s.read_deadline_seconds <= 0.3 and s.write_deadline_seconds <= 0.3 and s.request_timeout_seconds <= 0.3
 
 
 # ------------------------------------------------------------------ architect review AR-06
@@ -121,12 +121,32 @@ def test_default_deadlines_fit_inside_a_one_second_turn_budget(make_settings):
 def test_tool_deadlines_derive_from_the_voice_budget(make_settings):
     s = make_settings()
     assert s.voice_response_budget_seconds == 1.0 and s.reserved_stage_seconds == 0.65
-    assert s.read_deadline_seconds == pytest.approx(0.35)  # 1.0 - 0.65: the tool's share of the caller's second
+    assert s.read_deadline_seconds == pytest.approx(0.30)  # 1.0 - 0.65 - 0.05 gateway: the tool's share
     assert s.request_timeout_seconds <= s.read_deadline_seconds
-    assert s.write_deadline_seconds <= 0.6  # a confirmed write may use one more exchange than a read
+    assert s.write_deadline_seconds == pytest.approx(0.30)  # a confirmed write is an in-call turn too
     tighter = make_settings(voice_response_budget_seconds=0.8)
-    assert tighter.read_deadline_seconds == pytest.approx(0.15)
-    explicit = make_settings(read_deadline_seconds=2.0, write_deadline_seconds=2.0, request_timeout_seconds=1.5)
+    assert tighter.read_deadline_seconds == pytest.approx(0.10)
+    explicit = make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0, write_deadline_seconds=2.0,
+                             request_timeout_seconds=1.5)
     assert explicit.read_deadline_seconds == 2.0  # diagnostic override stays explicit
     with pytest.raises(ValueError, match="reserved"):
         make_settings(voice_response_budget_seconds=0.6)
+
+
+# ------------------------------------------------------------------ architect follow-up 2
+
+
+def test_every_in_call_tool_deadline_fits_the_voice_budget_including_the_gateway(make_settings):
+    s = make_settings()
+    assert s.gateway_overhead_seconds == 0.05
+    tool_share = s.voice_response_budget_seconds - s.reserved_stage_seconds - s.gateway_overhead_seconds
+    assert s.read_deadline_seconds == pytest.approx(tool_share) == pytest.approx(0.30)
+    assert s.write_deadline_seconds == pytest.approx(tool_share)  # a confirmed write is an in-call turn too
+    assert s.request_timeout_seconds <= s.read_deadline_seconds
+    longest_tool = max(s.read_deadline_seconds, s.write_deadline_seconds)
+    total = s.reserved_stage_seconds + s.gateway_overhead_seconds + longest_tool
+    assert total <= s.voice_response_budget_seconds + 1e-9
+    assert s.summary_deadline_seconds > s.voice_response_budget_seconds  # after the call, outside the budget
+    with pytest.raises(ValueError, match="budget"):
+        make_settings(write_deadline_seconds=0.9)  # an in-call override cannot exceed the tool's share
+    assert make_settings(write_deadline_seconds=0.9, allow_budget_overrides=True).write_deadline_seconds == 0.9

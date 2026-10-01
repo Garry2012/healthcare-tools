@@ -13,7 +13,8 @@ Implementation evidence: `docs/handover/mcp-only/implementation/`.
 - Process e2e only: `make test-e2e`; walk the tools: `make demo`; latency: `make bench`
 - Tool surface: `make schema` must equal `services/mcp/tests/contracts/mcp-tools.snapshot.json`; bump `prompt.SCHEMA_VERSION` and regenerate when it changes
 - Local stack against the development stubs: `cp .env.example .env && make up`
-- Deploy: `deploy/azure/deploy.sh rollouts/<id> --dry-run` (needs OPS_BASE_URL and KNOWLEDGE_BASE_URL of the owners' real hosts)
+- Environments: `eval "$(scripts/env.sh mock|live)"` is the one place an owner endpoint is written (`deploy/environments/*.env`, non-secret); it feeds deploy, the external gates and the bench. `live` is blank until Manoj supplies the full base URL (status: awaiting live integration)
+- Deploy: `deploy/azure/deploy.sh rollouts/<id> --profile live [--dry-run]` (profile names subscription `4e1c…` and `healthcare-rg`; the script never creates or defaults a resource group; `mock` can only dry-run)
 
 ## Rules the code will not tell you
 - No business rules here: no scheduling, slot, capacity, interpretation, knowledge or clinical logic; no database, queue or local fallback backend. The adapter validates, authenticates, forwards trusted context, applies deadlines, maps statuses and composes contracted reads.
@@ -27,7 +28,7 @@ Implementation evidence: `docs/handover/mcp-only/implementation/`.
 - Contract changes are reviewed changes: the pinned snapshot, its hash, the overlay and `contract.py` literals are asserted by tests. Stubs (`services/mcp/dev/`) are fixtures, never engines; production refuses stub/mock hosts.
 - Domain words live in `packs/healthcare.json`; tenant identity (timezone, calling code, languages) in `rollouts/<id>/rollout.env` with no defaults.
 
-- Deadlines derive from the voice budget: `VOICE_RESPONSE_BUDGET_SECONDS` − `RESERVED_STAGE_SECONDS` (default 0.35 s read, 0.6 s write); explicit `READ_DEADLINE_SECONDS` etc. are diagnostic overrides, never production defaults.
+- Deadlines derive from the voice budget: `VOICE_RESPONSE_BUDGET_SECONDS` − `RESERVED_STAGE_SECONDS` − `GATEWAY_OVERHEAD_SECONDS` (1.0 − 0.65 − 0.05 = 0.30 s for every in-call tool, reads and confirmed writes alike); explicit `READ_DEADLINE_SECONDS`/`WRITE_DEADLINE_SECONDS` above that share are refused unless `ALLOW_BUDGET_OVERRIDES=true` (diagnostics only). Short deadlines prove nothing about success latency; that needs the live measurement.
 
 ## Gotchas
 - Don't `source` rollout.env; use `scripts/rollout-env.sh`.

@@ -301,10 +301,12 @@ class AvailabilityService:
         entries = [e for e in board.items if e.doctorId == doctor_id]
         matched = None
         if session:
-            scoped = [e for e in entries if e.session and _normalised(e.session) == _normalised(session)]
-            matched = bool(scoped)
-            if scoped:
-                entries = scoped  # an unmatched session keeps the whole board in scope: the caller may mean any
+            labelled = [e for e in entries if e.session and _normalised(e.session) == _normalised(session)]
+            matched = bool(labelled)
+            if labelled:
+                # Rows without a label (the owner's UNKNOWN/missing shape) cannot be scoped away: they stay in scope
+                # next to the matched session. An unmatched session keeps the whole board: the caller may mean any.
+                entries = labelled + [e for e in entries if not e.session]
         if not entries and detail is None:
             detail = "BOARD_ENTRY_MISSING"  # the owner returned no row: that is UNKNOWN, never bookable hours
         name = profile.name if profile else (entries[0].doctorName if entries else doctor_id)

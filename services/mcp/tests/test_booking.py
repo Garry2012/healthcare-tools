@@ -162,8 +162,9 @@ async def test_credential_rejection_never_reaches_the_caller(make_settings):
 
 
 async def test_total_deadline_bounds_a_slow_write(make_settings):
-    hh = harness.build(make_settings(read_deadline_seconds=0.3, write_deadline_seconds=0.4,
-                                     summary_deadline_seconds=0.5, request_timeout_seconds=0.2))
+    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=0.3,
+                                     write_deadline_seconds=0.4, summary_deadline_seconds=0.5,
+                                     request_timeout_seconds=0.2))
     try:
         hh.ops_state.delay_for_prefix["/appointments"] = 2  # only the write is slow; the board check is fast
         result = await run(hh, **CREATE)
@@ -347,8 +348,8 @@ async def test_a_failed_board_read_blocks_the_create_honestly(h):
 async def test_board_check_overlaps_the_routing_check(make_settings):
     import time
 
-    hh = harness.build(make_settings(read_deadline_seconds=2.0, write_deadline_seconds=2.5,
-                                     request_timeout_seconds=1.5))
+    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
+                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
     try:
         hh.knowledge_state.delay_seconds = 0.3
         hh.ops_state.delay_seconds = 0.3
@@ -427,3 +428,26 @@ async def test_unknown_in_an_unrelated_session_does_not_block_a_scoped_create(h)
     ])
     result = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "session": "morning", "preferredTime": "10:00"})
     assert result.outcome == "NOTED"
+
+
+# ------------------------------------------------------------------ architect follow-up 1
+
+
+async def test_availability_and_create_agree_when_an_unlabelled_unknown_row_is_present(h):
+    """Journey: the doctor-specific Morning query and the Morning create must both end in callback-only; the
+    UNKNOWN rule is name + number, 'someone will call back', summary only."""
+    from frontdesk_mcp import availability
+
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
+         "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "status": "UNKNOWN", "updatedMinutesAgo": 1},
+    ])
+    service = availability.AvailabilityService(h.ops, h.knowledge, h.cache, h.settings, h.clock)
+    morning = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today",
+                                                                           session="Morning"))
+    created = await run(h, h.ctx(operation_id="op-m"), **{**CREATE, "session": "Morning"})
+    assert morning.outcome == created.outcome == "CALLBACK_REQUIRED"
+    assert morning.nextStep == created.nextStep == "ASK_CALLBACK_DETAILS"
+    assert created.callback.ask and "call you back" in created.callback.say
+    assert len(h.ops_state.appointments) == 0 and sent(h, "/appointments") == []

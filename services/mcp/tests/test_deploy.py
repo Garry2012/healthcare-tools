@@ -151,16 +151,37 @@ def test_schema_drift_between_server_and_gateway_is_detected():
 # ------------------------------------------------------------------ architect review AR-05
 
 
-def test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env(tmp_path):
-    """AR-05: the live app has only agent-token/mcp-token; an update with new secretref names must first attach
-    the Key Vault references (and identity/registry access), else the revision fails to start."""
+def _profile_dir(tmp_path, ops_base_url: str) -> str:
+    """A test-only profile: the committed live profile is blank until Manoj supplies the base URL."""
+    (tmp_path / "test.env").write_text(f"""PROFILE=test
+OPS_BASE_URL={ops_base_url}
+OPS_E2E_MODE=live
+KNOWLEDGE_BASE_URL=https://kb.example
+AZ_SUBSCRIPTION_ID=4e1c081a-9a6a-4e16-9da2-90217c22378b
+AZ_RESOURCE_GROUP=healthcare-rg
+AZ_CONTAINERAPPS_ENV=cae-frontdesk-demo-hospital
+AZ_LOG_WORKSPACE=law-frontdesk-demo-hospital
+AZ_ACR=acrfd399536
+AZ_KEYVAULT=kv-fd-demo-hospi-0574c1
+AZ_IDENTITY=id-frontdesk-demo-hospital
+""")
+    return str(tmp_path)
+
+
+def _dry_run(tmp_path, *args, ops_base_url="https://ops.example/api/v1", **env_extra):
     import os
     import subprocess
 
-    env = {**os.environ, "DEPLOY_ASSUME_EXISTING": "1", "OPS_BASE_URL": "https://ops.example/api/v1",
-           "KNOWLEDGE_BASE_URL": "https://kb.example"}
-    out = subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"), "--dry-run"],
-                         capture_output=True, text=True, env=env, check=False, cwd=DEPLOY.parent)
+    env = {**os.environ, "DEPLOY_PROFILE_DIR": _profile_dir(tmp_path, ops_base_url), **env_extra}
+    return subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"), "--profile",
+                           "test", "--dry-run", *args], capture_output=True, text=True, env=env, check=False,
+                          cwd=DEPLOY.parent)
+
+
+def test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env(tmp_path):
+    """AR-05: the live app has only agent-token/mcp-token; an update with new secretref names must first attach
+    the Key Vault references (and identity/registry access), else the revision fails to start."""
+    out = _dry_run(tmp_path, DEPLOY_ASSUME_EXISTING="1")
     log = out.stderr
     assert out.returncode == 0, log[-2000:]
     secret_set = log.index("az containerapp secret set")
@@ -172,3 +193,29 @@ def test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env
     for name in ("mcp-token", "mcp-lifecycle-token", "ops-client-id", "ops-client-secret", "knowledge-token"):
         assert f"{name}=keyvaultref:" in secrets_line, name
     assert "az containerapp create" not in log  # the existing app is upgraded, not recreated
+
+
+def test_deployment_targets_only_the_profiles_resource_group_and_never_creates_one(tmp_path):
+    """Follow-up 3: the documented command cannot silently create or use rg-frontdesk-demo-hospital."""
+    import subprocess
+
+    out = _dry_run(tmp_path)
+    assert out.returncode == 0, out.stderr[-1500:]
+    assert "rg-frontdesk-demo-hospital" not in out.stderr and "az group create" not in out.stderr
+    assert "-g healthcare-rg" in out.stderr
+    without_profile = subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"),
+                                      "--dry-run"], capture_output=True, text=True, check=False, cwd=DEPLOY.parent)
+    assert without_profile.returncode != 0 and "--profile" in without_profile.stderr
+
+
+def test_the_live_profile_is_refused_while_its_base_url_is_blank_and_mock_cannot_deploy(tmp_path):
+    import subprocess
+
+    env_sh = DEPLOY.parent / "scripts/env.sh"
+    live = subprocess.run([str(env_sh), "live"], capture_output=True, text=True, check=False)
+    assert live.returncode == 3 and live.stdout == "" and "awaiting" in live.stderr
+    mock = subprocess.run([str(env_sh), "mock"], capture_output=True, text=True, check=False)
+    assert mock.returncode == 0 and "healthcare-contract-mock" in mock.stdout and "OPS_E2E_MODE=mock" in mock.stdout
+    assert "AZ_RESOURCE_GROUP=healthcare-rg" in mock.stdout and "4e1c081a-9a6a-4e16-9da2-90217c22378b" in mock.stdout
+    refused = _dry_run(tmp_path, ops_base_url="https://healthcare-contract-mock.example")
+    assert refused.returncode != 0 and "stub/mock" in refused.stderr

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Deploy the MCP adapter for one rollout to Azure Container Apps, as one re-runnable command.
 #
-#   deploy/azure/deploy.sh <rollout directory> [--dry-run]
+#   deploy/azure/deploy.sh <rollout directory> --profile <live|mock> [--dry-run]
 #
-# The rollout directory supplies rollout.env (tenant settings, non-secret) and an optional azure.env
-# that overrides the Azure names below. The two owner services are external: their base URLs come
-# from azure.env or the environment (OPS_BASE_URL, KNOWLEDGE_BASE_URL) and MUST be the owners' real
-# hosts over https; production configuration refuses stubs and mocks. Nothing here provisions a
+# The rollout directory supplies rollout.env (tenant settings, non-secret). The profile
+# (deploy/environments/<profile>.env, loaded through scripts/env.sh) supplies the owner-service base URL,
+# the Key Vault secret names and the exact Azure target: subscription and resource group. The script refuses
+# to run without a profile, when the signed-in subscription differs from the profile's, or when the profile
+# names no resource group: it never invents one. The owner services are external and MUST be their real hosts
+# over https; production configuration refuses stubs and mocks (so `--profile mock` can only dry-run). Nothing here provisions a
 # database, runs migrations or builds any backend image: Manoj and Shobhit deploy their own services.
 #
 # Re-running is safe: resources that exist are kept, generated secrets are created once and then read
@@ -18,14 +20,20 @@
 # OPS_CLIENT_SECRET in the environment on first run), knowledge-token (Shobhit, same).
 set -euo pipefail
 
-usage() { sed -n '2,20p' "$0" >&2; exit 2; }
+usage() { sed -n '2,22p' "$0" >&2; exit 2; }
 [[ $# -ge 1 && -d "$1" ]] || usage
 ROLLOUT="$(cd "$1" && pwd)"; shift
-DRY=""
-for arg in "$@"; do
-  case "$arg" in --dry-run) DRY=1 ;; *) usage ;; esac
+DRY="" PROFILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY=1; shift ;;
+    --profile) PROFILE="${2:-}"; shift 2 ;;
+    *) usage ;;
+  esac
 done
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+[[ -n "$PROFILE" ]] || { echo "--profile <live|mock> is required (deploy/environments/)" >&2; exit 2; }
+eval "$("$ROOT/scripts/env.sh" "$PROFILE")"
 
 show() { printf '+ %s\n' "$*" | sed -E 's/(--admin-password |--value )[^ ]*/\1***/g' >&2; }
 run() { if [[ -n "$DRY" ]]; then show "$@"; else "$@"; fi; }
@@ -53,11 +61,10 @@ ROLLOUT_ENV=()
 while IFS= read -r line || [[ -n "$line" ]]; do ROLLOUT_ENV+=("$line"); done < <(read_env "$ROLLOUT/rollout.env")
 P="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^PROVIDER_ID=//p')"
 [[ -n "$P" ]] || { echo "rollout.env must set PROVIDER_ID" >&2; exit 2; }
-if [[ -f "$ROLLOUT/azure.env" ]]; then
-  while IFS= read -r line || [[ -n "$line" ]]; do export "${line?}"; done < <(read_env "$ROLLOUT/azure.env")
-fi
-: "${OPS_BASE_URL:?set OPS_BASE_URL to Manoj's deployed API base (https://host/api/v1)}"
-: "${KNOWLEDGE_BASE_URL:?set KNOWLEDGE_BASE_URL to Shobhit's deployed service base (https://host)}"
+: "${OPS_BASE_URL:?the profile must set OPS_BASE_URL (Manoj's deployed API base, https://host/api/v1)}"
+: "${KNOWLEDGE_BASE_URL:?set KNOWLEDGE_BASE_URL (profile or environment) to Shobhit's deployed service base}"
+: "${AZ_SUBSCRIPTION_ID:?the profile must name the subscription}"
+: "${AZ_RESOURCE_GROUP:?the profile must name the resource group; this script never defaults to rg-frontdesk-<provider>}"
 for url in "$OPS_BASE_URL" "$KNOWLEDGE_BASE_URL"; do
   [[ "$url" == https://* ]] || { echo "owner service URLs must be https: $url" >&2; exit 2; }
   case "$url" in *contract-mock*|*localhost*|*127.0.0.1*|*stub*|*prism*|*mock*)
@@ -72,21 +79,24 @@ step "validate the adapter configuration offline (settings, pack, tool schema)"
   MCP_BEARER_TOKEN=validate-a MCP_LIFECYCLE_BEARER_TOKEN=validate-b \
   uv run -q frontdesk-mcp schema >/dev/null)
 
-# --- names: deterministic per subscription and rollout ------------------------------------------
+# --- the Azure target comes from the profile; the signed-in subscription must match -------------
 SUB="$(out az account show --query id -o tsv)"
-hash6() { printf '%s' "$1" | openssl dgst -sha1 | sed 's/^.*= //' | cut -c1-6; }
+if [[ -z "$DRY" && "$SUB" != "$AZ_SUBSCRIPTION_ID" ]]; then
+  echo "signed-in subscription $SUB is not the profile's $AZ_SUBSCRIPTION_ID; run 'az account set' first" >&2; exit 2
+fi
 LOC="${AZ_LOCATION:-centralindia}"
-RG="${AZ_RESOURCE_GROUP:-rg-frontdesk-$P}"
-ENV_NAME="${AZ_CONTAINERAPPS_ENV:-cae-frontdesk-$P}" LAW="${AZ_LOG_WORKSPACE:-law-frontdesk-$P}"
-ACR="${AZ_ACR:-acrfd$(hash6 "$SUB")}"
-KV="${AZ_KEYVAULT:-kv-fd-${P:0:10}-$(hash6 "$SUB$P")}"
+RG="$AZ_RESOURCE_GROUP"
+ENV_NAME="${AZ_CONTAINERAPPS_ENV:?profile must name the Container Apps environment}"
+LAW="${AZ_LOG_WORKSPACE:?profile must name the Log Analytics workspace}"
+ACR="${AZ_ACR:?profile must name the registry}"
+KV="${AZ_KEYVAULT:?profile must name the Key Vault}"
 TAG="${TAG:-$(git -C "$ROOT" rev-parse --short HEAD)}"
-ID_NAME="${AZ_IDENTITY:-id-frontdesk-$P}"
+ID_NAME="${AZ_IDENTITY:?profile must name the managed identity}"
 APP="${AZ_MCP_APP:-mcp-$P}"
 
 # --- 2. shared infrastructure (kept if present) and the image ------------------------------------
-step "infrastructure: $RG in $LOC"
-run az group create -n "$RG" -l "$LOC" -o none
+step "infrastructure: $RG in $LOC (must already exist: shared group named by the profile)"
+exists az group show -n "$RG" || [[ -n "$DRY" ]] || { echo "resource group $RG not found; this script does not create groups" >&2; exit 2; }
 exists az monitor log-analytics workspace show -g "$RG" -n "$LAW" ||
   run az monitor log-analytics workspace create -g "$RG" -n "$LAW" -l "$LOC" -o none
 if ! exists az containerapp env show -g "$RG" -n "$ENV_NAME"; then

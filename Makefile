@@ -36,7 +36,7 @@ schema: ## Print the pinned tool surface (compare with tests/contracts/mcp-tools
 demo: ## In-process walk-through of the four tools against the stubs (dev/demo.py)
 	cd $(MCP) && uv run python dev/demo.py
 
-bench: ## Tool round-trip latency against the in-process stubs, or OPS_E2E_* real hosts (dev/bench.py)
+bench: ## Tool round-trip latency: in-process stubs by default; `eval "$$(scripts/env.sh mock|live)"` first for a real host
 	cd $(MCP) && uv run python dev/bench.py
 
 logs:

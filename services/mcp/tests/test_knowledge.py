@@ -76,8 +76,8 @@ async def test_knowledge_service_unreachable_means_no_routing_and_no_answer(make
     if break_it == "unconfigured":
         settings = make_settings(env="development", knowledge_base_url="")
     if break_it == "slow":
-        settings = make_settings(read_deadline_seconds=0.3, write_deadline_seconds=0.3, summary_deadline_seconds=0.3,
-                                 request_timeout_seconds=0.2)
+        settings = make_settings(allow_budget_overrides=True, read_deadline_seconds=0.3, write_deadline_seconds=0.3,
+                                 summary_deadline_seconds=0.3, request_timeout_seconds=0.2)
     hh = harness.build(settings)
     try:
         if break_it == "slow":
