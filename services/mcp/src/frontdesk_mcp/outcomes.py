@@ -149,3 +149,37 @@ class BookingResult(_Out):
     routing: Routing | None = None
     detail: str | None = None
     retryAfterSeconds: int | None = None  # noqa: N815
+
+
+# -------------------------------------------------------------------------------- search_knowledge
+
+
+KnowledgeOutcome = Literal["ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED", "COULD_NOT_CHECK",
+                           "INVALID_REQUEST"]
+KnowledgeNextStep = Literal["SPEAK_ANSWER", "SAY_NO_ANSWER_AND_OFFER_DESK", "ASK_CLARIFICATION", "TRANSFER_DESK",
+                            "SAY_COULD_NOT_CHECK", "ASK_TO_REPHRASE"]
+
+
+class KnowledgeResult(_Out):
+    outcome: KnowledgeOutcome
+    nextStep: KnowledgeNextStep  # noqa: N815
+    answer: Speech | None = Field(default=None, description="Approved text to speak exactly as given.")
+    sourceId: str | None = None  # noqa: N815
+    destination: str | None = None
+    detail: str | None = None
+
+
+# ----------------------------------------------------------------------------- record_call_summary
+
+
+SummaryOutcome = Literal["STORED", "REPLAYED", "REJECTED", "CONFLICT", "UNCERTAIN", "COULD_NOT_RECORD",
+                         "INVALID_REQUEST", "LIFECYCLE_CONTEXT_MISSING"]
+
+
+class SummaryResult(_Out):
+    outcome: SummaryOutcome
+    nextStep: Literal["DONE", "RETRY_SAME_PAYLOAD", "FIX_PLATFORM_INPUT", "RECORD_FAILED"]  # noqa: N815
+    summaryId: str | None = None  # noqa: N815
+    fields: list[str] = []
+    detail: str | None = None
+    retryAfterSeconds: int | None = None  # noqa: N815

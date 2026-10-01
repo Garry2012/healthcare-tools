@@ -279,6 +279,11 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         except ValueError:
             return error(400, "VALIDATION_FAILED", "body must be JSON")
         key = request.headers.get("idempotency-key")
+        # Contract: an existing callId returns the stored summary with 200. The stub lets that natural key
+        # take precedence over Idempotency-Key replay; the real precedence is an open question for Manoj.
+        if relative_path(request) == "/call-summaries" and isinstance(body, dict):
+            if body.get("callId") in state.summaries:
+                return JSONResponse(state.summaries[body["callId"]], status_code=200)
         if key and key in state.idempotency:
             stored_hash, status, stored = state.idempotency[key]
             if stored_hash != body_hash(body):
