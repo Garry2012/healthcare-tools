@@ -1,15 +1,20 @@
-"""Adapter settings, from the environment: the rollout's rollout.env (which provider, which
-domain, which languages) plus secrets. Nothing provider-specific is written in code."""
+"""Adapter settings, from the environment: the rollout's identity (rollouts/<id>/rollout.env), the
+two owner services (Manoj's operational API, Shobhit's knowledge service) and the gateway/lifecycle
+bearers. Nothing provider-specific is written in code, and production refuses development stubs."""
 
 from __future__ import annotations
 
 from functools import lru_cache
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from . import packs
+
+# Hostname fragments that identify contract mocks and development stubs. Production never talks to them.
+STUB_MARKERS = ("healthcare-contract-mock", "localhost", "127.0.0.1", ":4010", "stub", "prism", "mock")
 
 
 class Settings(BaseSettings):
@@ -20,25 +25,43 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8100, ge=1, le=65535)
 
-    # The rollout (rollouts/<id>/rollout.env, shared with the API): no defaults.
+    # --- the rollout (rollout.env): no defaults -------------------------------------------------
     provider_id: str = Field(min_length=1)
-    # Which words the LLM reads (packs/<name>.json); the same DOMAIN_PACK as the API's.
     domain_pack: str
-    # The languages the rollout serves; the LLM is told to set `language` to one of them.
     tenant_supported_languages: str
-    # Optional: the provider's name as the agent may say it ("Front-desk tools for ... at <name>").
+    tenant_timezone: str
+    tenant_country_calling_code: str
     tenant_display_name: str = ""
 
-    api_base_url: str = "http://127.0.0.1:8000/api/v1"
-    api_bearer_token: SecretStr = SecretStr("")
-    # Bearer the gateway (ContextForge) must present. Empty is allowed only in development.
+    # --- Manoj's operational API: full base URL (backend has /api/v1, the public mock does not) ---
+    ops_base_url: str
+    ops_client_id: str = ""
+    ops_client_secret: SecretStr = SecretStr("")
+
+    # --- Shobhit's knowledge service (contract pending: see knowledge_contract.py) ----------------
+    knowledge_base_url: str = ""
+    knowledge_bearer_token: SecretStr = SecretStr("")
+
+    # --- who may call us ------------------------------------------------------------------------
+    # Conversational path: the bearer the gateway presents for the three in-call tools.
     mcp_bearer_token: SecretStr = SecretStr("")
+    # Call-end lifecycle: a different bearer that alone may invoke record_call_summary.
+    mcp_lifecycle_bearer_token: SecretStr = SecretStr("")
     # Dev only: used when the gateway forwards no X-Caller-Number.
     mcp_dev_caller_number: str = ""
+    # Which X-Caller-Verification assertions authorise appointment lookups/changes (agreed with Manoj).
+    accepted_caller_verification: str = "SIP_CALLER_ID"
 
-    read_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
-    write_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
-    default_retry_after_seconds: int = Field(default=2, ge=0, le=300)
+    # --- one total deadline per tool invocation (pool wait + auth + every call + any retry) -------
+    read_deadline_seconds: float = Field(default=2.0, gt=0, le=30)
+    write_deadline_seconds: float = Field(default=4.0, gt=0, le=30)
+    summary_deadline_seconds: float = Field(default=8.0, gt=0, le=60)
+    request_timeout_seconds: float = Field(default=1.5, gt=0, le=30)  # cap for any single HTTP exchange
+    token_refresh_margin_seconds: int = Field(default=60, ge=0, le=3600)
+    directory_cache_seconds: int = Field(default=300, ge=0, le=86400)
+    directory_cache_max_entries: int = Field(default=512, ge=1, le=100_000)
+    ops_pool_max_connections: int = Field(default=20, ge=1, le=1000)
+    knowledge_pool_max_connections: int = Field(default=10, ge=1, le=1000)
 
     @field_validator("tenant_supported_languages")
     @classmethod
@@ -48,29 +71,81 @@ class Settings(BaseSettings):
             raise ValueError("TENANT_SUPPORTED_LANGUAGES must list language codes, e.g. en,kn,hi")
         return ",".join(codes)
 
+    @field_validator("tenant_timezone")
+    @classmethod
+    def _timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"TENANT_TIMEZONE must be an IANA zone name, e.g. Asia/Kolkata: {value!r}") from exc
+        return value
+
+    @field_validator("tenant_country_calling_code")
+    @classmethod
+    def _calling_code(cls, value: str) -> str:
+        if not value.isdigit() or not 1 <= len(value) <= 3:
+            raise ValueError("TENANT_COUNTRY_CALLING_CODE must be the digits of the calling code, e.g. 91")
+        return value
+
+    @field_validator("ops_base_url", "knowledge_base_url")
+    @classmethod
+    def _strip_slash(cls, value: str) -> str:
+        return value.rstrip("/")
+
+    @field_validator("accepted_caller_verification")
+    @classmethod
+    def _verification(cls, value: str) -> str:
+        levels = [v.strip() for v in value.split(",") if v.strip()]
+        if not levels:
+            raise ValueError("ACCEPTED_CALLER_VERIFICATION must name at least one verification level")
+        return ",".join(levels)
+
     @property
     def languages(self) -> tuple[str, ...]:
         return tuple(self.tenant_supported_languages.split(","))
 
-    @model_validator(mode="after")
-    def _production_guards(self) -> Settings:
-        packs.load(self.domain_pack)
-        if self.env == "production":
-            if not self.api_base_url.startswith("https://"):
-                # Caller numbers and names cross this hop: never in clear text in production.
-                raise ValueError("API_BASE_URL must use https:// when ENV=production")
-            if self.mcp_dev_caller_number:
-                raise ValueError("MCP_DEV_CALLER_NUMBER must not be set when ENV=production")
-            if not self.mcp_bearer_token.get_secret_value():
-                raise ValueError("MCP_BEARER_TOKEN is required when ENV=production")
-        if self.env != "development" and not self.api_bearer_token.get_secret_value():
-            raise ValueError("API_BEARER_TOKEN is required outside development")
-        return self
+    @property
+    def zone(self) -> ZoneInfo:
+        return ZoneInfo(self.tenant_timezone)
 
     @property
-    def api_root(self) -> str:
-        base = self.api_base_url.rstrip("/")
-        return base[: -len("/api/v1")] if base.endswith("/api/v1") else base
+    def accepted_verification(self) -> frozenset[str]:
+        return frozenset(self.accepted_caller_verification.split(","))
+
+    @property
+    def ops_token_url(self) -> str:
+        return f"{self.ops_base_url}/auth/token"
+
+    @model_validator(mode="after")
+    def _deadlines_nest(self) -> Settings:
+        if not self.read_deadline_seconds <= self.write_deadline_seconds <= self.summary_deadline_seconds:
+            raise ValueError("deadlines must satisfy read <= write <= summary")
+        return self
+
+    @model_validator(mode="after")
+    def _guards(self) -> Settings:
+        packs.load(self.domain_pack)
+        if self.env != "development":
+            if not (self.ops_client_id and self.ops_client_secret.get_secret_value()):
+                raise ValueError("OPS_CLIENT_ID and OPS_CLIENT_SECRET are required outside development")
+            if not self.knowledge_base_url:
+                raise ValueError("KNOWLEDGE_BASE_URL is required outside development (no local knowledge fallback)")
+        if self.env == "production":
+            for name, url in (("OPS_BASE_URL", self.ops_base_url), ("KNOWLEDGE_BASE_URL", self.knowledge_base_url)):
+                if not url.startswith("https://"):
+                    # Caller numbers, names and symptoms cross these hops: never in clear text in production.
+                    raise ValueError(f"{name} must use https:// when ENV=production")
+                if any(marker in url.lower() for marker in STUB_MARKERS):
+                    raise ValueError(f"{name} points at a stub/mock endpoint; production needs the owner's service")
+            if self.mcp_dev_caller_number:
+                raise ValueError("MCP_DEV_CALLER_NUMBER must not be set when ENV=production")
+            gateway = self.mcp_bearer_token.get_secret_value()
+            lifecycle = self.mcp_lifecycle_bearer_token.get_secret_value()
+            if not gateway:
+                raise ValueError("MCP_BEARER_TOKEN is required when ENV=production")
+            if not lifecycle or lifecycle == gateway:
+                raise ValueError("MCP_LIFECYCLE_BEARER_TOKEN is required and must differ from MCP_BEARER_TOKEN")
+        return self
 
 
 @lru_cache(maxsize=1)
