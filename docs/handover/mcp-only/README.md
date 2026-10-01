@@ -4,6 +4,10 @@ Published 1 October 2026. **The migration is planned, not implemented.** This tr
 
 The current application still has three MCP tools, our REST backend and PostgreSQL. The target has four MCP tools consuming Manoj's operational API and Shobhit's knowledge service, with no application database or backend engine in this repository. Building the existing MCP package is possible independently; running its current tools still requires the old backend. This handover does not claim a finished MCP-only application or a passing full legacy test suite.
 
+## Implementation assignment
+
+[FABLE-MASTER-PROMPT.md](FABLE-MASTER-PROMPT.md) is the comprehensive execution prompt for the coding agent working in this workspace. It covers implementation, tests, voice/gateway integration, source and Azure retirement, self-review, and the evidence to return for architect review. Giving the prompt to an agent starts a separate implementation assignment; publishing it has not implemented or cleaned up the system.
+
 ## Read in this order
 
 Start with [TARGET-STATE.md](TARGET-STATE.md) for the ownership diagram, contract-only boundary, cleanup completion gates and voice-performance requirements. The [Azure inventory](AZURE-RETIREMENT.md) identifies actual legacy and shared resources that must be handled during retirement.
