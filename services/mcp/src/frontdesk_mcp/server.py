@@ -1,4 +1,8 @@
-"""Starlette + FastMCP assembly: /mcp/ (streamable HTTP, stateless), /health, /ready."""
+"""Starlette + FastMCP assembly: /mcp/ (streamable HTTP, stateless), /health, /ready, /dependencies.
+
+Two bearers may reach /mcp/: the gateway's (conversational principal, three in-call tools) and the
+call-end finalizer's (lifecycle principal, record_call_summary only). The principal is decided here,
+on the server, and enforced by access.LifecycleGate; no header can claim it."""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ import hmac
 import json
 import logging
 import sys
+import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
@@ -18,15 +23,19 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import packs, prompt, tools
+from . import context, packs, prompt, tools
+from .access import LifecycleGate
+from .clock import Clock, Deadline
 from .config import Settings, get_settings
+from .ops_client import UpstreamError
 
 logger = logging.getLogger(__name__)
-
+DEPENDENCY_CHECK_SECONDS = 1.0
+DEPENDENCY_CACHE_SECONDS = 15.0
 
 
 class JsonFormatter(logging.Formatter):
-    """Same shape as the API's log lines: provider and callId correlate the two services."""
+    """One JSON object per line; provider and callId correlate across services. Never caller data."""
 
     def __init__(self, provider: str = "") -> None:
         super().__init__()
@@ -41,7 +50,7 @@ class JsonFormatter(logging.Formatter):
         }
         if self.provider:
             entry["provider"] = self.provider
-        if call_id := tools.call_id_var.get():
+        if call_id := context.call_id_var.get():
             entry["callId"] = call_id
         fields = getattr(record, "fields", None)
         if isinstance(fields, dict):
@@ -57,65 +66,119 @@ def configure_logging(level: str, provider: str = "") -> None:
 
 
 class BearerAuth:
-    """Only the gateway may call /mcp/. /health and /ready stay open for the orchestrator."""
+    """Decides the principal for /mcp/ from the presented bearer. /health, /ready, /dependencies stay open."""
 
-    def __init__(self, app: ASGIApp, token: str) -> None:
+    def __init__(self, app: ASGIApp, gateway_token: str, lifecycle_token: str, development: bool) -> None:
         self.app = app
-        self.expected = f"Bearer {token}".encode() if token else b""
+        self.gateway = f"Bearer {gateway_token}".encode() if gateway_token else b""
+        self.lifecycle = f"Bearer {lifecycle_token}".encode() if lifecycle_token else b""
+        self.development = development
+
+    def principal(self, supplied: bytes) -> context.Principal | None:
+        if self.lifecycle and hmac.compare_digest(supplied, self.lifecycle):
+            return "lifecycle"
+        if self.gateway and hmac.compare_digest(supplied, self.gateway):
+            return "conversation"
+        if not self.gateway and self.development:
+            return "conversation"  # development without a configured gateway token
+        return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and self.expected and scope["path"].startswith("/mcp"):
-            supplied = dict(scope.get("headers", [])).get(b"authorization", b"")
-            if not hmac.compare_digest(supplied, self.expected):
-                response = JSONResponse({"error": "unauthorized"}, status_code=401,
-                                        headers={"WWW-Authenticate": "Bearer"})
-                await response(scope, receive, send)
-                return
-        await self.app(scope, receive, send)
+        if scope["type"] != "http" or not scope["path"].startswith("/mcp"):
+            await self.app(scope, receive, send)
+            return
+        supplied = dict(scope.get("headers", [])).get(b"authorization", b"")
+        principal = self.principal(supplied)
+        if principal is None:
+            response = JSONResponse({"error": "unauthorized"}, status_code=401,
+                                    headers={"WWW-Authenticate": "Bearer"})
+            await response(scope, receive, send)
+            return
+        token = context.principal_var.set(principal)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            context.principal_var.reset(token)
 
 
-def build_mcp(client: tools.ApiClient) -> FastMCP:
-    pack = packs.load(client.settings.domain_pack)
-    mcp = FastMCP(name=f"frontdesk-{pack.name}", instructions=prompt.instructions(
-        pack, client.settings.languages, client.settings.tenant_display_name))
-    tools.register(mcp, client, pack)
+def build_mcp(services: tools.Services) -> FastMCP:
+    settings = services.settings
+    pack = packs.load(settings.domain_pack)
+    mcp = FastMCP(
+        name=f"frontdesk-{pack.name}",
+        instructions=prompt.instructions(pack, settings.languages, settings.tenant_display_name),
+        version=prompt.SCHEMA_VERSION,
+        middleware=[LifecycleGate()],
+    )
+    tools.register(mcp, services, pack)
     return mcp
 
 
-def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTransport | None = None) -> Starlette:
+class DependencyStatus:
+    """Bounded, cached checks of the two owner services; distinct from local readiness."""
+
+    def __init__(self, services: tools.Services) -> None:
+        self.services = services
+        self._cached: tuple[float, dict, int] | None = None
+
+    async def check(self, *, refresh: bool = False) -> tuple[dict, int]:
+        now = time.monotonic()
+        if not refresh and self._cached and now - self._cached[0] < DEPENDENCY_CACHE_SECONDS:
+            return self._cached[1], self._cached[2]
+        status = 200
+        try:
+            await self.services.ops.list_departments(Deadline(DEPENDENCY_CHECK_SECONDS))
+            operational = {"status": "ok", "check": "listDepartments"}
+        except UpstreamError as exc:
+            operational = {"status": "unavailable", "reason": getattr(exc, "reason", type(exc).__name__)}
+            status = 503
+        knowledge = {"status": "configured" if self.services.settings.knowledge_base_url else "not_configured",
+                     "check": "none agreed (contract pending)"}
+        body = {"operational": operational, "knowledge": knowledge}
+        self._cached = (now, body, status)
+        return body, status
+
+
+def create_app(settings: Settings | None = None, *, ops_transport: httpx.AsyncBaseTransport | None = None,
+               knowledge_transport: httpx.AsyncBaseTransport | None = None, clock: Clock | None = None) -> Starlette:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.provider_id)
-    client = tools.ApiClient(settings, transport=transport)
-    mcp = build_mcp(client)
+    services = tools.Services.build(settings, ops_transport=ops_transport, knowledge_transport=knowledge_transport,
+                                    clock=clock)
+    mcp = build_mcp(services)
     # Stateless: no per-session server state, so any replica can serve any request.
     mcp_app = mcp.http_app(path="/mcp/", transport="http", stateless_http=True)
+    dependencies = DependencyStatus(services)
 
     async def health(_: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
     async def ready(_: Request) -> JSONResponse:
-        try:
-            async with httpx.AsyncClient(timeout=settings.read_timeout_seconds) as http:
-                upstream = await http.get(f"{settings.api_root}/ready")
-        except httpx.HTTPError:
-            return JSONResponse({"status": "unavailable", "api": "unreachable"}, status_code=503)
-        if upstream.status_code != 200:
-            return JSONResponse({"status": "unavailable", "api": upstream.status_code}, status_code=503)
-        return JSONResponse({"status": "ready"})
+        # Local readiness: configuration validated, clients and tools built. No fresh token, no upstream probe.
+        return JSONResponse({"status": "ready", "schemaVersion": prompt.SCHEMA_VERSION, "tools": len(tools.TOOL_NAMES)})
+
+    async def dependency_status(request: Request) -> JSONResponse:
+        body, status = await dependencies.check(refresh=request.query_params.get("refresh") == "1")
+        return JSONResponse(body, status_code=status)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        logger.info("service_started", extra={"fields": {"env": settings.env, "pack": settings.domain_pack}})
+        logger.info("service_started", extra={"fields": {"env": settings.env, "pack": settings.domain_pack,
+                                                         "schemaVersion": prompt.SCHEMA_VERSION}})
         try:
             async with mcp_app.lifespan(app):
                 yield
         finally:
-            await client.aclose()
+            await services.aclose()
 
     app = Starlette(
-        routes=[Route("/health", health), Route("/ready", ready), Mount("/", app=mcp_app)],
+        routes=[Route("/health", health), Route("/ready", ready), Route("/dependencies", dependency_status),
+                Mount("/", app=mcp_app)],
         lifespan=lifespan,
     )
-    app.add_middleware(BearerAuth, token=settings.mcp_bearer_token.get_secret_value())
+    app.add_middleware(BearerAuth, gateway_token=settings.mcp_bearer_token.get_secret_value(),
+                       lifecycle_token=settings.mcp_lifecycle_bearer_token.get_secret_value(),
+                       development=settings.env == "development")
     app.state.mcp = mcp
+    app.state.services = services
     return app
