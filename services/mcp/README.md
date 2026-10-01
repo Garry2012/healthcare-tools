@@ -1,24 +1,33 @@
 # frontdesk-mcp
 
-FastMCP 2.14.7 adapter exposing three tools over streamable HTTP at `/mcp/` (stateless):
+FastMCP 2.14.7 adapter exposing four tools over streamable HTTP at `/mcp/` (stateless). It consumes
+two owner services over HTTPS and owns no data: Manoj's operational API (pinned contract in
+`docs/handover/mcp-only/contracts/`) and Shobhit's knowledge service (provisional contract in
+`src/frontdesk_mcp/knowledge_contract.py`).
 
-| Tool | REST |
-|---|---|
-| `find_availability` | `POST /agent/availability-search` |
-| `search_knowledge` | `POST /agent/knowledge-search` |
-| `manage_booking(action=BOOK\|LIST\|CANCEL\|RESCHEDULE)` | `POST /agent/bookings`, `GET /agent/bookings`, `POST …/cancel`, `POST …/reschedule` |
+| Tool | Principal | Owner calls |
+|---|---|---|
+| `get_doctor_availability` | gateway (in-call) | knowledge route (required clearance) ∥ `GET /departments` or `GET /doctors?query=`; then `GET /doctors/{id}` ∥ `GET /availability?doctorId=&date=` (or `department=`) |
+| `manage_booking` | gateway (in-call) | `POST /appointments` (after routing clearance), `GET /appointments?mobile=`, `POST …/cancel`, `POST …/reschedule` |
+| `search_knowledge` | gateway (in-call) | knowledge answer |
+| `record_call_summary` | call-end lifecycle only | `POST /call-summaries` |
 
-`X-Call-Id` and `X-Caller-Number` are read from the incoming MCP HTTP request, forwarded by
-ContextForge. They are never tool parameters. `Idempotency-Key` is
-`sha256(callId|action|normalised customer name|target)`. The tool result is the REST body
-unchanged. Transport failures, 429 and 5xx return
-`{"outcome": "COULD_NOT_CHECK" | "COULD_NOT_RECORD", "retryAfterSeconds": n}`.
+Trusted context arrives as HTTP headers forwarded by the gateway/platform, never as tool arguments:
+`X-Call-Id`, `X-Caller-Number` (+`X-Caller-Verification`), `X-Turn-Context` (base64url JSON
+`{utterance, language, turnId?}`), `X-Operation-Id` (per confirmed write), `X-Call-Started-At`,
+`X-Call-Duration-Seconds` (lifecycle). Two bearers: `MCP_BEARER_TOKEN` sees the three in-call tools;
+`MCP_LIFECYCLE_BEARER_TOKEN` sees only `record_call_summary` (enforced server-side).
 
 ```bash
-uv sync && uv run pytest tests      # set MCP_E2E_API_URL / MCP_E2E_API_TOKEN for the end-to-end test
+uv sync --frozen
+uv run pytest tests -q -m "not e2e"      # hermetic: stubs in process
+uv run pytest tests -q -m e2e            # real processes over TCP
+uv run frontdesk-mcp schema              # the pinned tool surface (tests/contracts/mcp-tools.snapshot.json)
+uv run python dev/demo.py                # walk the four tools against the stubs
+uv run python dev/bench.py               # tool round trips (stubs; BENCH_OPS_BASE_URL for a real host)
 uv run frontdesk-mcp serve
 ```
 
-The words the model reads (server instructions, tool and parameter descriptions) come from
-the domain pack `src/frontdesk_mcp/packs/$DOMAIN_PACK.json`. The tool schema is the same in
-every domain.
+Layout: `src/frontdesk_mcp/` (config, context, identity, clock, ops_client, knowledge_client, cache,
+availability, booking, knowledge, summary, access, tools, server, prompt, packs/healthcare.json);
+`dev/frontdesk_stubs/` (development stubs and fixtures; never in the image); `tests/`.

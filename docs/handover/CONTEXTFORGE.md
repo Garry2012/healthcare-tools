@@ -1,61 +1,44 @@
 # ContextForge registration
 
-ContextForge is infrastructure: it federates `frontdesk-mcp` as an MCP gateway
-(`integration_type: MCP`, streamable HTTP) and adds auth, observability and rate limits.
-Nothing is built or changed in the ContextForge fork. Each provider (hospital or hotel) is
-one gateway entry, `frontdesk-<provider>`, pointing at that provider's adapter.
+ContextForge federates `frontdesk-mcp` as an MCP gateway (streamable HTTP) and adds auth,
+observability and rate limits. Each hospital is one gateway entry, `frontdesk-<provider>`, pointing
+at that hospital's adapter with the **gateway** bearer. Through it the voice agent sees the three
+conversational tools; `record_call_summary` is invoked by the call-end lifecycle with the separate
+lifecycle bearer (directly or through its own gateway entry), never through this one.
 
 ```
-voice agent ──MCP + X-Call-Id, X-Caller-Number──▶ ContextForge ──passthrough──▶ frontdesk-mcp ──▶ frontdesk-api
+voice agent ──MCP + trusted call headers──▶ ContextForge ──passthrough──▶ frontdesk-mcp ──▶ owner services
 ```
 
 ## Prerequisites on the gateway
 
-- `ENABLE_HEADER_PASSTHROUGH=true` on ContextForge. The registration lists
-  `X-Call-Id` and `X-Caller-Number` as `passthrough_headers`; without the flag they are dropped
-  and every write is refused (no call id, no idempotency key).
+- `ENABLE_HEADER_PASSTHROUGH=true`. The registration lists every trusted header as
+  `passthrough_headers`: `X-Call-Id`, `X-Caller-Number`, `X-Caller-Verification`, `X-Turn-Context`,
+  `X-Operation-Id`, `X-Call-Started-At`, `X-Call-Duration-Seconds`. Without passthrough, writes are
+  refused (no call/operation id) and availability returns ROUTING_UNAVAILABLE (no trusted turn).
 - A network path from ContextForge to the adapter (`MCP_PUBLIC_URL`, ending in `/mcp/`).
 
-## Register (idempotent)
+## Register, verify, refresh
 
 ```bash
 export CONTEXTFORGE_URL=https://<gateway-host>
 export CONTEXTFORGE_ADMIN_EMAIL=... CONTEXTFORGE_ADMIN_PASSWORD=...   # or CONTEXTFORGE_TOKEN=<admin JWT>
 export MCP_PUBLIC_URL=https://<adapter-host>/mcp/
-export MCP_BEARER_TOKEN=<same value the adapter is configured with>
-eval "$(scripts/rollout-env.sh <rollout dir>)"     # PROVIDER_ID, DOMAIN_PACK, ... from rollout.env
+export MCP_BEARER_TOKEN=<the adapter's GATEWAY bearer>
+eval "$(scripts/rollout-env.sh <rollout dir>)"     # PROVIDER_ID, DOMAIN_PACK
 
 cd services/mcp
-uv run python ../../deploy/contextforge/register.py --dry-run   # prints the payload, token redacted
-uv run python ../../deploy/contextforge/register.py              # registers, or reports "already registered"
+uv run python ../../deploy/contextforge/register.py --dry-run   # payload, token redacted
+uv run python ../../deploy/contextforge/register.py              # register or update, then verify
 ```
 
-Re-running is safe. The same name and URL is a no-op, and a changed visibility or passthrough
-list is updated in place. A name that already points elsewhere is refused, as is a tool-name
-collision with an existing gateway.
+After registering or updating, the script lists the gateway's discovered tools and compares names
+and input schemas with what the adapter serves (`tools/list` through the same bearer). On drift it
+asks the gateway to rediscover once (`POST /v1/gateways/{id}/refresh`, falling back to a
+deactivate/activate toggle) and fails if the surface still differs. Run it after every change of
+`prompt.SCHEMA_VERSION`; LiveKit's cached tool view must be refreshed in the same step.
 
-## The same with curl
-
-```bash
-TOKEN=$(curl -s -X POST "$CONTEXTFORGE_URL/v1/auth/login" -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$CONTEXTFORGE_ADMIN_EMAIL\",\"password\":\"$CONTEXTFORGE_ADMIN_PASSWORD\"}" | jq -r .access_token)
-
-curl -s -X POST "$CONTEXTFORGE_URL/v1/gateways" -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' -d @- <<JSON
-{
-  "name": "frontdesk-<provider>",
-  "url": "$MCP_PUBLIC_URL",
-  "description": "Hospital front-desk tools: find_availability, manage_booking, search_knowledge",
-  "transport": "STREAMABLEHTTP",
-  "auth_type": "bearer",
-  "auth_token": "$MCP_BEARER_TOKEN",
-  "passthrough_headers": ["X-Call-Id", "X-Caller-Number"],
-  "visibility": "private",
-  "tags": ["front-desk", "<pack>", "frontdesk-<provider>"]
-}
-JSON
-```
-
-ContextForge then lists the tools with the gateway prefix, e.g.
-`frontdesk-<provider>-find-availability`. The live registration hasn't been run from this
-workspace; only `--dry-run` has been verified.
+**Verification status:** no ContextForge instance is deployed for this project (the `mcp-gateway`
+app in `vcare-rc-rg` belongs to another project). The refresh/toggle endpoints and header passthrough
+are implemented from the ContextForge documentation and are unverified against a live gateway; see
+`mcp-only/implementation/OPEN-DEPENDENCIES.md`.

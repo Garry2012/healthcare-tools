@@ -1,41 +1,33 @@
-# Front-desk platform (voice agent tools)
+# Front-desk MCP adapter (voice agent tools)
 
-> **MCP-only migration handover (1 October 2026):** Read
-> [docs/handover/mcp-only/README.md](docs/handover/mcp-only/README.md) first.
-> The revised plan assigns operational APIs to Manoj and knowledge/routing to Shobhit.
-> Migration is **not implemented**: the code and setup below still describe the legacy
-> three-tool MCP + REST API + PostgreSQL stack. For migration work, the new plan takes
-> precedence over conflicting legacy architecture/rules; do not move backend engines into MCP.
-
-Reusable front-desk API + MCP tools for a LiveKit voice agent; healthcare first, hospitality next.
-Architecture and decisions: `docs/architecture/TARGET.md`. Contract: `docs/frontdesk-api/openapi.yaml`.
+Four MCP tools for a LiveKit voice agent, consuming two owner services over HTTPS. This repository
+owns only the adapter: `services/mcp`. Manoj owns the operational API (directory, live board,
+appointments, call summaries; pinned contract in `docs/handover/mcp-only/contracts/`). Shobhit owns
+knowledge, symptom routing and red flags (contract pending; provisional boundary in
+`services/mcp/src/frontdesk_mcp/knowledge_contract.py`). Plan and target: `docs/handover/mcp-only/`.
+Implementation evidence: `docs/handover/mcp-only/implementation/`.
 
 ## Commands
-- Fast, no database (run after every change): `make test-fast`
-- Everything (lint, unit, integration, MCP e2e, schemathesis): `./scripts/test.sh` (before a PR; CI runs it)
-- No Docker daemon (web sessions): `eval "$(scripts/local-pg.sh start)"` exports `TEST_DATABASE_URL` / `TEST_DATABASE_OWNER_URL`
-- API tests: `cd services/api && uv run pytest tests/unit tests/contract/test_openapi_matches_spec.py tests/integration -q`
-- MCP tests: `cd services/mcp && uv run pytest tests -q -m "not e2e"`
-- Lint: `uv run ruff check .` in each service (a hook also lints every edited file)
-- Architecture: `cd services/api && uv run lint-imports` (layer contracts in `pyproject.toml`; CI fails on a violation)
-- Latency: `cd services/api && DATABASE_URL=$TEST_DATABASE_URL uv run python scripts/bench.py`
-- Rollout check (offline: settings with their layer, data, dialogues): `cd services/api && uv run frontdesk-api rollout validate ../../rollouts/<id>`
-- Deploy a rollout to Azure: `deploy/azure/deploy.sh <rollout dir> --dry-run` (AZURE.md)
+- Fast (no processes), run after every change: `make test-fast`
+- Everything a reviewer runs on a clean checkout: `./scripts/test.sh` (lint, hermetic suites, process e2e, package and image build); CI runs it
+- Process e2e only: `make test-e2e`; walk the tools: `make demo`; latency: `make bench`
+- Tool surface: `make schema` must equal `services/mcp/tests/contracts/mcp-tools.snapshot.json`; bump `prompt.SCHEMA_VERSION` and regenerate when it changes
+- Local stack against the development stubs: `cp .env.example .env && make up`
+- Deploy: `deploy/azure/deploy.sh rollouts/<id> --dry-run` (needs OPS_BASE_URL and KNOWLEDGE_BASE_URL of the owners' real hosts)
 
-## Rules that the code will not tell you
-- IMPORTANT: all business rules live in `services/api`. `services/mcp` only maps tools to `Agent` operations, injects call headers, derives idempotency keys and wraps failures.
-- Spec first: change `openapi.yaml`, then code. The contract test fails on any drift in paths, operationIds, required fields or enums.
-- Core names are domain-neutral (resource, category, booking, customer). Domain words live only in packs: `services/api/src/frontdesk_api/packs/<pack>/` and `services/mcp/src/frontdesk_mcp/packs/<pack>.json`. Never branch on the domain in code.
-- Language words (today/tomorrow, weekdays, months, titles, filler words) live only in `services/api/src/frontdesk_api/locales/<lang>.py`. A new language is a new module there plus one line in `AVAILABLE`; each rollout switches on its own languages (`TENANT_SUPPORTED_LANGUAGES`).
-- Caller speech is data: never "rename" words inside lexicon terms, honorifics, utterances or pack answers.
-- Identity (`X-Call-Id`, `X-Caller-Number`) comes only from trusted headers, never from tool parameters. A mismatch looks exactly like not-found.
-- The agent never speaks unapproved text: knowledge answers are returned verbatim, and failures are `COULD_NOT_CHECK` / `COULD_NOT_RECORD`, never "none available".
-- Voice latency is a product requirement: any writer of directory/lexicon/knowledge data must call `cache.bump(...)` in its transaction; cached values are plain dataclasses, never ORM rows; `test_latency_budget.py` gates round trips per call.
-- Schema changes: add a new Alembic revision (owner role runs it; the API role is DML-only). Never edit an applied revision; write a working `downgrade`.
-- Three layers, composed, never copied (TARGET.md A10): core → domain pack → rollout. A rollout (`rollouts/<id>/`: `rollout.env`, `data.yaml`, `dialogues.yaml`) is one provider's differences only; never edit a pack or the core to fit one provider. `rollout.env` lists only settings that differ from their default (a test fails otherwise). Settings resolve core default → domain default → rollout; identity (`PROVIDER_ID`, `DOMAIN_PACK`, timezone, phone, currency, languages) has no default anywhere.
-- One deployment per rollout. A real provider's rollout lives outside this repository; only `rollouts/demo-*` are committed. `seed` is for demos; `rollout apply` loads a real provider.
-- Packs hold baseline words keyed by category **code**; danger signs (RED_FLAG) are add-only for a rollout. Bump `Pack.version` when a baseline changes.
+## Rules the code will not tell you
+- No business rules here: no scheduling, slot, capacity, interpretation, knowledge or clinical logic; no database, queue or local fallback backend. The adapter validates, authenticates, forwards trusted context, applies deadlines, maps statuses and composes contracted reads.
+- Trusted context (`X-Call-Id`, `X-Caller-Number`, `X-Caller-Verification`, `X-Turn-Context`, `X-Operation-Id`, `X-Call-Started-At`, `X-Call-Duration-Seconds`) comes only from request headers. The principal (gateway vs call-end lifecycle) comes only from the bearer. Never from tool arguments.
+- Availability and CREATE wait for a current routing clearance from the knowledge service on the trusted turn. Missing context, outage or an unknown response is never clearance.
+- UNKNOWN board (today or later) stops the appointment journey: collect name and callback number, say someone will call back, record a CALLBACK_NOTED summary. No booking, transfer, alternate or task. A failed board read is COULD_NOT_CHECK, not UNKNOWN.
+- A create is NOTED, never confirmed. Writes need `callerConfirmed`, call id and operation id; the body is frozen and keyed by `sha256(tenant|call|action|target|operation)`. UNCERTAIN is a distinct outcome; one same-key retry at most, within the invocation deadline.
+- Caller authority for LIST/CANCEL/RESCHEDULE is the verified caller number under the configured country rule. A dictated mobile is contact data. No prefix stripping, never "the last ten digits".
+- `record_call_summary` is reachable only with the lifecycle bearer; MCP stays stateless; the platform owns durable finalization and retries.
+- Results and logs never carry caller numbers, patient names, reasons, raw upstream prose or secrets. Request-URL loggers stay at WARNING.
+- Contract changes are reviewed changes: the pinned snapshot, its hash, the overlay and `contract.py` literals are asserted by tests. Stubs (`services/mcp/dev/`) are fixtures, never engines; production refuses stub/mock hosts.
+- Domain words live in `packs/healthcare.json`; tenant identity (timezone, calling code, languages) in `rollouts/<id>/rollout.env` with no defaults.
 
 ## Gotchas
-- Don't `source` provider `.env` files in bash: it strips JSON quotes. Use `docker --env-file` or a line reader.
-- Test conftests strip every `Settings` field from the environment; pass overrides via `make_settings(...)`.
+- Don't `source` rollout.env; use `scripts/rollout-env.sh`.
+- Test conftest strips every `Settings` field from the environment; pass overrides via `make_settings(...)`.
+- In-process stub transports enforce request timeouts (tests/harness.py) so deadline tests are real.

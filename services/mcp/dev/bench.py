@@ -53,8 +53,8 @@ def percentile(values: list[float], p: float) -> float:
     return ordered[min(len(ordered) - 1, int(round(p / 100 * (len(ordered) - 1))))]
 
 
-async def measure(base: str, name: str, tool: str, args: dict, i: int, sem: asyncio.Semaphore) -> float | None:
-    """One tool round trip in ms, or None when the result is an error/failure envelope."""
+async def measure(base: str, name: str, tool: str, args: dict, i: int, sem: asyncio.Semaphore) -> float | str:
+    """One tool round trip in ms, or the failure outcome/detail when the result is an error/failure envelope."""
     headers = {"Authorization": "Bearer gateway", "X-Call-Id": f"bench-{name}-{i}",
                "X-Caller-Number": "+919000000101", "X-Turn-Context": turn("availability please")}
     async with sem, Client(StreamableHttpTransport(f"{base}/mcp/", headers=headers)) as c:
@@ -62,8 +62,10 @@ async def measure(base: str, name: str, tool: str, args: dict, i: int, sem: asyn
         result = await c.call_tool(tool, args, raise_on_error=False)
         elapsed = (time.perf_counter() - started) * 1000
     body = result.structured_content or {}
-    if result.is_error or body.get("outcome") in ("COULD_NOT_CHECK", "ROUTING_UNAVAILABLE"):
-        return None
+    if result.is_error:
+        return "TOOL_ERROR"
+    if body.get("outcome") in ("COULD_NOT_CHECK", "ROUTING_UNAVAILABLE", "COULD_NOT_RECORD"):
+        return f"{body.get('outcome')}:{body.get('detail')}"
     return elapsed
 
 
@@ -72,9 +74,15 @@ async def run(base: str, samples: int, concurrency: int) -> dict:
     for name, (tool, args) in SCENARIOS.items():
         sem = asyncio.Semaphore(concurrency)
         results = await asyncio.gather(*(measure(base, name, tool, args, i, sem) for i in range(samples)))
-        timings = [r for r in results if r is not None]
-        failures = len(results) - len(timings)
-        report[name] = {"samples": samples, "ok": len(timings), "failures": failures,
+        timings = [r for r in results if isinstance(r, float)]
+        failed = [r for r in results if isinstance(r, str)]
+        failures = len(failed)
+        outcomes = {}
+        for r in results:
+            label = r if isinstance(r, str) else "ok"
+            outcomes[label] = outcomes.get(label, 0) + 1
+        report[name] = {"samples": samples, "ok": len(timings), "failures": failures, "outcomes": outcomes,
+                        "first_call_ms": round(results[0], 1) if isinstance(results[0], float) else results[0],
                         "p50_ms": round(percentile(timings, 50), 1) if timings else None,
                         "p95_ms": round(percentile(timings, 95), 1) if timings else None,
                         "p99_ms": round(percentile(timings, 99), 1) if timings else None,
@@ -88,6 +96,9 @@ async def main() -> None:
     parser.add_argument("--concurrency", type=int, default=1)
     args = parser.parse_args()
     real_ops = os.environ.get("BENCH_OPS_BASE_URL")
+    # With real operational hosts but no knowledge host yet, keep the in-process knowledge stub so the routing
+    # gate clears and the Manoj critical path is what gets measured. Reported in the boundary line.
+    knowledge_stub_with_real_ops = bool(real_ops) and not os.environ.get("BENCH_KNOWLEDGE_BASE_URL")
     settings = Settings(
         env="development", log_level="WARNING", provider_id="demo-hospital", domain_pack="healthcare",
         tenant_supported_languages="en,kn,hi",
@@ -95,15 +106,22 @@ async def main() -> None:
         ops_base_url=real_ops or "http://ops-stub.local/api/v1",
         ops_client_id=os.environ.get("BENCH_OPS_CLIENT_ID", "mcp-dev"),
         ops_client_secret=os.environ.get("BENCH_OPS_CLIENT_SECRET", "dev-secret"),
-        knowledge_base_url=os.environ.get("BENCH_KNOWLEDGE_BASE_URL",
-                                          "" if real_ops else "http://knowledge-stub.local"),
+        knowledge_base_url=os.environ.get("BENCH_KNOWLEDGE_BASE_URL", "http://knowledge-stub.local"),
         knowledge_bearer_token=os.environ.get("BENCH_KNOWLEDGE_BEARER_TOKEN", "dev-knowledge-secret"),
         mcp_bearer_token="gateway", mcp_lifecycle_bearer_token="lifecycle",
-        read_deadline_seconds=float(os.environ.get("BENCH_READ_DEADLINE", "2.0")))
+        read_deadline_seconds=float(os.environ.get("BENCH_READ_DEADLINE", "2.0")),
+        write_deadline_seconds=max(4.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))),
+        summary_deadline_seconds=max(8.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))))
     if real_ops:
-        knowledge = settings.knowledge_base_url or "not configured"
+        knowledge = settings.knowledge_base_url
+        if knowledge_stub_with_real_ops:
+            knowledge = "in-process knowledge STUB (no real host yet)"
         boundary = f"laptop → MCP (local TCP) → {real_ops} (real network); knowledge: {knowledge}"
-        ops_transport = knowledge_transport = None
+        ops_transport = None
+        kb_state = knowledge_stub.KnowledgeStubState(bearer="dev-knowledge-secret")
+        knowledge_transport = None
+        if knowledge_stub_with_real_ops:
+            knowledge_transport = httpx.ASGITransport(app=knowledge_stub.create_app(kb_state))
         clock = SystemClock()
     else:
         boundary = "laptop → MCP (local TCP) → in-process stubs (ASGI, no network): fixture timings only"
