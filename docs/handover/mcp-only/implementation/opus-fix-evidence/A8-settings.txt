@@ -1,0 +1,163 @@
+$ uv run --directory services/mcp pytest tests/test_settings.py -k knowledge_configuration -q --tb=short
+FFFFFFFF.FF                                                              [100%]
+=================================== FAILURES ===================================
+__ test_knowledge_configuration_cannot_be_half_set[test-https://kb.example-] ___
+tests/test_settings.py:212: in test_knowledge_configuration_cannot_be_half_set
+    with pytest.raises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_________ test_knowledge_configuration_cannot_be_half_set[test--token] _________
+tests/test_settings.py:212: in test_knowledge_configuration_cannot_be_half_set
+    with pytest.raises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_knowledge_configuration_cannot_be_half_set[test-https://kb.example-  ] __
+tests/test_settings.py:212: in test_knowledge_configuration_cannot_be_half_set
+    with pytest.raises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_______ test_knowledge_configuration_cannot_be_half_set[test- / -token] ________
+tests/test_settings.py:212: in test_knowledge_configuration_cannot_be_half_set
+    with pytest.raises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+___________ test_knowledge_configuration_cannot_be_half_set[test-/-] ___________
+tests/test_settings.py:212: in test_knowledge_configuration_cannot_be_half_set
+    with pytest.raises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_knowledge_configuration_cannot_be_half_set[production-https://kb.example-] _
+tests/test_settings.py:212: in test_knowledge_configuration_cannot_be_half_set
+    with pytest.raises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+______ test_knowledge_configuration_cannot_be_half_set[production--token] ______
+tests/test_settings.py:212: in test_knowledge_configuration_cannot_be_half_set
+    with pytest.raises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_ test_knowledge_configuration_cannot_be_half_set[production-https://kb.example-  ] _
+tests/test_settings.py:212: in test_knowledge_configuration_cannot_be_half_set
+    with pytest.raises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+________ test_knowledge_configuration_cannot_be_half_set[production-/-] ________
+tests/test_settings.py:212: in test_knowledge_configuration_cannot_be_half_set
+    with pytest.raises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE ValueError
+_____ test_knowledge_configuration_trims_whitespace_before_pair_validation _____
+tests/test_settings.py:217: in test_knowledge_configuration_trims_whitespace_before_pair_validation
+    absent = make_settings(**{**PROD, "knowledge_base_url": "  ", "knowledge_bearer_token": "  "})
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/conftest.py:32: in factory
+    return Settings(**{**ROLLOUT, **ENDPOINTS, "env": "test", **overrides})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pydantic_settings/main.py:262: in __init__
+    super().__init__(**__pydantic_self__.__class__._settings_build_values(sources, init_kwargs))
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+E     Value error, KNOWLEDGE_BASE_URL must use https:// when ENV=production [type=value_error, input_value={'env': 'production', 'pr...t_timeout_seconds': 0.3}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+=========================== short test summary info ============================
+FAILED tests/test_settings.py::test_knowledge_configuration_cannot_be_half_set[test-https://kb.example-]
+FAILED tests/test_settings.py::test_knowledge_configuration_cannot_be_half_set[test--token]
+FAILED tests/test_settings.py::test_knowledge_configuration_cannot_be_half_set[test-https://kb.example-  ]
+FAILED tests/test_settings.py::test_knowledge_configuration_cannot_be_half_set[test- / -token]
+FAILED tests/test_settings.py::test_knowledge_configuration_cannot_be_half_set[test-/-]
+FAILED tests/test_settings.py::test_knowledge_configuration_cannot_be_half_set[production-https://kb.example-]
+FAILED tests/test_settings.py::test_knowledge_configuration_cannot_be_half_set[production--token]
+FAILED tests/test_settings.py::test_knowledge_configuration_cannot_be_half_set[production-https://kb.example-  ]
+FAILED tests/test_settings.py::test_knowledge_configuration_cannot_be_half_set[production-/-]
+FAILED tests/test_settings.py::test_knowledge_configuration_trims_whitespace_before_pair_validation
+10 failed, 1 passed, 21 deselected in 0.12s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+..............................F......................................... [ 55%]
+........................................................................ [ 73%]
+........................................................................ [ 92%]
+...............................                                          [100%]
+=================================== FAILURES ===================================
+____ test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret ____
+
+tmp_path = PosixPath('/private/var/folders/6w/_5mz5z1s1cb0tsjf92rvg76w0000gn/T/pytest-of-garima/pytest-169/test_deploy_without_knowledge_0')
+
+    def test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret(tmp_path):
+        import os
+        import subprocess
+
+        profile_dir = _profile_dir(tmp_path, "https://ops.example/api/v1")
+        path = tmp_path / "test.env"
+        path.write_text(path.read_text().replace("KNOWLEDGE_BASE_URL=https://kb.example", "KNOWLEDGE_BASE_URL="))
+        result = subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"),
+                                 "--profile", "test", "--dry-run"], capture_output=True, text=True, check=False,
+                                cwd=DEPLOY.parent, env={**os.environ, "DEPLOY_PROFILE_DIR": profile_dir,
+                                                       "DEPLOY_ASSUME_EXISTING": "1"})
+>       assert result.returncode == 0, result.stderr[-2000:]
+E       AssertionError: cp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+E         It will be compatible before version 2.0.0.
+E           from authlib.jose import JsonWebKey, JsonWebToken
+E         /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+E           from ._compat import httpx2
+E         Traceback (most recent call last):
+E           File "/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/bin/frontdesk-mcp", line 10, in <module>
+E             sys.exit(main())
+E                      ~~~~^^
+E           File "/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/cli.py", line 47, in main
+E             settings = get_settings()
+E           File "/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/config.py", line 214, in get_settings
+E             return Settings()
+E           File "/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/pydantic_settings/main.py", line 262, in __init__
+E             super().__init__(**__pydantic_self__.__class__._settings_build_values(sources, init_kwargs))
+E             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/pydantic/main.py", line 263, in __init__
+E             validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+E         pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+E           Value error, KNOWLEDGE_BASE_URL and KNOWLEDGE_BEARER_TOKEN must both be set or both empty [type=value_error, input_value={'env': 'production', 'pr...t_timeout_seconds': 0.3}, input_type=dict]
+E             For further information visit https://errors.pydantic.dev/2.13/v/value_error
+E
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/garima/conductor/workspaces/healthcare-tools/des-moines/deploy/azure/deploy.sh', '/User...seconds\': 0.3}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error\n').returncode
+
+tests/test_deploy.py:288: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret
+1 failed, 390 passed, 11 deselected, 2 warnings in 22.63s
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 55%]
+........................................................................ [ 73%]
+........................................................................ [ 92%]
+...............................                                          [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+391 passed, 11 deselected, 2 warnings in 22.78s
+EXIT: 0

@@ -105,7 +105,15 @@ class Settings(BaseSettings):
     @field_validator("ops_base_url", "knowledge_base_url")
     @classmethod
     def _strip_slash(cls, value: str) -> str:
+        value = value.strip()
+        if value and not value.rstrip("/"):
+            raise ValueError("owner base URL must not contain only slashes")
         return value.rstrip("/")
+
+    @field_validator("knowledge_bearer_token")
+    @classmethod
+    def _knowledge_token(cls, value: SecretStr) -> SecretStr:
+        return SecretStr(value.get_secret_value().strip())
 
     @field_validator("accepted_caller_verification")
     @classmethod
@@ -172,6 +180,8 @@ class Settings(BaseSettings):
     def _guards(self) -> Settings:
         packs.load(self.domain_pack)
         if self.env != "development":
+            if bool(self.knowledge_base_url) != bool(self.knowledge_bearer_token.get_secret_value()):
+                raise ValueError("KNOWLEDGE_BASE_URL and KNOWLEDGE_BEARER_TOKEN must both be set or both empty")
             if self.mcp_dev_caller_number:
                 raise ValueError("MCP_DEV_CALLER_NUMBER is allowed only when ENV=development")
             gateway = self.mcp_bearer_token.get_secret_value()

@@ -81,7 +81,7 @@ done
 step "validate the adapter configuration offline (settings, pack, tool schema)"
 (cd "$ROOT/services/mcp" && env -i PATH="$PATH" HOME="$HOME" ENV=production "${ROLLOUT_ENV[@]}" \
   OPS_BASE_URL="$OPS_BASE_URL" OPS_CLIENT_ID=validate OPS_CLIENT_SECRET=validate \
-  KNOWLEDGE_BASE_URL="$KNOWLEDGE_BASE_URL" KNOWLEDGE_BEARER_TOKEN=validate \
+  KNOWLEDGE_BASE_URL="$KNOWLEDGE_BASE_URL" KNOWLEDGE_BEARER_TOKEN="${KNOWLEDGE_BASE_URL:+validate}" \
   MCP_BEARER_TOKEN=validate-a MCP_LIFECYCLE_BEARER_TOKEN=validate-b \
   uv run -q frontdesk-mcp schema >/dev/null)
 

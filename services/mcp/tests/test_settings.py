@@ -203,3 +203,20 @@ async def test_production_without_knowledge_still_serves_scheduling(make_setting
     finally:
         await services.aclose()
         await h.aclose()
+
+
+@pytest.mark.parametrize("url,token", [("https://kb.example", ""), ("", "token"),
+                                       ("https://kb.example", "  "), (" / ", "token"), ("/", "")])
+@pytest.mark.parametrize("environment", ["test", "production"])
+def test_knowledge_configuration_cannot_be_half_set(make_settings, url, token, environment):
+    with pytest.raises(ValueError):
+        make_settings(**{**PROD, "env": environment, "knowledge_base_url": url, "knowledge_bearer_token": token})
+
+
+def test_knowledge_configuration_trims_whitespace_before_pair_validation(make_settings):
+    absent = make_settings(**{**PROD, "knowledge_base_url": "  ", "knowledge_bearer_token": "  "})
+    assert absent.knowledge_base_url == "" and absent.knowledge_bearer_token.get_secret_value() == ""
+    present = make_settings(**{**PROD, "knowledge_base_url": " https://kb.example/ ",
+                              "knowledge_bearer_token": " token "})
+    assert present.knowledge_base_url == "https://kb.example"
+    assert present.knowledge_bearer_token.get_secret_value() == "token"
