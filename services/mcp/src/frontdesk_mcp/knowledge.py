@@ -33,13 +33,14 @@ class KnowledgeService:
                                             detail=exc.reason)
         speech = (outcomes.Speech(text=response.answer.text, language=response.answer.language)
                   if response.answer else None)
-        common = {"answer": speech, "sourceId": response.sourceId, "destination": response.destination}
+        common = {"sourceId": response.sourceId, "destination": response.destination}
         if response.outcome == "ANSWERED":
-            return outcomes.KnowledgeResult(outcome="ANSWERED", nextStep="SPEAK_ANSWER", **common)
+            return outcomes.KnowledgeResult(outcome="ANSWERED", nextStep="SPEAK_ANSWER", answer=speech, **common)
         if response.outcome == "NO_ANSWER":
             return outcomes.KnowledgeResult(outcome="NO_ANSWER", nextStep="SAY_NO_ANSWER_AND_OFFER_DESK")
         if response.outcome == "CLARIFY":
-            return outcomes.KnowledgeResult(outcome="CLARIFICATION_NEEDED", nextStep="ASK_CLARIFICATION", **common)
+            return outcomes.KnowledgeResult(outcome="CLARIFICATION_NEEDED", nextStep="ASK_CLARIFICATION",
+                                            answer=speech, **common)
         step = {"EMERGENCY_TRANSFER": "TRANSFER_EMERGENCY", "DESK_TRANSFER": "TRANSFER_DESK",
                 "ROUTE_DEPARTMENT": "CHECK_AVAILABILITY"}[response.outcome]
         return outcomes.KnowledgeResult(outcome="ROUTING_REQUIRED", nextStep=step, **common,

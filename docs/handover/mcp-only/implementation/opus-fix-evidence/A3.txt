@@ -1,0 +1,168 @@
+$ uv run --directory services/mcp pytest tests/test_knowledge.py tests/test_stubs.py -q
+....F..................................FFF..........F...                 [100%]
+=================================== FAILURES ===================================
+_ test_one_exchange_maps_owner_outcome_without_transcript[payload4-ROUTING_REQUIRED-TRANSFER_EMERGENCY] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10952c900>
+payload = {'outcome': 'EMERGENCY_TRANSFER', 'answer': {'text': 'Owner emergency instruction', 'language': 'en'}}
+outcome = 'ROUTING_REQUIRED', step = 'TRANSFER_EMERGENCY'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10951c2b0>
+
+    @pytest.mark.parametrize("payload,outcome,step", [
+        ({"outcome": "ANSWERED", "answer": {"text": "ಪಾರ್ಕಿಂಗ್ ಇದೆ", "language": "kn"}, "sourceId": "parking"},
+         "ANSWERED", "SPEAK_ANSWER"),
+        ({"outcome": "NO_ANSWER"}, "NO_ANSWER", "SAY_NO_ANSWER_AND_OFFER_DESK"),
+        ({"outcome": "CLARIFY", "answer": {"text": "Which service?", "language": "en"}},
+         "CLARIFICATION_NEEDED", "ASK_CLARIFICATION"),
+        ({"outcome": "DESK_TRANSFER", "destination": "desk"}, "ROUTING_REQUIRED", "TRANSFER_DESK"),
+        ({"outcome": "EMERGENCY_TRANSFER", "answer": {"text": "Owner emergency instruction", "language": "en"}},
+         "ROUTING_REQUIRED", "TRANSFER_EMERGENCY"),
+        ({"outcome": "ROUTE_DEPARTMENT", "department": {"name": "Paediatrics"}},
+         "ROUTING_REQUIRED", "CHECK_AVAILABILITY"),
+    ])
+    async def test_one_exchange_maps_owner_outcome_without_transcript(make_settings, payload, outcome, step, caplog):
+        requests = []
+
+        async def owner(request):
+            requests.append(request)
+            return httpx.Response(200, json=payload)
+
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(owner))
+        try:
+            question = "  ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ  "
+            result = await services.search.search(CallContext(call_id="call-1"),
+                                                 KnowledgeRequest(question=question, language="kn"))
+            assert (result.outcome, result.nextStep) == (outcome, step)
+            [request] = requests
+            assert request.url.path == "/v1/answer" and request.method == "POST"
+            assert request.headers["authorization"] == "Bearer knowledge-secret"
+            assert json.loads(request.content) == {"question": question, "language": "kn", "callId": "call-1"}
+            if "answer" in payload and payload["outcome"] in ("ANSWERED", "CLARIFY"):
+                assert result.answer.model_dump() == payload["answer"]
+            if payload["outcome"] in ("EMERGENCY_TRANSFER", "DESK_TRANSFER", "ROUTE_DEPARTMENT"):
+>               assert result.answer is None
+E               AssertionError: assert Speech(text='Owner emergency instruction', language='en') is None
+E                +  where Speech(text='Owner emergency instruction', language='en') = KnowledgeResult(outcome='ROUTING_REQUIRED', nextStep='TRANSFER_EMERGENCY', answer=Speech(text='Owner emergency instruc...n='EMERGENCY_TRANSFER', speak=Speech(text='Owner emergency instruction', language='en'), department=None), detail=None).answer
+
+tests/test_knowledge.py:48: AssertionError
+____ test_routing_speech_has_one_authoritative_location[EMERGENCY_TRANSFER] ____
+
+make_settings = <function make_settings.<locals>.factory at 0x10947e480>
+outcome = 'EMERGENCY_TRANSFER'
+
+    @pytest.mark.parametrize("outcome", ["EMERGENCY_TRANSFER", "DESK_TRANSFER", "ROUTE_DEPARTMENT"])
+    async def test_routing_speech_has_one_authoritative_location(make_settings, outcome):
+        payload = {"outcome": outcome, "answer": {"text": "Owner wording", "language": "en"},
+                   "department": {"name": "Paediatrics"}}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="caller words", language="en"))
+>           assert result.answer is None
+E           AssertionError: assert Speech(text='Owner wording', language='en') is None
+E            +  where Speech(text='Owner wording', language='en') = KnowledgeResult(outcome='ROUTING_REQUIRED', nextStep='TRANSFER_EMERGENCY', answer=Speech(text='Owner wording', languag...cision='EMERGENCY_TRANSFER', speak=Speech(text='Owner wording', language='en'), department='Paediatrics'), detail=None).answer
+
+tests/test_knowledge.py:194: AssertionError
+______ test_routing_speech_has_one_authoritative_location[DESK_TRANSFER] _______
+
+make_settings = <function make_settings.<locals>.factory at 0x10947ff60>
+outcome = 'DESK_TRANSFER'
+
+    @pytest.mark.parametrize("outcome", ["EMERGENCY_TRANSFER", "DESK_TRANSFER", "ROUTE_DEPARTMENT"])
+    async def test_routing_speech_has_one_authoritative_location(make_settings, outcome):
+        payload = {"outcome": outcome, "answer": {"text": "Owner wording", "language": "en"},
+                   "department": {"name": "Paediatrics"}}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="caller words", language="en"))
+>           assert result.answer is None
+E           AssertionError: assert Speech(text='Owner wording', language='en') is None
+E            +  where Speech(text='Owner wording', language='en') = KnowledgeResult(outcome='ROUTING_REQUIRED', nextStep='TRANSFER_DESK', answer=Speech(text='Owner wording', language='en...ng(decision='DESK_TRANSFER', speak=Speech(text='Owner wording', language='en'), department='Paediatrics'), detail=None).answer
+
+tests/test_knowledge.py:194: AssertionError
+_____ test_routing_speech_has_one_authoritative_location[ROUTE_DEPARTMENT] _____
+
+make_settings = <function make_settings.<locals>.factory at 0x10947f1a0>
+outcome = 'ROUTE_DEPARTMENT'
+
+    @pytest.mark.parametrize("outcome", ["EMERGENCY_TRANSFER", "DESK_TRANSFER", "ROUTE_DEPARTMENT"])
+    async def test_routing_speech_has_one_authoritative_location(make_settings, outcome):
+        payload = {"outcome": outcome, "answer": {"text": "Owner wording", "language": "en"},
+                   "department": {"name": "Paediatrics"}}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="caller words", language="en"))
+>           assert result.answer is None
+E           AssertionError: assert Speech(text='Owner wording', language='en') is None
+E            +  where Speech(text='Owner wording', language='en') = KnowledgeResult(outcome='ROUTING_REQUIRED', nextStep='CHECK_AVAILABILITY', answer=Speech(text='Owner wording', languag...decision='ROUTE_DEPARTMENT', speak=Speech(text='Owner wording', language='en'), department='Paediatrics'), detail=None).answer
+
+tests/test_knowledge.py:194: AssertionError
+_______ test_routing_fixtures_are_an_exact_match_table_not_a_classifier ________
+
+knowledge = (KnowledgeStubState(bearer='knowledge-secret', answers=[{'id': 'kb_opd_hours', 'questions': ['opd timings', 'what time...l_next_for=[], malformed_next=[], malformed_next_for=[], delay_seconds=0.0), <httpx.AsyncClient object at 0x109494890>)
+
+    async def test_routing_fixtures_are_an_exact_match_table_not_a_classifier(knowledge):
+        state, http = knowledge
+        auth = {"Authorization": "Bearer knowledge-secret"}
+
+        async def route(utterance: str) -> dict:
+            response = await http.post(knowledge_contract.ANSWER_PATH, json={"question": utterance, "language": "en"},
+                                       headers=auth)
+            assert response.status_code == 200
+            return knowledge_contract.AnswerResponse.model_validate(response.json()).model_dump()
+
+        assert (await route("Dr Garima, I have chest pain"))["outcome"] == "EMERGENCY_TRANSFER"
+        assert (await route("severe stomach pain"))["outcome"] == "DESK_TRANSFER"
+        assert (await route("my child has stomach pain"))["outcome"] == "CLARIFY"
+        routed = await route("I need a children's doctor")
+        assert routed["outcome"] == "ROUTE_DEPARTMENT" and routed["department"]["name"] == "Paediatrics"
+>       assert routed["answer"]["text"] == "I can check the Paediatrics department for you."
+E       AssertionError: assert 'Fixture response' == 'I can check ...ment for you.'
+E
+E         - I can check the Paediatrics department for you.
+E         + Fixture response
+
+tests/test_stubs.py:259: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_one_exchange_maps_owner_outcome_without_transcript[payload4-ROUTING_REQUIRED-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_routing_speech_has_one_authoritative_location[EMERGENCY_TRANSFER]
+FAILED tests/test_knowledge.py::test_routing_speech_has_one_authoritative_location[DESK_TRANSFER]
+FAILED tests/test_knowledge.py::test_routing_speech_has_one_authoritative_location[ROUTE_DEPARTMENT]
+FAILED tests/test_stubs.py::test_routing_fixtures_are_an_exact_match_table_not_a_classifier
+5 failed, 51 passed, 2 warnings in 1.52s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 56%]
+........................................................................ [ 75%]
+........................................................................ [ 94%]
+...................                                                      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+379 passed, 11 deselected, 2 warnings in 24.44s
+EXIT: 0

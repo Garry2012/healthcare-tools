@@ -33,7 +33,7 @@
       }
     },
     "search_knowledge": {
-      "description": "Answer hospital questions and find a department for the caller's symptoms. Pass question verbatim, untranslated and unsummarised (maximum 500 characters; never truncate). Not for doctor availability or appointments. Speak approved answer.text and routing.speak.text exactly as returned. TRANSFER_EMERGENCY: transfer immediately, stop scheduling. CHECK_AVAILABILITY: use the returned department in get_doctor_availability; CLARIFICATION_NEEDED: ask the returned question. NO_ANSWER: offer the desk; COULD_NOT_CHECK is a service failure, not a negative answer.",
+      "description": "Answer hospital questions and find a department for the caller's symptoms. Pass question verbatim, untranslated and unsummarised (maximum 500 characters; never truncate). Not for doctor availability or appointments. Speak answer.text for answers or clarification; for routing decisions speak only routing.speak.text when present, exactly once and verbatim. TRANSFER_EMERGENCY: transfer immediately, stop scheduling. CHECK_AVAILABILITY: pass routing.department as departmentName to get_doctor_availability; CLARIFICATION_NEEDED: ask answer.text verbatim. NO_ANSWER: offer the desk; COULD_NOT_CHECK is a service failure, not a negative answer.",
       "parameters": {
         "question": "The caller's own words, untranslated and unsummarised; maximum 500 characters, never truncated.",
         "language": "The language the caller is speaking."

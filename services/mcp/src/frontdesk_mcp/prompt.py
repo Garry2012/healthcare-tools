@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from .packs import Pack
 
-SCHEMA_VERSION = "2026-10-03.1"
+SCHEMA_VERSION = "2026-10-03.2"
 
 CORE_RULES = (
     "Dates: pass date='today' or an explicit date YYYY-MM-DD the caller confirmed; every result carries "

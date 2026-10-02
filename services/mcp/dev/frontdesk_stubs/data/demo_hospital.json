@@ -102,8 +102,8 @@
     {"id": "routing-0", "questions": ["ಎದೆ ನೋವು ಜಾಸ್ತಿ ಇದೆ", "ಅಪ್ಪನಿಗೆ chest pain", "सीने में दर्द हो रहा है", "seene mein dard", "stomach pain and vomiting blood", "khansi mein khoon aa raha hai", "back pain, cannot move legs", "Dr Garima, I have chest pain", "is dr garima there, my father has chest pain", "chest pain, my left arm is numb"], "outcome": "EMERGENCY_TRANSFER", "answers": {"en": "This may be an emergency. I am connecting you to the emergency desk now."}},
     {"id": "routing-1", "questions": ["severe stomach pain", "ತುಂಬಾ ತಲೆ ನೋವು"], "outcome": "DESK_TRANSFER", "answers": {"en": "Let me connect you to the front desk so a person can help."}},
     {"id": "routing-2", "questions": ["my child has stomach pain"], "outcome": "CLARIFY", "answers": {"en": "Is this for a child? Would you like Paediatrics or General Medicine?"}},
-    {"id": "routing-3", "questions": ["pet mein dard hai", "ಹೊಟ್ಟೆ ನೋವು"], "outcome": "ROUTE_DEPARTMENT", "answers": {"en": "Fixture response"}, "department": {"name": "General Medicine"}},
-    {"id": "routing-4", "questions": ["I need a children's doctor", "ಮಕ್ಕಳ ಡಾಕ್ಟರ್"], "outcome": "ROUTE_DEPARTMENT", "answers": {"en": "Fixture response"}, "department": {"name": "Paediatrics"}},
+    {"id": "routing-3", "questions": ["pet mein dard hai", "ಹೊಟ್ಟೆ ನೋವು"], "outcome": "ROUTE_DEPARTMENT", "answers": {"en": "I can check the General Medicine department for you."}, "department": {"name": "General Medicine"}},
+    {"id": "routing-4", "questions": ["I need a children's doctor", "ಮಕ್ಕಳ ಡಾಕ್ಟರ್"], "outcome": "ROUTE_DEPARTMENT", "answers": {"en": "I can check the Paediatrics department for you."}, "department": {"name": "Paediatrics"}},
     {"id": "routing-5", "questions": ["I want to talk about my bill"], "outcome": "DESK_TRANSFER", "answers": {"en": "I will connect you to the billing desk."}}
   ]
 }

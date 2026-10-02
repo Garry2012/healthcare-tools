@@ -42,9 +42,10 @@ async def test_one_exchange_maps_owner_outcome_without_transcript(make_settings,
         assert request.url.path == "/v1/answer" and request.method == "POST"
         assert request.headers["authorization"] == "Bearer knowledge-secret"
         assert json.loads(request.content) == {"question": question, "language": "kn", "callId": "call-1"}
-        if "answer" in payload:
+        if "answer" in payload and payload["outcome"] in ("ANSWERED", "CLARIFY"):
             assert result.answer.model_dump() == payload["answer"]
         if payload["outcome"] in ("EMERGENCY_TRANSFER", "DESK_TRANSFER", "ROUTE_DEPARTMENT"):
+            assert result.answer is None
             assert result.routing.decision == payload["outcome"]
             assert (result.routing.speak.model_dump() if result.routing.speak else None) == payload.get("answer")
         if "department" in payload:
@@ -178,5 +179,20 @@ async def test_knowledge_metadata_is_bounded(make_settings, field, length):
             assert result.outcome == "ANSWERED" and getattr(result, field) == "x" * 64
         else:
             assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+    finally:
+        await services.aclose()
+
+
+@pytest.mark.parametrize("outcome", ["EMERGENCY_TRANSFER", "DESK_TRANSFER", "ROUTE_DEPARTMENT"])
+async def test_routing_speech_has_one_authoritative_location(make_settings, outcome):
+    payload = {"outcome": outcome, "answer": {"text": "Owner wording", "language": "en"},
+               "department": {"name": "Paediatrics"}}
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json=payload)))
+    try:
+        result = await services.search.search(CallContext(), KnowledgeRequest(question="caller words", language="en"))
+        assert result.answer is None
+        assert result.routing.speak.text == "Owner wording" and result.routing.speak.language == "en"
+        assert result.model_dump_json().count("Owner wording") == 1
     finally:
         await services.aclose()

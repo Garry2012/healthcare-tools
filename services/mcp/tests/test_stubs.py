@@ -256,6 +256,9 @@ async def test_routing_fixtures_are_an_exact_match_table_not_a_classifier(knowle
     assert (await route("my child has stomach pain"))["outcome"] == "CLARIFY"
     routed = await route("I need a children's doctor")
     assert routed["outcome"] == "ROUTE_DEPARTMENT" and routed["department"]["name"] == "Paediatrics"
+    assert routed["answer"]["text"] == "I can check the Paediatrics department for you."
+    general = await route("pet mein dard hai")
+    assert general["answer"]["text"] == "I can check the General Medicine department for you."
     assert (await route("is Dr Garima there tomorrow"))["outcome"] == "NO_ANSWER"
     # a near miss of an emergency phrase is NOT matched: the stub does not interpret words
     assert (await route("chest pain"))["outcome"] == "NO_ANSWER"
