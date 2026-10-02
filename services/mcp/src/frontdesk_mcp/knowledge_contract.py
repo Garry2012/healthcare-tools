@@ -22,7 +22,7 @@ from pydantic import (
 logger = logging.getLogger(__name__)
 
 ANSWER_PATH = "/v1/answer"  # PROVISIONAL: replace only after the owner publishes the contract.
-RoutingDecision = Literal["ROUTE_DEPARTMENT", "CLARIFY", "DESK_TRANSFER", "EMERGENCY_TRANSFER"]
+RoutingDecision = Literal["ROUTE_DEPARTMENT", "DESK_TRANSFER", "EMERGENCY_TRANSFER"]
 AnswerOutcome = Literal["ANSWERED", "NO_ANSWER", "CLARIFY", "DESK_TRANSFER", "EMERGENCY_TRANSFER", "ROUTE_DEPARTMENT"]
 
 

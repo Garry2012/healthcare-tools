@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from .packs import Pack
 
-SCHEMA_VERSION = "2026-10-02.1"
+SCHEMA_VERSION = "2026-10-03.1"
 
 CORE_RULES = (
     "Dates: pass date='today' or an explicit date YYYY-MM-DD the caller confirmed; every result carries "
@@ -30,11 +30,12 @@ CORE_RULES = (
     "recorded: say so and transfer to the desk; never retry it as a new request.",
     "IDENTITY_UNAVAILABLE: the caller's number could not be verified for looking up or changing appointments; do "
     "not ask for another number to use instead, offer the desk.",
-    "ROUTING_REQUIRED: follow nextStep (TRANSFER_EMERGENCY at once, TRANSFER_DESK, or ask routing.speak) and speak "
-    "routing.speak.text verbatim when present. CHECK_AVAILABILITY: call get_doctor_availability with the returned "
-    "department. COULD_NOT_CHECK or COULD_NOT_RECORD: say the "
+    "ROUTING_REQUIRED: follow nextStep: TRANSFER_EMERGENCY at once, TRANSFER_DESK, or CHECK_AVAILABILITY. Speak "
+    "routing.speak.text verbatim when present. CHECK_AVAILABILITY: call get_doctor_availability with "
+    "routing.department as departmentName. COULD_NOT_CHECK or COULD_NOT_RECORD: say the "
     "system could not check right now and offer the desk; never say that no one is available.",
-    "CLARIFICATION_NEEDED: offer the returned choices (complete=false means there are more) and ask; never choose "
+    "search_knowledge CLARIFICATION_NEEDED: ask answer.text verbatim. For availability CLARIFICATION_NEEDED, "
+    "offer the returned choices (complete=false means there are more) and ask; never choose "
     "for the caller. NOT_FOUND: ask the caller to repeat the name or department once, then offer the desk.",
     "For hospital questions or symptoms without a chosen department, call search_knowledge with the caller's "
     "own words, untranslated and unsummarised; never truncate the question. Speak "

@@ -317,3 +317,25 @@ def test_agent_instructions_command_exports_versioned_rules_without_credentials(
     for rule in ("NOTED", "CALLBACK_REQUIRED", "UNCERTAIN", "search_knowledge", "emergency"):
         assert rule in result.stdout
     assert "secret" not in result.stdout.casefold() and "Bearer" not in result.stdout
+
+
+def test_instructions_follow_real_knowledge_steps():
+    text = prompt.instructions(packs.load("healthcare"), ("en",), "Demo Hospital")
+    assert "or ask routing.speak" not in text
+    assert "routing.department as departmentName" in text
+    assert "search_knowledge CLARIFICATION_NEEDED: ask answer.text verbatim" in text
+
+
+def test_model_is_told_to_act_on_emergencies_not_defer_to_infrastructure():
+    text = packs.load("healthcare").instructions
+    assert "transfer immediately and do not continue scheduling" in text
+    assert "voice platform" not in text and "guardrail" not in text
+
+
+def test_routing_object_cannot_claim_a_clarification_decision():
+    from pydantic import ValidationError
+
+    from frontdesk_mcp.outcomes import Routing
+
+    with pytest.raises(ValidationError):
+        Routing(decision="CLARIFY")
