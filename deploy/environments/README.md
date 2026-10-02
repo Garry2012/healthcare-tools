@@ -11,8 +11,12 @@ the profile contains only vault and secret names.
 
 The inspected live contract matches pinned paths/schemas; its `servers` entry differs. As checked on
 2 October 2026, the live client authenticates as `jayashree` with `appointments.write`, but still needs
-`calls.write`. Shobhit's URL is not supplied. The existing canary has the placeholder
-an empty knowledge URL: scheduling works; knowledge integration remains pending. No placeholder host is needed.
+`calls.write`. Shobhit's URL was not supplied at that inspection; this is historical live status, not a fresh probe.
+The revised adapter accepts an empty knowledge URL and bearer together: scheduling remains independent,
+and knowledge reports NOT_CONFIGURED. Both must be set to enable knowledge; no placeholder host is needed.
+The profile derives `SMOKE_EXPECT_KNOWLEDGE=required|absent`; smoke refuses a mismatched deployment.
+Deployment clears the unused environment value and removes an existing app's stale knowledge-token
+reference after switching its environment. An already-absent reference needs no removal; unrelated secrets stay.
 
 ## Run tests and benchmarks with the same configuration
 

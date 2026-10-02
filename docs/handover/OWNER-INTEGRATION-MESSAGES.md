@@ -37,8 +37,8 @@ The provisional `/v1/answer` is a consumer proposal, not an imposed API. The voi
 ## Rajiv — voice integration
 
 > Connect the voice backend to the healthcare virtual-server MCP URL issued by the existing IBM
-> ContextForge gateway, using a scoped voice-client token. Forward trusted per-call/per-turn headers
-> (`X-Call-Id`, caller number + verification, original turn context, stable operation ID); the platform
+> ContextForge gateway, using a scoped voice-client token. Forward trusted per-call/per-operation headers
+> (`X-Call-Id`, caller number + verification, stable operation ID); the platform
 > must set them, not the LLM. At call end, invoke `record_call_summary` directly on the MCP canary with
 > the separate `mcp-lifecycle-token`, timing headers and a durable retry queue. UNKNOWN availability
 > means collect name/number and save a callback summary only. Follow the linked integration contracts
@@ -50,8 +50,8 @@ The provisional `/v1/answer` is a consumer proposal, not an imposed API. The voi
 - Call-end URL: `https://mcp-demo-hospital-canary.icytree-6543aaa9.centralindia.azurecontainerapps.io/mcp/`.
 - The platform handles confirmations, immutable retry payloads and stable IDs. A lost write response
   is UNCERTAIN, not a confirmed failure; do not issue a fresh booking with a new operation ID.
-- Test simultaneous calls and EN/KN/HI encoded turn headers; gateway byte limits can be smaller than
-  the adapter's character limit. Never truncate original caller words to make a header fit.
+- Test simultaneous calls and per-write operation headers through the local booking wrapper. Pass EN/KN/HI
+  caller words in the explicit knowledge question body, never a transcript header; never truncate them.
 
 ## Rajiv — expose Stratum without moving its implementation here
 

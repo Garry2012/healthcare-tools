@@ -40,7 +40,7 @@ Existing architecture, API specs and setup documents outside this directory desc
 - Availability combines the doctor's usual hours with the date/session-specific live board. No invented slots or capacity. A successful appointment request is NOTED, not a reserved appointment time.
 - UNKNOWN availability, today or future: collect caller name and callback number, say someone from the hospital will call back, and save only a call summary with CALLBACK_NOTED. No booking, transfer, alternative booking, notification or separate callback task. Failed reads are not valid UNKNOWN responses.
 - Department IDs come from the department list; doctor search accepts free text; appointment dates use confirmed ISO dates. Advanced multilingual interpretation and synonym/fuzzy matching are deferred, not new endpoint prerequisites.
-- Preserve the plan's trusted caller identity, routing gate, stable write identity, uncertain-write handling and call-end-only summary access. The platform owns durable finalization/retries; MCP remains stateless.
+- Preserve the plan's trusted caller identity, explicit knowledge selection, stable write identity, uncertain-write handling and call-end-only summary access. The platform owns durable finalization/retries; MCP remains stateless.
 - Target one second from end of caller speech to first useful audible response. The budget is provisional until measured on the real voice path; call summaries are outside it.
 
 ## Review and build on another laptop
