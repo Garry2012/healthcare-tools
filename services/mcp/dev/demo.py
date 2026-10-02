@@ -9,7 +9,6 @@ services. Trusted context is supplied the way the platform would: as headers on 
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import sys
 from datetime import UTC, datetime
@@ -38,11 +37,6 @@ SETTINGS = Settings(
 NOW = datetime(2026, 10, 1, 4, 30, tzinfo=UTC)  # Thursday 10:00 IST
 
 
-def turn(utterance: str, language: str = "en") -> str:
-    payload = json.dumps({"utterance": utterance, "language": language}).encode()
-    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
-
-
 def show(title: str, result: dict) -> None:
     print(f"\n== {title}\n{json.dumps(result, indent=2, ensure_ascii=False)}")
 
@@ -63,7 +57,7 @@ async def main() -> None:
         gateway = {"Authorization": "Bearer gateway", "X-Call-Id": "demo-call-1",
                    "X-Caller-Number": "+919000000101"}
         async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={
-                **gateway, "X-Turn-Context": turn("ಡಾಕ್ಟರ್ ಗರಿಮಾ ಇವತ್ತು ಇದ್ದಾರಾ", "kn"),
+                **gateway,
                 "X-Operation-Id": "demo-op-1"})) as c:
             show("tools visible to the gateway", {"tools": [t.name for t in await c.list_tools()]})
             await call(c, "get_doctor_availability: Dr Garima today (board IN + NOT_CONFIRMED)",
@@ -80,10 +74,10 @@ async def main() -> None:
             await call(c, "search_knowledge: ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", "search_knowledge",
                        {"question": "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", "language": "kn"})
         async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={
-                **gateway, "X-Turn-Context": turn("Dr Garima, I have chest pain"),
+                **gateway,
                 "X-Operation-Id": "demo-op-2"})) as c:
-            await call(c, "get_doctor_availability with a danger sign in the trusted turn (routing decides)",
-                       "get_doctor_availability", {"doctorName": "garima", "date": "today"})
+            await call(c, "search_knowledge with the caller's danger sign",
+                       "search_knowledge", {"question": "Dr Garima, I have chest pain", "language": "en"})
         async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={
                 "Authorization": "Bearer lifecycle", "X-Call-Id": "demo-call-1",
                 "X-Call-Started-At": "2026-10-01T09:58:00+05:30", "X-Call-Duration-Seconds": "184"})) as c:

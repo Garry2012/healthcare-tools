@@ -58,3 +58,25 @@ async def test_write_benchmark_checks_tenant_before_selecting_writes(monkeypatch
         with pytest.raises(BENCH["GateFailure"], match="tenant mismatch"):
             await SELECT(make_settings(), external=True)
     assert events == ["checked", "closed"]
+
+
+@pytest.mark.parametrize("doctor,ok", [("doc_garima", 1), ("doc_rohan_shetty", 0)])
+async def test_stub_benchmark_measures_a_real_create_at_the_fixture_date(doctor, ok):
+    import asyncio
+    import json
+    import os
+
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("BENCH_", "OPS_E2E_"))}
+    env["BENCH_DOCTOR_ID"] = doctor
+    process = await asyncio.create_subprocess_exec(
+        "uv", "run", "python", "dev/bench.py", "--samples", "1", "--concurrency", "1",
+        cwd=Path(__file__).resolve().parents[1], env=env,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+    assert process.returncode == 0, stderr.decode()[-2000:]
+    report = json.loads(stdout)
+    create = report["scenarios"]["booking_create"]
+    assert create["expected_outcomes"] == ["NOTED"]
+    assert create["ok"] == ok and create["rejected_or_failed"] == 1 - ok
+    assert report["owner_calls_verified"] is True
+    assert "POST /appointments" in create["required_owner_calls"]

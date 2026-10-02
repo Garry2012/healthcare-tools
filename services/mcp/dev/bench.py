@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import json
 import os
 import statistics
@@ -19,7 +18,6 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import httpx
 from fastmcp import Client
@@ -37,8 +35,7 @@ from frontdesk_stubs import knowledge as knowledge_stub  # noqa: E402
 from frontdesk_stubs import ops as ops_stub  # noqa: E402
 
 # name → (tool, arguments, outcomes that count as the intended success, owner paths the call must have hit:
-#          operational paths and the knowledge routing path; every in-call tool must route first)
-ROUTE = "/v1/route"
+#          only the owner paths needed by that tool)
 # Directory values the scenarios need. Defaults are the development fixtures; a real host needs its own
 # (BENCH_DOCTOR_ID: a doctor id; BENCH_DOCTOR_NAME: a name matching exactly one doctor; BENCH_AMBIGUOUS_NAME:
 # a name matching several; BENCH_DEPARTMENT: a department name present in the tenant).
@@ -48,27 +45,22 @@ AMBIGUOUS_NAME = os.environ.get("BENCH_AMBIGUOUS_NAME", "sharma")
 DEPARTMENT = os.environ.get("BENCH_DEPARTMENT", "cardiology")
 SCENARIOS = {
     "availability_known_doctor": ("get_doctor_availability", {"doctorId": DOCTOR_ID, "date": "today"},
-                                  {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("/availability", ROUTE)),
+                                  {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("GET /availability",)),
     "availability_name_search": ("get_doctor_availability", {"doctorName": DOCTOR_NAME, "date": "today"},
-                                 {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("/doctors", "/availability", ROUTE)),
+                                 {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("GET /doctors", "GET /availability")),
     "availability_ambiguous": ("get_doctor_availability", {"doctorName": AMBIGUOUS_NAME, "date": "today"},
-                               {"CLARIFICATION_NEEDED"}, ("/doctors", ROUTE)),
+                               {"CLARIFICATION_NEEDED"}, ("GET /doctors",)),
     # departments are cached across samples: the board is the per-call owner read that must be observed
     "availability_department": ("get_doctor_availability", {"departmentName": DEPARTMENT, "date": "today"},
-                                {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("/availability", ROUTE)),
+                                {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("GET /availability",)),
     "knowledge_answer": ("search_knowledge", {"question": "parking", "language": "en"}, {"ANSWERED", "NO_ANSWER"},
-                         ("/v1/answer", ROUTE)),
-    "booking_list": ("manage_booking", {"action": "LIST"}, {"FOUND", "NOT_FOUND"}, ("/appointments",)),
+                         ("POST /v1/answer",)),
+    "booking_list": ("manage_booking", {"action": "LIST"}, {"FOUND", "NOT_FOUND"}, ("GET /appointments",)),
     "booking_create": ("manage_booking", {"action": "CREATE", "patientName": "Bench Patient",
                                           "patientMobile": "9000000101", "doctorId": DOCTOR_ID, "visitDate": "today",
                                           "preferredTime": "09:30", "callerConfirmed": True},
-                       {"NOTED", "CALLBACK_REQUIRED"}, ("/availability", ROUTE)),
+                       {"NOTED"}, ("GET /availability", "POST /appointments")),
 }
-
-
-def turn(utterance: str) -> str:
-    payload = json.dumps({"utterance": utterance, "language": "en"}).encode()
-    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
 
 
 def percentile(values: list[float], p: float) -> float:
@@ -86,10 +78,7 @@ async def measure(base: str, name: str, tool: str, args: dict, expected: set[str
     operation was observed (stub mode); otherwise the outcome/detail label, counted as a rejected sample."""
     call_id = f"bench-{name}-{i}"
     headers = {"Authorization": "Bearer gateway", "X-Call-Id": call_id, "X-Operation-Id": f"{call_id}-op",
-               "X-Caller-Number": "+919000000101", "X-Caller-Verification": "SIP_CALLER_ID",
-               "X-Turn-Context": turn("availability please")}
-    if args.get("visitDate") == "today":
-        args = {**args, "visitDate": datetime.now(UTC).astimezone(ZoneInfo("Asia/Kolkata")).date().isoformat()}
+               "X-Caller-Number": "+919000000101", "X-Caller-Verification": "SIP_CALLER_ID"}
     async with sem, Client(StreamableHttpTransport(f"{base}/mcp/", headers=headers)) as c:
         started = time.perf_counter()
         result = await c.call_tool(tool, args, raise_on_error=False)
@@ -103,7 +92,7 @@ async def measure(base: str, name: str, tool: str, args: dict, expected: set[str
     if RECORDING_OWNER_CALLS:
         seen = [path for cid, path in OWNER_CALLS if cid == call_id]  # attributed by call id, safe under concurrency
         for path in paths:
-            if not any(path in p for p in seen):
+            if path not in seen:
                 return f"{outcome}:owner call {path} not observed"
     return elapsed
 
@@ -142,7 +131,8 @@ async def run(base: str, samples: int, concurrency: int, scenarios: dict) -> dic
             outcomes[label] = outcomes.get(label, 0) + 1
         report[name] = {"samples": samples, "ok": len(timings), "rejected_or_failed": failures,
                         "over_budget_ms": BUDGET_MS, "over_budget": sum(1 for t in timings if t > BUDGET_MS),
-                        "expected_outcomes": sorted(expected), "outcomes": outcomes,
+                        "expected_outcomes": sorted(expected), "required_owner_calls": list(paths),
+                        "outcomes": outcomes,
                         "first_call_ms": round(results[0], 1) if isinstance(results[0], float) else results[0],
                         "p50_ms": round(percentile(timings, 50), 1) if timings else None,
                         "p95_ms": round(percentile(timings, 95), 1) if timings else None,
@@ -157,8 +147,8 @@ async def main() -> None:
     parser.add_argument("--concurrency", type=int, default=1)
     args = parser.parse_args()
     real_ops = os.environ.get("BENCH_OPS_BASE_URL")
-    # With real operational hosts but no knowledge host yet, keep the in-process knowledge stub so the routing
-    # gate clears and the Manoj critical path is what gets measured. Reported in the boundary line.
+    # With real operational hosts but no knowledge host yet, keep the in-process knowledge stub so knowledge
+    # answer samples remain labelled fixtures. Scheduling never uses that stub.
     knowledge_stub_with_real_ops = bool(real_ops) and not os.environ.get("BENCH_KNOWLEDGE_BASE_URL")
     settings = Settings(
         env="development", log_level="WARNING", provider_id="demo-hospital", domain_pack="healthcare",
@@ -202,7 +192,9 @@ async def main() -> None:
             async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
                 from frontdesk_mcp.context import call_id_var
 
-                OWNER_CALLS.append((call_id_var.get() or "", request.url.path))
+                prefix = httpx.URL(settings.ops_base_url).path.rstrip("/")
+                OWNER_CALLS.append((call_id_var.get() or "",
+                                    f"{request.method} {request.url.path.removeprefix(prefix)}"))
                 return await self.inner.handle_async_request(request)
 
         global RECORDING_OWNER_CALLS
@@ -211,6 +203,12 @@ async def main() -> None:
         kb_state = knowledge_stub.KnowledgeStubState(bearer="dev-knowledge-secret")
         knowledge_transport = Recording(knowledge_stub.create_app(kb_state))
     scenarios = await selected_scenarios(settings, external=bool(real_ops))
+    scenarios = {
+        name: (tool, {**values, "visitDate": os.environ.get("BENCH_VISIT_DATE") or
+                      clock.now().astimezone(settings.zone).date().isoformat()}, expected, paths)
+        if values.get("visitDate") == "today" else (tool, values, expected, paths)
+        for name, (tool, values, expected, paths) in scenarios.items()
+    }
     app = create_app(settings, ops_transport=ops_transport, knowledge_transport=knowledge_transport, clock=clock)
     async with serving(app) as base:
         # warm: first call pays token + pool + schema
@@ -223,7 +221,8 @@ async def main() -> None:
                       "owner_calls_verified": RECORDING_OWNER_CALLS,
                       "omitted_scenarios": {name: "external writes disabled" for name in SCENARIOS
                                             if name not in scenarios},
-                      "note": "timings include client-side schema checking and session initialize; "
+                      "note": "timings cover tools/call after MCP session initialization, "
+                              "including client schema checking; "
                               "a sample counts only when the intended outcome and owner call were observed",
                       "scenarios": report}, indent=2))
 
