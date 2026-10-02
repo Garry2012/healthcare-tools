@@ -127,3 +127,56 @@ async def test_question_limit_preserves_entire_question_and_rejects_overflow(mak
         assert len(requests) == 1
     finally:
         await services.aclose()
+
+
+@pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                         ("DESK_TRANSFER", "TRANSFER_DESK")])
+@pytest.mark.parametrize("field,bad", [
+    ("answer", {"text": "Owner instruction", "language": " "}),
+    ("answer", {"text": "x" * 1001, "language": "en"}),
+    ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+])
+async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+    payload = {"outcome": outcome, "destination": "desk", field: bad}
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json=payload)))
+    try:
+        result = await services.search.search(
+            CallContext(), KnowledgeRequest(question="private question", language="en"))
+        assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+        assert result.destination == "desk"
+        assert getattr(result, "answer" if field == "answer" else "sourceId") is None
+        assert result.routing.department is None
+        assert "knowledge_optional_field_dropped" in caplog.text
+        assert "owner-private" not in caplog.text and "private question" not in caplog.text
+        assert "Owner instruction" not in caplog.text
+    finally:
+        await services.aclose()
+
+
+@pytest.mark.parametrize("content_type", ["text/html", "text/plain", ""])
+async def test_knowledge_refuses_non_json_media_type(make_settings, content_type):
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, content=b'{"outcome":"NO_ANSWER"}',
+                                      headers={"content-type": content_type})))
+    try:
+        result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+        assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+    finally:
+        await services.aclose()
+
+
+@pytest.mark.parametrize("field", ["destination", "sourceId"])
+@pytest.mark.parametrize("length", [64, 65])
+async def test_knowledge_metadata_is_bounded(make_settings, field, length):
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"outcome": "ANSWERED",
+            "answer": {"text": "Parking is available.", "language": "en"}, field: "x" * length})))
+    try:
+        result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+        if length == 64:
+            assert result.outcome == "ANSWERED" and getattr(result, field) == "x" * 64
+        else:
+            assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+    finally:
+        await services.aclose()

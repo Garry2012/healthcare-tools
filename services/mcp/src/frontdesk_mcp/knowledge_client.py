@@ -60,6 +60,8 @@ class KnowledgeClient:
         if response.status_code != 200:
             logger.warning("knowledge_error", extra={"fields": {"path": path, "status": response.status_code}})
             raise KnowledgeUnavailable("UNAVAILABLE")
+        if response.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+            raise KnowledgeUnavailable("MALFORMED")
         try:
             data = response.json()
         except ValueError as exc:

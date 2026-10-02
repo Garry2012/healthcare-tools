@@ -1,0 +1,73 @@
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/frontdesk_mcp/knowledge_contract.py:6:1
+   |
+ 4 |   emergency classifier is a separate owner integration, outside this MCP adapter. No local interpretation.
+ 5 |   """
+ 6 | / from __future__ import annotations
+ 7 | |
+ 8 | | import logging
+ 9 | | from typing import Any, Literal
+10 | |
+11 | | from pydantic import (BaseModel, ConfigDict, Field, ValidationError, ValidationInfo,
+12 | |                       ValidatorFunctionWrapHandler, field_validator, model_validator)
+   | |_____________________________________________________________________________________^
+13 |
+14 |   logger = logging.getLogger(__name__)
+   |
+help: Organize imports
+   |
+10 |
+   - from pydantic import (BaseModel, ConfigDict, Field, ValidationError, ValidationInfo,
+   -                       ValidatorFunctionWrapHandler, field_validator, model_validator)
+11 + from pydantic import (
+12 +     BaseModel,
+13 +     ConfigDict,
+14 +     Field,
+15 +     ValidationError,
+16 +     ValidationInfo,
+17 +     ValidatorFunctionWrapHandler,
+18 +     field_validator,
+19 +     model_validator,
+20 + )
+21 |
+   |
+
+E501 Line too long (122 > 120)
+   --> tests/test_knowledge.py:144:121
+    |
+142 |         lambda request: httpx.Response(200, json=payload)))
+143 |     try:
+144 |         result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+    |                                                                                                                         ^^
+145 |         assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+146 |         assert result.destination == "desk"
+    |
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 19%]
+........................................................................ [ 38%]
+........................................................................ [ 57%]
+........................................................................ [ 77%]
+........................................................................ [ 96%]
+.............                                                            [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+373 passed, 11 deselected, 2 warnings in 24.21s
+EXIT: 0

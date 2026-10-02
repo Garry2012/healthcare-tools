@@ -5,9 +5,21 @@ emergency classifier is a separate owner integration, outside this MCP adapter. 
 """
 from __future__ import annotations
 
-from typing import Literal
+import logging
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    ValidatorFunctionWrapHandler,
+    field_validator,
+    model_validator,
+)
+
+logger = logging.getLogger(__name__)
 
 ANSWER_PATH = "/v1/answer"  # PROVISIONAL: replace only after the owner publishes the contract.
 RoutingDecision = Literal["ROUTE_DEPARTMENT", "CLARIFY", "DESK_TRANSFER", "EMERGENCY_TRANSFER"]
@@ -45,8 +57,21 @@ class AnswerResponse(_Model):
     outcome: AnswerOutcome
     answer: Speech | None = None
     department: DepartmentHint | None = None
-    sourceId: str | None = None  # noqa: N815
-    destination: str | None = None
+    sourceId: str | None = Field(default=None, max_length=64)  # noqa: N815
+    destination: str | None = Field(default=None, max_length=64)
+
+    @field_validator("answer", "department", "sourceId", "destination", mode="wrap")
+    @classmethod
+    def preserve_transfer(cls, value: Any, handler: ValidatorFunctionWrapHandler,
+                          info: ValidationInfo) -> Any:
+        # outcome is declared first, so its validated value is available before optional fields.
+        try:
+            return handler(value)
+        except ValidationError:
+            if info.data.get("outcome") not in ("EMERGENCY_TRANSFER", "DESK_TRANSFER"):
+                raise
+            logger.warning("knowledge_optional_field_dropped")
+            return None
 
     @model_validator(mode="after")
     def actionable(self) -> AnswerResponse:
