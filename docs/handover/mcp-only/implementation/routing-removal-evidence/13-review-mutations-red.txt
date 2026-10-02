@@ -154,7 +154,7 @@ ___________ test_owner_failure_is_not_an_answer[timeout-UNAVAILABLE] ___________
 tests/test_knowledge.py:91: in test_owner_failure_is_not_an_answer
     assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
 E   AssertionError: assert ('COULD_NOT_C..., 'MALFORMED') == ('COULD_NOT_C...'UNAVAILABLE')
-E     
+E
 E     At index 2 diff: 'MALFORMED' != 'UNAVAILABLE'
 E     Use -v to get more diff
 =============================== warnings summary ===============================
@@ -218,7 +218,7 @@ _ test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_garima-1] _
 tests/test_bench.py:79: in test_stub_benchmark_measures_a_real_create_at_the_fixture_date
     assert create["expected_outcomes"] == ["NOTED"]
 E   AssertionError: assert ['CALLBACK_REQUIRED', 'NOTED'] == ['NOTED']
-E     
+E
 E     At index 0 diff: 'CALLBACK_REQUIRED' != 'NOTED'
 E     Left contains one more item: 'NOTED'
 E     Use -v to get more diff
@@ -226,7 +226,7 @@ _ test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_rohan_shett
 tests/test_bench.py:79: in test_stub_benchmark_measures_a_real_create_at_the_fixture_date
     assert create["expected_outcomes"] == ["NOTED"]
 E   AssertionError: assert ['CALLBACK_REQUIRED', 'NOTED'] == ['NOTED']
-E     
+E
 E     At index 0 diff: 'CALLBACK_REQUIRED' != 'NOTED'
 E     Left contains one more item: 'NOTED'
 E     Use -v to get more diff

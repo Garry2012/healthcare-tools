@@ -21,3 +21,6 @@ tests/test_availability.py::test_availability_is_independent_of_knowledge_and_tr
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 74 passed, 2 warnings in 2.77s
+
+$ git diff 73a0832 --check
+exit 0 (includes newly tracked evidence; terminal trailing whitespace normalized)

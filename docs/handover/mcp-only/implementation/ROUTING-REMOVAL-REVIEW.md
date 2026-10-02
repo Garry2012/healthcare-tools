@@ -24,7 +24,7 @@ No production module or dependency was added. The new text artifact exports exis
 
 ## Mandatory checklist and proof index
 
-The raw command output is committed in [routing-removal-evidence](routing-removal-evidence/). Selected output is pasted below. These are local tests, not claims about deployed services.
+The command output (terminal trailing whitespace normalized) is committed in [routing-removal-evidence](routing-removal-evidence/). Selected output is pasted below. These are local tests, not claims about deployed services.
 
 | Requirement | Result and evidence |
 |---|---|

@@ -4,7 +4,7 @@ ____ test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret ____
 tests/test_deploy.py:288: in test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret
     assert result.returncode == 0, result.stderr[-2000:]
 E   AssertionError: /Users/garima/conductor/workspaces/healthcare-tools/des-moines/deploy/azure/deploy.sh: line 70: KNOWLEDGE_BASE_URL: set KNOWLEDGE_BASE_URL (profile or environment) to the knowledge service base
-E     
+E
 E   assert 1 == 0
 E    +  where 1 = CompletedProcess(args=['/Users/garima/conductor/workspaces/healthcare-tools/des-moines/deploy/azure/deploy.sh', '/User...ploy.sh: line 70: KNOWLEDGE_BASE_URL: set KNOWLEDGE_BASE_URL (profile or environment) to the knowledge service base\n').returncode
 =============================== warnings summary ===============================

@@ -21,18 +21,18 @@ step = 'OFFER_APPOINTMENT_REQUEST', configured = True
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -41,7 +41,7 @@ step = 'OFFER_APPOINTMENT_REQUEST', configured = True
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...MENT_REQUEST')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
 E             Use -v to get more diff
 
@@ -67,18 +67,18 @@ step = 'OFFER_APPOINTMENT_REQUEST', configured = True
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -87,7 +87,7 @@ step = 'OFFER_APPOINTMENT_REQUEST', configured = True
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...MENT_REQUEST')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
 E             Use -v to get more diff
 
@@ -113,18 +113,18 @@ step = 'ASK_WHICH_DOCTOR', configured = True
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -133,7 +133,7 @@ step = 'ASK_WHICH_DOCTOR', configured = True
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('CLARIFICATI...WHICH_DOCTOR')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'CLARIFICATION_NEEDED'
 E             Use -v to get more diff
 
@@ -159,18 +159,18 @@ step = 'ASK_WHICH_DOCTOR', configured = True
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -179,7 +179,7 @@ step = 'ASK_WHICH_DOCTOR', configured = True
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...WHICH_DOCTOR')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
 E             Use -v to get more diff
 
@@ -205,18 +205,18 @@ step = 'ASK_WHICH_DOCTOR', configured = True
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -225,7 +225,7 @@ step = 'ASK_WHICH_DOCTOR', configured = True
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...WHICH_DOCTOR')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
 E             Use -v to get more diff
 
@@ -251,18 +251,18 @@ step = 'ASK_CALLBACK_DETAILS', configured = True
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -271,7 +271,7 @@ step = 'ASK_CALLBACK_DETAILS', configured = True
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('CALLBACK_RE...BACK_DETAILS')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'CALLBACK_REQUIRED'
 E             Use -v to get more diff
 
@@ -297,18 +297,18 @@ step = 'ASK_TO_REPHRASE', configured = True
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -317,7 +317,7 @@ step = 'ASK_TO_REPHRASE', configured = True
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('NOT_FOUND',..._TO_REPHRASE')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'NOT_FOUND'
 E             Use -v to get more diff
 
@@ -343,18 +343,18 @@ configured = True
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -363,7 +363,7 @@ configured = True
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('INVALID_REQ..._TO_REPHRASE')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'INVALID_REQUEST'
 E             Use -v to get more diff
 
@@ -389,18 +389,18 @@ step = 'OFFER_APPOINTMENT_REQUEST', configured = False
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -409,7 +409,7 @@ step = 'OFFER_APPOINTMENT_REQUEST', configured = False
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...MENT_REQUEST')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
 E             Use -v to get more diff
 
@@ -435,18 +435,18 @@ step = 'OFFER_APPOINTMENT_REQUEST', configured = False
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -455,7 +455,7 @@ step = 'OFFER_APPOINTMENT_REQUEST', configured = False
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...MENT_REQUEST')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
 E             Use -v to get more diff
 
@@ -481,18 +481,18 @@ step = 'ASK_WHICH_DOCTOR', configured = False
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -501,7 +501,7 @@ step = 'ASK_WHICH_DOCTOR', configured = False
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('CLARIFICATI...WHICH_DOCTOR')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'CLARIFICATION_NEEDED'
 E             Use -v to get more diff
 
@@ -527,18 +527,18 @@ step = 'ASK_WHICH_DOCTOR', configured = False
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -547,7 +547,7 @@ step = 'ASK_WHICH_DOCTOR', configured = False
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...WHICH_DOCTOR')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
 E             Use -v to get more diff
 
@@ -573,18 +573,18 @@ step = 'ASK_WHICH_DOCTOR', configured = False
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -593,7 +593,7 @@ step = 'ASK_WHICH_DOCTOR', configured = False
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...WHICH_DOCTOR')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
 E             Use -v to get more diff
 
@@ -619,18 +619,18 @@ step = 'ASK_CALLBACK_DETAILS', configured = False
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -639,7 +639,7 @@ step = 'ASK_CALLBACK_DETAILS', configured = False
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('CALLBACK_RE...BACK_DETAILS')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'CALLBACK_REQUIRED'
 E             Use -v to get more diff
 
@@ -665,18 +665,18 @@ step = 'ASK_TO_REPHRASE', configured = False
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -685,7 +685,7 @@ step = 'ASK_TO_REPHRASE', configured = False
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('NOT_FOUND',..._TO_REPHRASE')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'NOT_FOUND'
 E             Use -v to get more diff
 
@@ -711,18 +711,18 @@ configured = False
     async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
         import httpx
         from frontdesk_stubs import ops as ops_stub
-    
+
         from frontdesk_mcp.context import CallContext
         from frontdesk_mcp.tools import Services
-    
+
         settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
         h = harness.build(settings)
         knowledge_requests = []
-    
+
         async def forbidden(request):
             knowledge_requests.append(request)
             raise AssertionError("availability must not contact knowledge")
-    
+
         services = Services.build(settings, clock=h.clock,
                                   ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
                                   knowledge_transport=httpx.MockTransport(forbidden))
@@ -731,7 +731,7 @@ configured = False
                 **{"date": "today", **target}))
 >           assert (result.outcome, result.nextStep) == (expected, step)
 E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('INVALID_REQ..._TO_REPHRASE')
-E             
+E
 E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'INVALID_REQUEST'
 E             Use -v to get more diff
 

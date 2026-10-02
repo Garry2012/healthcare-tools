@@ -4,21 +4,21 @@ __ test_booking_journey_forwards_reason_without_knowledge_or_transcript[None] __
 tests/test_booking.py:573: in test_booking_journey_forwards_reason_without_knowledge_or_transcript
     assert result.outcome == "NOTED" and result.appointment.status == "NOTED"
 E   AssertionError: assert ('ROUTING_UNAVAILABLE' == 'NOTED'
-E     
+E
 E     - NOTED
 E     + ROUTING_UNAVAILABLE)
 _ test_booking_journey_forwards_reason_without_knowledge_or_transcript[fever for three days] _
 tests/test_booking.py:573: in test_booking_journey_forwards_reason_without_knowledge_or_transcript
     assert result.outcome == "NOTED" and result.appointment.status == "NOTED"
 E   AssertionError: assert ('ROUTING_UNAVAILABLE' == 'NOTED'
-E     
+E
 E     - NOTED
 E     + ROUTING_UNAVAILABLE)
 _ test_booking_journey_forwards_reason_without_knowledge_or_transcript[chest pain, my left arm is numb] _
 tests/test_booking.py:573: in test_booking_journey_forwards_reason_without_knowledge_or_transcript
     assert result.outcome == "NOTED" and result.appointment.status == "NOTED"
 E   AssertionError: assert ('ROUTING_UNAVAILABLE' == 'NOTED'
-E     
+E
 E     - NOTED
 E     + ROUTING_UNAVAILABLE)
 =============================== warnings summary ===============================

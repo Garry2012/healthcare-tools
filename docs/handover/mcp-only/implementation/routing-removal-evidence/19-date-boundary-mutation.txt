@@ -6,14 +6,14 @@ _ test_availability_is_independent_of_knowledge_and_transcript[True-target8-INVA
 tests/test_availability.py:424: in test_availability_is_independent_of_knowledge_and_transcript
     assert (result.outcome, result.nextStep) == (expected, step)
 E   AssertionError: assert ('AVAILABILIT...MENT_REQUEST') == ('INVALID_REQ...XPLICIT_DATE')
-E     
+E
 E     At index 0 diff: 'AVAILABILITY' != 'INVALID_REQUEST'
 E     Use -v to get more diff
 _ test_availability_is_independent_of_knowledge_and_transcript[False-target8-INVALID_REQUEST-ASK_EXPLICIT_DATE] _
 tests/test_availability.py:424: in test_availability_is_independent_of_knowledge_and_transcript
     assert (result.outcome, result.nextStep) == (expected, step)
 E   AssertionError: assert ('AVAILABILIT...MENT_REQUEST') == ('INVALID_REQ...XPLICIT_DATE')
-E     
+E
 E     At index 0 diff: 'AVAILABILITY' != 'INVALID_REQUEST'
 E     Use -v to get more diff
 =============================== warnings summary ===============================

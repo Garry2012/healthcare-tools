@@ -4,7 +4,7 @@ ________ test_stub_benchmark_measures_a_real_create_at_the_fixture_date ________
 tests/test_bench.py:77: in test_stub_benchmark_measures_a_real_create_at_the_fixture_date
     assert create["expected_outcomes"] == ["NOTED"]
 E   AssertionError: assert ['CALLBACK_REQUIRED', 'NOTED'] == ['NOTED']
-E     
+E
 E     At index 0 diff: 'CALLBACK_REQUIRED' != 'NOTED'
 E     Left contains one more item: 'NOTED'
 E     Use -v to get more diff
