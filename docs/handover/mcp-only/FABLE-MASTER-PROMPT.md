@@ -1,5 +1,7 @@
 # Master execution prompt for Fable 5.1
 
+> Historical evidence/instructions for the pre-removal revision. Scheduling-gate statements are superseded by the user-approved K1 decision in docs/DECISIONS.md and ROUTING-REMOVAL-REVIEW.md. Do not implement or deploy from this historical document.
+
 This is the implementation assignment. Read it in full, then execute it when the user gives you this prompt. Its creation is not evidence that implementation, deployment or cleanup has already happened. Return your work for architectural review using the report requirements below.
 
 ## Your role and outcome

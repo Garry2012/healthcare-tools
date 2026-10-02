@@ -1,5 +1,7 @@
 # Independent review and next-agent handoff — 2 October 2026
 
+> Historical evidence/instructions for the pre-removal revision. Scheduling-gate statements are superseded by the user-approved K1 decision in docs/DECISIONS.md and ROUTING-REMOVAL-REVIEW.md. Do not implement or deploy from this historical document.
+
 ## Follow-up status
 
 The user assigned the two fixes to the reviewing agent. R1 and R2 below are historical findings,

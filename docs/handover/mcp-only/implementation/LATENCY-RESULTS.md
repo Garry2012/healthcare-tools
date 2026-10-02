@@ -1,5 +1,7 @@
 # Latency results (1–2 October 2026)
 
+> Historical evidence/instructions for the pre-removal revision. Scheduling-gate statements are superseded by the user-approved K1 decision in docs/DECISIONS.md and ROUTING-REMOVAL-REVIEW.md. Do not implement or deploy from this historical document.
+
 **Status (2 October 2026): the live operational API has been measured from a developer laptop (§E), not yet from the
 MCP region; no voice-path measurement exists.** Earlier sections: in-process stubs (*stub*) and Manoj's public contract
 mock (*mock*) from the same laptop. Stub, mock and laptop→live timings are **not production timings**: they prove the
