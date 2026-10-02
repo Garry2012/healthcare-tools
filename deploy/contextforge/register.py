@@ -38,7 +38,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 TOOLS = ("get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary")
 CONVERSATIONAL = TOOLS[:3]
 # Trusted call context travels from the voice platform through the gateway to the adapter.
-PASSTHROUGH = ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification", "X-Turn-Context", "X-Operation-Id",
+PASSTHROUGH = ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification", "X-Operation-Id",
                "X-Call-Started-At", "X-Call-Duration-Seconds"]
 
 

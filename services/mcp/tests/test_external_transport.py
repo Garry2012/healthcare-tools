@@ -57,7 +57,7 @@ async def test_trusted_headers_are_forwarded_by_the_deployed_transport():
 
 async def test_backend_lookup_succeeds_through_the_deployed_adapter():
     """Backend layer: the owner answered a real appointment lookup through the deployment (FOUND/NOT_FOUND).
-    COULD_NOT_CHECK, ROUTING_UNAVAILABLE or a refusal fails this gate."""
+    COULD_NOT_CHECK, UNKNOWN_OUTCOME or a refusal fails this gate."""
     url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
     headers = {"Authorization": f"Bearer {bearer}", **harness.headers(call_id=f"gate-{uuid.uuid4().hex[:8]}")}
     async with Client(StreamableHttpTransport(url, headers=headers)) as c:

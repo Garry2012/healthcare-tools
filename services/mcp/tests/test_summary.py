@@ -15,7 +15,7 @@ from frontdesk_mcp import access, context, summary
 
 from . import harness
 
-LIFECYCLE = {"operation_id": None, "started_at": "2026-10-01T09:58:00+05:30", "duration": "184", "turn": None}
+LIFECYCLE = {"operation_id": None, "started_at": "2026-10-01T09:58:00+05:30", "duration": "184"}
 CALLBACK = {"intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED", "callerName": "Lakshmi Rao",
             "callerMobile": "9000000101", "doctorId": "doc_garima", "language": "kn-IN",
             "summaryText": "Asked for Dr. Garima tomorrow morning; board status UNKNOWN."}

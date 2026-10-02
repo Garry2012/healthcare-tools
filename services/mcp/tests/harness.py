@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -22,15 +20,8 @@ NOW = datetime(2026, 10, 1, 4, 30, tzinfo=UTC)
 CALLER = "+919000000101"
 
 
-def turn_header(utterance: str, language: str = "en", turn_id: str | None = None) -> str:
-    payload = {"utterance": utterance, "language": language}
-    if turn_id:
-        payload["turnId"] = turn_id
-    return base64.urlsafe_b64encode(json.dumps(payload, ensure_ascii=False).encode()).decode().rstrip("=")
-
-
-def headers(*, call_id: str | None = "call-1", caller: str | None = CALLER, turn: str | None = "is Dr Garima in today",
-            language: str = "en", operation_id: str | None = None, verification: str | None = "SIP_CALLER_ID",
+def headers(*, call_id: str | None = "call-1", caller: str | None = CALLER,
+            operation_id: str | None = None, verification: str | None = "SIP_CALLER_ID",
             started_at: str | None = None, duration: str | None = None) -> dict[str, str]:
     out: dict[str, str] = {}
     if call_id:
@@ -39,8 +30,6 @@ def headers(*, call_id: str | None = "call-1", caller: str | None = CALLER, turn
         out["X-Caller-Number"] = caller
     if verification:
         out["X-Caller-Verification"] = verification
-    if turn is not None:
-        out["X-Turn-Context"] = turn_header(turn, language)
     if operation_id:
         out["X-Operation-Id"] = operation_id
     if started_at:
