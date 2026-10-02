@@ -1,29 +1,57 @@
 {
   "role": "a hospital voice agent",
-  "instructions": "Book one patient per call. A red-flag symptom returns TRANSFER_EMERGENCY: transfer at once.",
+  "instructions": "Help one patient per call. Whether the caller's words contain a danger sign is decided by the hospital's routing service, never by you: follow its decision in routing.",
   "tools": {
-    "find_availability": {
-      "description": "Find which doctors can be seen and when. Give the caller's words for the doctor, department or problem exactly as spoken, and when they want to come. Returns understood meaning, bookable slots with times, fee, and what to do next (offer slots, ask a clarifying question, or transfer).",
+    "get_doctor_availability": {
+      "description": "Check a doctor's or a department's availability for today or an explicit date. Resolves the doctor or department from the hospital directory (asking for a choice when several match), then returns the usual hours qualified by the live board for each session: IN, LATE (with expected time), CANCELLED, NOT_CONFIRMED or UNKNOWN. UNKNOWN returns CALLBACK_REQUIRED: collect name and callback number only.",
       "parameters": {
-        "resourceName": "If the caller named a doctor. As heard, never corrected.",
-        "category": "If the caller named a department or speciality (\"skin doctor\", \"ಚರ್ಮ ವೈದ್ಯ\"). As heard.",
-        "needText": "If the caller described a health problem or symptom. As heard; never map it to a department yourself.",
-        "preferences": "Only if the caller asked: doctor's gender, consultation language."
+        "doctorName": "The doctor's name as the caller said it, when they named one. Never corrected.",
+        "doctorId": "A doctorId from an earlier result's choices or doctors, when the caller has chosen.",
+        "departmentName": "The department or speciality as the caller said it, when they named one.",
+        "departmentId": "A departmentId from an earlier result's departmentChoices, when the caller has chosen.",
+        "date": "'today', or the explicit YYYY-MM-DD date the caller confirmed.",
+        "session": "Only if the caller asked about a particular session (morning, evening) as they said it.",
+        "gender": "Only if the caller asked for a lady or a male doctor."
       }
     },
     "manage_booking": {
-      "description": "Book, list, cancel or reschedule a doctor's appointment for the caller. Book uses a slotId from find_availability. List/cancel/reschedule are checked against the caller's phone number and the patient's name. ALREADY_CANCELLED means it was cancelled before this call; if status is CANCELLED_BY_PROVIDER, say the hospital cancelled it and offer a new appointment.",
+      "description": "Record (CREATE), list (LIST), cancel (CANCEL) or move (RESCHEDULE) an appointment request. CREATE needs the patient's name and mobile read back, the chosen doctorId or departmentId, the confirmed visit date and optional preferred time; success is NOTED (recorded, not a reserved time). LIST, CANCEL and RESCHEDULE work on the verified caller's own number only. Every write needs callerConfirmed=true after reading the details back.",
       "parameters": {
-        "customer": "BOOK: the patient (name spelled back, phone read back). One patient per call.",
-        "customerName": "LIST (optional), CANCEL, RESCHEDULE: the patient's name as they say it.",
-        "bookingId": "CANCEL/RESCHEDULE: an appointment's bookingId from LIST or BOOK.",
-        "reasonVerbatim": "BOOK/CANCEL: the caller's own words for the reason (e.g. the symptom)."
+        "action": "CREATE a request, LIST the caller's requests, CANCEL or RESCHEDULE one of them.",
+        "patientName": "CREATE: the patient's name, spelled back.",
+        "patientMobile": "CREATE: the patient's 10-digit mobile, read back digit by digit. Contact data only.",
+        "doctorId": "CREATE: the chosen doctorId from get_doctor_availability (or departmentId instead).",
+        "departmentId": "CREATE: the chosen departmentId when no particular doctor was chosen.",
+        "visitDate": "CREATE: the confirmed visit date, YYYY-MM-DD.",
+        "preferredTime": "CREATE: the time the caller would like to come, HH:MM 24-hour, if they gave one.",
+        "session": "CREATE: the board session the caller chose from get_doctor_availability (e.g. Morning), when the doctor has several that day.",
+        "reasonVerbatim": "CREATE/CANCEL: the caller's own words for the reason. Never an interpretation.",
+        "appointmentId": "CANCEL/RESCHEDULE: the appointmentId from LIST or CREATE.",
+        "newVisitDate": "RESCHEDULE: the new confirmed date, YYYY-MM-DD.",
+        "newPreferredTime": "RESCHEDULE: the new preferred time, HH:MM, if given.",
+        "callerConfirmed": "true only after the caller clearly agreed to the read-back details."
       }
     },
     "search_knowledge": {
-      "description": "Answer a general question about the hospital (opening hours, visiting hours, parking, payment, reports, directions) from the hospital's approved answers. Give the caller's question as spoken. Speak answer.text as given and add nothing; if routing.action is TRANSFER_DESK, say it and transfer. Not for doctors' availability, fees or appointments: use find_availability.",
+      "description": "Answer a general question about the hospital (hours, visiting, parking, payment, reports, directions, insurance) from approved answers. Speak answer.text as given. Not for doctors' availability or appointments.",
       "parameters": {
-        "question": "The caller's question verbatim, in any language, as STT delivered it."
+        "question": "The caller's question as spoken, in any language.",
+        "language": "The language the caller is speaking."
+      }
+    },
+    "record_call_summary": {
+      "description": "Call-end lifecycle only (not for use during the conversation): store the hospital-facing summary of the completed call. Call identity and timing come from the platform. For a callback after UNKNOWN availability use outcome CALLBACK_NOTED with the caller's name and callback number.",
+      "parameters": {
+        "intent": "What the caller wanted.",
+        "outcome": "How the call ended from the hospital's point of view.",
+        "summaryText": "One or two sentences for the admin UI; never a transcript.",
+        "callerName": "The caller's name when they gave it (required for CALLBACK_NOTED).",
+        "callerMobile": "The 10-digit callback number only when the caller gave it; never the caller ID.",
+        "language": "The language the call was handled in.",
+        "doctorId": "The doctor the call was about, when applicable.",
+        "appointmentId": "The appointment created or changed, when applicable.",
+        "transferredTo": "Desk or department the call was handed to, for transfer outcomes.",
+        "requestedDate": "For CALLBACK_NOTED: the date the caller asked about (YYYY-MM-DD), kept whole in the summary."
       }
     }
   }

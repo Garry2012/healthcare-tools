@@ -14,14 +14,22 @@ for _field in Settings.model_fields:
     os.environ.pop(_field.upper(), None)
 
 # The demo hospital rollout's values the adapter reads (rollouts/demo-hospital/rollout.env).
-ROLLOUT = {"provider_id": "demo-hospital", "domain_pack": "healthcare", "tenant_supported_languages": "en,kn,hi"}
+ROLLOUT = {
+    "provider_id": "demo-hospital", "domain_pack": "healthcare", "tenant_supported_languages": "en,kn,hi",
+    "tenant_timezone": "Asia/Kolkata", "tenant_country_calling_code": "91",
+}
+# Dev/test endpoints: the in-process stubs (tests) or the compose stub services.
+ENDPOINTS = {
+    "ops_base_url": "http://ops-stub.test/api/v1", "ops_client_id": "mcp-test", "ops_client_secret": "ops-secret",
+    "knowledge_base_url": "http://knowledge-stub.test", "knowledge_bearer_token": "knowledge-secret",
+    "mcp_bearer_token": "mcp-token", "mcp_lifecycle_bearer_token": "lifecycle-token",
+}
 
 
 @pytest.fixture
 def make_settings():
     def factory(**overrides) -> Settings:
-        return Settings(**{**ROLLOUT, "env": "test", "api_bearer_token": "api-token",
-                           "mcp_bearer_token": "mcp-token", **overrides})
+        return Settings(**{**ROLLOUT, **ENDPOINTS, "env": "test", **overrides})
 
     return factory
 

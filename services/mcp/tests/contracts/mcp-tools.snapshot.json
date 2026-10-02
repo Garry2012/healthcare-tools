@@ -1,0 +1,1595 @@
+{
+  "instructions": "Front-desk tools for a hospital voice agent. Dates: pass date='today' or an explicit date YYYY-MM-DD the caller confirmed; every result carries facilityToday and weekday to help you confirm. Never work out a relative date yourself: ask for the day. get_doctor_availability returns usual hours qualified by the live board per session. Speak the board status (IN, LATE with its expectedTime, CANCELLED, NOT_CONFIRMED, expired) and never present usual hours as today's attendance. There are no slots, tokens or guaranteed times: a preferred time is a request. manage_booking CREATE returns NOTED: say the request is recorded with that preferred time; never say 'confirmed' or 'booked'. CALLBACK_REQUIRED (board UNKNOWN today or on a later date): stop the appointment journey. Ask 'May I have your name and a callback number?' and then say 'Someone from the hospital will call you back.' Do not book, transfer, offer another doctor or date, or promise when; the call summary records it as CALLBACK_NOTED. Help one patient per call. Whether the caller's words contain a danger sign is decided by the hospital's routing service, never by you: follow its decision in routing. Before CREATE, CANCEL or RESCHEDULE, read the details back and get a clear yes; only then set callerConfirmed=true and call manage_booking once for that intent. UNCERTAIN means it may or may not be recorded: say so and transfer to the desk; never retry it as a new request. IDENTITY_UNAVAILABLE: the caller's number could not be verified for looking up or changing appointments; do not ask for another number to use instead, offer the desk. ROUTING_REQUIRED: follow nextStep (TRANSFER_EMERGENCY at once, TRANSFER_DESK, or ask routing.speak) and speak routing.speak.text verbatim when present. ROUTING_UNAVAILABLE, COULD_NOT_CHECK or COULD_NOT_RECORD: say the system could not check right now and offer the desk; never say that no one is available. CLARIFICATION_NEEDED: offer the returned choices (complete=false means there are more) and ask; never choose for the caller. NOT_FOUND: ask the caller to repeat the name or department once, then offer the desk. For general questions (hours, parking, reports, payment, directions) call search_knowledge and speak answer.text exactly as given; add nothing. Languages: set `language` to the language the caller is speaking (en, kn, hi). Pass names, departments and questions as heard, untranslated; speak approved answers in the language they come back in. Tool schema 2026-10-01.4.",
+  "schemaVersion": "2026-10-01.4",
+  "tools": [
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Check a doctor's or a department's availability for today or an explicit date. Resolves the doctor or department from the hospital directory (asking for a choice when several match), then returns the usual hours qualified by the live board for each session: IN, LATE (with expected time), CANCELLED, NOT_CONFIRMED or UNKNOWN. UNKNOWN returns CALLBACK_REQUIRED: collect name and callback number only.",
+      "inputSchema": {
+        "properties": {
+          "date": {
+            "description": "'today', or the explicit YYYY-MM-DD date the caller confirmed.",
+            "maxLength": 10,
+            "type": "string"
+          },
+          "departmentId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A departmentId from an earlier result's departmentChoices, when the caller has chosen."
+          },
+          "departmentName": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The department or speciality as the caller said it, when they named one."
+          },
+          "doctorId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A doctorId from an earlier result's choices or doctors, when the caller has chosen."
+          },
+          "doctorName": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The doctor's name as the caller said it, when they named one. Never corrected."
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "enum": [
+                  "FEMALE",
+                  "MALE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only if the caller asked for a lady or a male doctor."
+          },
+          "session": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only if the caller asked about a particular session (morning, evening) as they said it."
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "type": "object"
+      },
+      "lifecycle": false,
+      "name": "get_doctor_availability",
+      "outputSchema": {
+        "$defs": {
+          "BoardSessionOut": {
+            "properties": {
+              "delayMinutes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Delayminutes"
+              },
+              "expectedEndTime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expectedendtime"
+              },
+              "expectedTime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expectedtime"
+              },
+              "expired": {
+                "description": "expectedEndTime has passed in facility time on the requested date.",
+                "title": "Expired",
+                "type": "boolean"
+              },
+              "isStale": {
+                "title": "Isstale",
+                "type": "boolean"
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Note"
+              },
+              "session": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Session"
+              },
+              "status": {
+                "enum": [
+                  "IN",
+                  "LATE",
+                  "CANCELLED",
+                  "NOT_CONFIRMED",
+                  "UNKNOWN"
+                ],
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "required": [
+              "session",
+              "status",
+              "isStale",
+              "expired"
+            ],
+            "title": "BoardSessionOut",
+            "type": "object"
+          },
+          "Callback": {
+            "description": "The UNKNOWN policy: collect name and number, say someone will call back, record a summary only.",
+            "properties": {
+              "ask": {
+                "default": "May I have your name and a callback number?",
+                "title": "Ask",
+                "type": "string"
+              },
+              "say": {
+                "default": "Someone from the hospital will call you back.",
+                "title": "Say",
+                "type": "string"
+              },
+              "summaryOutcome": {
+                "const": "CALLBACK_NOTED",
+                "default": "CALLBACK_NOTED",
+                "title": "Summaryoutcome",
+                "type": "string"
+              }
+            },
+            "title": "Callback",
+            "type": "object"
+          },
+          "DepartmentChoice": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "title": "DepartmentChoice",
+            "type": "object"
+          },
+          "DoctorAvailability": {
+            "properties": {
+              "attendanceType": {
+                "enum": [
+                  "REGULAR",
+                  "VISITING",
+                  "ON_CALL"
+                ],
+                "title": "Attendancetype",
+                "type": "string"
+              },
+              "board": {
+                "items": {
+                  "$ref": "#/$defs/BoardSessionOut"
+                },
+                "title": "Board",
+                "type": "array"
+              },
+              "dataConfirmed": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Dataconfirmed"
+              },
+              "departments": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Departments",
+                "type": "array"
+              },
+              "doctorId": {
+                "title": "Doctorid",
+                "type": "string"
+              },
+              "gender": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Gender"
+              },
+              "journey": {
+                "enum": [
+                  "APPOINTMENT_REQUEST",
+                  "CALLBACK_ONLY",
+                  "DESK"
+                ],
+                "title": "Journey",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "unknownSessions": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "title": "Unknownsessions",
+                "type": "array"
+              },
+              "usualSessions": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/UsualSessionOut"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Background hours only, never today's position. null when the profile was not fetched.",
+                "title": "Usualsessions"
+              }
+            },
+            "required": [
+              "doctorId",
+              "name",
+              "departments",
+              "attendanceType",
+              "usualSessions",
+              "board",
+              "journey"
+            ],
+            "title": "DoctorAvailability",
+            "type": "object"
+          },
+          "DoctorChoice": {
+            "properties": {
+              "departments": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Departments",
+                "type": "array"
+              },
+              "doctorId": {
+                "title": "Doctorid",
+                "type": "string"
+              },
+              "gender": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Gender"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "doctorId",
+              "name",
+              "departments"
+            ],
+            "title": "DoctorChoice",
+            "type": "object"
+          },
+          "Routing": {
+            "properties": {
+              "decision": {
+                "enum": [
+                  "CONTINUE",
+                  "ROUTE_DEPARTMENT",
+                  "CLARIFY",
+                  "DESK_TRANSFER",
+                  "EMERGENCY_TRANSFER"
+                ],
+                "title": "Decision",
+                "type": "string"
+              },
+              "department": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Department"
+              },
+              "speak": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Speech"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "decision"
+            ],
+            "title": "Routing",
+            "type": "object"
+          },
+          "Speech": {
+            "properties": {
+              "language": {
+                "title": "Language",
+                "type": "string"
+              },
+              "text": {
+                "title": "Text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "language"
+            ],
+            "title": "Speech",
+            "type": "object"
+          },
+          "UsualSessionOut": {
+            "properties": {
+              "daysOfWeek": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Daysofweek",
+                "type": "array"
+              },
+              "end": {
+                "title": "End",
+                "type": "string"
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Label"
+              },
+              "onRequestedDate": {
+                "title": "Onrequesteddate",
+                "type": "boolean"
+              },
+              "start": {
+                "title": "Start",
+                "type": "string"
+              }
+            },
+            "required": [
+              "label",
+              "daysOfWeek",
+              "start",
+              "end",
+              "onRequestedDate"
+            ],
+            "title": "UsualSessionOut",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "callback": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Callback"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "choices": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/DoctorChoice"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "complete": {
+            "default": true,
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DepartmentChoice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "departmentChoices": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/DepartmentChoice"
+            },
+            "title": "Departmentchoices",
+            "type": "array"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Machine-readable reason for non-success outcomes.",
+            "title": "Detail"
+          },
+          "doctors": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/DoctorAvailability"
+            },
+            "title": "Doctors",
+            "type": "array"
+          },
+          "facilityToday": {
+            "title": "Facilitytoday",
+            "type": "string"
+          },
+          "nextStep": {
+            "enum": [
+              "OFFER_APPOINTMENT_REQUEST",
+              "ASK_WHICH_DOCTOR",
+              "ASK_WHICH_DEPARTMENT",
+              "ASK_CALLBACK_DETAILS",
+              "TRANSFER_EMERGENCY",
+              "TRANSFER_DESK",
+              "ASK_ROUTING_CLARIFICATION",
+              "ASK_TO_REPHRASE",
+              "SAY_COULD_NOT_CHECK",
+              "ASK_EXPLICIT_DATE"
+            ],
+            "title": "Nextstep",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "AVAILABILITY",
+              "CLARIFICATION_NEEDED",
+              "CALLBACK_REQUIRED",
+              "ROUTING_REQUIRED",
+              "ROUTING_UNAVAILABLE",
+              "NOT_FOUND",
+              "COULD_NOT_CHECK",
+              "INVALID_REQUEST"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "requestedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requesteddate"
+          },
+          "retryAfterSeconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retryafterseconds"
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Routing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "sessionMatched": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sessionmatched"
+          },
+          "totalMatches": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Totalmatches"
+          },
+          "weekday": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Weekday"
+          }
+        },
+        "required": [
+          "outcome",
+          "nextStep",
+          "facilityToday"
+        ],
+        "title": "AvailabilityResult",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Record (CREATE), list (LIST), cancel (CANCEL) or move (RESCHEDULE) an appointment request. CREATE needs the patient's name and mobile read back, the chosen doctorId or departmentId, the confirmed visit date and optional preferred time; success is NOTED (recorded, not a reserved time). LIST, CANCEL and RESCHEDULE work on the verified caller's own number only. Every write needs callerConfirmed=true after reading the details back.",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "CREATE a request, LIST the caller's requests, CANCEL or RESCHEDULE one of them.",
+            "enum": [
+              "CREATE",
+              "LIST",
+              "CANCEL",
+              "RESCHEDULE"
+            ],
+            "type": "string"
+          },
+          "appointmentId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CANCEL/RESCHEDULE: the appointmentId from LIST or CREATE."
+          },
+          "callerConfirmed": {
+            "default": false,
+            "description": "true only after the caller clearly agreed to the read-back details.",
+            "type": "boolean"
+          },
+          "departmentId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CREATE: the chosen departmentId when no particular doctor was chosen."
+          },
+          "doctorId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CREATE: the chosen doctorId from get_doctor_availability (or departmentId instead)."
+          },
+          "fromDate": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "newPreferredTime": {
+            "anyOf": [
+              {
+                "maxLength": 5,
+                "pattern": "^\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RESCHEDULE: the new preferred time, HH:MM, if given."
+          },
+          "newVisitDate": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RESCHEDULE: the new confirmed date, YYYY-MM-DD."
+          },
+          "patientMobile": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CREATE: the patient's 10-digit mobile, read back digit by digit. Contact data only."
+          },
+          "patientName": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CREATE: the patient's name, spelled back."
+          },
+          "preferredTime": {
+            "anyOf": [
+              {
+                "maxLength": 5,
+                "pattern": "^\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CREATE: the time the caller would like to come, HH:MM 24-hour, if they gave one."
+          },
+          "reasonVerbatim": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CREATE/CANCEL: the caller's own words for the reason. Never an interpretation."
+          },
+          "session": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CREATE: the board session the caller chose from get_doctor_availability (e.g. Morning), when the doctor has several that day."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "NOTED",
+                  "CONFIRMED_BY_DESK",
+                  "CHANGED",
+                  "CANCELLED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "toDate": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "visitDate": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "CREATE: the confirmed visit date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "lifecycle": false,
+      "name": "manage_booking",
+      "outputSchema": {
+        "$defs": {
+          "AppointmentOut": {
+            "description": "The minimum the agent needs to speak about a request: no contact number, no reason text.",
+            "properties": {
+              "appointmentId": {
+                "title": "Appointmentid",
+                "type": "string"
+              },
+              "department": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Department"
+              },
+              "doctorId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Doctorid"
+              },
+              "expectedTime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expectedtime"
+              },
+              "patientName": {
+                "title": "Patientname",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "NOTED",
+                  "CONFIRMED_BY_DESK",
+                  "CHANGED",
+                  "CANCELLED"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "visitDate": {
+                "title": "Visitdate",
+                "type": "string"
+              }
+            },
+            "required": [
+              "appointmentId",
+              "status",
+              "visitDate",
+              "patientName"
+            ],
+            "title": "AppointmentOut",
+            "type": "object"
+          },
+          "Callback": {
+            "description": "The UNKNOWN policy: collect name and number, say someone will call back, record a summary only.",
+            "properties": {
+              "ask": {
+                "default": "May I have your name and a callback number?",
+                "title": "Ask",
+                "type": "string"
+              },
+              "say": {
+                "default": "Someone from the hospital will call you back.",
+                "title": "Say",
+                "type": "string"
+              },
+              "summaryOutcome": {
+                "const": "CALLBACK_NOTED",
+                "default": "CALLBACK_NOTED",
+                "title": "Summaryoutcome",
+                "type": "string"
+              }
+            },
+            "title": "Callback",
+            "type": "object"
+          },
+          "Routing": {
+            "properties": {
+              "decision": {
+                "enum": [
+                  "CONTINUE",
+                  "ROUTE_DEPARTMENT",
+                  "CLARIFY",
+                  "DESK_TRANSFER",
+                  "EMERGENCY_TRANSFER"
+                ],
+                "title": "Decision",
+                "type": "string"
+              },
+              "department": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Department"
+              },
+              "speak": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Speech"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "decision"
+            ],
+            "title": "Routing",
+            "type": "object"
+          },
+          "Speech": {
+            "properties": {
+              "language": {
+                "title": "Language",
+                "type": "string"
+              },
+              "text": {
+                "title": "Text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "language"
+            ],
+            "title": "Speech",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "appointment": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AppointmentOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "appointments": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/AppointmentOut"
+            },
+            "title": "Appointments",
+            "type": "array"
+          },
+          "callback": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Callback"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "fields": {
+            "default": [],
+            "description": "Request fields that were invalid or rejected.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "nextStep": {
+            "enum": [
+              "SAY_REQUEST_NOTED",
+              "SAY_CHANGED",
+              "SAY_CANCELLED",
+              "OFFER_CHOICES",
+              "SAY_NOT_FOUND",
+              "ASK_TO_CORRECT",
+              "SAY_UNCERTAIN_AND_TRANSFER",
+              "TRANSFER_DESK",
+              "TRANSFER_EMERGENCY",
+              "ASK_ROUTING_CLARIFICATION",
+              "ASK_CALLBACK_DETAILS",
+              "ASK_CONFIRMATION",
+              "SAY_COULD_NOT_RECORD",
+              "SAY_COULD_NOT_CHECK"
+            ],
+            "title": "Nextstep",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "NOTED",
+              "CHANGED",
+              "CANCELLED",
+              "FOUND",
+              "NOT_FOUND",
+              "REJECTED",
+              "CONFLICT",
+              "UNCERTAIN",
+              "IDENTITY_UNAVAILABLE",
+              "ROUTING_REQUIRED",
+              "ROUTING_UNAVAILABLE",
+              "CALLBACK_REQUIRED",
+              "CONFIRMATION_REQUIRED",
+              "OPERATION_CONTEXT_MISSING",
+              "COULD_NOT_RECORD",
+              "COULD_NOT_CHECK",
+              "INVALID_REQUEST"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "retryAfterSeconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retryafterseconds"
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Routing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "outcome",
+          "nextStep"
+        ],
+        "title": "BookingResult",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Answer a general question about the hospital (hours, visiting, parking, payment, reports, directions, insurance) from approved answers. Speak answer.text as given. Not for doctors' availability or appointments.",
+      "inputSchema": {
+        "properties": {
+          "language": {
+            "description": "The language the caller is speaking.",
+            "maxLength": 16,
+            "type": "string"
+          },
+          "question": {
+            "description": "The caller's question as spoken, in any language.",
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "language"
+        ],
+        "type": "object"
+      },
+      "lifecycle": false,
+      "name": "search_knowledge",
+      "outputSchema": {
+        "$defs": {
+          "Routing": {
+            "properties": {
+              "decision": {
+                "enum": [
+                  "CONTINUE",
+                  "ROUTE_DEPARTMENT",
+                  "CLARIFY",
+                  "DESK_TRANSFER",
+                  "EMERGENCY_TRANSFER"
+                ],
+                "title": "Decision",
+                "type": "string"
+              },
+              "department": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Department"
+              },
+              "speak": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Speech"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "decision"
+            ],
+            "title": "Routing",
+            "type": "object"
+          },
+          "Speech": {
+            "properties": {
+              "language": {
+                "title": "Language",
+                "type": "string"
+              },
+              "text": {
+                "title": "Text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "language"
+            ],
+            "title": "Speech",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Speech"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Approved text to speak exactly as given."
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Destination"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "nextStep": {
+            "enum": [
+              "SPEAK_ANSWER",
+              "SAY_NO_ANSWER_AND_OFFER_DESK",
+              "ASK_CLARIFICATION",
+              "TRANSFER_DESK",
+              "TRANSFER_EMERGENCY",
+              "ASK_ROUTING_CLARIFICATION",
+              "SAY_COULD_NOT_CHECK",
+              "ASK_TO_REPHRASE"
+            ],
+            "title": "Nextstep",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "ANSWERED",
+              "NO_ANSWER",
+              "CLARIFICATION_NEEDED",
+              "ROUTING_REQUIRED",
+              "ROUTING_UNAVAILABLE",
+              "COULD_NOT_CHECK",
+              "INVALID_REQUEST"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Routing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The owner's routing decision over the caller's words."
+          },
+          "sourceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sourceid"
+          }
+        },
+        "required": [
+          "outcome",
+          "nextStep"
+        ],
+        "title": "KnowledgeResult",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Call-end lifecycle only (not for use during the conversation): store the hospital-facing summary of the completed call. Call identity and timing come from the platform. For a callback after UNKNOWN availability use outcome CALLBACK_NOTED with the caller's name and callback number.",
+      "inputSchema": {
+        "properties": {
+          "appointmentId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The appointment created or changed, when applicable."
+          },
+          "callerMobile": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The 10-digit callback number only when the caller gave it; never the caller ID."
+          },
+          "callerName": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The caller's name when they gave it (required for CALLBACK_NOTED)."
+          },
+          "doctorId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The doctor the call was about, when applicable."
+          },
+          "intent": {
+            "description": "What the caller wanted.",
+            "enum": [
+              "AVAILABILITY",
+              "BOOKING",
+              "RESCHEDULE",
+              "CANCEL",
+              "GENERAL_INFO",
+              "LAB",
+              "INSURANCE",
+              "EMERGENCY",
+              "AMBULANCE",
+              "SYMPTOM_ROUTING",
+              "COMPLAINT",
+              "ADMIN",
+              "OTHER"
+            ],
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The language the call was handled in."
+          },
+          "outcome": {
+            "description": "How the call ended from the hospital's point of view.",
+            "enum": [
+              "RESOLVED_BY_AGENT",
+              "APPOINTMENT_NOTED",
+              "APPOINTMENT_CANCELLED",
+              "APPOINTMENT_RESCHEDULED",
+              "TRANSFERRED",
+              "EMERGENCY_TRANSFERRED",
+              "AMBULANCE_NUMBER_GIVEN",
+              "CALLBACK_NOTED",
+              "ABANDONED"
+            ],
+            "type": "string"
+          },
+          "requestedDate": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For CALLBACK_NOTED: the date the caller asked about (YYYY-MM-DD), kept whole in the summary."
+          },
+          "summaryText": {
+            "description": "One or two sentences for the admin UI; never a transcript.",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "transferredTo": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Desk or department the call was handed to, for transfer outcomes."
+          }
+        },
+        "required": [
+          "intent",
+          "outcome",
+          "summaryText"
+        ],
+        "type": "object"
+      },
+      "lifecycle": true,
+      "name": "record_call_summary",
+      "outputSchema": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "nextStep": {
+            "enum": [
+              "DONE",
+              "RETRY_SAME_PAYLOAD",
+              "FIX_PLATFORM_INPUT",
+              "RECORD_FAILED"
+            ],
+            "title": "Nextstep",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "STORED",
+              "REPLAYED",
+              "REJECTED",
+              "CONFLICT",
+              "UNCERTAIN",
+              "COULD_NOT_RECORD",
+              "INVALID_REQUEST",
+              "LIFECYCLE_CONTEXT_MISSING"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "retryAfterSeconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retryafterseconds"
+          },
+          "summaryId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Summaryid"
+          }
+        },
+        "required": [
+          "outcome",
+          "nextStep"
+        ],
+        "title": "SummaryResult",
+        "type": "object"
+      }
+    }
+  ]
+}

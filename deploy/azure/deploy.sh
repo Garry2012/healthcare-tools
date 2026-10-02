@@ -1,122 +1,125 @@
 #!/usr/bin/env bash
-# Deploy one rollout to Azure Container Apps: docs/handover/AZURE.md as one re-runnable command.
+# Deploy the MCP adapter for one rollout to Azure Container Apps, as one re-runnable command.
 #
-#   deploy/azure/deploy.sh <rollout directory> [--seed-demo] [--dry-run]
+#   deploy/azure/deploy.sh <rollout directory> --profile <live|mock> [--dry-run]
 #
-# The rollout directory is the only input (rollouts/<id>/ here, or a private repository's copy):
-# rollout.env becomes the containers' settings, data.yaml is baked into a per-rollout API image
-# and written by a `rollout apply` job, and an optional azure.env overrides the Azure names and
-# sizes below. Nothing in the platform changes per rollout.
+# The rollout directory supplies rollout.env (tenant settings, non-secret). The profile
+# (deploy/environments/<profile>.env, loaded through scripts/env.sh) supplies the owner-service base URL,
+# the Key Vault secret names and the exact Azure target: subscription and resource group. The script refuses
+# to run without a profile, when the signed-in subscription differs from the profile's, or when the profile
+# names no resource group: it never invents one. The owner services are external and MUST be their real hosts
+# over https; production configuration refuses stubs and mocks (so `--profile mock` can only dry-run). Nothing here provisions a
+# database, runs migrations or builds any backend image: Manoj and Shobhit deploy their own services.
 #
-# Re-running is safe: resources that exist are kept, secrets are generated once and then read
-# from Key Vault, containers get the new image and exactly the rollout's current settings.
-#   --dry-run    print every az/psql call instead of running it (no Azure login needed)
-#   --seed-demo  demo rollouts only (demo-*): also load the demo scenario, with ENV=staging
+# Re-running is safe: resources that exist are kept, generated secrets are created once and then read
+# from Key Vault, the container gets the new image and exactly the rollout's current settings.
+#   --dry-run    print every az call instead of running it (no Azure login needed)
+#
+# Secrets in Key Vault (names): mcp-token (gateway bearer), mcp-lifecycle-token (call-end bearer),
+# ops-client-id / ops-client-secret (Manoj machine client, supplied by the owner: set OPS_CLIENT_ID /
+# OPS_CLIENT_SECRET in the environment on first run), knowledge-token (Shobhit, same).
 set -euo pipefail
 
-usage() { sed -n '2,15p' "$0" >&2; exit 2; }
+usage() { sed -n '2,22p' "$0" >&2; exit 2; }
 [[ $# -ge 1 && -d "$1" ]] || usage
 ROLLOUT="$(cd "$1" && pwd)"; shift
-DRY="" SEED_DEMO=""
-for arg in "$@"; do
-  case "$arg" in --dry-run) DRY=1 ;; --seed-demo) SEED_DEMO=1 ;; *) usage ;; esac
+DRY="" PROFILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY=1; shift ;;
+    --profile) [[ $# -ge 2 ]] || { echo "--profile needs a value: live or mock" >&2; exit 2; }; PROFILE="$2"; shift 2 ;;
+    *) usage ;;
+  esac
 done
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+[[ -n "$PROFILE" ]] || { echo "--profile <live|mock> is required (deploy/environments/)" >&2; exit 2; }
+# The profile is the only source of the target: forget anything inherited from the shell first, and stop if the
+# profile cannot be loaded (eval alone would ignore env.sh's exit code and carry on with stale exports).
+unset OPS_BASE_URL OPS_E2E_MODE AZ_SUBSCRIPTION_ID AZ_RESOURCE_GROUP AZ_CONTAINERAPPS_ENV AZ_LOG_WORKSPACE AZ_ACR \
+  AZ_KEYVAULT AZ_IDENTITY AZ_MCP_APP
+PROFILE_EXPORTS="$("$ROOT/scripts/env.sh" "$PROFILE")" || { echo "profile $PROFILE not usable; stopping" >&2; exit 2; }
+eval "$PROFILE_EXPORTS"
 
-# --- run, capture, or (in a dry run) print ---------------------------------------------------
-show() { printf '+ %s\n' "$*" | sed -E 's/(PGPASSWORD=|--admin-password )[^ ]*/\1***/g' >&2; }
+show() { printf '+ %s\n' "$*" | sed -E 's/(--admin-password |--value )[^ ]*/\1***/g' >&2; }
 run() { if [[ -n "$DRY" ]]; then show "$@"; else "$@"; fi; }
 out() { if [[ -n "$DRY" ]]; then show "$@"; echo "<$2-$3>"; else "$@"; fi; }
-exists() { [[ -z "$DRY" ]] && "$@" >/dev/null 2>&1; }  # a dry run shows a first deployment
+# A dry run shows a first deployment, or an upgrade of an existing app with DEPLOY_ASSUME_EXISTING=1 (only the
+# container-app existence check honours the flag; vault/identity lookups still show a first deployment).
+exists() {
+  if [[ -n "$DRY" ]]; then
+    [[ -n "${DEPLOY_ASSUME_EXISTING:-}" && "$*" == *"containerapp show"* ]]
+    return
+  fi
+  "$@" >/dev/null 2>&1
+}
 step() { printf '\n== %s\n' "$*" >&2; }
 
-# Check local dependencies before creating any cloud resources. Dry runs need no Azure/psql.
 required="uv git openssl"
-[[ -n "$DRY" ]] || required="$required az psql curl"
+[[ -n "$DRY" ]] || required="$required az"
 for command in $required; do
-  command -v "$command" >/dev/null 2>&1 || {
-    echo "missing prerequisite: $command (install it and add it to PATH)" >&2; exit 1;
-  }
+  command -v "$command" >/dev/null 2>&1 || { echo "missing prerequisite: $command" >&2; exit 1; }
 done
-CONTEXT="" SETUP_FIREWALL=""
-cleanup() {
-  local status=$?
-  if [[ -n "$SETUP_FIREWALL" ]]; then
-    if ! run az postgres flexible-server firewall-rule delete -g "$RG" -n "$PG" \
-      --rule-name setup --yes -o none; then
-      echo "could not remove PostgreSQL firewall rule 'setup'; remove it before continuing" >&2
-      status=1
-    fi
-  fi
-  [[ -z "$CONTEXT" ]] || rm -rf "$CONTEXT"
-  return "$status"
-}
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
-# --- 1. the rollout must pass its own checks before anything is created ------------------------
-step "validate $ROLLOUT (settings, data, dialogues)"
-(cd "$ROOT/services/api" && uv run -q frontdesk-api rollout validate "$ROLLOUT" >/dev/null) || {
-  (cd "$ROOT/services/api" && uv run -q frontdesk-api rollout validate "$ROLLOUT") >&2; exit 1; }
-
-read_env() {  # KEY=value lines, never `source` (JSON quotes, `$` in patterns)
-  grep -Ev '^[[:space:]]*(#|$)' "$1" || true
-}
+# --- 1. rollout settings and the owner service endpoints -----------------------------------------
+read_env() { grep -Ev '^[[:space:]]*(#|$)' "$1" || true; }
 ROLLOUT_ENV=()
-while IFS= read -r line || [[ -n "$line" ]]; do
-  ROLLOUT_ENV+=("$line")
-done < <(read_env "$ROLLOUT/rollout.env")
+while IFS= read -r line || [[ -n "$line" ]]; do ROLLOUT_ENV+=("$line"); done < <(read_env "$ROLLOUT/rollout.env")
 P="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^PROVIDER_ID=//p')"
-if [[ -f "$ROLLOUT/azure.env" ]]; then
-  while IFS= read -r line || [[ -n "$line" ]]; do export "${line?}"; done < <(read_env "$ROLLOUT/azure.env")
-fi
-if [[ -n "$SEED_DEMO" && "$P" != demo-* ]]; then
-  echo "--seed-demo is for demo rollouts only; $P is loaded with its own data" >&2; exit 2
-fi
+[[ -n "$P" ]] || { echo "rollout.env must set PROVIDER_ID" >&2; exit 2; }
+: "${OPS_BASE_URL:?the profile must set OPS_BASE_URL (the operational API base, https://host/api/v1)}"
+: "${KNOWLEDGE_BASE_URL:?set KNOWLEDGE_BASE_URL (profile or environment) to the knowledge service base}"
+: "${AZ_SUBSCRIPTION_ID:?the profile must name the subscription}"
+: "${AZ_RESOURCE_GROUP:?the profile must name the resource group; this script never defaults to rg-frontdesk-<provider>}"
+for url in "$OPS_BASE_URL" "$KNOWLEDGE_BASE_URL"; do
+  [[ "$url" == https://* ]] || { echo "owner service URLs must be https: $url" >&2; exit 2; }
+  case "$url" in *contract-mock*|*localhost*|*127.0.0.1*|*stub*|*prism*|*mock*)
+    echo "refusing to deploy production against a stub/mock endpoint: $url" >&2; exit 2 ;;
+  esac
+done
 
-# --- names: deterministic per subscription and rollout, so a re-run finds the same resources ---
+step "validate the adapter configuration offline (settings, pack, tool schema)"
+(cd "$ROOT/services/mcp" && env -i PATH="$PATH" HOME="$HOME" ENV=production "${ROLLOUT_ENV[@]}" \
+  OPS_BASE_URL="$OPS_BASE_URL" OPS_CLIENT_ID=validate OPS_CLIENT_SECRET=validate \
+  KNOWLEDGE_BASE_URL="$KNOWLEDGE_BASE_URL" KNOWLEDGE_BEARER_TOKEN=validate \
+  MCP_BEARER_TOKEN=validate-a MCP_LIFECYCLE_BEARER_TOKEN=validate-b \
+  uv run -q frontdesk-mcp schema >/dev/null)
+
+# --- the Azure target comes from the profile; the signed-in subscription must match -------------
 SUB="$(out az account show --query id -o tsv)"
-hash6() { printf '%s' "$1" | openssl dgst -sha1 | sed 's/^.*= //' | cut -c1-6; }
-LOC="${AZ_LOCATION:-centralindia}"
-RG="${AZ_RESOURCE_GROUP:-rg-frontdesk-$P}"
-ENV_NAME="${AZ_CONTAINERAPPS_ENV:-cae-frontdesk-$P}" LAW="${AZ_LOG_WORKSPACE:-law-frontdesk-$P}"
-ACR="${AZ_ACR:-acrfd$(hash6 "$SUB")}"                     # one registry per subscription
-KV="${AZ_KEYVAULT:-kv-fd-${P:0:10}-$(hash6 "$SUB$P")}"     # max 24 characters, globally unique
-PG="${AZ_POSTGRES:-pg-fd-$P-$(hash6 "$SUB$P")}" DB=frontdesk
-PG_SKU="${AZ_POSTGRES_SKU:-Standard_B1ms}" PG_TIER="${AZ_POSTGRES_TIER:-Burstable}"
-TAG="${TAG:-$(git -C "$ROOT" rev-parse --short HEAD)}"
-ID_NAME="id-frontdesk-$P"
-
-# --- 2. resource group, logs, Container Apps environment, registry, images ---------------------
-step "infrastructure: $RG in $LOC"
-run az group create -n "$RG" -l "$LOC" -o none
-exists az monitor log-analytics workspace show -g "$RG" -n "$LAW" ||
-  run az monitor log-analytics workspace create -g "$RG" -n "$LAW" -l "$LOC" -o none
-if ! exists az containerapp env show -g "$RG" -n "$ENV_NAME"; then
-  LAW_ID="$(out az monitor log-analytics workspace show -g "$RG" -n "$LAW" --query customerId -o tsv)"
-  LAW_KEY="$(out az monitor log-analytics workspace get-shared-keys -g "$RG" -n "$LAW" --query primarySharedKey -o tsv)"
-  run az containerapp env create -g "$RG" -n "$ENV_NAME" -l "$LOC" \
-    --logs-workspace-id "$LAW_ID" --logs-workspace-key "$LAW_KEY" -o none
+[[ -n "$DRY" && -n "${DEPLOY_DRY_SUBSCRIPTION:-}" ]] && SUB="$DEPLOY_DRY_SUBSCRIPTION"  # tests simulate the login
+if [[ ( -z "$DRY" || -n "${DEPLOY_DRY_SUBSCRIPTION:-}" ) && "$SUB" != "$AZ_SUBSCRIPTION_ID" ]]; then
+  echo "signed-in subscription $SUB is not the profile subscription $AZ_SUBSCRIPTION_ID; run az account set first" >&2
+  exit 2
 fi
-DOMAIN="$(out az containerapp env show -g "$RG" -n "$ENV_NAME" --query properties.defaultDomain -o tsv)"
-exists az acr show -n "$ACR" || run az acr create -g "$RG" -n "$ACR" --sku Basic -o none
+LOC="${AZ_LOCATION:-centralindia}"
+RG="$AZ_RESOURCE_GROUP"
+ENV_NAME="${AZ_CONTAINERAPPS_ENV:?profile must name the Container Apps environment}"
+LAW="${AZ_LOG_WORKSPACE:?profile must name the Log Analytics workspace}"
+ACR="${AZ_ACR:?profile must name the registry}"
+KV="${AZ_KEYVAULT:?profile must name the Key Vault}"
+TAG="${TAG:-$(git -C "$ROOT" rev-parse --short HEAD)}"
+ID_NAME="${AZ_IDENTITY:?profile must name the managed identity}"
+APP="${AZ_MCP_APP:-mcp-$P}"
 
-step "images $TAG: platform images, then this rollout's data on top of the API image"
-run az acr build -r "$ACR" -t "frontdesk-api:$TAG" "$ROOT/services/api" -o none
+# --- 2. shared infrastructure (kept if present) and the image ------------------------------------
+step "shared infrastructure named by the profile must already exist (this script creates none of it)"
+require() {  # require DESCRIPTION az-show-command...: the shared resource must exist; dry runs only list the check
+  local what="$1"; shift
+  if [[ -n "$DRY" ]]; then show "$@"; return 0; fi
+  "$@" >/dev/null 2>&1 || { echo "$what not found; shared infrastructure is not created by this script" >&2; exit 2; }
+}
+require "resource group $RG" az group show -n "$RG"
+require "log workspace $LAW" az monitor log-analytics workspace show -g "$RG" -n "$LAW"
+require "container apps environment $ENV_NAME" az containerapp env show -g "$RG" -n "$ENV_NAME"
+require "registry $ACR" az acr show -n "$ACR"
+
+step "image frontdesk-mcp:$TAG (services/mcp only: no stubs, no fixtures)"
 run az acr build -r "$ACR" -t "frontdesk-mcp:$TAG" "$ROOT/services/mcp" -o none
-CONTEXT="$(mktemp -d)"
-cp "$ROLLOUT/rollout.env" "$ROLLOUT/data.yaml" "$CONTEXT/"
-[[ -f "$ROLLOUT/dialogues.yaml" ]] && cp "$ROLLOUT/dialogues.yaml" "$CONTEXT/"
-# The build context may be private (umask 077); the non-root runtime must own its rollout.
-printf 'FROM %s.azurecr.io/frontdesk-api:%s\nCOPY --chown=10001:10001 . /app/rollout\n' "$ACR" "$TAG" > "$CONTEXT/Dockerfile"
-run az acr build -r "$ACR" -t "frontdesk-api-$P:$TAG" "$CONTEXT" -o none
-API_IMAGE="$ACR.azurecr.io/frontdesk-api-$P:$TAG" MCP_IMAGE="$ACR.azurecr.io/frontdesk-mcp:$TAG"
+MCP_IMAGE="$ACR.azurecr.io/frontdesk-mcp:$TAG"
 
-# --- 3. Key Vault and the identity that reads it -----------------------------------------------
-step "secrets: $KV (generated once, then kept)"
-exists az keyvault show -n "$KV" ||
-  run az keyvault create -g "$RG" -n "$KV" -l "$LOC" --enable-rbac-authorization true -o none
+# --- 3. Key Vault secrets and the identity that reads them ---------------------------------------
+step "secrets: $KV (shared vault named by the profile)"
+require "key vault $KV" az keyvault show -n "$KV"
 KV_ID="$(out az keyvault show -n "$KV" --query id -o tsv)"
 ME="$(out az ad signed-in-user show --query id -o tsv)"
 run az role assignment create --assignee "$ME" --role "Key Vault Secrets Officer" --scope "$KV_ID" -o none
@@ -126,34 +129,39 @@ secret() {  # secret NAME GENERATOR...: the stored value, or a new one stored no
     value="$(az keyvault secret show --vault-name "$KV" -n "$1" --query value -o tsv)" || return 1
   else
     value="$("${@:2}")" || return 1
-    # From a private file, not --value: argv is readable by every user of this machine.
     local file attempt stored=""
     file="$(umask 077 && mktemp)"
     printf '%s' "$value" > "$file"
-    # A role assigned a moment ago can take minutes to reach Key Vault: retry before giving up.
     for attempt in 1 2 3 4 5 6; do
       if run az keyvault secret set --vault-name "$KV" -n "$1" --file "$file" --encoding utf-8 -o none; then
         stored=1; break
       fi
-      echo "Key Vault refused secret $1 (attempt $attempt); retrying" >&2
       sleep "${KV_RETRY_SECONDS:-20}"
     done
     rm -f "$file"
-    # Never go on with a secret that isn't stored: the next run would make a different one.
     [[ -n "$stored" ]] || { echo "could not store secret $1 in $KV; stopping" >&2; return 1; }
   fi
   printf '%s' "$value"
 }
 token() { openssl rand -hex 24; }
-password() { openssl rand -base64 24 | tr -d '/+='; }
-# One assignment per line: `set -e` stops on a failed $(...) only when it is the line's last.
-OWNER_PW="$(secret db-owner-password password)"
-APP_PW="$(secret db-app-password password)"
-AGENT_TOKEN="$(secret agent-token token)"
-STAFF_TOKEN="$(secret staff-token token)"
+supplied() {  # supplied VAR: the owner-provided credential from the environment (first run only)
+  if [[ -z "${!1:-}" ]]; then
+    [[ -n "$DRY" ]] && { echo "(dry run: $1 would be required on the first real run)" >&2; printf '<%s>' "$1"; return 0; }
+    echo "$1 is not in Key Vault yet; export it for this first run" >&2; return 1
+  fi
+  printf '%s' "${!1}"
+}
 MCP_TOKEN="$(secret mcp-token token)"
+LIFECYCLE_TOKEN="$(secret mcp-lifecycle-token token)"
+OPS_ID_SECRET="${OPS_CLIENT_ID_SECRET_NAME:-ops-client-id}"
+OPS_PASSWORD_SECRET="${OPS_CLIENT_SECRET_SECRET_NAME:-ops-client-secret}"
+KNOWLEDGE_SECRET="${KNOWLEDGE_BEARER_TOKEN_SECRET_NAME:-knowledge-token}"
+secret "$OPS_ID_SECRET" supplied OPS_CLIENT_ID >/dev/null
+secret "$OPS_PASSWORD_SECRET" supplied OPS_CLIENT_SECRET >/dev/null
+secret "$KNOWLEDGE_SECRET" supplied KNOWLEDGE_BEARER_TOKEN >/dev/null
+[[ "$MCP_TOKEN" != "$LIFECYCLE_TOKEN" ]] || { echo "gateway and lifecycle bearers must differ" >&2; exit 1; }
 
-exists az identity show -g "$RG" -n "$ID_NAME" || run az identity create -g "$RG" -n "$ID_NAME" -o none
+require "managed identity $ID_NAME" az identity show -g "$RG" -n "$ID_NAME"
 ID="$(out az identity show -g "$RG" -n "$ID_NAME" --query id -o tsv)"
 PRINCIPAL="$(out az identity show -g "$RG" -n "$ID_NAME" --query principalId -o tsv)"
 run az role assignment create --assignee-object-id "$PRINCIPAL" --assignee-principal-type ServicePrincipal \
@@ -162,156 +170,78 @@ run az role assignment create --assignee-object-id "$PRINCIPAL" --assignee-princ
   --role AcrPull --scope "$(out az acr show -n "$ACR" --query id -o tsv)" -o none
 kv() { echo "$1=keyvaultref:https://$KV.vault.azure.net/secrets/$1,identityref:$ID"; }
 
-# --- 4. PostgreSQL: the owner runs migrations, the API role is DML-only ------------------------
-step "database: $PG"
-HOST="$PG.postgres.database.azure.com"
-if ! exists az postgres flexible-server show -g "$RG" -n "$PG"; then
-  # --public-access 0.0.0.0 admits Azure services (password and TLS still required); production
-  # uses VNet integration instead (AZURE.md, production checklist). az takes the admin password
-  # only as an argument: run this from a machine no one else is logged in to, or Cloud Shell.
-  run az postgres flexible-server create -g "$RG" -n "$PG" -l "$LOC" --version 16 --tier "$PG_TIER" \
-    --sku-name "$PG_SKU" --storage-size 32 --admin-user frontdesk_owner --admin-password "$OWNER_PW" \
-    --public-access 0.0.0.0 -o none
+# --- 4. the adapter (reached by the gateway and the call-end lifecycle) --------------------------
+step "container: $APP"
+SECRETS="$(kv mcp-token) $(kv mcp-lifecycle-token) $(kv "$OPS_ID_SECRET") $(kv "$OPS_PASSWORD_SECRET") $(kv "$KNOWLEDGE_SECRET")"
+ENV_VARS=(ENV=production HOST=0.0.0.0 PORT=8100
+  "OPS_BASE_URL=$OPS_BASE_URL" "OPS_CLIENT_ID=secretref:$OPS_ID_SECRET" "OPS_CLIENT_SECRET=secretref:$OPS_PASSWORD_SECRET"
+  "KNOWLEDGE_BASE_URL=$KNOWLEDGE_BASE_URL" "KNOWLEDGE_BEARER_TOKEN=secretref:$KNOWLEDGE_SECRET"
+  MCP_BEARER_TOKEN=secretref:mcp-token MCP_LIFECYCLE_BEARER_TOKEN=secretref:mcp-lifecycle-token
+  "${ROLLOUT_ENV[@]}")
+if exists az containerapp show -g "$RG" -n "$APP"; then
+  # Upgrade path (AR-05): an app deployed by the legacy script carries only agent-token/mcp-token. Attach the
+  # identity and registry access, then every Key Vault reference the new environment names, BEFORE switching the
+  # revision's environment; otherwise the new revision cannot resolve its secretrefs and never becomes ready.
+  run az containerapp identity assign -g "$RG" -n "$APP" --user-assigned "$ID" -o none
+  run az containerapp registry set -g "$RG" -n "$APP" --server "$ACR.azurecr.io" --identity "$ID" -o none
+  # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
+  run az containerapp secret set -g "$RG" -n "$APP" --secrets $SECRETS -o none
+  run az containerapp update -g "$RG" -n "$APP" --image "$MCP_IMAGE" --replace-env-vars "${ENV_VARS[@]}" -o none
+  # Legacy secrets (agent-token for the retired API) stay attached until the retirement step removes them.
+else
+  # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
+  run az containerapp create -g "$RG" -n "$APP" --environment "$ENV_NAME" --image "$MCP_IMAGE" \
+    --registry-server "$ACR.azurecr.io" --registry-identity "$ID" --user-assigned "$ID" \
+    --ingress external --target-port 8100 --min-replicas 1 --max-replicas 3 --cpu 0.25 --memory 0.5Gi \
+    --secrets $SECRETS --env-vars "${ENV_VARS[@]}" -o none
 fi
-# Reconcile the database and roles even after a previous run created only the server.
-exists az postgres flexible-server db show -g "$RG" -s "$PG" -d "$DB" ||
-  run az postgres flexible-server db create -g "$RG" -s "$PG" -d "$DB" -o none
-MY_IP="$(out curl -4 --fail --silent --show-error --max-time 15 https://ifconfig.me)"
-SETUP_FIREWALL=1  # also clean up if Azure creates the rule but the CLI then fails
-run az postgres flexible-server firewall-rule create -g "$RG" -n "$PG" --rule-name setup \
-  --start-ip-address "$MY_IP" --end-ip-address "$MY_IP" -o none
-# Wait for firewall propagation, but don't retry SQL errors as though they were network errors.
-DB_READY=""
-for _ in $(seq 1 30); do
-  if run env PGPASSWORD="$OWNER_PW" psql \
-    "host=$HOST port=5432 dbname=$DB user=frontdesk_owner sslmode=require connect_timeout=5" \
-    -X -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null; then
-    DB_READY=1; break
-  fi
-  sleep "${PG_RETRY_SECONDS:-10}"
-done
-[[ -n "$DB_READY" ]] || { echo "database did not become reachable" >&2; exit 1; }
-# Quote the stored password as a SQL literal; no password appears in argv or dry-run output.
-APP_PW_SQL="${APP_PW//\'/\'\'}"
-ROLES="BEGIN;
-SET LOCAL standard_conforming_strings = on;
-SELECT format('CREATE ROLE frontdesk_app LOGIN PASSWORD %L', '$APP_PW_SQL')
-WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'frontdesk_app')
-\gexec
-GRANT CONNECT ON DATABASE $DB TO frontdesk_app;
-GRANT USAGE ON SCHEMA public TO frontdesk_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO frontdesk_app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO frontdesk_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE frontdesk_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO frontdesk_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE frontdesk_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO frontdesk_app;
-COMMIT;"
-run env PGPASSWORD="$OWNER_PW" psql \
-  "host=$HOST port=5432 dbname=$DB user=frontdesk_owner sslmode=require connect_timeout=5" \
-  -X -v ON_ERROR_STOP=1 <<<"$ROLES"
-run az postgres flexible-server firewall-rule delete -g "$RG" -n "$PG" --rule-name setup --yes -o none
-SETUP_FIREWALL=""
-secret db-owner-url echo "postgresql://frontdesk_owner:$OWNER_PW@$HOST:5432/$DB?sslmode=require" >/dev/null
-secret db-app-url echo "postgresql://frontdesk_app:$APP_PW@$HOST:5432/$DB?sslmode=require" >/dev/null
-STAFF_SCOPES='"bookings.staff","schedule.write","board.write","directory.write","knowledge.write","calls.write","calls.read"'
-secret auth-tokens echo "{\"$AGENT_TOKEN\":[\"agent\"],\"$STAFF_TOKEN\":[$STAFF_SCOPES]}" >/dev/null
-
-# --- 5. jobs: migrate, then write the rollout (and, for a demo, its scenario) ------------------
-job() {  # job NAME ENV SECRET ARGS...: (re)create a manual job with the current image, run it, wait
-  local name="job-$1-$P" env="$2" db_secret="$3"; shift 3
-  exists az containerapp job show -g "$RG" -n "$name" && run az containerapp job delete -g "$RG" -n "$name" --yes -o none
-  run az containerapp job create -g "$RG" -n "$name" --environment "$ENV_NAME" --trigger-type Manual \
-    --replica-timeout 600 --replica-retry-limit 0 --cpu 0.5 --memory 1Gi \
-    --image "$API_IMAGE" --registry-server "$ACR.azurecr.io" \
-    --registry-identity "$ID" --mi-user-assigned "$ID" --secrets "$(kv "$db_secret")" \
-    --env-vars ENV="$env" DATABASE_URL="secretref:$db_secret" ROLLOUT_DIR=/app/rollout "${ROLLOUT_ENV[@]}" \
-    --command frontdesk-api --args "$@" -o none
-  local execution
-  execution="$(out az containerapp job start -g "$RG" -n "$name" --query name -o tsv)"
-  [[ -n "$DRY" ]] && return 0
-  for _ in $(seq 1 120); do
-    case "$(az containerapp job execution show -g "$RG" -n "$name" --job-execution-name "$execution" \
-              --query properties.status -o tsv)" in
-      Succeeded) return 0 ;;
-      Failed|Stopped) echo "job $name failed: az containerapp job logs show -g $RG -n $name" >&2; exit 1 ;;
-    esac
-    sleep 5
-  done
-  echo "job $name did not finish in 10 minutes" >&2; exit 1
-}
-step "migrate (owner role), then apply the rollout (domain baseline + its data)"
-job migrate production db-owner-url migrate
-job apply production db-app-url rollout apply
-[[ -n "$SEED_DEMO" ]] && { step "demo scenario (ENV=staging)"; job seed staging db-app-url seed; }
-
-# --- 6. the API (internal only) and the MCP adapter (reached by the gateway) --------------------
-app() {  # app NAME IMAGE PORT INGRESS SIZE SECRETS ENV...: create, or update to this image and env
-  local name="$1" image="$2" port="$3" ingress="$4" cpu="$5" memory="$6" secrets="$7"; shift 7
-  if exists az containerapp show -g "$RG" -n "$name"; then
-    run az containerapp update -g "$RG" -n "$name" --image "$image" --replace-env-vars "$@" -o none
-  else
-    # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
-    run az containerapp create -g "$RG" -n "$name" --environment "$ENV_NAME" --image "$image" \
-      --registry-server "$ACR.azurecr.io" --registry-identity "$ID" --user-assigned "$ID" \
-      --ingress "$ingress" --target-port "$port" --min-replicas 1 --max-replicas 3 --cpu "$cpu" --memory "$memory" \
-      --secrets $secrets --env-vars "$@" -o none
-  fi
-  # Container Apps ignores the Dockerfile HEALTHCHECK: readiness on /ready, liveness on /health.
-  local spec; spec="$(mktemp)"
-  run az containerapp show -g "$RG" -n "$name" -o yaml > "$spec"
-  if [[ -z "$DRY" ]]; then
-    (cd "$ROOT/services/api" && uv run -q python - "$spec" "$port" <<'PY'
+# Container Apps ignores the Dockerfile HEALTHCHECK: readiness on /ready (local), liveness on /health.
+SPEC="$(mktemp)"
+run az containerapp show -g "$RG" -n "$APP" -o yaml > "$SPEC"
+if [[ -z "$DRY" ]]; then
+  (cd "$ROOT/services/mcp" && uv run -q --with pyyaml==6.0.3 python - "$SPEC" <<'PY'
 import sys, yaml
-path, port = sys.argv[1], int(sys.argv[2])
+path = sys.argv[1]
 spec = yaml.safe_load(open(path))
 spec["properties"]["template"]["containers"][0]["probes"] = [
-    {"type": "Readiness", "httpGet": {"path": "/ready", "port": port}, "periodSeconds": 5},
-    {"type": "Liveness", "httpGet": {"path": "/health", "port": port}, "periodSeconds": 10},
+    {"type": "Readiness", "httpGet": {"path": "/ready", "port": 8100}, "periodSeconds": 5},
+    {"type": "Liveness", "httpGet": {"path": "/health", "port": 8100}, "periodSeconds": 10},
 ]
 yaml.safe_dump(spec, open(path, "w"))
 PY
-    )
-  fi
-  run az containerapp update -g "$RG" -n "$name" --yaml "$spec" -o none
-  rm -f "$spec"
-}
-step "containers: api-$P (internal), mcp-$P (external)"
-app "api-$P" "$API_IMAGE" 8000 internal 0.5 1Gi "$(kv db-app-url) $(kv auth-tokens)" \
-  ENV=production HOST=0.0.0.0 PORT=8000 ROLLOUT_DIR=/app/rollout DATABASE_URL=secretref:db-app-url \
-  AUTH_TOKENS_JSON=secretref:auth-tokens "${ROLLOUT_ENV[@]}"
-app "mcp-$P" "$MCP_IMAGE" 8100 external 0.25 0.5Gi "$(kv agent-token) $(kv mcp-token)" \
-  ENV=production HOST=0.0.0.0 PORT=8100 "API_BASE_URL=https://api-$P.internal.$DOMAIN/api/v1" \
-  API_BEARER_TOKEN=secretref:agent-token MCP_BEARER_TOKEN=secretref:mcp-token "${ROLLOUT_ENV[@]}"
+  )
+fi
+run az containerapp update -g "$RG" -n "$APP" --yaml "$SPEC" -o none
+rm -f "$SPEC"
 
-# A healthy old revision is not proof that this deployment succeeded.
 wait_ready() {
-  local name="$1" revision health ready
-  revision="$(out az containerapp show -g "$RG" -n "$name" --query properties.latestRevisionName -o tsv)"
+  local revision health ready
+  revision="$(out az containerapp show -g "$RG" -n "$APP" --query properties.latestRevisionName -o tsv)"
   for _ in $(seq 1 60); do
-    health="$(out az containerapp revision show -g "$RG" -n "$name" --revision "$revision" \
-      --query properties.healthState -o tsv)"
-    ready="$(out az containerapp show -g "$RG" -n "$name" --query properties.latestReadyRevisionName -o tsv)"
+    health="$(out az containerapp revision show -g "$RG" -n "$APP" --revision "$revision" --query properties.healthState -o tsv)"
+    ready="$(out az containerapp show -g "$RG" -n "$APP" --query properties.latestReadyRevisionName -o tsv)"
     [[ -n "$DRY" ]] && return 0
     [[ -n "$revision" && "$health" == Healthy && "$ready" == "$revision" ]] && return 0
     sleep "${READY_RETRY_SECONDS:-5}"
   done
-  echo "$name revision $revision did not become ready; inspect its Container Apps logs" >&2
+  echo "$APP revision $revision did not become ready; inspect its Container Apps logs" >&2
   return 1
 }
-step "verify: latest revisions, upstream readiness and authenticated MCP tools"
-wait_ready "api-$P"
-wait_ready "mcp-$P"
-MCP_HOST="$(out az containerapp show -g "$RG" -n "mcp-$P" --query properties.configuration.ingress.fqdn -o tsv)"
+step "verify: latest revision ready, dependencies, authentication, three conversational tools, lifecycle boundary"
+wait_ready
+MCP_HOST="$(out az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv)"
+LANG1="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^TENANT_SUPPORTED_LANGUAGES=//p' | cut -d, -f1)"
 if [[ -n "$DRY" ]]; then
   show uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 else
-  # Environment, not arguments: the bearer is never printed or stored in shell history.
-  MCP_URL="https://$MCP_HOST/mcp/" MCP_BEARER_TOKEN="$MCP_TOKEN" \
-    SMOKE_LANGUAGE="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^TENANT_SUPPORTED_LANGUAGES=//p' | cut -d, -f1)" \
-    uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
+  MCP_URL="https://$MCP_HOST/mcp/" MCP_BEARER_TOKEN="$MCP_TOKEN" MCP_LIFECYCLE_BEARER_TOKEN="$LIFECYCLE_TOKEN" \
+    SMOKE_LANGUAGE="$LANG1" uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 fi
 
 step "done: $P"
-cat >&2 <<EOF
-MCP adapter:   https://mcp-$P.$DOMAIN/mcp/   (bearer: Key Vault $KV secret mcp-token)
-Next:          register it with ContextForge (AZURE.md §7), then test (AZURE.md §8).
-EOF
+cat >&2 <<EOF2
+MCP adapter:      https://$APP.<environment domain>/mcp/
+Gateway bearer:   Key Vault $KV secret mcp-token            (ContextForge / voice agent, three tools)
+Lifecycle bearer: Key Vault $KV secret mcp-lifecycle-token  (call-end finalizer, record_call_summary)
+Next:             register with ContextForge (deploy/contextforge/register.py), then AZURE.md §tests.
+EOF2

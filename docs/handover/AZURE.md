@@ -1,330 +1,92 @@
 # Deploy and test on Azure
 
-One stack per rollout (a hospital's or hotel's instance of its domain), as everywhere else
-(TARGET.md A1, A10):
-
-```
-                       Azure Container Apps environment  (region: Central India or South India)
- LiveKit agent ──▶ ContextForge ──▶ frontdesk-mcp-<p> ──https (internal)──▶ frontdesk-api-<p> ──TLS──▶ Azure Database for PostgreSQL
-                   (gateway)         (external ingress,     (internal ingress only)                   (Flexible Server 16)
-                                      bearer auth)
- Images: Azure Container Registry   Secrets: Key Vault (read by a managed identity)   Logs: Log Analytics
- Migrations and the rollout's data: Container Apps jobs (manual trigger), migrate then `rollout apply`
-```
-
-> These steps use the documented `az` CLI (Azure CLI 2.60+ with the `containerapp` extension).
-> The synthetic `demo-hospital` rollout was deployed and verified in `healthcare-rg`, Central
-> India, on 2026-09-27. Migrate/apply/seed jobs and the live MCP smoke check passed, followed by
-> multilingual knowledge, booking/retry/list/reschedule/cancel and caller-isolation checks.
-> This verifies the backend deployment; ContextForge and LiveKit voice calls remain separate.
+The adapter is one Container App per rollout. It needs the two owner services' base URLs and machine
+credentials; it needs no database, migration job or backend image. `deploy/azure/deploy.sh` is the
+whole procedure as one re-runnable command; this page explains what it does and how to test.
 
 ## One command
 
-The rollout directory is the only input. Everything below is what the script does, in order.
+```bash
+R=rollouts/demo-hospital
+# deploy/environments/live.env carries Manoj's base URL (…/api/v1) and targets the canary app; change endpoints there only
+export KNOWLEDGE_BASE_URL=https://...                   # Shobhit's host until it is in the profile (2 Oct 2026: placeholder in use)
+export KNOWLEDGE_BEARER_TOKEN=...                       # first run only: stored in Key Vault (ops creds: see below)
+deploy/azure/deploy.sh $R --profile live --dry-run      # prints every az call; no login needed
+deploy/azure/deploy.sh $R --profile live                # creates/updates mcp-demo-hospital-canary in healthcare-rg, runs the smoke
+```
+
+The profile (`deploy/environments/live.env`, non-secret, committed) names the subscription
+`4e1c081a-9a6a-4e16-9da2-90217c22378b`, resource group `healthcare-rg`, environment, registry, vault and
+identity; the script refuses to run without `--profile`, when the signed-in subscription differs, and it never
+creates or defaults a resource group. Production configuration refuses `http://` and any stub/mock hostname,
+so `--profile mock` can only dry-run. The script validates the adapter configuration offline first
+(`frontdesk-mcp schema` under `ENV=production`).
+
+**Ops credentials:** `ops-client-id`/`ops-client-secret` hold the registered pair Manoj stored on 2 October 2026 (accepted by `/auth/token`; token scope `appointments.write` only, so `record_call_summary` returns COULD_NOT_RECORD until `calls.write` is granted). `deploy.sh` reads the current vault version and never overwrites an existing secret from the environment; rotate explicitly (`deploy/environments/README.md`). `knowledge-token` is a tagged placeholder until Shobhit's host exists.
+
+## What it creates or reuses
+
+| Resource | Default name | Notes |
+|---|---|---|
+| Resource group, Log Analytics, Container Apps environment, registry | named by the profile: `healthcare-rg`, `law-frontdesk-demo-hospital`, `cae-frontdesk-demo-hospital`, `acrfd399536` | Shared; must exist; never created by this script |
+| Image | `frontdesk-mcp:<git sha>` | Built from `services/mcp` only: no stubs, no fixtures, no dev dependencies |
+| Key Vault | named by the profile (`kv-fd-demo-hospi-0574c1`) | `mcp-token` and `mcp-lifecycle-token` generated once; `ops-client-id`, `ops-client-secret`, `knowledge-token` supplied by the owners (replace explicitly; see above) |
+| Managed identity | `id-frontdesk-<p>` | Key Vault Secrets User + AcrPull |
+| Container App | named by the profile (`mcp-demo-hospital-canary` until the voice platform cuts over) | External ingress on 8100, 1–3 replicas, readiness `/ready` (local), liveness `/health` |
+
+Settings come from `rollout.env` (tenant identity) plus the owner URLs; secrets are Key Vault
+references. `--replace-env-vars` on update, so a removed setting falls back to its default.
+
+## Gateway and voice agent
+
+Run ContextForge from its official image with `ENABLE_HEADER_PASSTHROUGH=true` and register the
+adapter (`CONTEXTFORGE.md`). Give the voice platform the gateway bearer for the three in-call tools
+and the lifecycle bearer for `record_call_summary` only (`LIVEKIT.md`).
+
+## Test in Azure
+
+The deploy script already runs `deploy/azure/smoke.py`: readiness, dependency status, refused
+unauthenticated request, exactly three conversational tools, the lifecycle boundary, and two
+read-only calls (`get_doctor_availability` for a department today, `search_knowledge`). It never
+creates an appointment or a summary. Run it again any time:
 
 ```bash
-az login && az extension add -n containerapp --upgrade
-export AZ_RESOURCE_GROUP=healthcare-rg AZ_LOCATION=centralindia  # this demo's target
-deploy/azure/deploy.sh rollouts/demo-hospital --dry-run      # print every az call first
-deploy/azure/deploy.sh rollouts/demo-hospital --seed-demo    # a demo: also its dated scenario
-deploy/azure/deploy.sh ../private/hospital-a                 # a real provider: its own directory
+MCP_URL=https://mcp-$P.$DOMAIN/mcp/ MCP_BEARER_TOKEN=... MCP_LIFECYCLE_BEARER_TOKEN=... SMOKE_LANGUAGE=en \
+  uv run --project services/mcp python deploy/azure/smoke.py
 ```
 
-- It validates the rollout (settings, data, acceptance dialogues) before creating anything.
-- It supports macOS Bash 3.2. Live runs check `uv`, `git`, `openssl`, `az`, `psql` and `curl`
-  before provisioning; dry runs do not require Azure CLI, login or `psql`.
-- Names are derived from the subscription and the rollout id, so a re-run finds the same
-  resources. Secrets are generated once into Key Vault and read back on every later run.
-- An optional `azure.env` in the rollout directory overrides `AZ_LOCATION`, `AZ_RESOURCE_GROUP`,
-  `AZ_ACR`, `AZ_KEYVAULT`, `AZ_POSTGRES`, `AZ_POSTGRES_SKU`, `AZ_POSTGRES_TIER`,
-  `AZ_CONTAINERAPPS_ENV` and `AZ_LOG_WORKSPACE`.
-- Every live run needs `psql` on your machine, to reconcile the runtime database role. On macOS,
-  install it with `brew install libpq` and add `$(brew --prefix libpq)/bin` to `PATH`. Run it from a
-  machine no one else is logged in to, or Azure Cloud Shell: `az` takes the database admin
-  password only as a command-line argument (every other secret goes through files or the
-  environment, and none is printed).
-- Database and role/grant setup runs even if a previous attempt already created the server.
-  The script waits for connectivity, applies role/grant changes in a transaction and removes
-  the temporary `setup` firewall rule on success or failure (including INT/TERM). If cleanup
-  fails, it reports the rule to remove and exits unsuccessfully.
-- The database admits Azure services (`--public-access 0.0.0.0`, password and TLS required).
-  For production, move it into a VNet (production checklist below).
-- Re-run after any change to the rollout: new image, new settings (exactly the file's, nothing
-  stale), migrate, `rollout apply`.
-- Completion requires the latest API and MCP revisions to be healthy and ready, followed by
-  `deploy/azure/smoke.py` against the deployed adapter. This verifies upstream readiness,
-  rejects unauthenticated access, discovers all three tools, and makes authenticated availability
-  and knowledge requests through to the internal API. Failure envelopes fail the release even
-  when MCP returns HTTP 200. These checks are read-only and do not create demo bookings.
-- Revision polling allows 60 attempts, normally five seconds apart. The MCP check has a
-  120-second overall deadline. Inspect Container Apps logs when either gate fails; `done`
-  is printed only after both gates pass.
+Synthetic write journeys (create → list → reschedule → cancel → summary) run only against the
+owners' designated test tenant: `OPS_E2E_BASE_URL=… ./scripts/test.sh` (suites marked `external`).
+Never against a hospital's production tenant.
 
-The manual steps follow, for reading or for running one at a time.
+**Dependency status** without a token: `curl https://mcp-$P.$DOMAIN/dependencies` reports the
+operational service (an authenticated `listDepartments` with a 1 s deadline, cached 15 s) and whether
+the knowledge service is configured. `/ready` stays local: it does not probe upstreams.
 
-## 0. Variables
+**Logs.** Every line is JSON with `provider`, `callId`, `tool`, `outcome`, `nextStep`; never caller
+numbers, names or upstream prose.
 
 ```bash
-az login && az extension add -n containerapp --upgrade
-export P=demo-hospital R=rollouts/$P   # the rollout: its id and its directory
-export RG=rg-frontdesk-$P LOC=centralindia
-export ACR=acrfrontdesk$RANDOM KV=kv-fd-${P:0:12}-$RANDOM ENV_NAME=cae-frontdesk LAW=law-frontdesk  # Key Vault: max 24 chars, globally unique
-export PG=pg-frontdesk-$P DB=frontdesk TAG=$(git rev-parse --short HEAD)
-export OWNER_PW=$(openssl rand -base64 24 | tr -d '/+=') APP_PW=$(openssl rand -base64 24 | tr -d '/+=')
-export AGENT_TOKEN=$(openssl rand -hex 24) STAFF_TOKEN=$(openssl rand -hex 24) MCP_TOKEN=$(openssl rand -hex 24)
+az containerapp logs show -g $RG -n mcp-$P --follow
 ```
 
-Keep these values out of shell history in production (read them from Key Vault instead).
+## Upgrades and rollback
 
-## 1. Resource group, logs, Container Apps environment, registry
-
-```bash
-az group create -n $RG -l $LOC
-az monitor log-analytics workspace create -g $RG -n $LAW -l $LOC
-LAW_ID=$(az monitor log-analytics workspace show -g $RG -n $LAW --query customerId -o tsv)
-LAW_KEY=$(az monitor log-analytics workspace get-shared-keys -g $RG -n $LAW --query primarySharedKey -o tsv)
-az containerapp env create -g $RG -n $ENV_NAME -l $LOC --logs-workspace-id $LAW_ID --logs-workspace-key $LAW_KEY
-DOMAIN=$(az containerapp env show -g $RG -n $ENV_NAME --query properties.defaultDomain -o tsv)
-
-az acr create -g $RG -n $ACR --sku Basic
-az acr build -r $ACR -t frontdesk-api:$TAG services/api
-az acr build -r $ACR -t frontdesk-mcp:$TAG services/mcp
-# The rollout's data on top of the platform image: the only per-rollout image.
-CTX=$(mktemp -d) && cp $R/rollout.env $R/data.yaml $CTX/ && cp $R/dialogues.yaml $CTX/ 2>/dev/null
-printf 'FROM %s.azurecr.io/frontdesk-api:%s\nCOPY . /app/rollout\n' $ACR $TAG > $CTX/Dockerfile
-az acr build -r $ACR -t frontdesk-api-$P:$TAG $CTX
-```
-
-**Check:** `az acr repository show-tags -n $ACR --repository frontdesk-api-$P` lists `$TAG`.
-
-## 2. PostgreSQL (one server or database per provider)
-
-```bash
-az postgres flexible-server create -g $RG -n $PG -l $LOC --version 16 \
-  --tier Burstable --sku-name Standard_B1ms --storage-size 32 \
-  --admin-user frontdesk_owner --admin-password "$OWNER_PW" --public-access 0.0.0.0
-az postgres flexible-server db create -g $RG -s $PG -d $DB
-```
-
-`--public-access 0.0.0.0` lets Azure services reach the server. For production, use VNet
-integration (`--vnet`/`--subnet`) and put the Container Apps environment on the same VNet.
-
-Create the DML-only runtime role once, as the owner. The API never runs DDL. The server only
-admits Azure services, so first allow your own IP for this step, and remove the rule afterwards:
-
-```bash
-az postgres flexible-server firewall-rule create -g $RG -n $PG --rule-name setup \
-  --start-ip-address "$(curl -s https://ifconfig.me)" --end-ip-address "$(curl -s https://ifconfig.me)"
-PGPASSWORD="$OWNER_PW" psql "host=$PG.postgres.database.azure.com port=5432 dbname=$DB user=frontdesk_owner sslmode=require" <<SQL
-CREATE ROLE frontdesk_app LOGIN PASSWORD '$APP_PW';
-GRANT CONNECT ON DATABASE $DB TO frontdesk_app;
-GRANT USAGE ON SCHEMA public TO frontdesk_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE frontdesk_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO frontdesk_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE frontdesk_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO frontdesk_app;
-SQL
-az postgres flexible-server firewall-rule delete -g $RG -n $PG --rule-name setup --yes
-```
-
-The connection strings keep Azure's `sslmode=require`. The service translates it for asyncpg
-(`config.py`, `tests/unit/test_config.py`).
-
-## 3. Secrets in Key Vault, read by one managed identity
-
-```bash
-az keyvault create -g $RG -n $KV -l $LOC --enable-rbac-authorization true
-KV_ID=$(az keyvault show -n $KV --query id -o tsv)
-az role assignment create --assignee "$(az ad signed-in-user show --query id -o tsv)" \
-  --role "Key Vault Secrets Officer" --scope $KV_ID
-HOST=$PG.postgres.database.azure.com
-az keyvault secret set --vault-name $KV -n db-owner-url --value "postgresql://frontdesk_owner:$OWNER_PW@$HOST:5432/$DB?sslmode=require"
-az keyvault secret set --vault-name $KV -n db-app-url   --value "postgresql://frontdesk_app:$APP_PW@$HOST:5432/$DB?sslmode=require"
-az keyvault secret set --vault-name $KV -n auth-tokens  --value "{\"$AGENT_TOKEN\":[\"agent\"],\"$STAFF_TOKEN\":[\"bookings.staff\",\"schedule.write\",\"board.write\",\"directory.write\",\"knowledge.write\",\"calls.write\",\"calls.read\"]}"
-az keyvault secret set --vault-name $KV -n agent-token  --value "$AGENT_TOKEN"
-az keyvault secret set --vault-name $KV -n mcp-token    --value "$MCP_TOKEN"
-
-az identity create -g $RG -n id-frontdesk-$P
-ID=$(az identity show -g $RG -n id-frontdesk-$P --query id -o tsv)
-PRINCIPAL=$(az identity show -g $RG -n id-frontdesk-$P --query principalId -o tsv)
-az role assignment create --assignee-object-id $PRINCIPAL --assignee-principal-type ServicePrincipal \
-  --role "Key Vault Secrets User" --scope $KV_ID
-az role assignment create --assignee-object-id $PRINCIPAL --assignee-principal-type ServicePrincipal \
-  --role AcrPull --scope "$(az acr show -n $ACR --query id -o tsv)"
-kv() { echo "$1=keyvaultref:https://$KV.vault.azure.net/secrets/$2,identityref:$ID"; }
-```
-
-## 4. The rollout's settings
-
-Container Apps takes the same `rollout.env` the compose stack uses: only what the rollout
-changes. Read it line by line; never `source` it, because that strips the JSON quotes:
-
-```bash
-mapfile -t ROLLOUT_ENV < <(grep -Ev '^[[:space:]]*(#|$)' $R/rollout.env)
-```
-
-## 5. Migrate, then write the rollout's data (jobs, run on every deployment)
-
-```bash
-az containerapp job create -g $RG -n job-migrate-$P --environment $ENV_NAME \
-  --trigger-type Manual --replica-timeout 600 --replica-retry-limit 0 \
-  --image $ACR.azurecr.io/frontdesk-api-$P:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
-  --mi-user-assigned $ID --secrets "$(kv db-owner-url db-owner-url)" \
-  --env-vars ENV=production DATABASE_URL=secretref:db-owner-url \
-  --command frontdesk-api --args migrate
-az containerapp job start -g $RG -n job-migrate-$P
-az containerapp job execution list -g $RG -n job-migrate-$P -o table     # wait for Succeeded
-
-# The domain baseline for the rollout's languages + the rollout's data. Idempotent.
-az containerapp job create -g $RG -n job-apply-$P --environment $ENV_NAME \
-  --trigger-type Manual --replica-timeout 600 --replica-retry-limit 0 \
-  --image $ACR.azurecr.io/frontdesk-api-$P:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
-  --mi-user-assigned $ID --secrets "$(kv db-app-url db-app-url)" \
-  --env-vars ENV=production DATABASE_URL=secretref:db-app-url ROLLOUT_DIR=/app/rollout "${ROLLOUT_ENV[@]}" \
-  --command frontdesk-api --args rollout apply
-az containerapp job start -g $RG -n job-apply-$P
-```
-
-## 6. API (internal only) and MCP adapter (reachable by the gateway)
-
-```bash
-az containerapp create -g $RG -n api-$P --environment $ENV_NAME \
-  --image $ACR.azurecr.io/frontdesk-api-$P:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
-  --user-assigned $ID --ingress internal --target-port 8000 --min-replicas 1 --max-replicas 3 --cpu 0.5 --memory 1Gi \
-  --secrets "$(kv db-app-url db-app-url)" "$(kv auth-tokens auth-tokens)" \
-  --env-vars ENV=production HOST=0.0.0.0 PORT=8000 DATABASE_URL=secretref:db-app-url ROLLOUT_DIR=/app/rollout \
-             AUTH_TOKENS_JSON=secretref:auth-tokens "${ROLLOUT_ENV[@]}"
-
-az containerapp create -g $RG -n mcp-$P --environment $ENV_NAME \
-  --image $ACR.azurecr.io/frontdesk-mcp:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
-  --user-assigned $ID --ingress external --target-port 8100 --min-replicas 1 --max-replicas 3 --cpu 0.25 --memory 0.5Gi \
-  --secrets "$(kv agent-token agent-token)" "$(kv mcp-token mcp-token)" \
-  --env-vars ENV=production HOST=0.0.0.0 PORT=8100 \
-             API_BASE_URL=https://api-$P.internal.$DOMAIN/api/v1 \
-             API_BEARER_TOKEN=secretref:agent-token MCP_BEARER_TOKEN=secretref:mcp-token "${ROLLOUT_ENV[@]}"
-```
-
-- `--min-replicas 1` keeps a warm instance, so a caller never waits for a cold start.
-- The MCP adapter refuses to start in production unless `API_BASE_URL` is `https://`. The
-  environment's internal FQDN serves TLS.
-- If ContextForge runs in the same environment, make the adapter `--ingress internal` too.
-
-**Health probes.** Container Apps doesn't use the Dockerfile `HEALTHCHECK`. Set HTTP probes
-so traffic only reaches an API whose schema matches (`/ready`), and a stuck process is
-restarted (`/health`). Export the app with `az containerapp show -g $RG -n api-$P -o yaml > api.yaml`,
-add the following under `properties.template.containers[0]`, and apply with
-`az containerapp update -g $RG -n api-$P --yaml api.yaml`. Do the same for `mcp-$P` on port 8100:
-
-```yaml
-probes:
-  - type: Readiness
-    httpGet: {path: /ready, port: 8000}
-    periodSeconds: 5
-  - type: Liveness
-    httpGet: {path: /health, port: 8000}
-    periodSeconds: 10
-```
-
-## 7. Gateway and voice agent
-
-ContextForge is infrastructure (`CONTEXTFORGE.md`). Run it as another Container App from its
-official image, following ContextForge's own deployment guide, with
-`ENABLE_HEADER_PASSTHROUGH=true`. Then register this provider's adapter:
-
-```bash
-export CONTEXTFORGE_URL=https://<gateway-host> MCP_PUBLIC_URL=https://mcp-$P.$DOMAIN/mcp/ MCP_BEARER_TOKEN=$MCP_TOKEN
-eval "$(scripts/rollout-env.sh $R)"   # PROVIDER_ID, DOMAIN_PACK, ...
-(cd services/mcp && uv run python ../../deploy/contextforge/register.py --dry-run && uv run python ../../deploy/contextforge/register.py)
-```
-
-Point the LiveKit agent at ContextForge and set the call headers (`LIVEKIT.md`).
-
-## 8. Test in Azure
-
-**Demo rollouts only:** add the dated demo scenario (bookings, exceptions, board). A real
-provider already has its data from `rollout apply` (§5); the seed refuses `ENV=production` and
-`deploy.sh --seed-demo` refuses a rollout whose id is not `demo-*`.
-
-```bash
-az containerapp job create -g $RG -n job-seed-$P --environment $ENV_NAME --trigger-type Manual \
-  --replica-timeout 600 --replica-retry-limit 0 \
-  --image $ACR.azurecr.io/frontdesk-api-$P:$TAG --registry-server $ACR.azurecr.io --registry-identity $ID \
-  --mi-user-assigned $ID --secrets "$(kv db-app-url db-app-url)" \
-  --env-vars ENV=staging DATABASE_URL=secretref:db-app-url ROLLOUT_DIR=/app/rollout "${ROLLOUT_ENV[@]}" \
-  --command frontdesk-api --args seed
-az containerapp job start -g $RG -n job-seed-$P
-```
-
-**The API, end to end.** Open the internal API to your own IP for the duration of the test,
-then close it again:
-
-```bash
-az containerapp ingress update -g $RG -n api-$P --type external
-az containerapp ingress access-restriction set -g $RG -n api-$P --rule-name tester \
-  --ip-address "$(curl -s https://ifconfig.me)/32" --action Allow
-API_HOST=$(az containerapp show -g $RG -n api-$P --query properties.configuration.ingress.fqdn -o tsv)
-curl -s https://$API_HOST/ready                    # {"status":"ready","schema":"0004"}
-API_URL=https://$API_HOST/api/v1 AGENT_TOKEN=$AGENT_TOKEN ./scripts/demo.sh   # book → list → reschedule → cancel
-az containerapp ingress update -g $RG -n api-$P --type internal
-```
-
-Also run the scenarios in `TESTING.md` "Try these by hand" against `API_URL`.
-
-**The MCP adapter, as the voice agent sees it:**
-
-```bash
-cd services/mcp && MCP_URL=https://mcp-$P.$DOMAIN/mcp/ MCP_TOKEN=$MCP_TOKEN uv run python - <<'PY'
-import asyncio, os
-from fastmcp import Client
-from fastmcp.client.transports import StreamableHttpTransport
-async def main():
-    t = StreamableHttpTransport(os.environ["MCP_URL"], headers={
-        "Authorization": f"Bearer {os.environ['MCP_TOKEN']}", "X-Call-Id": "azure-smoke-1",
-        "X-Caller-Number": "+919000000777"})
-    async with Client(t) as c:
-        print([tool.name for tool in await c.list_tools()])
-        r = await c.call_tool("search_knowledge", {"question": "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", "language": "kn"})
-        print(r.structured_content["outcome"], r.structured_content["answer"]["text"])
-asyncio.run(main())
-PY
-```
-
-Expected output: the three tools, then `ANSWERED` and the Kannada parking answer.
-
-**Logs.** Every line is JSON with `provider` and `callId`:
-
-```bash
-az containerapp logs show -g $RG -n api-$P --follow
-```
-
-In Log Analytics:
-
-```kusto
-ContainerAppConsoleLogs_CL
-| where ContainerAppName_s == "api-demo-hospital"
-| extend j = parse_json(Log_s) | where tostring(j.callId) == "azure-smoke-1"
-```
-
-## 9. Upgrades and rollout changes
-
-Re-run `deploy/azure/deploy.sh <rollout>` for a new platform version, a new domain pack version,
-or a change to the rollout's files. By hand:
-
-1. `az acr build` the new tag, and the rollout image on top of it.
-2. Update the migrate job's image and start it. Wait for `Succeeded`. Then the apply job.
-3. `az containerapp update --image …:<tag> --replace-env-vars …` for `api-$P`, then `mcp-$P`
-   (replace, so a setting removed from `rollout.env` falls back to its domain or core default).
-
-`/ready` is strict, so an old API goes unready as soon as the schema moves on: roll out right
-after the migration. Revision `0002` renames tables and needs a maintenance window
-(`DEPLOY.md`).
+Re-run `deploy/azure/deploy.sh <rollout> --profile live` for a new adapter version or a settings change. Pin
+together: image tag, `prompt.SCHEMA_VERSION`, the gateway registration (re-run `register.py` so the
+gateway rediscovers tools) and the owner contract revision. Rollback is
+`az containerapp revision activate` of the previous revision (or `deploy.sh` with `TAG=<previous>`)
+against the same owner services: there is one appointment authority, never two. If a compatible
+previous adapter cannot operate, disable writes by rotating the gateway bearer and keep the desk
+flow; do not reactivate the retired backend.
 
 ## Production checklist
 
-- Private networking: VNet-integrated environment, Postgres with no public access, and the API
-  on internal ingress only.
-- Data residency: Central India or South India region, for the DPDP Act.
-- Secrets only in Key Vault. Rotate `AUTH_TOKENS_JSON` and `MCP_BEARER_TOKEN` by adding the
-  new token, rolling out, then removing the old one.
-- Backups: the Flexible Server's automated backups (7–35 days) and a tested point-in-time
-  restore.
-- Alerts in Log Analytics on 5xx rate, `COULD_NOT_CHECK` outcomes, and `db_ms` in
-  `Server-Timing` above budget.
+- Owner URLs are the owners' production hosts; credentials registered by them with exactly
+  `appointments.write` and `calls.write`; `ACCEPTED_CALLER_VERIFICATION` agreed with Manoj and the platform.
+- Gateway and lifecycle bearers differ and are held by different components.
+- ContextForge passthrough covers every trusted header; voice platform forwards them and invokes the
+  summary at call end with the lifecycle bearer.
+- Smoke passes; latency measured on the real path (`mcp-only/implementation/LATENCY-RESULTS.md`).
+- The retired backend's app, jobs, images, database and credentials are gone
+  (`mcp-only/AZURE-RETIREMENT.md`, `mcp-only/implementation/AZURE-RETIREMENT-RESULTS.md`).

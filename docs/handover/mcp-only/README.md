@@ -1,8 +1,22 @@
 # MCP-only implementation handover
 
-Published 1 October 2026. **The migration is planned, not implemented.** This tracked directory contains the decisions and available contract needed for another developer or code agent to review and begin implementation from a fresh clone. No private workspace folder is required.
+Published 1 October 2026; implementation delivered the same day on branch `Garry2012/mcp-external-api`.
 
-The current application still has three MCP tools, our REST backend and PostgreSQL. The target has four MCP tools consuming Manoj's operational API and Shobhit's knowledge service, with no application database or backend engine in this repository. Building the existing MCP package is possible independently; running its current tools still requires the old backend. This handover does not claim a finished MCP-only application or a passing full legacy test suite.
+> **Implementation status:** the source migration is **implemented and fixture-verified**: four MCP
+> tools, independent owner clients, stubs, retirement of `services/api`, PostgreSQL tooling and legacy
+> docs. It is **not real-service-verified, not cut over and not cloud-retired**: Manoj's deployed backend
+> needs machine credentials, Shobhit's contract is still provisional, the voice platform does not yet
+> forward the trusted headers, and the legacy Azure resources remain running. Read
+> [implementation/REVIEW-REPORT.md](implementation/REVIEW-REPORT.md) for the evidence and
+> [implementation/OPEN-DEPENDENCIES.md](implementation/OPEN-DEPENDENCIES.md) for what is missing.
+> The planning text below describes the state before implementation and is kept as the authority the
+> implementation was built against.
+
+The application before this work had three MCP tools, our REST backend and PostgreSQL. The target has four MCP tools consuming Manoj's operational API and Shobhit's knowledge service, with no application database or backend engine in this repository.
+
+## Implementation assignment
+
+[FABLE-MASTER-PROMPT.md](FABLE-MASTER-PROMPT.md) is the comprehensive execution prompt for the coding agent working in this workspace. It covers implementation, tests, voice/gateway integration, source and Azure retirement, self-review, and the evidence to return for architect review. Giving the prompt to an agent starts a separate implementation assignment; publishing it has not implemented or cleaned up the system.
 
 ## Implementation assignment
 
@@ -31,20 +45,16 @@ Existing architecture, API specs and setup documents outside this directory desc
 
 ## Review and build on another laptop
 
-Clone this repository and use `main`. Use Python 3.13 and uv (the existing CI pins uv 0.11.21). These commands, from the repository root, install and check the **current MCP package**, without starting PostgreSQL or the API:
+Clone this repository, check out the implementation branch, use Python 3.13 and uv 0.11.21. Everything a reviewer needs runs without a database or any owner source:
 
 ```bash
 git clone git@github.com:Garry2012/healthcare-tools.git
-cd healthcare-tools
-uv sync --project services/mcp --frozen
-uv run --project services/mcp ruff check services/mcp deploy
-(cd services/mcp && uv run --frozen pytest tests -q -m 'not e2e')
-uv build --project services/mcp --out-dir /tmp/healthcare-mcp-build
+cd healthcare-tools && git checkout Garry2012/mcp-external-api
+./scripts/test.sh          # frozen install, lint, hermetic suites, process e2e, package + image build
+make demo                  # walk the four tools against the development stubs
 ```
 
-The existing MCP Dockerfile also builds with `services/mcp` as its context. The full legacy `make up`, `make build`, `make test` and Azure deployment still include the old API/database; they are not the planned MCP-only workflow. Do not run migration/seed/deployment commands merely to review this handover. Existing agent session hooks can also start a local database in their remote-session mode; see the source audit before using that automation.
-
-Before implementation, create a new branch from current `main`, review the plan and turn its phases into changes. Start with consumer contracts and independent operational/knowledge test stubs. Adapt tools and deployment together, verify against owner services, then remove the old backend and retire obsolete Azure resources after the stated gates pass. Do not recreate its engines inside MCP or the stubs.
+`implementation/REVIEW-REPORT.md` lists the exact commands, counts and which checks used fixtures versus real services.
 
 ## Handover validation on 1 October 2026
 

@@ -1,5 +1,11 @@
 # What the source code actually contains
 
+> **Superseded on the implementation branch (1 October 2026):** this audit describes the source at
+> `7e20b44`, before the migration. On `Garry2012/mcp-external-api` the backend, database tooling and
+> three-tool adapter below are gone; the current state is in
+> [implementation/REVIEW-REPORT.md](implementation/REVIEW-REPORT.md). The audit stays as the record of
+> what was retired and why.
+
 Audit date: 1 October 2026. Runtime source baseline: `7e20b4459d0a58422bf3b5ba40a670be94b758f5`. Findings below come from reading executable source, dependency declarations, tests and deployment scripts, not from accepting the older architecture documents. A subsequent [read-only Azure inventory](AZURE-RETIREMENT.md) confirms deployed MCP still points to the legacy API and identifies shared resources for future retirement. Publishing this handover changes documentation only.
 
 **The entire old backend is still present.** This is our previous backend implementation, covering responsibilities now assigned to Manoj and Shobhit; it is not a copy of Manoj's new implementation. None of the planned external integrations or backend removal has been implemented. There is no meaningful partial-removal percentage to report: the old application is still wired end to end.

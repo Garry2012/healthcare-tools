@@ -1,0 +1,13 @@
+E           AssertionError: BookingResult(outcome='CALLBACK_REQUIRED', nextStep='ASK_CALLBACK_DETAILS', appointment=None, appointments=[], fields=...om the hospital will call you back.', summaryOutcome='CALLBACK_NOTED'), detail='BOARD_UNKNOWN', retryAfterSeconds=None)
+>               raise RuntimeError(f"{name} failed its read-only smoke check")
+E               RuntimeError: get_doctor_availability failed its read-only smoke check
+PASSED tests/test_external.py::test_machine_token_is_issued_and_reads_work
+PASSED tests/test_external.py::test_an_absent_bearer_is_refused_by_the_service
+PASSED tests/test_external.py::test_availability_tool_end_to_end_against_the_service
+PASSED tests/test_external.py::test_negative_unknown_date_is_callback_only_and_writes_nothing
+PASSED tests/test_external.py::test_knowledge_search_against_the_real_host
+PASSED tests/test_external_transport.py::test_trusted_headers_are_forwarded_by_the_deployed_transport
+PASSED tests/test_external_transport.py::test_backend_lookup_succeeds_through_the_deployed_adapter
+FAILED tests/test_external.py::test_positive_write_journey_create_list_reschedule_cancel_summary
+FAILED tests/test_external_transport.py::test_release_smoke_against_the_deployed_adapter
+2 failed, 7 passed, 320 deselected, 2 warnings in 27.22s

@@ -1,0 +1,87 @@
+{
+  "measured_at": "2026-10-01T06:17:21+00:00",
+  "boundary": "laptop \u2192 MCP (local TCP) \u2192 https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io (real network); knowledge: in-process knowledge STUB (no real host yet)",
+  "samples_per_scenario": 30,
+  "concurrency": 1,
+  "warm": true,
+  "scenarios": {
+    "availability_known_doctor": {
+      "samples": 30,
+      "ok": 30,
+      "failures": 0,
+      "outcomes": {
+        "ok": 30
+      },
+      "first_call_ms": 2199.5,
+      "p50_ms": 360.8,
+      "p95_ms": 469.2,
+      "p99_ms": 2199.5,
+      "mean_ms": 436.5
+    },
+    "availability_name_search": {
+      "samples": 30,
+      "ok": 30,
+      "failures": 0,
+      "outcomes": {
+        "ok": 30
+      },
+      "first_call_ms": 1041.5,
+      "p50_ms": 678.0,
+      "p95_ms": 811.3,
+      "p99_ms": 1041.5,
+      "mean_ms": 710.9
+    },
+    "availability_ambiguous": {
+      "samples": 30,
+      "ok": 30,
+      "failures": 0,
+      "outcomes": {
+        "ok": 30
+      },
+      "first_call_ms": 703.7,
+      "p50_ms": 703.7,
+      "p95_ms": 807.5,
+      "p99_ms": 811.7,
+      "mean_ms": 710.7
+    },
+    "availability_department": {
+      "samples": 30,
+      "ok": 30,
+      "failures": 0,
+      "outcomes": {
+        "ok": 30
+      },
+      "first_call_ms": 396.0,
+      "p50_ms": 40.4,
+      "p95_ms": 44.0,
+      "p99_ms": 396.0,
+      "mean_ms": 52.5
+    },
+    "knowledge_answer": {
+      "samples": 30,
+      "ok": 30,
+      "failures": 0,
+      "outcomes": {
+        "ok": 30
+      },
+      "first_call_ms": 19.0,
+      "p50_ms": 14.7,
+      "p95_ms": 20.6,
+      "p99_ms": 21.8,
+      "mean_ms": 15.7
+    },
+    "booking_list": {
+      "samples": 30,
+      "ok": 30,
+      "failures": 0,
+      "outcomes": {
+        "ok": 30
+      },
+      "first_call_ms": 397.0,
+      "p50_ms": 344.5,
+      "p95_ms": 405.8,
+      "p99_ms": 429.3,
+      "mean_ms": 358.6
+    }
+  }
+}

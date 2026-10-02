@@ -1,0 +1,11 @@
+**
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!src/**
+!dev/frontdesk_stubs/
+!dev/frontdesk_stubs/**
+**/__pycache__/
+**/*.pyc

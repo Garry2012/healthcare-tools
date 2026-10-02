@@ -1,0 +1,225 @@
+{
+ "measured_at": "2026-10-02T05:26Z",
+ "boundary": "laptop FastMCP client -> local adapter (127.0.0.1:8101, ENV=staging, diagnostic deadline overrides) -> LIVE ops API https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1 ; knowledge = LOCAL STUB (Shobhit's host pending)",
+ "credentials": "Key Vault kv-fd-demo-hospi-0574c1 ops-client-id/ops-client-secret (current versions, 2026-10-02T04:38Z)",
+ "calls": [
+  {
+   "label": "availability dept General Medicine today",
+   "tool": "get_doctor_availability",
+   "args": {
+    "date": "today",
+    "departmentName": "General Medicine"
+   },
+   "ms": 961,
+   "outcome": "CALLBACK_REQUIRED",
+   "detail": null,
+   "nextStep": "ASK_CALLBACK_DETAILS"
+  },
+  {
+   "label": "availability dept General Medicine tomorrow",
+   "tool": "get_doctor_availability",
+   "args": {
+    "date": "2026-10-03",
+    "departmentName": "General Medicine"
+   },
+   "ms": 343,
+   "outcome": "CALLBACK_REQUIRED",
+   "detail": null,
+   "nextStep": "ASK_CALLBACK_DETAILS"
+  },
+  {
+   "label": "availability doctor by name Shreyas",
+   "tool": "get_doctor_availability",
+   "args": {
+    "date": "2026-10-03",
+    "doctorName": "Shreyas"
+   },
+   "ms": 649,
+   "outcome": "CALLBACK_REQUIRED",
+   "detail": null,
+   "nextStep": "ASK_CALLBACK_DETAILS"
+  },
+  {
+   "label": "availability doctor by name Ashok (2 matches)",
+   "tool": "get_doctor_availability",
+   "args": {
+    "date": "2026-10-03",
+    "doctorName": "Ashok"
+   },
+   "ms": 328,
+   "outcome": "CLARIFICATION_NEEDED",
+   "detail": null,
+   "nextStep": "ASK_WHICH_DOCTOR"
+  },
+  {
+   "label": "availability doctor by id Ambika",
+   "tool": "get_doctor_availability",
+   "args": {
+    "date": "2026-10-06",
+    "doctorId": "62476883-f54e-4a3a-878f-81782f48f6d7"
+   },
+   "ms": 342,
+   "outcome": "CALLBACK_REQUIRED",
+   "detail": null,
+   "nextStep": "ASK_CALLBACK_DETAILS"
+  },
+  {
+   "label": "availability unknown department",
+   "tool": "get_doctor_availability",
+   "args": {
+    "date": "today",
+    "departmentName": "Astrology"
+   },
+   "ms": 22,
+   "outcome": "CLARIFICATION_NEEDED",
+   "detail": "DEPARTMENT_UNMATCHED",
+   "nextStep": "ASK_WHICH_DEPARTMENT"
+  },
+  {
+   "label": "availability no department/doctor (offer list)",
+   "tool": "get_doctor_availability",
+   "args": {
+    "date": "today"
+   },
+   "ms": 21,
+   "outcome": "INVALID_REQUEST",
+   "detail": "TARGET_REQUIRED",
+   "nextStep": "ASK_TO_REPHRASE"
+  },
+  {
+   "label": "booking LIST (caller number)",
+   "tool": "manage_booking",
+   "args": {
+    "action": "LIST"
+   },
+   "ms": 402,
+   "outcome": "NOT_FOUND",
+   "detail": null,
+   "appointments": []
+  },
+  {
+   "label": "booking CREATE (board UNKNOWN -> callback)",
+   "tool": "manage_booking",
+   "args": {
+    "action": "CREATE",
+    "patientName": "Synthetic Test Patient",
+    "patientMobile": "9999900001",
+    "doctorId": "30b5941b-1e7a-43cb-b994-eb8b47729736",
+    "visitDate": "2026-10-03",
+    "preferredTime": "10:00",
+    "callerConfirmed": true
+   },
+   "ms": 354,
+   "outcome": "CALLBACK_REQUIRED",
+   "detail": "BOARD_UNKNOWN",
+   "nextStep": "ASK_CALLBACK_DETAILS",
+   "fields": []
+  },
+  {
+   "label": "booking CANCEL unknown id",
+   "tool": "manage_booking",
+   "args": {
+    "action": "CANCEL",
+    "appointmentId": "does-not-exist",
+    "callerConfirmed": true
+   },
+   "ms": 364,
+   "outcome": "NOT_FOUND",
+   "detail": null,
+   "nextStep": "SAY_NOT_FOUND",
+   "fields": []
+  },
+  {
+   "label": "booking RESCHEDULE unknown id",
+   "tool": "manage_booking",
+   "args": {
+    "action": "RESCHEDULE",
+    "appointmentId": "does-not-exist",
+    "newVisitDate": "2026-10-04",
+    "callerConfirmed": true
+   },
+   "ms": 664,
+   "outcome": "NOT_FOUND",
+   "detail": null,
+   "nextStep": "SAY_NOT_FOUND",
+   "fields": []
+  },
+  {
+   "label": "booking LIST after CREATE (must be unchanged)",
+   "tool": "manage_booking",
+   "args": {
+    "action": "LIST"
+   },
+   "ms": 346,
+   "outcome": "NOT_FOUND",
+   "detail": null,
+   "appointments": []
+  },
+  {
+   "label": "knowledge (LOCAL STUB, not Shobhit)",
+   "tool": "search_knowledge",
+   "args": {
+    "question": "visiting hours",
+    "language": "en"
+   },
+   "ms": 19,
+   "outcome": "ANSWERED",
+   "detail": null,
+   "nextStep": "SPEAK_ANSWER"
+  },
+  {
+   "label": "gateway bearer calling lifecycle tool (must refuse)",
+   "tool": "record_call_summary",
+   "args": {
+    "intent": "OTHER",
+    "outcome": "ABANDONED",
+    "summaryText": "x"
+   },
+   "ms": 3,
+   "is_error": true,
+   "text": "record_call_summary is not available to the conversation principal (lifecycle access boundary)"
+  },
+  {
+   "label": "LIST without caller identity (must refuse)",
+   "tool": "manage_booking",
+   "args": {
+    "action": "LIST"
+   },
+   "ms": 16,
+   "outcome": "IDENTITY_UNAVAILABLE",
+   "detail": null,
+   "nextStep": "TRANSFER_DESK"
+  },
+  {
+   "label": "record_call_summary (live, scope calls.write?)",
+   "tool": "record_call_summary",
+   "args": {
+    "intent": "AVAILABILITY",
+    "outcome": "CALLBACK_NOTED",
+    "summaryText": "Synthetic MCP walk against live: availability unknown, callback noted."
+   },
+   "ms": 6,
+   "outcome": "INVALID_REQUEST",
+   "detail": null,
+   "summaryId": null,
+   "fields": [
+    "callerMobile",
+    "callerName"
+   ]
+  }
+ ],
+ "lifecycle_retest": [
+  {
+   "label": "summary CALLBACK_NOTED with callback details",
+   "ms": 742,
+   "outcome": "COULD_NOT_RECORD",
+   "detail": "AUTH"
+  },
+  {
+   "label": "summary RESOLVED_BY_AGENT",
+   "ms": 352,
+   "outcome": "COULD_NOT_RECORD",
+   "detail": "AUTH"
+  }
+ ]
+}

@@ -1,0 +1,143 @@
+{
+  "measured_at": "2026-10-02T05:31:12+00:00",
+  "boundary": "laptop → MCP (local TCP) → https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1 (real network); knowledge: in-process knowledge STUB (no real host yet)",
+  "samples_per_scenario": 20,
+  "concurrency": 1,
+  "warm": "token warmed at start-up; one tools/list before sampling; a new MCP session per sample",
+  "owner_calls_verified": false,
+  "note": "timings include client-side schema checking and session initialize; a sample counts only when the intended outcome and owner call were observed",
+  "scenarios": {
+    "availability_known_doctor": {
+      "samples": 20,
+      "ok": 20,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 20,
+      "expected_outcomes": [
+        "AVAILABILITY",
+        "CALLBACK_REQUIRED"
+      ],
+      "outcomes": {
+        "ok": 20
+      },
+      "first_call_ms": 778.9,
+      "p50_ms": 340.3,
+      "p95_ms": 388.1,
+      "p99_ms": 778.9,
+      "mean_ms": 366.2
+    },
+    "availability_name_search": {
+      "samples": 20,
+      "ok": 20,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 20,
+      "expected_outcomes": [
+        "AVAILABILITY",
+        "CALLBACK_REQUIRED"
+      ],
+      "outcomes": {
+        "ok": 20
+      },
+      "first_call_ms": 720.1,
+      "p50_ms": 649.2,
+      "p95_ms": 720.1,
+      "p99_ms": 746.8,
+      "mean_ms": 662.4
+    },
+    "availability_ambiguous": {
+      "samples": 20,
+      "ok": 20,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 20,
+      "expected_outcomes": [
+        "CLARIFICATION_NEEDED"
+      ],
+      "outcomes": {
+        "ok": 20
+      },
+      "first_call_ms": 353.1,
+      "p50_ms": 335.7,
+      "p95_ms": 413.4,
+      "p99_ms": 425.0,
+      "mean_ms": 349.5
+    },
+    "availability_department": {
+      "samples": 20,
+      "ok": 20,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 20,
+      "expected_outcomes": [
+        "AVAILABILITY",
+        "CALLBACK_REQUIRED"
+      ],
+      "outcomes": {
+        "ok": 20
+      },
+      "first_call_ms": 1137.9,
+      "p50_ms": 336.1,
+      "p95_ms": 370.1,
+      "p99_ms": 1137.9,
+      "mean_ms": 376.2
+    },
+    "knowledge_answer": {
+      "samples": 20,
+      "ok": 20,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "ANSWERED",
+        "NO_ANSWER"
+      ],
+      "outcomes": {
+        "ok": 20
+      },
+      "first_call_ms": 17.8,
+      "p50_ms": 14.0,
+      "p95_ms": 17.8,
+      "p99_ms": 17.8,
+      "mean_ms": 14.6
+    },
+    "booking_list": {
+      "samples": 20,
+      "ok": 20,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 20,
+      "expected_outcomes": [
+        "FOUND",
+        "NOT_FOUND"
+      ],
+      "outcomes": {
+        "ok": 20
+      },
+      "first_call_ms": 389.3,
+      "p50_ms": 330.9,
+      "p95_ms": 377.2,
+      "p99_ms": 389.3,
+      "mean_ms": 335.2
+    },
+    "booking_create": {
+      "samples": 20,
+      "ok": 20,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 20,
+      "expected_outcomes": [
+        "CALLBACK_REQUIRED",
+        "NOTED"
+      ],
+      "outcomes": {
+        "ok": 20
+      },
+      "first_call_ms": 346.2,
+      "p50_ms": 333.1,
+      "p95_ms": 358.4,
+      "p99_ms": 422.2,
+      "mean_ms": 339.5
+    }
+  }
+}

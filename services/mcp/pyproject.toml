@@ -1,7 +1,7 @@
 [project]
 name = "frontdesk-mcp"
 version = "0.1.0"
-description = "Thin FastMCP adapter exposing the front-desk Agent operations as two tools"
+description = "Thin FastMCP adapter: four hospital front-desk tools over the owners' operational and knowledge services"
 requires-python = "==3.13.*"
 dependencies = [
     "fastmcp==2.14.7",
@@ -15,6 +15,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "jsonschema==4.26.0",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pyyaml==6.0.3",
@@ -32,14 +33,14 @@ build-backend = "hatchling.build"
 packages = ["src/frontdesk_mcp"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "dev"]
 asyncio_mode = "auto"
 # A hung test dumps every thread's stack instead of stalling CI silently.
 faulthandler_timeout = 60
 asyncio_default_fixture_loop_scope = "function"
 asyncio_default_test_loop_scope = "function"
 testpaths = ["tests"]
-markers = ["e2e: needs a running frontdesk-api (MCP_E2E_API_URL)"]
+markers = ["e2e: drives real MCP/stub processes over TCP", "external: needs owner-designated real services (OPS_E2E_*)"]
 
 [tool.ruff]
 line-length = 120
@@ -50,4 +51,9 @@ select = ["E", "F", "I", "B", "UP", "S", "BLE"]
 ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S105", "S106", "S603", "S607"]
+"tests/**" = ["S105", "S106", "S107", "S603", "S607"]
+"dev/demo.py" = ["S106", "E402"]
+"dev/bench.py" = ["S106", "E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["frontdesk_mcp", "frontdesk_stubs"]

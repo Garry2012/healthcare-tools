@@ -14,19 +14,16 @@ concurrency:
 
 jobs:
   test:
-    # Every suite, exactly as a developer runs it: lint, unit, contract, integration on a throwaway
-    # PostgreSQL 16 (compose `test` profile), every committed rollout validated with its dialogues,
-    # MCP end to end through the adapter, schemathesis.
+    # Exactly what a reviewer runs on a clean checkout: no database, no owner source, no API virtualenv.
+    # Lint, hermetic suites, process-level e2e against the development stubs, package and image builds.
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.11.21"
           enable-cache: true
-          cache-dependency-glob: "services/*/uv.lock"
-      - name: Test environment
-        run: cp .env.example .env
+          cache-dependency-glob: "services/mcp/uv.lock"
       - name: All suites
         run: ./scripts/test.sh
