@@ -1,0 +1,183 @@
+FFFFFFFFFFFFFFFFFFFF...F                                                 [100%]
+=================================== FAILURES ===================================
+_ test_one_exchange_maps_owner_outcome_without_transcript[payload0-ANSWERED-SPEAK_ANSWER] _
+tests/test_knowledge.py:40: in test_one_exchange_maps_owner_outcome_without_transcript
+    assert (result.outcome, result.nextStep) == (outcome, step)
+E   AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('ANSWERED', 'SPEAK_ANSWER')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'ANSWERED'
+E     Use -v to get more diff
+_ test_one_exchange_maps_owner_outcome_without_transcript[payload1-NO_ANSWER-SAY_NO_ANSWER_AND_OFFER_DESK] _
+tests/test_knowledge.py:40: in test_one_exchange_maps_owner_outcome_without_transcript
+    assert (result.outcome, result.nextStep) == (outcome, step)
+E   AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('NO_ANSWER',...D_OFFER_DESK')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'NO_ANSWER'
+E     Use -v to get more diff
+_ test_one_exchange_maps_owner_outcome_without_transcript[payload2-CLARIFICATION_NEEDED-ASK_CLARIFICATION] _
+tests/test_knowledge.py:40: in test_one_exchange_maps_owner_outcome_without_transcript
+    assert (result.outcome, result.nextStep) == (outcome, step)
+E   AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('CLARIFICATI...LARIFICATION')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'CLARIFICATION_NEEDED'
+E     Use -v to get more diff
+_ test_one_exchange_maps_owner_outcome_without_transcript[payload3-ROUTING_REQUIRED-TRANSFER_DESK] _
+tests/test_knowledge.py:40: in test_one_exchange_maps_owner_outcome_without_transcript
+    assert (result.outcome, result.nextStep) == (outcome, step)
+E   AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('ROUTING_REQ...RANSFER_DESK')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'ROUTING_REQUIRED'
+E     Use -v to get more diff
+_ test_one_exchange_maps_owner_outcome_without_transcript[payload4-ROUTING_REQUIRED-TRANSFER_EMERGENCY] _
+tests/test_knowledge.py:40: in test_one_exchange_maps_owner_outcome_without_transcript
+    assert (result.outcome, result.nextStep) == (outcome, step)
+E   AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('ROUTING_REQ...ER_EMERGENCY')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'ROUTING_REQUIRED'
+E     Use -v to get more diff
+_ test_one_exchange_maps_owner_outcome_without_transcript[payload5-ROUTING_REQUIRED-CHECK_AVAILABILITY] _
+tests/test_knowledge.py:40: in test_one_exchange_maps_owner_outcome_without_transcript
+    assert (result.outcome, result.nextStep) == (outcome, step)
+E   AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('ROUTING_REQ...AVAILABILITY')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'ROUTING_REQUIRED'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[timeout-UNAVAILABLE] ___________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C...'UNAVAILABLE')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[network-UNAVAILABLE] ___________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C...'UNAVAILABLE')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+_____________ test_owner_failure_is_not_an_answer[401-UNAVAILABLE] _____________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C...'UNAVAILABLE')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+_____________ test_owner_failure_is_not_an_answer[403-UNAVAILABLE] _____________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C...'UNAVAILABLE')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+_____________ test_owner_failure_is_not_an_answer[503-UNAVAILABLE] _____________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C...'UNAVAILABLE')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+_____________ test_owner_failure_is_not_an_answer[json-MALFORMED] ______________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C..., 'MALFORMED')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[failure6-MALFORMED] ____________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C..., 'MALFORMED')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[failure7-MALFORMED] ____________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C..., 'MALFORMED')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[failure8-MALFORMED] ____________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C..., 'MALFORMED')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[failure9-MALFORMED] ____________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C..., 'MALFORMED')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[failure10-MALFORMED] ___________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C..., 'MALFORMED')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[failure11-MALFORMED] ___________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C..., 'MALFORMED')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[failure12-MALFORMED] ___________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C..., 'MALFORMED')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+___________ test_owner_failure_is_not_an_answer[failure13-MALFORMED] ___________
+tests/test_knowledge.py:83: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('ROUTING_UNA...TEXT_MISSING') == ('COULD_NOT_C..., 'MALFORMED')
+E     
+E     At index 0 diff: 'ROUTING_UNAVAILABLE' != 'COULD_NOT_CHECK'
+E     Use -v to get more diff
+______ test_question_limit_preserves_entire_question_and_rejects_overflow ______
+tests/test_knowledge.py:114: in test_question_limit_preserves_entire_question_and_rejects_overflow
+    assert result.outcome == "NO_ANSWER" and requests == [{"question": question, "language": "kn"}]
+E   AssertionError: assert ('ROUTING_UNAVAILABLE' == 'NO_ANSWER'
+E     
+E     - NO_ANSWER
+E     + ROUTING_UNAVAILABLE)
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_one_exchange_maps_owner_outcome_without_transcript[payload0-ANSWERED-SPEAK_ANSWER]
+FAILED tests/test_knowledge.py::test_one_exchange_maps_owner_outcome_without_transcript[payload1-NO_ANSWER-SAY_NO_ANSWER_AND_OFFER_DESK]
+FAILED tests/test_knowledge.py::test_one_exchange_maps_owner_outcome_without_transcript[payload2-CLARIFICATION_NEEDED-ASK_CLARIFICATION]
+FAILED tests/test_knowledge.py::test_one_exchange_maps_owner_outcome_without_transcript[payload3-ROUTING_REQUIRED-TRANSFER_DESK]
+FAILED tests/test_knowledge.py::test_one_exchange_maps_owner_outcome_without_transcript[payload4-ROUTING_REQUIRED-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_one_exchange_maps_owner_outcome_without_transcript[payload5-ROUTING_REQUIRED-CHECK_AVAILABILITY]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[timeout-UNAVAILABLE]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[network-UNAVAILABLE]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[401-UNAVAILABLE]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[403-UNAVAILABLE]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[503-UNAVAILABLE]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[json-MALFORMED]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[failure6-MALFORMED]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[failure7-MALFORMED]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[failure8-MALFORMED]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[failure9-MALFORMED]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[failure10-MALFORMED]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[failure11-MALFORMED]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[failure12-MALFORMED]
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[failure13-MALFORMED]
+FAILED tests/test_knowledge.py::test_question_limit_preserves_entire_question_and_rejects_overflow
+21 failed, 3 passed, 2 warnings in 1.24s

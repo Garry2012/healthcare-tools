@@ -1,27 +1,17 @@
-"""PROVISIONAL consumer contract for Shobhit's knowledge service.
+"""PROVISIONAL consumer proposal for Shobhit's knowledge API, not an agreed owner contract.
 
-Shobhit has not published an endpoint, schema or auth contract (docs/handover/mcp-only/OPEN-DEPENDENCIES).
-This module names the outcomes our integration needs from his service so the boundary is implemented
-cleanly now; the paths, field names and auth below are placeholders agreed with nobody. Replace them
-with the published contract and keep the outcome vocabulary stable for the tools. Nothing here
-interprets symptoms: MCP forwards the caller's words and consumes his decision.
+One question returns either approved text or an actionable decision. The voice platform's every-turn
+emergency classifier is a separate owner integration, outside this MCP adapter. No local interpretation.
 """
-
 from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-ROUTE_PATH = "/v1/route"  # PROVISIONAL
-ANSWER_PATH = "/v1/answer"  # PROVISIONAL
-
-# What routing must tell us before an availability answer or an appointment create may proceed.
-RoutingDecision = Literal["CONTINUE", "ROUTE_DEPARTMENT", "CLARIFY", "DESK_TRANSFER", "EMERGENCY_TRANSFER"]
-# Decisions that permit the routine scheduling journey to continue.
-CLEARANCE: frozenset[str] = frozenset({"CONTINUE", "ROUTE_DEPARTMENT"})
-
-AnswerOutcome = Literal["ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "TRANSFER_DESK"]
+ANSWER_PATH = "/v1/answer"  # PROVISIONAL: replace only after the owner publishes the contract.
+RoutingDecision = Literal["ROUTE_DEPARTMENT", "CLARIFY", "DESK_TRANSFER", "EMERGENCY_TRANSFER"]
+AnswerOutcome = Literal["ANSWERED", "NO_ANSWER", "CLARIFY", "DESK_TRANSFER", "EMERGENCY_TRANSFER", "ROUTE_DEPARTMENT"]
 
 
 class _Model(BaseModel):
@@ -29,51 +19,39 @@ class _Model(BaseModel):
 
 
 class Speech(_Model):
-    """Approved text the agent may speak verbatim, with its language."""
+    text: str = Field(min_length=1, max_length=1000)
+    language: str = Field(min_length=1, max_length=16)
 
-    text: str = Field(max_length=1000)
-    language: str
+    @field_validator("text", "language")
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("speech fields must not be blank")
+        return value  # preserve owner wording exactly
 
 
 class DepartmentHint(_Model):
-    """Shobhit's department reference; MCP maps it to Manoj's directory by name, clarifying if unsure."""
+    name: str = Field(min_length=1, max_length=100)
 
-    name: str
-
-
-class RouteRequest(_Model):
-    utterance: str
-    language: str
-    callId: str | None = None  # noqa: N815 - wire names
-    turnId: str | None = None  # noqa: N815
-    # Other caller words relevant to the decision that are not in this turn (e.g. the reason for the visit
-    # given earlier and relayed by the agent). The service decides over all of them.
-    additionalText: list[str] | None = None  # noqa: N815
-
-
-class RouteResponse(_Model):
-    decision: RoutingDecision
-    department: DepartmentHint | None = None
-    speak: Speech | None = None
-    provenance: str | None = None
-
-
-class TurnEcho(_Model):
-    utterance: str
-    language: str
-
-
-class AnswerRequest(_Model):
-    question: str
-    language: str
-    callId: str | None = None  # noqa: N815
-    # The caller's original words for this turn (trusted), so a danger sign the model's question omits still
-    # reaches the service that decides routing.
-    turn: TurnEcho | None = None
+    @field_validator("name")
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("department name must not be blank")
+        return value
 
 
 class AnswerResponse(_Model):
     outcome: AnswerOutcome
     answer: Speech | None = None
+    department: DepartmentHint | None = None
     sourceId: str | None = None  # noqa: N815
     destination: str | None = None
+
+    @model_validator(mode="after")
+    def actionable(self) -> AnswerResponse:
+        if self.outcome in ("ANSWERED", "CLARIFY") and self.answer is None:
+            raise ValueError("this outcome needs approved speech")
+        if self.outcome == "ROUTE_DEPARTMENT" and self.department is None:
+            raise ValueError("department routing needs a department")
+        return self

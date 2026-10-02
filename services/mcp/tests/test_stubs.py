@@ -237,7 +237,7 @@ def knowledge():
 
 async def test_knowledge_stub_requires_its_bearer(knowledge):
     state, http = knowledge
-    response = await http.post(knowledge_contract.ROUTE_PATH, json={"utterance": "x", "language": "en"})
+    response = await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"})
     assert response.status_code == 401
 
 
@@ -246,19 +246,19 @@ async def test_routing_fixtures_are_an_exact_match_table_not_a_classifier(knowle
     auth = {"Authorization": "Bearer knowledge-secret"}
 
     async def route(utterance: str) -> dict:
-        response = await http.post(knowledge_contract.ROUTE_PATH, json={"utterance": utterance, "language": "en"},
+        response = await http.post(knowledge_contract.ANSWER_PATH, json={"question": utterance, "language": "en"},
                                    headers=auth)
         assert response.status_code == 200
-        return knowledge_contract.RouteResponse.model_validate(response.json()).model_dump()
+        return knowledge_contract.AnswerResponse.model_validate(response.json()).model_dump()
 
-    assert (await route("Dr Garima, I have chest pain"))["decision"] == "EMERGENCY_TRANSFER"
-    assert (await route("severe stomach pain"))["decision"] == "DESK_TRANSFER"
-    assert (await route("my child has stomach pain"))["decision"] == "CLARIFY"
+    assert (await route("Dr Garima, I have chest pain"))["outcome"] == "EMERGENCY_TRANSFER"
+    assert (await route("severe stomach pain"))["outcome"] == "DESK_TRANSFER"
+    assert (await route("my child has stomach pain"))["outcome"] == "CLARIFY"
     routed = await route("I need a children's doctor")
-    assert routed["decision"] == "ROUTE_DEPARTMENT" and routed["department"]["name"] == "Paediatrics"
-    assert (await route("is Dr Garima there tomorrow"))["decision"] == "CONTINUE"
+    assert routed["outcome"] == "ROUTE_DEPARTMENT" and routed["department"]["name"] == "Paediatrics"
+    assert (await route("is Dr Garima there tomorrow"))["outcome"] == "NO_ANSWER"
     # a near miss of an emergency phrase is NOT matched: the stub does not interpret words
-    assert (await route("chest pain"))["decision"] == "CONTINUE"
+    assert (await route("chest pain"))["outcome"] == "NO_ANSWER"
 
 
 async def test_answers_come_back_verbatim_in_the_requested_language(knowledge):
@@ -271,7 +271,7 @@ async def test_answers_come_back_verbatim_in_the_requested_language(knowledge):
     assert parsed.answer.text.startswith("ಹೌದು")
     desk = knowledge_contract.AnswerResponse.model_validate((await http.post(
         knowledge_contract.ANSWER_PATH, json={"question": "cashless", "language": "en"}, headers=auth)).json())
-    assert desk.outcome == "TRANSFER_DESK" and desk.destination == "insurance"
+    assert desk.outcome == "DESK_TRANSFER" and desk.destination == "insurance"
     unknown = knowledge_contract.AnswerResponse.model_validate((await http.post(
         knowledge_contract.ANSWER_PATH, json={"question": "what is the meaning of life", "language": "en"},
         headers=auth)).json())
@@ -282,16 +282,17 @@ async def test_knowledge_scenarios(knowledge):
     state, http = knowledge
     auth = {"Authorization": "Bearer knowledge-secret"}
     state.fail_next.append(503)
-    assert (await http.post(knowledge_contract.ROUTE_PATH, json={"utterance": "x", "language": "en"},
+    assert (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"},
                             headers=auth)).status_code == 503
     state.malformed_next.append(True)
-    body = (await http.post(knowledge_contract.ROUTE_PATH, json={"utterance": "x", "language": "en"},
+    body = (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"},
                             headers=auth)).json()
-    assert "decision" not in body
-    state.decisions.append(knowledge_stub.Decision(utterances=("test phrase",), decision="DESK_TRANSFER"))
-    scripted = (await http.post(knowledge_contract.ROUTE_PATH, json={"utterance": "test phrase", "language": "en"},
+    assert "outcome" not in body
+    state.answers.append({"id": "test", "questions": ["test phrase"], "outcome": "DESK_TRANSFER",
+                          "answers": {"en": "Ask the desk"}})
+    scripted = (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "test phrase", "language": "en"},
                                 headers=auth)).json()
-    assert scripted["decision"] == "DESK_TRANSFER"
+    assert scripted["outcome"] == "DESK_TRANSFER"
 
 
 def test_fixture_data_is_contract_shaped():

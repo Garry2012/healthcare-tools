@@ -1,6 +1,6 @@
 """HTTP adapter for Shobhit's knowledge service under the PROVISIONAL knowledge_contract. It forwards
-the caller's trusted words and consumes his decision; it never decides locally. Any failure, missing
-configuration or unknown response shape is an explicit unavailable result, never clearance."""
+the caller's question argument and consumes his decision; it never decides locally. Any failure, missing
+configuration or unknown response shape is an explicit unavailable result, never a negative answer."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from . import knowledge_contract as kc
 from .clock import Deadline, DeadlineExceeded
 from .config import Settings
-from .context import CallContext, TurnContext
+from .context import CallContext
 
 logger = logging.getLogger(__name__)
 
@@ -68,28 +68,10 @@ class KnowledgeClient:
             raise KnowledgeUnavailable("MALFORMED")
         return data
 
-    async def route(self, turn: TurnContext, ctx: CallContext, deadline: Deadline,
-                    additional_text: list[str] | None = None) -> kc.RouteResponse:
-        body: dict = {"utterance": turn.utterance, "language": turn.language}
-        if ctx.call_id:
-            body["callId"] = ctx.call_id
-        if turn.turn_id:
-            body["turnId"] = turn.turn_id
-        if additional_text:
-            body["additionalText"] = [t for t in additional_text if t and t.strip()]
-        data = await self._post(kc.ROUTE_PATH, body, deadline)
-        try:
-            return kc.RouteResponse.model_validate(data)
-        except ValidationError as exc:
-            logger.error("knowledge_route_malformed")
-            raise KnowledgeUnavailable("MALFORMED") from exc
-
     async def answer(self, question: str, language: str, ctx: CallContext, deadline: Deadline) -> kc.AnswerResponse:
         body: dict = {"question": question, "language": language}
         if ctx.call_id:
             body["callId"] = ctx.call_id
-        if ctx.turn is not None:
-            body["turn"] = {"utterance": ctx.turn.utterance, "language": ctx.turn.language}
         data = await self._post(kc.ANSWER_PATH, body, deadline)
         try:
             return kc.AnswerResponse.model_validate(data)
