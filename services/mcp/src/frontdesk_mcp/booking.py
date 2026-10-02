@@ -2,8 +2,7 @@
 
 Authority to list or change comes from the trusted caller identity; the dictated patient mobile is
 contact data only. A write needs the caller's confirmation, trusted call and operation context and
-(for a create) a current routing clearance over the trusted turn plus the caller's relayed words, and a
-live-board check that refuses an UNKNOWN date with the callback-only outcome. The outgoing body is
+a live-board check that refuses an UNKNOWN date with the callback-only outcome. The outgoing body is
 frozen and keyed by sha256(tenant|call|action|operation) so a retry replays and any changed payload,
 including a changed target, conflicts at the owner.
 Outcomes keep validated success, definite rejection, state/idempotency conflict and uncertain
@@ -13,7 +12,6 @@ completion distinct. A successful create is NOTED: recorded, never a reserved ti
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
 import logging
 import re
@@ -23,12 +21,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import board_scope, contract, identity, outcomes
-from . import knowledge_contract as kc
 from .cache import DirectoryCache
 from .clock import Clock, Deadline, local_now
 from .config import Settings
 from .context import CallContext
-from .knowledge_client import KnowledgeClient, KnowledgeUnavailable
 from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unavailable, UncertainWrite
 
 logger = logging.getLogger(__name__)
@@ -106,10 +102,9 @@ def _time(value: str | None, field: str, issues: list[str]) -> str | None:
 
 
 class BookingService:
-    def __init__(self, ops: OpsClient, knowledge: KnowledgeClient, settings: Settings, clock: Clock,
+    def __init__(self, ops: OpsClient, settings: Settings, clock: Clock,
                  cache: DirectoryCache | None = None) -> None:
         self.ops = ops
-        self.knowledge = knowledge
         self.settings = settings
         self.clock = clock
         self.cache = cache or DirectoryCache(settings)
@@ -178,30 +173,6 @@ class BookingService:
                                           detail=exc.reason, retryAfterSeconds=exc.retry_after)
         raise exc
 
-    async def _routing(self, ctx: CallContext, deadline: Deadline,
-                       extra_text: list[str] | None = None) -> outcomes.BookingResult | None:
-        """A write waits for a current clearance over the trusted turn plus the caller's relayed words
-        (reason for the visit); nothing else is clearance."""
-        if ctx.turn is None:
-            return outcomes.BookingResult(outcome="ROUTING_UNAVAILABLE", nextStep="TRANSFER_DESK",
-                                          detail=ctx.turn_failure or "TURN_CONTEXT_MISSING")
-        try:
-            decision = await self.knowledge.route(ctx.turn, ctx, deadline, additional_text=extra_text)
-        except KnowledgeUnavailable as exc:
-            detail = {"NOT_CONFIGURED": "ROUTING_NOT_CONFIGURED", "MALFORMED": "ROUTING_MALFORMED",
-                      "UNAVAILABLE": "ROUTING_UNAVAILABLE"}[exc.reason]
-            return outcomes.BookingResult(outcome="ROUTING_UNAVAILABLE", nextStep="TRANSFER_DESK", detail=detail)
-        if decision.decision in kc.CLEARANCE:
-            return None
-        step = {"EMERGENCY_TRANSFER": "TRANSFER_EMERGENCY", "DESK_TRANSFER": "TRANSFER_DESK",
-                "CLARIFY": "ASK_ROUTING_CLARIFICATION"}[decision.decision]
-        speak = outcomes.Speech(text=decision.speak.text, language=decision.speak.language) if decision.speak else None
-        return outcomes.BookingResult(outcome="ROUTING_REQUIRED", nextStep=step, routing=outcomes.Routing(
-            decision=decision.decision, speak=speak,
-            department=decision.department.name if decision.department else None))
-
-    # ------------------------------------------------------------------ actions
-
     async def _list(self, ctx: CallContext, request: BookingRequest) -> outcomes.BookingResult:
         mobile = identity.authorised_mobile(ctx, self.settings)
         if mobile is None:
@@ -244,21 +215,18 @@ class BookingService:
             return gate
         deadline = Deadline(self.settings.write_deadline_seconds)
         date_param = "today" if visit_date == today.isoformat() else visit_date
-        board_task = asyncio.create_task(self.ops.get_availability(
-            deadline, date=date_param, doctor_id=request.doctorId, department=request.departmentId))
-        profile_task = (asyncio.create_task(self._profile(request.doctorId, deadline))
-                        if request.doctorId and request.session else None)
-        blocked = await self._routing(ctx, deadline, [request.reasonVerbatim] if request.reasonVerbatim else None)
-        if blocked:
-            for task in (board_task, profile_task):
-                if task is not None:
-                    task.cancel()
-                    with contextlib.suppress(BaseException):
-                        await task
-            return blocked
-        profile = await profile_task if profile_task is not None else None
+        board_read = self.ops.get_availability(
+            deadline, date=date_param, doctor_id=request.doctorId, department=request.departmentId)
         try:
-            board = await board_task
+            if request.doctorId and request.session:
+                profile, board = await asyncio.gather(self._profile(request.doctorId, deadline), board_read,
+                                                     return_exceptions=True)
+                if isinstance(board, BaseException):
+                    raise board
+                if isinstance(profile, BaseException):
+                    raise profile
+            else:
+                profile, board = None, await board_read
         except (Unavailable, Malformed) as exc:
             retry = exc.retry_after if isinstance(exc, Unavailable) else None
             detail = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else "BOARD_UNAVAILABLE"
@@ -336,9 +304,6 @@ class BookingService:
         if mobile is None:
             return self._identity_unavailable()
         deadline = Deadline(self.settings.write_deadline_seconds)
-        if request.reasonVerbatim:  # the caller's words for the change are routed too; no words, no hop
-            if blocked := await self._routing(ctx, deadline, [request.reasonVerbatim]):
-                return blocked
         if request.action == "RESCHEDULE":
             if blocked := await self._reschedule_gate(mobile, request, new_date, new_time, today, deadline):
                 return blocked

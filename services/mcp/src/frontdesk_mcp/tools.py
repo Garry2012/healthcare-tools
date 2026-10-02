@@ -1,5 +1,5 @@
 """The four tools. Each maps model-facing arguments to one service call; trusted context (call id,
-caller number, turn, operation id, lifecycle timing) is read from the request headers only and is never
+caller number, operation id, lifecycle timing) is read from the request headers only and is never
 a parameter. Business rules live with the owners; the services here compose contracted facts."""
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ class Services:
         kb = KnowledgeClient(settings, transport=knowledge_transport)
         cache = DirectoryCache(settings, monotonic)
         return cls(settings, clock, ops, kb, cache,
-                   availability.AvailabilityService(ops, kb, cache, settings, clock),
-                   booking.BookingService(ops, kb, settings, clock, cache),
+                   availability.AvailabilityService(ops, cache, settings, clock),
+                   booking.BookingService(ops, settings, clock, cache),
                    knowledge.KnowledgeService(kb, settings),
                    summary.SummaryService(ops, settings))
 

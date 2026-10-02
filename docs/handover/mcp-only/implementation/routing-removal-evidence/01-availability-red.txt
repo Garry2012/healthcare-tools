@@ -1,0 +1,767 @@
+FFFFFFFF.FFFFFFFF.                                                       [100%]
+=================================== FAILURES ===================================
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST] _
+
+make_settings = <function make_settings.<locals>.factory at 0x1087b68e0>
+target = {'doctorId': 'doc_garima'}, expected = 'AVAILABILITY'
+step = 'OFFER_APPOINTMENT_REQUEST', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...MENT_REQUEST')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target1-AVAILABILITY-OFFER_APPOINTMENT_REQUEST] _
+
+make_settings = <function make_settings.<locals>.factory at 0x1087b6b60>
+target = {'doctorName': 'garima'}, expected = 'AVAILABILITY'
+step = 'OFFER_APPOINTMENT_REQUEST', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...MENT_REQUEST')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target2-CLARIFICATION_NEEDED-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a1eb7e0>
+target = {'doctorName': 'Dr Sharma'}, expected = 'CLARIFICATION_NEEDED'
+step = 'ASK_WHICH_DOCTOR', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('CLARIFICATI...WHICH_DOCTOR')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'CLARIFICATION_NEEDED'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target3-AVAILABILITY-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a1eb740>
+target = {'departmentId': 'dept_cardio'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_DOCTOR', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...WHICH_DOCTOR')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target4-AVAILABILITY-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a1ebba0>
+target = {'departmentName': 'cardiology'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_DOCTOR', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...WHICH_DOCTOR')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target5-CALLBACK_REQUIRED-ASK_CALLBACK_DETAILS] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a1ebd80>
+target = {'doctorId': 'doc_rohan_shetty'}, expected = 'CALLBACK_REQUIRED'
+step = 'ASK_CALLBACK_DETAILS', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('CALLBACK_RE...BACK_DETAILS')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'CALLBACK_REQUIRED'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target6-NOT_FOUND-ASK_TO_REPHRASE] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a1f89a0>
+target = {'doctorName': 'Nobody'}, expected = 'NOT_FOUND'
+step = 'ASK_TO_REPHRASE', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('NOT_FOUND',..._TO_REPHRASE')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'NOT_FOUND'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target7-INVALID_REQUEST-ASK_TO_REPHRASE] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a1b7920>
+target = {}, expected = 'INVALID_REQUEST', step = 'ASK_TO_REPHRASE'
+configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('INVALID_REQ..._TO_REPHRASE')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'INVALID_REQUEST'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a2ef7e0>
+target = {'doctorId': 'doc_garima'}, expected = 'AVAILABILITY'
+step = 'OFFER_APPOINTMENT_REQUEST', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...MENT_REQUEST')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target1-AVAILABILITY-OFFER_APPOINTMENT_REQUEST] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a17e020>
+target = {'doctorName': 'garima'}, expected = 'AVAILABILITY'
+step = 'OFFER_APPOINTMENT_REQUEST', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...MENT_REQUEST')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target2-CLARIFICATION_NEEDED-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a17f060>
+target = {'doctorName': 'Dr Sharma'}, expected = 'CLARIFICATION_NEEDED'
+step = 'ASK_WHICH_DOCTOR', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('CLARIFICATI...WHICH_DOCTOR')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'CLARIFICATION_NEEDED'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target3-AVAILABILITY-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a17fec0>
+target = {'departmentId': 'dept_cardio'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_DOCTOR', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...WHICH_DOCTOR')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target4-AVAILABILITY-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a17fce0>
+target = {'departmentName': 'cardiology'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_DOCTOR', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('AVAILABILIT...WHICH_DOCTOR')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'AVAILABILITY'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target5-CALLBACK_REQUIRED-ASK_CALLBACK_DETAILS] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a1ea660>
+target = {'doctorId': 'doc_rohan_shetty'}, expected = 'CALLBACK_REQUIRED'
+step = 'ASK_CALLBACK_DETAILS', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('CALLBACK_RE...BACK_DETAILS')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'CALLBACK_REQUIRED'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target6-NOT_FOUND-ASK_TO_REPHRASE] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a1f9080>
+target = {'doctorName': 'Nobody'}, expected = 'NOT_FOUND'
+step = 'ASK_TO_REPHRASE', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('NOT_FOUND',..._TO_REPHRASE')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'NOT_FOUND'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target7-INVALID_REQUEST-ASK_TO_REPHRASE] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10a19fec0>
+target = {}, expected = 'INVALID_REQUEST', step = 'ASK_TO_REPHRASE'
+configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected, step, configured):
+        import httpx
+        from frontdesk_stubs import ops as ops_stub
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('ROUTING_UNA...RANSFER_DESK') == ('INVALID_REQ..._TO_REPHRASE')
+E             
+E             At index 0 diff: 'ROUTING_UNAVAILABLE' != 'INVALID_REQUEST'
+E             Use -v to get more diff
+
+tests/test_availability.py:435: AssertionError
+=============================== warnings summary ===============================
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target1-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target2-CLARIFICATION_NEEDED-ASK_WHICH_DOCTOR]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target3-AVAILABILITY-ASK_WHICH_DOCTOR]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target4-AVAILABILITY-ASK_WHICH_DOCTOR]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target5-CALLBACK_REQUIRED-ASK_CALLBACK_DETAILS]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target6-NOT_FOUND-ASK_TO_REPHRASE]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target7-INVALID_REQUEST-ASK_TO_REPHRASE]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target1-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target2-CLARIFICATION_NEEDED-ASK_WHICH_DOCTOR]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target3-AVAILABILITY-ASK_WHICH_DOCTOR]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target4-AVAILABILITY-ASK_WHICH_DOCTOR]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target5-CALLBACK_REQUIRED-ASK_CALLBACK_DETAILS]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target6-NOT_FOUND-ASK_TO_REPHRASE]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target7-INVALID_REQUEST-ASK_TO_REPHRASE]
+16 failed, 2 passed, 42 deselected, 2 warnings in 1.15s

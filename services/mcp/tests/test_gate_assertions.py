@@ -23,7 +23,7 @@ async def h(make_settings):
 
 
 async def run(h, ctx, **args):
-    service = booking.BookingService(h.ops, h.knowledge, h.settings, h.clock)
+    service = booking.BookingService(h.ops, h.settings, h.clock)
     return await service.manage(ctx, booking.BookingRequest(**args))
 
 
@@ -61,7 +61,7 @@ def test_identity_forwarding_is_not_backend_verification():
     with pytest.raises(gates.GateFailure, match="not refused"):
         gates.assert_identity_forwarded({"outcome": "NOT_FOUND"}, {"outcome": "NOT_FOUND"})
     for bad in ({"outcome": "COULD_NOT_CHECK", "detail": "TRANSPORT"}, {"outcome": "IDENTITY_UNAVAILABLE"},
-                {"outcome": "ROUTING_UNAVAILABLE"}, {}):
+                {"outcome": "UNKNOWN_OUTCOME"}, {}):
         with pytest.raises(gates.GateFailure):
             gates.assert_backend_lookup_succeeded(bad)
     gates.assert_backend_lookup_succeeded({"outcome": "NOT_FOUND"})
