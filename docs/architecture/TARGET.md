@@ -16,9 +16,9 @@ LiveKit voice agent ──MCP + trusted call headers──▶ ContextForge ─�
 | # | Decision | Why |
 |---|---|---|
 | A1 | One deployment per rollout; tenant identity (timezone, calling code, languages) has no default | A wrong default is a wrong hospital |
-| A2 | Four task-level tools; directory, profile, board and routing composed inside one availability call | Fewer model decisions, one round-trip budget |
+| A2 | Four task-level tools; directory, profile and board composed inside one availability call | Fewer model decisions, one round-trip budget |
 | A3 | Trusted context in headers only; principal from the bearer only | Model arguments are untrusted; client-side hiding is not authorization |
-| A4 | Routing clearance from the knowledge service before availability results and before a create; nothing local decides | Shobhit owns clinical routing |
+| A4 | LLM-selected knowledge tool; voice platform owns every-turn emergency detection; no knowledge gates in scheduling | Shobhit owns clinical routing |
 | A5 | UNKNOWN board → callback-only outcome; failed board → COULD_NOT_CHECK | User-fixed policy; failures are never "no availability" |
 | A6 | NOTED, never confirmed; no slot, capacity or arrival computation | The owner contract has no slots |
 | A7 | Frozen write body keyed by sha256(tenant\|call\|action\|target\|operation); UNCERTAIN as a distinct outcome; one same-key retry within the deadline | Lost responses must not mint new intents |

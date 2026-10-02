@@ -12,7 +12,7 @@ the profile contains only vault and secret names.
 The inspected live contract matches pinned paths/schemas; its `servers` entry differs. As checked on
 2 October 2026, the live client authenticates as `jayashree` with `appointments.write`, but still needs
 `calls.write`. Shobhit's URL is not supplied. The existing canary has the placeholder
-`https://knowledge.pending.invalid` and therefore cannot pass routing-dependent journeys.
+an empty knowledge URL: scheduling works; knowledge integration remains pending. No placeholder host is needed.
 
 ## Run tests and benchmarks with the same configuration
 

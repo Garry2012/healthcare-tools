@@ -55,3 +55,7 @@ rollouts/       demo-hospital/rollout.env: tenant identity (timezone, calling co
 deploy/         docker-compose.yml, environments/{mock,live}.env, azure/deploy.sh + smoke.py, contextforge/register.py
 docs/           handover/mcp-only (plan, contracts, implementation evidence), handover/*.md, DECISIONS.md
 ```
+
+Scheduling tools call only Manoj; the LLM explicitly chooses `search_knowledge` for information or symptoms.
+Emergency checks on every caller turn belong to the voice platform. See [LiveKit handover](docs/handover/LIVEKIT.md).
+`make agent-instructions` exports the versioned rules the voice team must load explicitly.
