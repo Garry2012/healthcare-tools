@@ -3,7 +3,7 @@
 ```
 caller ──SIP──▶ LiveKit ──▶ voice agent ──MCP (streamable HTTP)──▶ ContextForge ──▶ frontdesk-mcp ──▶ owner services
                                   │ headers on every MCP request (set in agent code, never by the model):
-                                  │   Authorization: Bearer <gateway token>
+                                  │   Authorization: Bearer <scoped voice-client token issued by ContextForge>
                                   │   X-Call-Id: <stable call id, ≤64 chars [A-Za-z0-9._:-]>
                                   │   X-Caller-Number: <verified caller number, E.164, e.g. +919845012345>
                                   │   X-Caller-Verification: SIP_CALLER_ID | OTP | ...   (what the platform asserts)
@@ -11,10 +11,21 @@ caller ──SIP──▶ LiveKit ──▶ voice agent ──MCP (streamable HT
                                   └─  X-Operation-Id: <stable id per confirmed write intent>
 ```
 
-The agent gets three tools through the gateway bearer: `get_doctor_availability`, `manage_booking`,
+The agent gets three tools through its ContextForge virtual-server URL: `get_doctor_availability`, `manage_booking`,
 `search_knowledge`. Their descriptions and the server instructions come from
 `services/mcp/src/frontdesk_mcp/packs/healthcare.json` and `prompt.py`; the pinned surface is
 `services/mcp/tests/contracts/mcp-tools.snapshot.json` (`frontdesk-mcp schema`).
+
+ContextForge stores a different credential (`mcp-token`) for its upstream connection to our canary.
+Never forward the voice-client Authorization header to MCP. See [ContextForge setup](CONTEXTFORGE.md)
+for the actual hosts, registration, virtual-server creation and token separation. Use a scoped voice
+credential, not an administrator token. The platform's trusted headers must be refreshed per call
+and turn; avoid shared mutable client headers that can mix concurrent callers.
+
+The adapter's 4,000-character turn limit does not guarantee transport acceptance: JSON, UTF-8 and
+base64 increase the header size, while ContextForge documents a 4 KB header-value cap. Validate
+encoded sizes and multilingual delivery through the real gateway; handle rejection explicitly and
+never truncate or treat missing context as routing clearance.
 
 ## What the platform must supply (integration contract)
 
@@ -32,7 +43,9 @@ server enforces the split by bearer.
 ## Call-end lifecycle
 
 When the call ends (including abrupt disconnect), the platform invokes `record_call_summary`
-**once**, with the **lifecycle** bearer (`MCP_LIFECYCLE_BEARER_TOKEN`), `X-Call-Id`,
+**once per logical call**, with retries of the identical payload when necessary. Connect directly to
+`https://mcp-demo-hospital-canary.icytree-6543aaa9.centralindia.azurecontainerapps.io/mcp/`,
+using the **lifecycle** bearer from Key Vault `mcp-lifecycle-token` (`MCP_LIFECYCLE_BEARER_TOKEN`), `X-Call-Id`,
 `X-Call-Started-At` and `X-Call-Duration-Seconds`, and the summary fields it decided from the call
 record: `intent`, `outcome`, `summaryText`, optional `callerName`, `callerMobile` (only when the
 caller gave it), `language`, `doctorId`, `appointmentId`, `transferredTo`. For the UNKNOWN callback

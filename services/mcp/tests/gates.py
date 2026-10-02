@@ -3,13 +3,48 @@ unavailable or refused downstream can never satisfy them (a passing gate means t
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
+
 from frontdesk_mcp import outcomes
+from frontdesk_mcp.clock import Deadline
+from frontdesk_mcp.ops_client import OpsClient, Unavailable
 
 LIST_SUCCESS = {"FOUND", "NOT_FOUND"}
 
 
 class GateFailure(AssertionError):
     pass
+
+
+async def assert_authenticated_write_tenant(ops: OpsClient, expected: str) -> None:
+    """Read identity ONLY from the token fetched by our client from the configured HTTPS owner endpoint.
+
+    This is not JWT authentication of caller-supplied input: TokenCache obtains the token over verified TLS
+    using the owner's machine credentials. We inspect that trusted auth response before any test write.
+    Manoj currently issues JWTs with `tenant`; opaque/malformed/unknown identities fail closed until an
+    authoritative identity endpoint is agreed. The owner must separately designate `expected` as synthetic.
+    """
+    if not expected.strip() or not ops.settings.ops_base_url.startswith("https://"):
+        raise GateFailure("BLOCKED: write tests require an expected tenant and an HTTPS owner endpoint")
+    try:
+        token = await ops.tokens.get(Deadline(5.0, cap=5.0))
+    except Unavailable as exc:
+        raise GateFailure("BLOCKED: could not authenticate the write-test tenant") from exc
+    try:
+        segments = token.split(".")
+        if len(segments) != 3:
+            raise ValueError("not a JWT")
+        claims = json.loads(base64.b64decode(segments[1] + "=" * (-len(segments[1]) % 4),
+                                           altchars=b"-_", validate=True))
+        tenant = claims.get("tenant") if isinstance(claims, dict) else None
+    except (ValueError, binascii.Error, UnicodeDecodeError):
+        tenant = None
+    if not isinstance(tenant, str) or not tenant:
+        raise GateFailure("BLOCKED: auth response has no authoritative tenant identity; no test writes allowed")
+    if tenant != expected:
+        raise GateFailure("BLOCKED: authenticated tenant does not match OPS_E2E_WRITE_TENANT; no writes allowed")
 
 
 def assert_list_succeeded(result: outcomes.BookingResult) -> list[outcomes.AppointmentOut]:

@@ -10,7 +10,16 @@ the adapter; they are not evidence about Manoj's or Shobhit's services.
 | `make test-fast` | ruff; hermetic suites: contract snapshot/overlay/types, settings and production guards, trusted context and identity, operational and knowledge clients, stubs validated against the OpenAPI schemas, the four tools, the assembled server over HTTP (uvicorn) | ~10 s | uv |
 | `make test-e2e` | `python -m frontdesk_stubs` and `frontdesk-mcp serve` as real processes over TCP; the release smoke; a full journey with trusted headers and the lifecycle bearer | ~5 s | uv |
 | `./scripts/test.sh` (= `make test`) | all of the above plus the source/wheel build and, with a Docker daemon, the production image (asserting it contains neither stubs nor dev dependencies) | ~1–2 min | uv (+ Docker) |
-| `eval "$(scripts/env.sh mock\|live)"; export OPS_E2E_CLIENT_ID=… OPS_E2E_CLIENT_SECRET=…; ./scripts/test.sh` | additionally the `external` gates: `tests/test_external.py` (owner API reads; the deterministic create→list→reschedule→cancel→summary journey and the negative UNKNOWN case only with `OPS_E2E_ALLOW_WRITES=1`, `OPS_E2E_WRITE_TENANT`, `OPS_E2E_DOCTOR_ID`, `OPS_E2E_UNKNOWN_DATE` on a designated synthetic live tenant; knowledge with `KNOWLEDGE_E2E_*`) and `tests/test_external_transport.py` (the deployed adapter over real MCP transport with `MCP_E2E_URL`, `MCP_E2E_BEARER`, `MCP_E2E_LIFECYCLE_BEARER`). A missing input fails the test with `BLOCKED: …`; nothing skips silently. Report which layer ran | — | owner test tenant and machine credentials; a deployed adapter |
+| `scripts/run-profile.sh live -- ./scripts/test.sh` (or `mock`) | additionally the `external` gates: `tests/test_external.py` (owner API reads; the deterministic create→list→reschedule→cancel→summary journey and the negative UNKNOWN case only with `OPS_E2E_ALLOW_WRITES=1`, `OPS_E2E_WRITE_TENANT`, `OPS_E2E_DOCTOR_ID`, `OPS_E2E_UNKNOWN_DATE` on a designated synthetic live tenant; knowledge with `KNOWLEDGE_E2E_*`) and `tests/test_external_transport.py` (the deployed adapter over real MCP transport with `MCP_E2E_URL`, `MCP_E2E_BEARER`, `MCP_E2E_LIFECYCLE_BEARER`). A missing input fails the test with `BLOCKED: …`; nothing skips silently. Report which layer ran | — | owner test tenant and machine credentials; a deployed adapter |
+
+The profile launcher reads current owner credentials from the selected Key Vault without printing
+values. Knowledge URL/token aliases are propagated to tests and benchmarks as well as runtime.
+Live writes require the authenticated token's tenant to equal the owner-designated
+`OPS_E2E_WRITE_TENANT`; missing or mismatching identity blocks writes. The owner must independently
+confirm the tenant is synthetic. The positive journey currently creates at 10:00 on
+`OPS_E2E_VISIT_DATE` and reschedules to the following day: prepare known usable boards for both dates.
+The benchmark also defaults to read-only against external services; explicit test writes require
+`BENCH_ALLOW_WRITES=1` and a matching `BENCH_WRITE_TENANT` under the live profile.
 
 Expect `== all suites passed` for the local run. CI runs `./scripts/test.sh` on every pull request and on `main`.
 With a profile loaded the script also runs the `external` gates and exits non-zero whenever any gate is BLOCKED

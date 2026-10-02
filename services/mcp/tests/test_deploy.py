@@ -121,9 +121,9 @@ def test_registration_names_four_tools_and_forwards_every_trusted_header(monkeyp
     monkeypatch.setenv("DOMAIN_PACK", "healthcare")
     body = REGISTER["payload"](SimpleNamespace(name="frontdesk-demo-hospital", visibility="private"))
     assert tuple(REGISTER["TOOLS"]) == TOOL_NAMES
-    assert sorted(body["passthrough_headers"]) == sorted(PASSTHROUGH_HEADERS)
-    assert body["transport"] == "STREAMABLEHTTP" and body["auth_type"] == "bearer"
-    assert REGISTER["redacted"](body)["auth_token"] == "***"
+    assert sorted(body["passthroughHeaders"]) == sorted(PASSTHROUGH_HEADERS)
+    assert body["transport"] == "STREAMABLEHTTP" and body["authType"] == "bearer"
+    assert REGISTER["redacted"](body)["authToken"] == "***"
     assert "gateway-secret" not in str(REGISTER["redacted"](body))
 
 
@@ -246,3 +246,29 @@ def test_the_committed_live_profile_names_manoj_base_and_the_canary_app():
     assert f"OPS_BASE_URL={base}" in live.stdout
     assert "OPS_E2E_MODE=live" in live.stdout and "AZ_MCP_APP=mcp-demo-hospital-canary" in live.stdout
     assert "AZ_RESOURCE_GROUP=healthcare-rg" in live.stdout
+
+
+def test_gateway_refresh_uses_the_deployed_contextforge_api(monkeypatch):
+    """The deployed 1.0.11 API refreshes at /tools/refresh, not /refresh."""
+    served = [{"name": name, "inputSchema": {}} for name in CONVERSATIONAL_TOOLS]
+
+    async def discover(*_):
+        return served
+
+    monkeypatch.setenv("MCP_PUBLIC_URL", "https://adapter.example/mcp/")
+    monkeypatch.setenv("MCP_BEARER_TOKEN", "gateway-secret")
+    monkeypatch.setitem(REGISTER["verify"].__globals__, "served_tools", discover)
+    requests = []
+
+    def gateway(request):
+        requests.append((request.method, request.url.path))
+        if request.url.path.endswith("/tools/refresh"):
+            return httpx.Response(200, json={})
+        tools = [] if len(requests) == 1 else [
+            {"name": f"frontdesk-demo-hospital-{t['name']}", "inputSchema": {}} for t in served]
+        return httpx.Response(200, json={"tools": tools})
+
+    with httpx.Client(base_url="https://gateway.example", transport=httpx.MockTransport(gateway)) as client:
+        REGISTER["verify"](client, "gateway-id", "frontdesk-demo-hospital")
+    assert requests == [("GET", "/v1/tools"), ("POST", "/v1/gateways/gateway-id/tools/refresh"),
+                        ("GET", "/v1/tools")]

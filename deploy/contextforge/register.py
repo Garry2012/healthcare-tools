@@ -11,6 +11,7 @@ the environment.
     CONTEXTFORGE_ADMIN_EMAIL / CONTEXTFORGE_ADMIN_PASSWORD   (POST /v1/auth/login)
     MCP_PUBLIC_URL               URL ContextForge uses to reach the adapter, ending /mcp/
     MCP_BEARER_TOKEN             the GATEWAY bearer the adapter expects (never the lifecycle bearer)
+    CONTEXTFORGE_TEAM_ID         required with --visibility team
     PROVIDER_ID, DOMAIN_PACK     from rollouts/<provider>/rollout.env: one gateway per rollout,
                                  named frontdesk-<provider> (the voice agent's tool prefix)
 
@@ -54,16 +55,16 @@ def payload(args: argparse.Namespace) -> dict:
         "url": env("MCP_PUBLIC_URL"),
         "description": f"Hospital front-desk tools: {', '.join(CONVERSATIONAL)} (call-end: {TOOLS[3]})",
         "transport": "STREAMABLEHTTP",
-        "auth_type": "bearer",
-        "auth_token": env("MCP_BEARER_TOKEN"),
-        "passthrough_headers": PASSTHROUGH,
+        "authType": "bearer",
+        "authToken": env("MCP_BEARER_TOKEN"),
+        "passthroughHeaders": PASSTHROUGH,
         "visibility": args.visibility,
         "tags": ["front-desk", env("DOMAIN_PACK", required=False) or "healthcare", args.name],
     }
 
 
 def redacted(body: dict) -> dict:
-    return {**body, "auth_token": "***" if body.get("auth_token") else ""}
+    return {**body, "authToken": "***" if body.get("authToken") else ""}
 
 
 def rows(body, key: str) -> list[dict]:
@@ -127,11 +128,11 @@ def verify(client: httpx.Client, gateway_id: str, name: str) -> None:
             return
         if attempt == 1:
             print("tool drift detected; asking the gateway to rediscover", file=sys.stderr)
-            refresh = client.post(f"/v1/gateways/{gateway_id}/refresh")
+            refresh = client.post(f"/v1/gateways/{gateway_id}/tools/refresh")
             if refresh.status_code >= 400:  # not every ContextForge version has this endpoint
                 print(f"refresh endpoint unavailable ({refresh.status_code}); toggling the gateway", file=sys.stderr)
-                client.post(f"/v1/gateways/{gateway_id}/toggle", params={"activate": "false"})
-                client.post(f"/v1/gateways/{gateway_id}/toggle", params={"activate": "true"})
+                client.post(f"/v1/gateways/{gateway_id}/state", params={"activate": "false"}).raise_for_status()
+                client.post(f"/v1/gateways/{gateway_id}/state", params={"activate": "true"}).raise_for_status()
     raise SystemExit("gateway tool surface still differs from the adapter:\n  " + "\n  ".join(problems))
 
 
@@ -148,6 +149,8 @@ def main() -> None:
         parser.error("set PROVIDER_ID (or pass --name): each provider is its own gateway")
 
     body = payload(args)
+    if args.visibility == "team":
+        body["teamId"] = env("CONTEXTFORGE_TEAM_ID")
     if args.dry_run:
         print(json.dumps({"method": "POST", "path": "/v1/gateways", "json": redacted(body),
                           "verify": "GET /v1/tools vs adapter tools/list"}, indent=2))
@@ -162,7 +165,9 @@ def main() -> None:
             if str(same.get("url", "")).rstrip("/") != body["url"].rstrip("/"):
                 raise SystemExit(f"gateway {args.name!r} already points at {same.get('url')}; refusing to repoint")
             registered = same.get("passthrough_headers") or same.get("passthroughHeaders") or []
-            changed = same.get("visibility") != args.visibility or sorted(registered) != sorted(PASSTHROUGH)
+            changed = (same.get("visibility") != args.visibility or sorted(registered) != sorted(PASSTHROUGH)
+                       or (body.get("teamId") is not None
+                           and (same.get("teamId") or same.get("team_id")) != body["teamId"]))
             if changed:
                 client.put(f"/v1/gateways/{same['id']}", json=body).raise_for_status()
                 print(f"updated: {args.name} ({same['id']})")
@@ -178,7 +183,7 @@ def main() -> None:
                 raise SystemExit(f"tool-name collision: {', '.join(clash)}")
             created = client.post("/v1/gateways", json=body)
             if created.status_code >= 400:
-                print(created.text, file=sys.stderr)
+                print(f"registration failed (HTTP {created.status_code}); response body suppressed", file=sys.stderr)
             created.raise_for_status()
             result = created.json()
             gateway_id = str(result.get("id"))

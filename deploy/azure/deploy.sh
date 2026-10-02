@@ -153,9 +153,12 @@ supplied() {  # supplied VAR: the owner-provided credential from the environment
 }
 MCP_TOKEN="$(secret mcp-token token)"
 LIFECYCLE_TOKEN="$(secret mcp-lifecycle-token token)"
-secret ops-client-id supplied OPS_CLIENT_ID >/dev/null
-secret ops-client-secret supplied OPS_CLIENT_SECRET >/dev/null
-secret knowledge-token supplied KNOWLEDGE_BEARER_TOKEN >/dev/null
+OPS_ID_SECRET="${OPS_CLIENT_ID_SECRET_NAME:-ops-client-id}"
+OPS_PASSWORD_SECRET="${OPS_CLIENT_SECRET_SECRET_NAME:-ops-client-secret}"
+KNOWLEDGE_SECRET="${KNOWLEDGE_BEARER_TOKEN_SECRET_NAME:-knowledge-token}"
+secret "$OPS_ID_SECRET" supplied OPS_CLIENT_ID >/dev/null
+secret "$OPS_PASSWORD_SECRET" supplied OPS_CLIENT_SECRET >/dev/null
+secret "$KNOWLEDGE_SECRET" supplied KNOWLEDGE_BEARER_TOKEN >/dev/null
 [[ "$MCP_TOKEN" != "$LIFECYCLE_TOKEN" ]] || { echo "gateway and lifecycle bearers must differ" >&2; exit 1; }
 
 require "managed identity $ID_NAME" az identity show -g "$RG" -n "$ID_NAME"
@@ -169,10 +172,10 @@ kv() { echo "$1=keyvaultref:https://$KV.vault.azure.net/secrets/$1,identityref:$
 
 # --- 4. the adapter (reached by the gateway and the call-end lifecycle) --------------------------
 step "container: $APP"
-SECRETS="$(kv mcp-token) $(kv mcp-lifecycle-token) $(kv ops-client-id) $(kv ops-client-secret) $(kv knowledge-token)"
+SECRETS="$(kv mcp-token) $(kv mcp-lifecycle-token) $(kv "$OPS_ID_SECRET") $(kv "$OPS_PASSWORD_SECRET") $(kv "$KNOWLEDGE_SECRET")"
 ENV_VARS=(ENV=production HOST=0.0.0.0 PORT=8100
-  "OPS_BASE_URL=$OPS_BASE_URL" OPS_CLIENT_ID=secretref:ops-client-id OPS_CLIENT_SECRET=secretref:ops-client-secret
-  "KNOWLEDGE_BASE_URL=$KNOWLEDGE_BASE_URL" KNOWLEDGE_BEARER_TOKEN=secretref:knowledge-token
+  "OPS_BASE_URL=$OPS_BASE_URL" "OPS_CLIENT_ID=secretref:$OPS_ID_SECRET" "OPS_CLIENT_SECRET=secretref:$OPS_PASSWORD_SECRET"
+  "KNOWLEDGE_BASE_URL=$KNOWLEDGE_BASE_URL" "KNOWLEDGE_BEARER_TOKEN=secretref:$KNOWLEDGE_SECRET"
   MCP_BEARER_TOKEN=secretref:mcp-token MCP_LIFECYCLE_BEARER_TOKEN=secretref:mcp-lifecycle-token
   "${ROLLOUT_ENV[@]}")
 if exists az containerapp show -g "$RG" -n "$APP"; then

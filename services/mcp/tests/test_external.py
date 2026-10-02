@@ -53,8 +53,8 @@ def mode() -> str:
 def settings() -> Settings:
     return Settings(**ROLLOUT, env="test", ops_base_url=required("OPS_E2E_BASE_URL"),
                     ops_client_id=required("OPS_E2E_CLIENT_ID"), ops_client_secret=required("OPS_E2E_CLIENT_SECRET"),
-                    knowledge_base_url=os.environ.get("KNOWLEDGE_E2E_BASE_URL", "https://knowledge.pending.invalid"),
-                    knowledge_bearer_token=os.environ.get("KNOWLEDGE_E2E_BEARER_TOKEN", "pending"),
+                    knowledge_base_url=os.environ.get("KNOWLEDGE_E2E_BASE_URL") or "https://knowledge.pending.invalid",
+                    knowledge_bearer_token=os.environ.get("KNOWLEDGE_E2E_BEARER_TOKEN") or "pending",
                     mcp_bearer_token="external-gateway", mcp_lifecycle_bearer_token="external-lifecycle",
                     # diagnostic overrides: the laptop → Azure path is far slower than the in-region budget; these are
                     # explicitly allowed here and never become production defaults
@@ -130,23 +130,24 @@ async def test_availability_tool_end_to_end_against_the_service(settings):
 # ------------------------------------------------------------------ writes (designated synthetic tenant only)
 
 
-def _write_gate() -> None:
+async def _write_gate(ops: OpsClient) -> None:
     if os.environ.get("OPS_E2E_ALLOW_WRITES") != "1":
         pytest.fail("BLOCKED: OPS_E2E_ALLOW_WRITES=1 not set; the synthetic write journey was not verified")
-    required("OPS_E2E_WRITE_TENANT")
+    tenant = required("OPS_E2E_WRITE_TENANT")
     if mode() != "live":
         pytest.fail("BLOCKED: the write journey needs a stateful live test tenant; the Prism mock keeps no state")
     required("KNOWLEDGE_E2E_BASE_URL")
+    await gates.assert_authenticated_write_tenant(ops, tenant)
 
 
 async def test_positive_write_journey_create_list_reschedule_cancel_summary(settings):
     """Deterministic positive journey on the designated synthetic tenant; every step must succeed."""
-    _write_gate()
     doctor_id = required("OPS_E2E_DOCTOR_ID")
     visit = os.environ.get("OPS_E2E_VISIT_DATE") or (datetime.now(UTC).astimezone(settings.zone).date()
                                                    + timedelta(days=1)).isoformat()
     ops, kb = OpsClient(settings), KnowledgeClient(settings)
     try:
+        await _write_gate(ops)
         svc = booking.BookingService(ops, kb, settings, SystemClock())
         call_id = f"ext-{uuid.uuid4().hex[:8]}"
 
@@ -185,11 +186,11 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
 
 async def test_negative_unknown_date_is_callback_only_and_writes_nothing(settings):
     """Negative case: a date the board reports UNKNOWN must not produce an appointment on the tenant."""
-    _write_gate()
     doctor_id = required("OPS_E2E_DOCTOR_ID")
     unknown_date = required("OPS_E2E_UNKNOWN_DATE")  # a date the tenant's board reports UNKNOWN for that doctor
     ops, kb = OpsClient(settings), KnowledgeClient(settings)
     try:
+        await _write_gate(ops)
         svc = booking.BookingService(ops, kb, settings, SystemClock())
         call_id = f"ext-{uuid.uuid4().hex[:8]}"
         ctx = context.from_headers(harness.headers(call_id=call_id, operation_id=f"{call_id}-create",

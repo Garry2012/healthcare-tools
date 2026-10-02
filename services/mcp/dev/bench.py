@@ -27,9 +27,11 @@ from fastmcp.client.transports import StreamableHttpTransport
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 from conftest import serving  # noqa: E402
+from gates import GateFailure, assert_authenticated_write_tenant  # noqa: E402
 
 from frontdesk_mcp.clock import FixedClock, SystemClock  # noqa: E402
 from frontdesk_mcp.config import Settings  # noqa: E402
+from frontdesk_mcp.ops_client import OpsClient  # noqa: E402
 from frontdesk_mcp.server import create_app  # noqa: E402
 from frontdesk_stubs import knowledge as knowledge_stub  # noqa: E402
 from frontdesk_stubs import ops as ops_stub  # noqa: E402
@@ -109,9 +111,25 @@ async def measure(base: str, name: str, tool: str, args: dict, expected: set[str
 RECORDING_OWNER_CALLS = False
 
 
-async def run(base: str, samples: int, concurrency: int) -> dict:
+async def selected_scenarios(settings: Settings, *, external: bool) -> dict:
+    """External benchmarking is read-only unless explicitly bound to an owner-designated test tenant."""
+    if not external:
+        return SCENARIOS
+    if os.environ.get("BENCH_ALLOW_WRITES") != "1":
+        return {name: scenario for name, scenario in SCENARIOS.items() if name != "booking_create"}
+    if os.environ.get("OPS_E2E_MODE") != "live":
+        raise GateFailure("BLOCKED: write benchmarking requires OPS_E2E_MODE=live and a synthetic tenant")
+    ops = OpsClient(settings)
+    try:
+        await assert_authenticated_write_tenant(ops, os.environ.get("BENCH_WRITE_TENANT", ""))
+    finally:
+        await ops.aclose()
+    return SCENARIOS
+
+
+async def run(base: str, samples: int, concurrency: int, scenarios: dict) -> dict:
     report: dict = {}
-    for name, (tool, args, expected, paths) in SCENARIOS.items():
+    for name, (tool, args, expected, paths) in scenarios.items():
         sem = asyncio.Semaphore(concurrency)
         results = await asyncio.gather(*(measure(base, name, tool, args, expected, paths, i, sem)
                                          for i in range(samples)))
@@ -150,8 +168,8 @@ async def main() -> None:
         ops_client_id=os.environ.get("BENCH_OPS_CLIENT_ID") or os.environ.get("OPS_E2E_CLIENT_ID", "mcp-dev"),
         ops_client_secret=(os.environ.get("BENCH_OPS_CLIENT_SECRET")
                            or os.environ.get("OPS_E2E_CLIENT_SECRET", "dev-secret")),
-        knowledge_base_url=os.environ.get("BENCH_KNOWLEDGE_BASE_URL", "http://knowledge-stub.local"),
-        knowledge_bearer_token=os.environ.get("BENCH_KNOWLEDGE_BEARER_TOKEN", "dev-knowledge-secret"),
+        knowledge_base_url=os.environ.get("BENCH_KNOWLEDGE_BASE_URL") or "http://knowledge-stub.local",
+        knowledge_bearer_token=os.environ.get("BENCH_KNOWLEDGE_BEARER_TOKEN") or "dev-knowledge-secret",
         mcp_bearer_token="gateway", mcp_lifecycle_bearer_token="lifecycle",
         allow_budget_overrides=True,  # diagnostic: the bench runs from wherever it is started, not from the MCP region
         read_deadline_seconds=float(os.environ.get("BENCH_READ_DEADLINE", "2.0")),
@@ -192,16 +210,19 @@ async def main() -> None:
         ops_transport = Recording(ops_stub.create_app(ops_state, prefix="/api/v1"))
         kb_state = knowledge_stub.KnowledgeStubState(bearer="dev-knowledge-secret")
         knowledge_transport = Recording(knowledge_stub.create_app(kb_state))
+    scenarios = await selected_scenarios(settings, external=bool(real_ops))
     app = create_app(settings, ops_transport=ops_transport, knowledge_transport=knowledge_transport, clock=clock)
     async with serving(app) as base:
         # warm: first call pays token + pool + schema
         async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={"Authorization": "Bearer gateway"})) as c:
             await c.list_tools()
-        report = await run(base, args.samples, args.concurrency)
+        report = await run(base, args.samples, args.concurrency, scenarios)
     print(json.dumps({"measured_at": datetime.now(UTC).isoformat(timespec="seconds"), "boundary": boundary,
                       "samples_per_scenario": args.samples, "concurrency": args.concurrency,
                       "warm": "token warmed at start-up; one tools/list before sampling; a new MCP session per sample",
                       "owner_calls_verified": RECORDING_OWNER_CALLS,
+                      "omitted_scenarios": {name: "external writes disabled" for name in SCENARIOS
+                                            if name not in scenarios},
                       "note": "timings include client-side schema checking and session initialize; "
                               "a sample counts only when the intended outcome and owner call were observed",
                       "scenarios": report}, indent=2))

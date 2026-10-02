@@ -1,51 +1,62 @@
 # Environment profiles (non-secret)
 
-One mechanism supplies the owner-service URLs and the Azure target to deployment, the external
-integration gates and the benchmark, so an endpoint is written down once:
+Edit service addresses once in `deploy/environments/live.env` (or `mock.env`). Deployment, integration
+tests and benchmarks derive their addresses from that profile. Secret values stay in Key Vault;
+the profile contains only vault and secret names.
+
+| Profile | Operational service | Credentials / purpose |
+|---|---|---|
+| `mock` | `https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io` | Public example credentials; static Prism responses, no persistence |
+| `live` | `https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1` | Registered machine client from the shared vault; real-service tests and the canary |
+
+The inspected live contract matches pinned paths/schemas; its `servers` entry differs. As checked on
+2 October 2026, the live client authenticates as `jayashree` with `appointments.write`, but still needs
+`calls.write`. Shobhit's URL is not supplied. The existing canary has the placeholder
+`https://knowledge.pending.invalid` and therefore cannot pass routing-dependent journeys.
+
+## Run tests and benchmarks with the same configuration
+
+From the repository root, the launcher loads the profile and reads current Key Vault credentials into
+the child process environment. It never prints their values or writes them to a file. Azure CLI access
+to the named vault is required for live credentials. The mock operational service receives example
+credentials, never the live client secret.
 
 ```bash
-eval "$(scripts/env.sh mock)"    # or: live
+# Read-only live authentication gates (no appointment or summary writes):
+scripts/run-profile.sh live -- uv run --project services/mcp pytest services/mcp/tests/test_external.py -q -m external -k 'machine_token_is_issued or absent_bearer'
+
+# Benchmark; inspect reported boundaries before treating results as live-service evidence:
+scripts/run-profile.sh live -- uv run --project services/mcp python services/mcp/dev/bench.py
 ```
 
-`scripts/env.sh <profile>` prints `export` lines from `deploy/environments/<profile>.env` (plus the
-derived `OPS_E2E_*`/`BENCH_*` variables) and refuses a profile whose required values are still blank.
-Secret **values** never live here: profiles name Key Vault secrets; local runs read credentials from
-the git-ignored `.env` or the shell.
+`scripts/env.sh live` remains available for non-secret exports. It derives the runtime, `OPS_E2E_*`,
+`KNOWLEDGE_E2E_*` and `BENCH_*` URL aliases. Blank profile values **clear stale shell values**. The
+launcher supplies the corresponding credential aliases from `OPS_CLIENT_ID_SECRET_NAME`,
+`OPS_CLIENT_SECRET_SECRET_NAME` and `KNOWLEDGE_BEARER_TOKEN_SECRET_NAME`. With no knowledge URL,
+external knowledge gates remain blocked; the benchmark explicitly labels its local knowledge stub.
+External benchmarks omit CREATE by default and report that omission. To benchmark real test bookings,
+set `BENCH_ALLOW_WRITES=1`, `OPS_E2E_MODE=live` and `BENCH_WRITE_TENANT` to the owner-designated synthetic
+tenant; the same authenticated-tenant check runs first. This deliberately creates synthetic records;
+coordinate test-data disposition with the owner. Fixture benchmarks keep all scenarios.
 
-| Profile | OPS_BASE_URL | Auth | Purpose |
-|---|---|---|---|
-| `mock` | `https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io` (no `/api/v1`) | any client credentials; `401` without a bearer | integration tests and benchmarks against the public Prism contract mock (static bodies, no state) |
-| `live` | `https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1` (Manoj, 2 October 2026; served OpenAPI 0.3.0-draft equals the pinned contract) | registered machine client (Key Vault `ops-client-id` / `ops-client-secret`, accepted by `/auth/token`; scope `appointments.write` only — `calls.write` still missing) | real-service verification and the canary deployment `mcp-demo-hospital-canary` |
+Selecting a profile does not authorize writes. Live write gates additionally require the explicit
+write opt-in, an owner-designated synthetic tenant and test data. The test checks that the tenant in
+the authenticated owner's token matches `OPS_E2E_WRITE_TENANT` before any writes. Missing, opaque or
+mismatching identity fails closed; matching a name does not establish that data is synthetic.
 
-Both profiles identify the Azure target explicitly: subscription `4e1c081a-9a6a-4e16-9da2-90217c22378b`
-and resource group `healthcare-rg`. `deploy/azure/deploy.sh` requires a profile, forgets any inherited
-`OPS_BASE_URL`/`AZ_*` first, stops if the profile cannot be loaded, refuses a different signed-in
-subscription, never creates or defaults a resource group, and never creates the shared environment,
-registry, vault, log workspace or identity (they must exist). A blank profile value never overwrites a
-value exported in the shell (so `KNOWLEDGE_BASE_URL` comes from the environment until Shobhit's host
-is in the profile; the canary was deployed with the placeholder `https://knowledge.pending.invalid`, which makes
-routing-gated tools answer ROUTING_UNAVAILABLE until his host replaces it). The live profile targets a **canary** app (`mcp-demo-hospital-canary`), because the
-voice platform still calls `mcp-demo-hospital` with the legacy integration.
+## Deploy or change an endpoint
 
-## Ops credentials
-
-Key Vault keeps versions. `deploy.sh` reads the **current** version of `ops-client-id` /
-`ops-client-secret` and never overwrites an existing secret from the environment, so exporting new
-values does nothing. Manoj stored the registered pair on 2 October 2026 (current versions 04:38 UTC); the
-earlier dummy versions are disabled. To rotate, set new versions explicitly (the Container App picks them
-up on its next revision):
+Edit `OPS_BASE_URL` / `KNOWLEDGE_BASE_URL` in the selected profile; keep credentials at its named
+vault references. After required owner inputs are available:
 
 ```bash
-az keyvault secret set --vault-name kv-fd-demo-hospi-0574c1 -n ops-client-id     --file <(printf '%s' "$REGISTERED_ID")
-az keyvault secret set --vault-name kv-fd-demo-hospi-0574c1 -n ops-client-secret --file <(printf '%s' "$REGISTERED_SECRET")
+deploy/azure/deploy.sh rollouts/demo-hospital --profile live --dry-run
+# Execute the same command without --dry-run only as part of the assigned deployment.
 ```
 
-Verify before deploying: `eval "$(scripts/env.sh live)"` with `OPS_E2E_CLIENT_ID`/`OPS_E2E_CLIENT_SECRET`
-exported locally (read them from the vault, never paste them into files) and
-`cd services/mcp && uv run pytest tests -m external -k "token or absent_bearer"`.
-
-## Changing an endpoint
-
-Edit the one line in the profile (`OPS_BASE_URL`, later `KNOWLEDGE_BASE_URL`), run
-`deploy/azure/deploy.sh rollouts/demo-hospital --profile live --dry-run`, then the same without `--dry-run`:
-the canary is updated in place with the new environment. Nothing else in the repository names a host.
+The deployer reads the current vault versions and never overwrites an existing secret from shell
+values. Rotate a credential by creating a new version at its existing vault name, then deploy the new
+revision. The profile controls subscription `4e1c081a-9a6a-4e16-9da2-90217c22378b`, resource group
+`healthcare-rg` and the canary `mcp-demo-hospital-canary`. Deployment requires existing shared
+infrastructure and does not create a resource group, registry, environment, vault or shared identity.
+The legacy `mcp-demo-hospital` remains separate until consumer cutover is verified.

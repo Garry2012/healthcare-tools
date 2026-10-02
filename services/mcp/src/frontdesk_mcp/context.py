@@ -27,7 +27,8 @@ call_id_var: ContextVar[str | None] = ContextVar("mcp_call_id", default=None)
 
 _ID = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 # Agreed size limit for one turn's words. Never truncated: an oversized context is refused (no clearance),
-# because the decisive words may be at the end. Header transport comfortably carries 4,000 characters.
+# because the decisive words may be at the end. Gateway limits apply to encoded bytes, not characters;
+# the voice integration must test UTF-8/base64 expansion and handle oversized headers without truncation.
 UTTERANCE_MAX = 4000
 TurnFailure = Literal["TURN_CONTEXT_MISSING", "TURN_CONTEXT_MALFORMED", "TURN_CONTEXT_OVERSIZED"]
 

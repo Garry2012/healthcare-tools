@@ -44,7 +44,7 @@ if [[ -n "${OPS_E2E_BASE_URL:-}" ]]; then
   echo "== external gates (${OPS_E2E_MODE:-?} profile: ${DEPLOY_PROFILE:-manual}): owner services / deployed adapter"
   uv run pytest tests -q -p no:cacheprovider -m external
 else
-  echo "== external gates not run: no profile loaded (eval \"\$(scripts/env.sh mock|live)\" and export credentials)"
+  echo "== external gates not run: no profile loaded (scripts/run-profile.sh mock|live -- ./scripts/test.sh)"
 fi
 
 echo "== all suites passed"
