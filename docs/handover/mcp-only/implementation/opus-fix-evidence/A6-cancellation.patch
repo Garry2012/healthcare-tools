@@ -1,0 +1,11 @@
+--- a/services/mcp/src/frontdesk_mcp/knowledge_client.py
++++ b/services/mcp/src/frontdesk_mcp/knowledge_client.py
+@@ -51,7 +51,7 @@
+                 response = await self.http.post(path, json=body, timeout=timeout)
+         except DeadlineExceeded as exc:
+             raise KnowledgeUnavailable("UNAVAILABLE") from exc
+-        except (httpx.RequestError, TimeoutError) as exc:
++        except (httpx.RequestError, TimeoutError, asyncio.CancelledError) as exc:
+             logger.warning("knowledge_unreachable", extra={"fields": {"path": path, "error": type(exc).__name__}})
+             raise KnowledgeUnavailable("UNAVAILABLE") from exc
+         if response.status_code in (401, 403):

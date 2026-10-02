@@ -23,7 +23,8 @@ from .conftest import serving
 SNAPSHOT = Path(__file__).parent / "contracts/mcp-tools.snapshot.json"
 FORBIDDEN = {"x-call-id", "xcallid", "callid", "x-caller-number", "xcallernumber", "callernumber", "callernumbers",
              "idempotency-key", "idempotencykey", "operationid", "x-operation-id",
-             "utterance", "tenant", "tenantid", "principal", "startedat", "durationseconds"}
+             "turncontext", "x-turn-context", "utterance", "tenant", "tenantid", "principal",
+             "startedat", "durationseconds"}
 CONVERSATIONAL = ["get_doctor_availability", "manage_booking", "search_knowledge"]
 
 
@@ -317,6 +318,8 @@ def test_agent_instructions_command_exports_versioned_rules_without_credentials(
     for rule in ("NOTED", "CALLBACK_REQUIRED", "UNCERTAIN", "search_knowledge", "emergency"):
         assert rule in result.stdout
     assert "secret" not in result.stdout.casefold() and "Bearer" not in result.stdout
+    artifact = Path(__file__).resolve().parents[3] / "docs/handover/mcp-only/AGENT-INSTRUCTIONS.txt"
+    assert result.stdout.encode() == artifact.read_bytes()
 
 
 def test_instructions_follow_real_knowledge_steps():

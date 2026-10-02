@@ -1,0 +1,46 @@
+PATCH: A6-transcript-argument.patch
+BASE: f3ad09e3526b3a240e0acd1d56c9828e5b3b90c5
+$ uv run --directory services/mcp pytest tests/test_server.py -k without_trusted_fields -q --tb=short
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_conversational_principal_gets_exactly_three_tools_without_trusted_fields _
+tests/test_server.py:66: in test_conversational_principal_gets_exactly_three_tools_without_trusted_fields
+    assert leaked == set(), f"{tool.name} exposes {leaked}"
+E   AssertionError: get_doctor_availability exposes {'x-turn-context'}
+E   assert {'x-turn-context'} == set()
+E
+E     Extra items in the left set:
+E     'x-turn-context'
+E     Use -v to get more diff
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-02T21:13:34.394847+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [83305]", "provider": "demo-hospital"}
+{"ts": "2026-10-02T21:13:34.395354+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-02T21:13:34.395517+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-03.2"}
+{"ts": "2026-10-02T21:13:34.413531+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-02T21:13:34.413806+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:62740 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-02T21:13:34.552325+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-02T21:13:34.654628+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-02T21:13:34.655602+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-02T21:13:34.655658+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [83305]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [83305]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_conversational_principal_gets_exactly_three_tools_without_trusted_fields
+1 failed, 20 deselected, 2 warnings in 1.02s
+EXIT: 1
+SOURCE RESTORED

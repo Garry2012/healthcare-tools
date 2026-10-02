@@ -1,0 +1,10 @@
+--- a/services/mcp/src/frontdesk_mcp/knowledge_client.py
++++ b/services/mcp/src/frontdesk_mcp/knowledge_client.py
+@@ -74,6 +74,7 @@
+         body: dict = {"question": question, "language": language}
+         if ctx.call_id:
+             body["callId"] = ctx.call_id
++        logger.warning(question)
+         data = await self._post(kc.ANSWER_PATH, body, deadline)
+         try:
+             return kc.AnswerResponse.model_validate(data)

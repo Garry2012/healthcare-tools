@@ -65,7 +65,7 @@ async def test_one_exchange_maps_owner_outcome_without_transcript(make_settings,
     ({"outcome": "ROUTE_DEPARTMENT", "department": {"name": " "}}, "MALFORMED"),
     ({"outcome": "ANSWERED", "answer": {"text": " ", "language": "en"}}, "MALFORMED"),
 ])
-async def test_owner_failure_is_not_an_answer(make_settings, failure, detail):
+async def test_owner_failure_is_not_an_answer(make_settings, failure, detail, caplog):
     requests = []
     cancelled = asyncio.Event()
 
@@ -88,10 +88,12 @@ async def test_owner_failure_is_not_an_answer(make_settings, failure, detail):
                               knowledge_transport=httpx.MockTransport(owner))
     try:
         started = asyncio.get_running_loop().time()
-        result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+        result = await services.search.search(
+            CallContext(), KnowledgeRequest(question="private caller question", language="en"))
         assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
         assert result.answer is None and result.routing is None and len(requests) == 1
         assert "private upstream error" not in result.model_dump_json()
+        assert "private caller question" not in caplog.text and "private upstream error" not in caplog.text
         if failure == "timeout":
             assert cancelled.is_set() and asyncio.get_running_loop().time() - started < 0.3
     finally:
@@ -195,4 +197,31 @@ async def test_routing_speech_has_one_authoritative_location(make_settings, outc
         assert result.routing.speak.text == "Owner wording" and result.routing.speak.language == "en"
         assert result.model_dump_json().count("Owner wording") == 1
     finally:
+        await services.aclose()
+
+
+async def test_external_cancellation_propagates_through_knowledge(make_settings):
+    started, stopped = asyncio.Event(), asyncio.Event()
+
+    async def owner(request):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    services = Services.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2,
+                                            request_timeout_seconds=2),
+                              knowledge_transport=httpx.MockTransport(owner))
+    task = asyncio.create_task(services.search.search(
+        CallContext(), KnowledgeRequest(question="private question", language="en")))
+    try:
+        async with asyncio.timeout(1):
+            await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert stopped.is_set()
+    finally:
+        task.cancel()
         await services.aclose()

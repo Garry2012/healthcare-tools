@@ -1,0 +1,10 @@
+--- a/services/mcp/src/frontdesk_mcp/outcomes.py
++++ b/services/mcp/src/frontdesk_mcp/outcomes.py
+@@ -95,6 +95,7 @@
+ 
+ 
+ class AvailabilityResult(_Out):
++    turncontext: str | None = Field(default=None, alias="x-turn-context")
+     outcome: AvailabilityOutcome
+     nextStep: NextStep  # noqa: N815
+     facilityToday: str  # noqa: N815

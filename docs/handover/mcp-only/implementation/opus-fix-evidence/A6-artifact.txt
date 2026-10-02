@@ -1,0 +1,184 @@
+PATCH: A6-artifact.patch
+BASE: f3ad09e3526b3a240e0acd1d56c9828e5b3b90c5
+$ uv run --directory services/mcp pytest tests/test_server.py -k agent_instructions_command -q --tb=short
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_agent_instructions_command_exports_versioned_rules_without_credentials __
+tests/test_server.py:321: in test_agent_instructions_command_exports_versioned_rules_without_credentials
+    assert result.stdout.encode() == artifact.read_bytes()
+E   assert b"Front-desk ...26-10-03.2.\n" == b"STALE Front...26-10-03.2.\n"
+E
+E     At index 0 diff: b'F' != b'S'
+E     Use -v to get more diff
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_agent_instructions_command_exports_versioned_rules_without_credentials
+1 failed, 20 deselected, 2 warnings in 1.63s
+EXIT: 1
+SOURCE RESTORED
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+E501 Line too long (125 > 120)
+  --> tests/test_server.py:26:121
+   |
+24 | FORBIDDEN = {"x-call-id", "xcallid", "callid", "x-caller-number", "xcallernumber", "callernumber", "callernumbers",
+25 |              "idempotency-key", "idempotencykey", "operationid", "x-operation-id",
+26 |              "turncontext", "x-turn-context", "utterance", "tenant", "tenantid", "principal", "startedat", "durationseconds"}
+   |                                                                                                                         ^^^^^
+27 | CONVERSATIONAL = ["get_doctor_availability", "manage_booking", "search_knowledge"]
+   |
+
+Found 1 error.
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 56%]
+.....................F.................................................. [ 75%]
+........................................................................ [ 94%]
+....................                                                     [100%]
+=================================== FAILURES ===================================
+___________ test_external_cancellation_propagates_through_knowledge ____________
+
+make_settings = <function make_settings.<locals>.factory at 0x109cbba60>
+
+    async def test_external_cancellation_propagates_through_knowledge(make_settings):
+        started, stopped = asyncio.Event(), asyncio.Event()
+
+        async def owner(request):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.set()
+
+>       services = Services.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2,
+                                                request_timeout_seconds=2),
+                                  knowledge_transport=httpx.MockTransport(owner))
+
+tests/test_knowledge.py:213:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests/conftest.py:32: in factory
+    return Settings(**{**ROLLOUT, **ENDPOINTS, "env": "test", **overrides})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+__pydantic_self__ = Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', domain_pack='healthca...irectory_page_size=25, directory_cache_max_entries=512, ops_pool_max_connections=20, knowledge_pool_max_connections=10)
+_case_sensitive = None, _nested_model_default_partial_update = None
+_env_prefix = None, _env_prefix_target = None, _env_file = PosixPath('.')
+_env_file_encoding = None, _env_ignore_empty = None
+_env_nested_delimiter = None, _env_nested_max_split = None
+_env_parse_none_str = None, _env_parse_enums = None, _cli_prog_name = None
+_cli_parse_args = None, _cli_settings_source = None, _cli_parse_none_str = None
+_cli_hide_none_type = None, _cli_avoid_json = None, _cli_enforce_required = None
+_cli_use_class_docs_for_groups = None, _cli_show_env_vars = None
+_cli_exit_on_error = None, _cli_prefix = None, _cli_flag_prefix_char = None
+_cli_implicit_flags = None, _cli_ignore_unknown_args = None
+_cli_kebab_case = None, _cli_shortcuts = None, _secrets_dir = None
+_build_sources = None
+values = {'provider_id': 'demo-hospital', 'domain_pack': 'healthcare', 'tenant_supported_languages': 'en,kn,hi', 'tenant_timezone': 'Asia/Kolkata', ...}
+
+    def __init__(
+        __pydantic_self__,
+        _case_sensitive: bool | None = None,
+        _nested_model_default_partial_update: bool | None = None,
+        _env_prefix: str | None = None,
+        _env_prefix_target: EnvPrefixTarget | None = None,
+        _env_file: DotenvType | None = ENV_FILE_SENTINEL,
+        _env_file_encoding: str | None = None,
+        _env_ignore_empty: bool | None = None,
+        _env_nested_delimiter: str | None = None,
+        _env_nested_max_split: int | None = None,
+        _env_parse_none_str: str | None = None,
+        _env_parse_enums: bool | None = None,
+        _cli_prog_name: str | None = None,
+        _cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
+        _cli_settings_source: CliSettingsSource[Any] | None = None,
+        _cli_parse_none_str: str | None = None,
+        _cli_hide_none_type: bool | None = None,
+        _cli_avoid_json: bool | None = None,
+        _cli_enforce_required: bool | None = None,
+        _cli_use_class_docs_for_groups: bool | None = None,
+        _cli_show_env_vars: bool | None = None,
+        _cli_exit_on_error: bool | None = None,
+        _cli_prefix: str | None = None,
+        _cli_flag_prefix_char: str | None = None,
+        _cli_implicit_flags: bool | Literal['dual', 'toggle'] | None = None,
+        _cli_ignore_unknown_args: bool | None = None,
+        _cli_kebab_case: bool | Literal['all', 'no_enums'] | None = None,
+        _cli_shortcuts: Mapping[str, str | list[str]] | None = None,
+        _secrets_dir: PathType | None = None,
+        _build_sources: tuple[tuple[PydanticBaseSettingsSource, ...], dict[str, Any]] | None = None,
+        **values: Any,
+    ) -> None:
+        sources, init_kwargs = (
+            _build_sources
+            if _build_sources is not None
+            else __pydantic_self__.__class__._settings_init_sources(
+                _case_sensitive=_case_sensitive,
+                _nested_model_default_partial_update=_nested_model_default_partial_update,
+                _env_prefix=_env_prefix,
+                _env_prefix_target=_env_prefix_target,
+                _env_file=_env_file,
+                _env_file_encoding=_env_file_encoding,
+                _env_ignore_empty=_env_ignore_empty,
+                _env_nested_delimiter=_env_nested_delimiter,
+                _env_nested_max_split=_env_nested_max_split,
+                _env_parse_none_str=_env_parse_none_str,
+                _env_parse_enums=_env_parse_enums,
+                _cli_prog_name=_cli_prog_name,
+                _cli_parse_args=_cli_parse_args,
+                _cli_settings_source=_cli_settings_source,
+                _cli_parse_none_str=_cli_parse_none_str,
+                _cli_hide_none_type=_cli_hide_none_type,
+                _cli_avoid_json=_cli_avoid_json,
+                _cli_enforce_required=_cli_enforce_required,
+                _cli_use_class_docs_for_groups=_cli_use_class_docs_for_groups,
+                _cli_show_env_vars=_cli_show_env_vars,
+                _cli_exit_on_error=_cli_exit_on_error,
+                _cli_prefix=_cli_prefix,
+                _cli_flag_prefix_char=_cli_flag_prefix_char,
+                _cli_implicit_flags=_cli_implicit_flags,
+                _cli_ignore_unknown_args=_cli_ignore_unknown_args,
+                _cli_kebab_case=_cli_kebab_case,
+                _cli_shortcuts=_cli_shortcuts,
+                _secrets_dir=_secrets_dir,
+                _init_kwargs=values,
+            )
+        )
+
+>       super().__init__(**__pydantic_self__.__class__._settings_build_values(sources, init_kwargs))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+E         Value error, deadlines must satisfy read <= write <= summary [type=value_error, input_value={'env': 'test', 'provider..._deadline_seconds': 0.3}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/value_error
+
+.venv/lib/python3.13/site-packages/pydantic_settings/main.py:262: ValidationError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_external_cancellation_propagates_through_knowledge
+1 failed, 379 passed, 11 deselected, 2 warnings in 24.89s
+make: *** [test-fast] Error 1
+EXIT: 2
