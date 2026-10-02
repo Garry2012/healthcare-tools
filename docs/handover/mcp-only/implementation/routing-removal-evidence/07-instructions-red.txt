@@ -1,0 +1,33 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________________ test_tool_schemas_match_the_pinned_snapshot __________________
+tests/test_server.py:96: in test_tool_schemas_match_the_pinned_snapshot
+    assert document == json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+E   assert {'schemaVersi...False}, ...}]} == {'instruction...: True, ...}]}
+E     
+E     Omitting 2 identical items, use -vv to show
+E     Differing items:
+E     {'tools': [{'name': 'get_doctor_availability', 'lifecycle': False, 'description': "Check a doctor's or a department's ...annotations': {'readOnlyHint': False, 'destructiveHint': False, 'idempotentHint': True, 'openWorldHint': False}, ...}]} != {'tools': [{'annotations': {'idempotentHint': True, 'openWorldHint': False, 'readOnlyHint': True}, 'description': "Che...hen applicable.'}, ...}, 'required': ['intent', 'outcome', 'summaryText'], 'type': 'object'}, 'lifecycle': True, ...}]}
+E     Use -v to get more diff
+_ test_agent_instructions_command_exports_versioned_rules_without_credentials __
+tests/test_server.py:315: in test_agent_instructions_command_exports_versioned_rules_without_credentials
+    assert result.returncode == 0, result.stderr
+E   AssertionError: make: *** No rule to make target `agent-instructions'.  Stop.
+E     
+E   assert 2 == 0
+E    +  where 2 = CompletedProcess(args=['make', 'agent-instructions'], returncode=2, stdout='', stderr="make: *** No rule to make target `agent-instructions'.  Stop.\n").returncode
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_tool_schemas_match_the_pinned_snapshot - as...
+FAILED tests/test_server.py::test_agent_instructions_command_exports_versioned_rules_without_credentials
+2 failed, 16 deselected, 2 warnings in 1.05s

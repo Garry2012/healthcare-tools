@@ -22,7 +22,7 @@ from .conftest import serving
 
 SNAPSHOT = Path(__file__).parent / "contracts/mcp-tools.snapshot.json"
 FORBIDDEN = {"x-call-id", "xcallid", "callid", "x-caller-number", "xcallernumber", "callernumber", "callernumbers",
-             "idempotency-key", "idempotencykey", "operationid", "x-operation-id", "turncontext", "x-turn-context",
+             "idempotency-key", "idempotencykey", "operationid", "x-operation-id",
              "utterance", "tenant", "tenantid", "principal", "startedat", "durationseconds"}
 CONVERSATIONAL = ["get_doctor_availability", "manage_booking", "search_knowledge"]
 
@@ -100,7 +100,7 @@ def test_tool_schemas_match_the_pinned_snapshot(make_settings):
 
 async def test_the_whole_journey_over_http(served):
     base, h = served
-    async with client(base, operation_id="op-1", turn="is Dr Garima in tomorrow") as c:
+    async with client(base, operation_id="op-1") as c:
         found = await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "2026-10-02"})
         assert found.structured_content["outcome"] == "CALLBACK_REQUIRED"  # tomorrow's board is UNKNOWN in the fixture
         today = (await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "today"})
@@ -137,7 +137,7 @@ async def test_the_whole_journey_over_http(served):
         cancelled = (await c.call_tool("manage_booking", {"action": "CANCEL", "appointmentId": appointment_id,
                                                           "callerConfirmed": True})).structured_content
         assert cancelled["outcome"] == "CANCELLED"
-    async with client(base, token="lifecycle-token", turn=None, started_at="2026-10-01T09:58:00+05:30",
+    async with client(base, token="lifecycle-token", started_at="2026-10-01T09:58:00+05:30",
                       duration="240") as c:
         stored = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_CANCELLED", "appointmentId": appointment_id,
@@ -241,7 +241,7 @@ def test_the_pack_describes_exactly_the_four_tools_and_no_core_rule():
 def test_instructions_cover_the_fixed_policies(make_settings):
     text = prompt.instructions(packs.load("healthcare"), ("en", "kn", "hi"), "Demo Hospital")
     for phrase in ("call you back", "CALLBACK_REQUIRED", "NOTED", "never say", "UNCERTAIN", "IDENTITY_UNAVAILABLE",
-                   "ROUTING_UNAVAILABLE", "explicit date", "(en, kn, hi)", "Demo Hospital"):
+                   "COULD_NOT_CHECK", "explicit date", "(en, kn, hi)", "Demo Hospital"):
         assert phrase in text, phrase
     assert "slotId" not in text and "never say 'confirmed'" in text
 
@@ -290,3 +290,30 @@ def test_an_external_suite_exists_for_owner_designated_services():
     assert "test_external.py" in out.stdout
     collected = re.search(r"(\d+)(?:/\d+)? tests? collected", out.stdout)
     assert collected and int(collected.group(1)) >= 3, out.stdout[-300:]
+
+
+async def test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failure(make_settings, capsys):
+    import runpy
+
+    smoke = runpy.run_path(str(Path(__file__).resolve().parents[3] / "deploy/azure/smoke.py"))
+    settings = make_settings(knowledge_base_url="", knowledge_bearer_token="")
+    h = harness.build(settings)
+    app = create_app(settings, ops_transport=h.ops.http._transport, clock=h.clock)
+    try:
+        async with serving(app) as base:
+            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "lifecycle-token", "en", "General Medicine")
+        assert "knowledge: NOT_CONFIGURED" in capsys.readouterr().out
+    finally:
+        await h.aclose()
+
+
+def test_agent_instructions_command_exports_versioned_rules_without_credentials():
+    import subprocess
+
+    result = subprocess.run(["make", "agent-instructions"], cwd=Path(__file__).resolve().parents[3],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert f"Tool schema {prompt.SCHEMA_VERSION}." in result.stdout
+    for rule in ("NOTED", "CALLBACK_REQUIRED", "UNCERTAIN", "search_knowledge", "emergency"):
+        assert rule in result.stdout
+    assert "secret" not in result.stdout.casefold() and "Bearer" not in result.stdout

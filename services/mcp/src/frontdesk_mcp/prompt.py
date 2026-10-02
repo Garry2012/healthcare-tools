@@ -1,4 +1,5 @@
-"""The server instructions the LLM reads: core rules + the domain's words + the rollout's values.
+"""Instructions for MCP clients and explicit voice-agent injection: core rules,
+domain words and rollout values.
 
 Core rules hold for every rollout: explicit dates, board-qualified hours, NOTED not confirmed, the
 UNKNOWN callback policy, confirmed writes and uncertain results, identity and routing failures, verbatim
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 from .packs import Pack
 
-SCHEMA_VERSION = "2026-10-01.4"
+SCHEMA_VERSION = "2026-10-02.1"
 
 CORE_RULES = (
     "Dates: pass date='today' or an explicit date YYYY-MM-DD the caller confirmed; every result carries "
@@ -30,11 +31,13 @@ CORE_RULES = (
     "IDENTITY_UNAVAILABLE: the caller's number could not be verified for looking up or changing appointments; do "
     "not ask for another number to use instead, offer the desk.",
     "ROUTING_REQUIRED: follow nextStep (TRANSFER_EMERGENCY at once, TRANSFER_DESK, or ask routing.speak) and speak "
-    "routing.speak.text verbatim when present. ROUTING_UNAVAILABLE, COULD_NOT_CHECK or COULD_NOT_RECORD: say the "
+    "routing.speak.text verbatim when present. CHECK_AVAILABILITY: call get_doctor_availability with the returned "
+    "department. COULD_NOT_CHECK or COULD_NOT_RECORD: say the "
     "system could not check right now and offer the desk; never say that no one is available.",
     "CLARIFICATION_NEEDED: offer the returned choices (complete=false means there are more) and ask; never choose "
     "for the caller. NOT_FOUND: ask the caller to repeat the name or department once, then offer the desk.",
-    "For general questions (hours, parking, reports, payment, directions) call search_knowledge and speak "
+    "For hospital questions or symptoms without a chosen department, call search_knowledge with the caller's "
+    "own words, untranslated and unsummarised; never truncate the question. Speak "
     "answer.text exactly as given; add nothing.",
 )
 

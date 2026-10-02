@@ -9,7 +9,7 @@ import json
 import sys
 from typing import Any
 
-from . import prompt, tools
+from . import packs, prompt, tools
 from .access import LIFECYCLE_TAG
 from .config import Settings, get_settings
 
@@ -42,9 +42,12 @@ def schema_document(settings: Settings) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="frontdesk-mcp")
-    parser.add_argument("command", choices=["serve", "schema"])
+    parser.add_argument("command", choices=["serve", "schema", "agent-instructions"])
     args = parser.parse_args()
     settings = get_settings()
+    if args.command == "agent-instructions":
+        print(prompt.instructions(packs.load(settings.domain_pack), settings.languages, settings.tenant_display_name))
+        return
     if args.command == "schema":
         json.dump(schema_document(settings), sys.stdout, indent=2, ensure_ascii=False, sort_keys=True)
         sys.stdout.write("\n")
