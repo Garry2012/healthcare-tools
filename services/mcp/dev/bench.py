@@ -37,21 +37,28 @@ from frontdesk_stubs import ops as ops_stub  # noqa: E402
 # name → (tool, arguments, outcomes that count as the intended success, owner paths the call must have hit:
 #          operational paths and the knowledge routing path; every in-call tool must route first)
 ROUTE = "/v1/route"
+# Directory values the scenarios need. Defaults are the development fixtures; a real host needs its own
+# (BENCH_DOCTOR_ID: a doctor id; BENCH_DOCTOR_NAME: a name matching exactly one doctor; BENCH_AMBIGUOUS_NAME:
+# a name matching several; BENCH_DEPARTMENT: a department name present in the tenant).
+DOCTOR_ID = os.environ.get("BENCH_DOCTOR_ID", "doc_garima")
+DOCTOR_NAME = os.environ.get("BENCH_DOCTOR_NAME", "garima")
+AMBIGUOUS_NAME = os.environ.get("BENCH_AMBIGUOUS_NAME", "sharma")
+DEPARTMENT = os.environ.get("BENCH_DEPARTMENT", "cardiology")
 SCENARIOS = {
-    "availability_known_doctor": ("get_doctor_availability", {"doctorId": "doc_garima", "date": "today"},
+    "availability_known_doctor": ("get_doctor_availability", {"doctorId": DOCTOR_ID, "date": "today"},
                                   {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("/availability", ROUTE)),
-    "availability_name_search": ("get_doctor_availability", {"doctorName": "garima", "date": "today"},
+    "availability_name_search": ("get_doctor_availability", {"doctorName": DOCTOR_NAME, "date": "today"},
                                  {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("/doctors", "/availability", ROUTE)),
-    "availability_ambiguous": ("get_doctor_availability", {"doctorName": "sharma", "date": "today"},
+    "availability_ambiguous": ("get_doctor_availability", {"doctorName": AMBIGUOUS_NAME, "date": "today"},
                                {"CLARIFICATION_NEEDED"}, ("/doctors", ROUTE)),
     # departments are cached across samples: the board is the per-call owner read that must be observed
-    "availability_department": ("get_doctor_availability", {"departmentName": "cardiology", "date": "today"},
+    "availability_department": ("get_doctor_availability", {"departmentName": DEPARTMENT, "date": "today"},
                                 {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("/availability", ROUTE)),
     "knowledge_answer": ("search_knowledge", {"question": "parking", "language": "en"}, {"ANSWERED", "NO_ANSWER"},
                          ("/v1/answer", ROUTE)),
     "booking_list": ("manage_booking", {"action": "LIST"}, {"FOUND", "NOT_FOUND"}, ("/appointments",)),
     "booking_create": ("manage_booking", {"action": "CREATE", "patientName": "Bench Patient",
-                                          "patientMobile": "9000000101", "doctorId": "doc_garima", "visitDate": "today",
+                                          "patientMobile": "9000000101", "doctorId": DOCTOR_ID, "visitDate": "today",
                                           "preferredTime": "09:30", "callerConfirmed": True},
                        {"NOTED", "CALLBACK_REQUIRED"}, ("/availability", ROUTE)),
 }

@@ -152,7 +152,7 @@ def test_schema_drift_between_server_and_gateway_is_detected():
 
 
 def _profile_dir(tmp_path, ops_base_url: str) -> str:
-    """A test-only profile: the committed live profile is blank until Manoj supplies the base URL."""
+    """A test-only profile, so the dry runs never depend on the committed live profile's values."""
     (tmp_path / "test.env").write_text(f"""PROFILE=test
 OPS_BASE_URL={ops_base_url}
 OPS_E2E_MODE=live
@@ -215,19 +215,34 @@ def test_deployment_targets_only_the_profiles_resource_group_and_never_creates_o
     assert without_profile.returncode != 0 and "--profile" in without_profile.stderr
 
 
-def test_the_live_profile_is_refused_while_its_base_url_is_blank_and_mock_cannot_deploy(tmp_path):
+def test_a_profile_with_a_blank_base_url_is_refused_and_mock_cannot_deploy(tmp_path):
     import os
     import subprocess
 
     env_sh = DEPLOY.parent / "scripts/env.sh"
-    live = subprocess.run([str(env_sh), "live"], capture_output=True, text=True, check=False)
+    blank_dir = tmp_path / "blank"
+    blank_dir.mkdir()
+    (blank_dir / "live.env").write_text("PROFILE=live\nOPS_BASE_URL=\nAZ_RESOURCE_GROUP=healthcare-rg\n")
+    blank_env = {**os.environ, "DEPLOY_PROFILE_DIR": str(blank_dir)}
+    live = subprocess.run([str(env_sh), "live"], capture_output=True, text=True, check=False, env=blank_env)
     assert live.returncode == 3 and live.stdout == "" and "awaiting" in live.stderr
     aborted = subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"),
                               "--profile", "live", "--dry-run"], capture_output=True, text=True, check=False,
-                             cwd=DEPLOY.parent, env={**os.environ, "OPS_BASE_URL": "https://inherited.example/api/v1"})
+                             cwd=DEPLOY.parent, env={**blank_env, "OPS_BASE_URL": "https://inherited.example/api/v1"})
     assert aborted.returncode != 0 and "az containerapp" not in aborted.stderr  # eval must not swallow the refusal
     mock = subprocess.run([str(env_sh), "mock"], capture_output=True, text=True, check=False)
     assert mock.returncode == 0 and "healthcare-contract-mock" in mock.stdout and "OPS_E2E_MODE=mock" in mock.stdout
     assert "AZ_RESOURCE_GROUP=healthcare-rg" in mock.stdout and "4e1c081a-9a6a-4e16-9da2-90217c22378b" in mock.stdout
     refused = _dry_run(tmp_path, ops_base_url="https://healthcare-contract-mock.example")
     assert refused.returncode != 0 and "stub/mock" in refused.stderr
+
+
+def test_the_committed_live_profile_names_manoj_base_and_the_canary_app():
+    import subprocess
+
+    live = subprocess.run([str(DEPLOY.parent / "scripts/env.sh"), "live"], capture_output=True, text=True, check=False)
+    assert live.returncode == 0
+    base = "https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1"
+    assert f"OPS_BASE_URL={base}" in live.stdout
+    assert "OPS_E2E_MODE=live" in live.stdout and "AZ_MCP_APP=mcp-demo-hospital-canary" in live.stdout
+    assert "AZ_RESOURCE_GROUP=healthcare-rg" in live.stdout
