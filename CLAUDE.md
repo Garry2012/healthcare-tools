@@ -13,7 +13,7 @@ Implementation evidence: `docs/handover/mcp-only/implementation/`.
 - Process e2e only: `make test-e2e`; walk the tools: `make demo`; latency: `make bench`
 - Tool surface: `make schema` must equal `services/mcp/tests/contracts/mcp-tools.snapshot.json`; bump `prompt.SCHEMA_VERSION` and regenerate when it changes
 - Local stack against the development stubs: `cp .env.example .env && make up`
-- Environments: `eval "$(scripts/env.sh mock|live)"` is the one place an owner endpoint is written (`deploy/environments/*.env`, non-secret); it feeds deploy, the external gates and the bench. `live` is blank until Manoj supplies the full base URL (status: awaiting live integration)
+- Environments: `eval "$(scripts/env.sh mock|live)"` is the one place an owner endpoint is written (`deploy/environments/*.env`, non-secret); it feeds deploy, the external gates and the bench. `live` names Manoj's base URL and the canary app `mcp-demo-hospital-canary` (deployed 2 October 2026; knowledge host still a placeholder)
 - Deploy: `deploy/azure/deploy.sh rollouts/<id> --profile live [--dry-run]` (profile names subscription `4e1c…` and `healthcare-rg`; the script never creates or defaults a resource group; `mock` can only dry-run)
 
 ## Rules the code will not tell you

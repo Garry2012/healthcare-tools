@@ -8,11 +8,11 @@ whole procedure as one re-runnable command; this page explains what it does and 
 
 ```bash
 R=rollouts/demo-hospital
-# 1. fill deploy/environments/live.env OPS_BASE_URL with the full base URL Manoj supplies (expected …/api/v1);
-#    until then scripts/env.sh refuses the profile: status "awaiting live integration"
+# deploy/environments/live.env carries Manoj's base URL (…/api/v1) and targets the canary app; change endpoints there only
+export KNOWLEDGE_BASE_URL=https://...                   # Shobhit's host until it is in the profile (2 Oct 2026: placeholder in use)
 export KNOWLEDGE_BEARER_TOKEN=...                       # first run only: stored in Key Vault (ops creds: see below)
 deploy/azure/deploy.sh $R --profile live --dry-run      # prints every az call; no login needed
-deploy/azure/deploy.sh $R --profile live                # upgrades mcp-demo-hospital in healthcare-rg, runs the smoke
+deploy/azure/deploy.sh $R --profile live                # creates/updates mcp-demo-hospital-canary in healthcare-rg, runs the smoke
 ```
 
 The profile (`deploy/environments/live.env`, non-secret, committed) names the subscription
@@ -22,10 +22,7 @@ creates or defaults a resource group. Production configuration refuses `http://`
 so `--profile mock` can only dry-run. The script validates the adapter configuration offline first
 (`frontdesk-mcp schema` under `ENV=production`).
 
-**Ops credentials:** `ops-client-id`/`ops-client-secret` currently hold generated dummy values (tagged
-`validation=not-accepted-by-live-api`). `deploy.sh` reads the current vault version and never overwrites an
-existing secret from the environment; replace them explicitly once Manoj registers the client
-(`deploy/environments/README.md`).
+**Ops credentials:** `ops-client-id`/`ops-client-secret` hold the registered pair Manoj stored on 2 October 2026 (accepted by `/auth/token`; token scope `appointments.write` only, so `record_call_summary` returns COULD_NOT_RECORD until `calls.write` is granted). `deploy.sh` reads the current vault version and never overwrites an existing secret from the environment; rotate explicitly (`deploy/environments/README.md`). `knowledge-token` is a tagged placeholder until Shobhit's host exists.
 
 ## What it creates or reuses
 

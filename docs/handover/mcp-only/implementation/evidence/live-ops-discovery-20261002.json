@@ -1,0 +1,28 @@
+{
+ "checked_at": "2026-10-02T05:10Z",
+ "live_base": "https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1",
+ "openapi_version": "0.3.0-draft",
+ "openapi_matches_pinned_contract": "paths and schemas identical to docs/handover/mcp-only/contracts/manoj-openapi-20260930.yaml (sha256 b8f28271…); only the servers list differs",
+ "token_endpoint": "POST /auth/token application/x-www-form-urlencoded grant_type=client_credentials -> 200, expires_in 3600",
+ "machine_token_claims": {
+  "typ": "machine",
+  "tenant": "jayashree",
+  "scopes": [
+   "appointments.write"
+  ]
+ },
+ "scopes_missing_for_mcp": [
+  "calls.write (record_call_summary -> 403 -> COULD_NOT_RECORD/AUTH)"
+ ],
+ "departments": 19,
+ "doctors": 25,
+ "department_filter": "department id only (dept_general_medicine); names return an empty list -- the adapter already resolves name -> id through /departments",
+ "boards": "every doctor UNKNOWN for 2026-10-01..2026-10-09 (whole tenant, checked per department id); no DESK/DOCTOR_MESSAGE entries exist yet",
+ "availability_write_scope": "not granted to the MCP client (correct: boards are staff writes)",
+ "synthetic_test_values": {
+  "doctor_id": "30b5941b-1e7a-43cb-b994-eb8b47729736",
+  "doctor": "Dr. V Shreyas Kumar (General Medicine)",
+  "ambiguous_name": "Ashok (2 doctors)",
+  "department": "General Medicine"
+ }
+}

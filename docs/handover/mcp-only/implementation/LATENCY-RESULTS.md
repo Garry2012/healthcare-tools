@@ -1,13 +1,12 @@
-# Latency results (1 October 2026)
+# Latency results (1–2 October 2026)
 
-**Status: no real voice-path or live owner-service measurement exists yet.** The tool round trip was
-measured against the in-process development stubs (labelled *stub*) and against Manoj's public *contract
-mock* in Central India from a developer laptop outside Azure (labelled *mock*). Manoj's live backend
-(`healthcare-api`) is deployed but rejects unregistered clients, so no authenticated live timing was
-possible. Stub and mock timings are **not production timings**; they prove the adapter's own overhead and
-the composition shape. Caller-audio latency (end of speech → first useful audible result) was not
-measured: no voice-platform access. Updated after the architect's review: AR-06 (budget-derived
-deadlines) and AR-07 (benchmark counts only verified successful owner operations).
+**Status (2 October 2026): the live operational API has been measured from a developer laptop (§E), not yet from the
+MCP region; no voice-path measurement exists.** Earlier sections: in-process stubs (*stub*) and Manoj's public contract
+mock (*mock*) from the same laptop. Stub, mock and laptop→live timings are **not production timings**: they prove the
+adapter's overhead, the composition shape and the live service's behaviour, while the hop from the laptop to Central India
+dominates every number. Caller-audio latency (end of speech → first useful audible result) was not measured: no
+voice-platform access. The canary adapter deployed in the region logs no per-call durations, so the only in-region fact is
+that its LIST through the deployment completed inside the 0.30 s in-call deadline (otherwise COULD_NOT_CHECK).
 
 ## Method and commands
 
@@ -136,11 +135,35 @@ Fast failures are reported separately from successful-response percentiles in ev
 
 Stub timings only; the per-exchange caps now differ by path (in-call 0.30 s; summaries 8 s; token refresh 5 s).
 
+### E. Real network: laptop → Manoj's LIVE operational API (Central India), registered client, knowledge from the in-process stub
+
+2 October 2026, `evidence/bench-live-ops-laptop-20261002.json`. `eval "$(scripts/env.sh live)"`, credentials read from Key Vault
+into `BENCH_OPS_CLIENT_ID`/`BENCH_OPS_CLIENT_SECRET`, `BENCH_DOCTOR_ID=30b5941b-…` (Dr. V Shreyas Kumar), `BENCH_DOCTOR_NAME=Shreyas`,
+`BENCH_AMBIGUOUS_NAME=Ashok`, `BENCH_DEPARTMENT="General Medicine"`; 20 samples, concurrency 1, warm token, a new MCP session per sample.
+Every sample reached its intended outcome (boards are UNKNOWN on the tenant, so availability and CREATE end in CALLBACK_REQUIRED
+after the owner calls); the CREATE scenario wrote nothing.
+
+| Scenario | ok | first call | p50 | p95 | p99 | over 300 ms |
+|---|---:|---:|---:|---:|---:|---:|
+| availability, known doctorId (profile ∥ board ∥ routing: one network stage) | 20/20 | 779 ms | 340 | 388 | 779 | 20 |
+| availability, name search (search; then profile ∥ board: two stages) | 20/20 | 720 | 649 | 720 | 747 | 20 |
+| availability, ambiguous name (search → clarification) | 20/20 | — | 336 | 413 | — | 20 |
+| availability, department (departments cached; doctors ∥ board) | 20/20 | — | 336 | 370 | — | 20 |
+| search_knowledge (local stub) | 20/20 | — | 14 | 18 | — | 0 |
+| manage_booking LIST (one GET) | 20/20 | 389 | 331 | 377 | 389 | 20 |
+| manage_booking CREATE (board ∥ profile ∥ routing → CALLBACK_REQUIRED) | 20/20 | 346 | 333 | 358 | 422 | 20 |
+
+Reading: identical shape to the mock run (§B): one owner stage ≈ one laptop RTT (≈ 330 ms), two stages ≈ 650 ms, and the live
+service answers as fast as the static mock did, so Manoj's processing time is small against this hop. From the laptop every
+owner-touching scenario exceeds the 0.30 s in-call share, as predicted; the same path from the region costs the in-region RTT
+instead. The four-tool walk over the MCP transport against the same host (`evidence/tool-walk-live-ops-20261002.json`) shows the
+same 330–400 ms per stage, and the canary in Central India completed a LIST within its 0.30 s deadline.
+
 ## Comparison with the targets
 
 | Target (TARGET-STATE.md) | Measured | Verdict |
 |---|---|---|
-| Tool round trip ≈ 250 ms (70 ms gateway/MCP/transport + 180 ms downstream) | Adapter overhead ≈ 40 ms incl. session init (stubs); real in-region downstream not measured | **Not demonstrated.** Adapter share is inside its 70 ms allocation; downstream share unknown |
+| Tool round trip ≈ 250 ms (70 ms gateway/MCP/transport + 180 ms downstream) | Adapter overhead ≈ 40 ms incl. session init (stubs); live downstream measured only from the laptop (one stage ≈ 330 ms, dominated by the hop); in-region: LIST on the canary inside 0.30 s, no finer figure | **Not demonstrated** in region: the adapter share is inside its 70 ms allocation; the downstream share needs a Central India run |
 | Caller response p95 ≤ 1,000 ms | Not measured (no voice platform access) | **Not demonstrated** |
 
 ## Bottlenecks and what decides the budget
@@ -161,9 +184,9 @@ Stub timings only; the per-exchange caps now differ by path (in-call 0.30 s; sum
 
 ## What would make this real
 
-- Machine credentials for `healthcare-api` (Manoj) and Shobhit's host: rerun
-  `BENCH_OPS_BASE_URL=https://healthcare-api…/api/v1 BENCH_KNOWLEDGE_BASE_URL=… uv run python dev/bench.py`
-  from an Azure Container App or VM in Central India (not a laptop) and record cold/warm, c=1/5/20.
+- Shobhit's host, then rerun `eval "$(scripts/env.sh live)"; BENCH_KNOWLEDGE_BASE_URL=… BENCH_DOCTOR_ID=… uv run python dev/bench.py`
+  from an Azure Container App or VM in Central India (not a laptop) and record cold/warm, c=1/5/20. Board entries on the
+  tenant are needed for the AVAILABILITY/NOTED paths (today every scenario ends in the UNKNOWN callback branch).
 - A LiveKit test call with the platform forwarding the trusted headers; measure end-of-speech →
   first useful audio at the caller with LiveKit's turn timings, EN/KN/HI, including a clarification
   turn and a UNKNOWN-callback turn; count timeouts and fillers separately.
