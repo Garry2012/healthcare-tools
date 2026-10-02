@@ -1,0 +1,36 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failure ____
+tests/test_server.py:304: in test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failure
+    await smoke["smoke"](f"{base}/mcp/", "mcp-token", "lifecycle-token", "en", "General Medicine")
+../../deploy/azure/smoke.py:87: in smoke
+    await check_tools(conversational, language, department)
+../../deploy/azure/smoke.py:62: in check_tools
+    raise RuntimeError(f"{name} failed its read-only smoke check")
+E   RuntimeError: search_knowledge failed its read-only smoke check
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-02T12:50:55.616660+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [90326]", "provider": "demo-hospital"}
+{"ts": "2026-10-02T12:50:55.616933+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-02T12:50:55.617057+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-01.4"}
+{"ts": "2026-10-02T12:50:55.631111+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-02T12:50:55.631343+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:59037 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+{"ts": "2026-10-02T12:50:55.689341+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "deploy-smoke-448824cc359b475b9465ad21e60dff80", "tool": "get_doctor_availability", "outcome": "AVAILABILITY", "nextStep": "ASK_WHICH_DOCTOR"}
+{"ts": "2026-10-02T12:50:55.747938+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "deploy-smoke-448824cc359b475b9465ad21e60dff80", "tool": "search_knowledge", "outcome": "COULD_NOT_CHECK", "nextStep": "SAY_COULD_NOT_CHECK"}
+{"ts": "2026-10-02T12:50:55.846380+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-02T12:50:55.947676+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-02T12:50:55.951586+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-02T12:50:55.951646+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [90326]", "provider": "demo-hospital"}
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failure
+1 failed, 16 deselected, 2 warnings in 1.38s

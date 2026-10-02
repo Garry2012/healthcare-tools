@@ -67,10 +67,11 @@ while IFS= read -r line || [[ -n "$line" ]]; do ROLLOUT_ENV+=("$line"); done < <
 P="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^PROVIDER_ID=//p')"
 [[ -n "$P" ]] || { echo "rollout.env must set PROVIDER_ID" >&2; exit 2; }
 : "${OPS_BASE_URL:?the profile must set OPS_BASE_URL (the operational API base, https://host/api/v1)}"
-: "${KNOWLEDGE_BASE_URL:?set KNOWLEDGE_BASE_URL (profile or environment) to the knowledge service base}"
+KNOWLEDGE_BASE_URL="${KNOWLEDGE_BASE_URL:-}"
 : "${AZ_SUBSCRIPTION_ID:?the profile must name the subscription}"
 : "${AZ_RESOURCE_GROUP:?the profile must name the resource group; this script never defaults to rg-frontdesk-<provider>}"
 for url in "$OPS_BASE_URL" "$KNOWLEDGE_BASE_URL"; do
+  [[ -z "$url" ]] && continue
   [[ "$url" == https://* ]] || { echo "owner service URLs must be https: $url" >&2; exit 2; }
   case "$url" in *contract-mock*|*localhost*|*127.0.0.1*|*stub*|*prism*|*mock*)
     echo "refusing to deploy production against a stub/mock endpoint: $url" >&2; exit 2 ;;
@@ -158,7 +159,9 @@ OPS_PASSWORD_SECRET="${OPS_CLIENT_SECRET_SECRET_NAME:-ops-client-secret}"
 KNOWLEDGE_SECRET="${KNOWLEDGE_BEARER_TOKEN_SECRET_NAME:-knowledge-token}"
 secret "$OPS_ID_SECRET" supplied OPS_CLIENT_ID >/dev/null
 secret "$OPS_PASSWORD_SECRET" supplied OPS_CLIENT_SECRET >/dev/null
-secret "$KNOWLEDGE_SECRET" supplied KNOWLEDGE_BEARER_TOKEN >/dev/null
+if [[ -n "$KNOWLEDGE_BASE_URL" ]]; then
+  secret "$KNOWLEDGE_SECRET" supplied KNOWLEDGE_BEARER_TOKEN >/dev/null
+fi
 [[ "$MCP_TOKEN" != "$LIFECYCLE_TOKEN" ]] || { echo "gateway and lifecycle bearers must differ" >&2; exit 1; }
 
 require "managed identity $ID_NAME" az identity show -g "$RG" -n "$ID_NAME"
@@ -172,12 +175,18 @@ kv() { echo "$1=keyvaultref:https://$KV.vault.azure.net/secrets/$1,identityref:$
 
 # --- 4. the adapter (reached by the gateway and the call-end lifecycle) --------------------------
 step "container: $APP"
-SECRETS="$(kv mcp-token) $(kv mcp-lifecycle-token) $(kv "$OPS_ID_SECRET") $(kv "$OPS_PASSWORD_SECRET") $(kv "$KNOWLEDGE_SECRET")"
+SECRETS="$(kv mcp-token) $(kv mcp-lifecycle-token) $(kv "$OPS_ID_SECRET") $(kv "$OPS_PASSWORD_SECRET")"
 ENV_VARS=(ENV=production HOST=0.0.0.0 PORT=8100
   "OPS_BASE_URL=$OPS_BASE_URL" "OPS_CLIENT_ID=secretref:$OPS_ID_SECRET" "OPS_CLIENT_SECRET=secretref:$OPS_PASSWORD_SECRET"
-  "KNOWLEDGE_BASE_URL=$KNOWLEDGE_BASE_URL" "KNOWLEDGE_BEARER_TOKEN=secretref:$KNOWLEDGE_SECRET"
+  "KNOWLEDGE_BASE_URL=$KNOWLEDGE_BASE_URL"
   MCP_BEARER_TOKEN=secretref:mcp-token MCP_LIFECYCLE_BEARER_TOKEN=secretref:mcp-lifecycle-token
   "${ROLLOUT_ENV[@]}")
+if [[ -n "$KNOWLEDGE_BASE_URL" ]]; then
+  SECRETS="$SECRETS $(kv "$KNOWLEDGE_SECRET")"
+  ENV_VARS+=("KNOWLEDGE_BEARER_TOKEN=secretref:$KNOWLEDGE_SECRET")
+else
+  ENV_VARS+=("KNOWLEDGE_BEARER_TOKEN=")
+fi
 if exists az containerapp show -g "$RG" -n "$APP"; then
   # Upgrade path (AR-05): an app deployed by the legacy script carries only agent-token/mcp-token. Attach the
   # identity and registry access, then every Key Vault reference the new environment names, BEFORE switching the

@@ -62,7 +62,7 @@ async def test_conversational_tool_set_must_be_exactly_three_and_the_summary_too
 
 
 @pytest.mark.parametrize("body", [
-    {"outcome": "COULD_NOT_CHECK"}, {"outcome": "ROUTING_UNAVAILABLE"}, {"outcome": "INVALID_REQUEST"},
+    {"outcome": "COULD_NOT_CHECK"}, {"outcome": "UNKNOWN_OUTCOME"}, {"outcome": "INVALID_REQUEST"},
     {"error": {"code": "UNAUTHORIZED"}}, None,
 ])
 async def test_transport_success_does_not_hide_failures(body):
@@ -272,3 +272,52 @@ def test_gateway_refresh_uses_the_deployed_contextforge_api(monkeypatch):
         REGISTER["verify"](client, "gateway-id", "frontdesk-demo-hospital")
     assert requests == [("GET", "/v1/tools"), ("POST", "/v1/gateways/gateway-id/tools/refresh"),
                         ("GET", "/v1/tools")]
+
+
+def test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret(tmp_path):
+    import os
+    import subprocess
+
+    profile_dir = _profile_dir(tmp_path, "https://ops.example/api/v1")
+    path = tmp_path / "test.env"
+    path.write_text(path.read_text().replace("KNOWLEDGE_BASE_URL=https://kb.example", "KNOWLEDGE_BASE_URL="))
+    result = subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"),
+                             "--profile", "test", "--dry-run"], capture_output=True, text=True, check=False,
+                            cwd=DEPLOY.parent, env={**os.environ, "DEPLOY_PROFILE_DIR": profile_dir,
+                                                   "DEPLOY_ASSUME_EXISTING": "1"})
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "knowledge-token=keyvaultref:" not in result.stderr
+    assert "KNOWLEDGE_BEARER_TOKEN=secretref:" not in result.stderr
+    assert "KNOWLEDGE_BASE_URL=" in result.stderr and "KNOWLEDGE_BEARER_TOKEN=" in result.stderr
+    assert "az containerapp update" in result.stderr
+
+
+@pytest.mark.parametrize("body,error", [
+    ({"outcome": "ANSWERED"}, False),
+    ({"outcome": "COULD_NOT_CHECK", "detail": "UNAVAILABLE"}, False),
+    ({"outcome": "COULD_NOT_CHECK", "detail": "NOT_CONFIGURED"}, True),
+])
+async def test_unconfigured_smoke_refuses_mismatched_or_error_results(body, error):
+    from fastmcp import Client, FastMCP
+    from fastmcp.exceptions import ToolError
+
+    # An external MCP boundary fixture, not a mock of our adapter classes.
+    remote = FastMCP("inconsistent-remote")
+
+    @remote.tool()
+    def get_doctor_availability(date: str, departmentName: str) -> dict:  # noqa: N803
+        return {"outcome": "CALLBACK_REQUIRED"}
+
+    @remote.tool()
+    def manage_booking(action: str) -> dict:
+        raise AssertionError("smoke must never write")
+
+    @remote.tool()
+    def search_knowledge(question: str, language: str) -> dict:
+        if error:
+            raise ToolError("fixture failure")
+        return body
+
+    async with Client(remote) as client:
+        with pytest.raises(RuntimeError, match="configuration and tool result disagree"):
+            await SMOKE["check_tools"](client, "en", "General Medicine", knowledge_configured=False)

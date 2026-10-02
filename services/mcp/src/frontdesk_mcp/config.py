@@ -181,10 +181,10 @@ class Settings(BaseSettings):
                                  "decided by the bearer)")
             if not (self.ops_client_id and self.ops_client_secret.get_secret_value()):
                 raise ValueError("OPS_CLIENT_ID and OPS_CLIENT_SECRET are required outside development")
-            if not self.knowledge_base_url:
-                raise ValueError("KNOWLEDGE_BASE_URL is required outside development (no local knowledge fallback)")
         if self.env == "production":
             for name, url in (("OPS_BASE_URL", self.ops_base_url), ("KNOWLEDGE_BASE_URL", self.knowledge_base_url)):
+                if name == "KNOWLEDGE_BASE_URL" and not url:
+                    continue  # only the knowledge tool is unavailable; scheduling remains independent
                 if not url.startswith("https://"):
                     # Caller numbers, names and symptoms cross these hops: never in clear text in production.
                     raise ValueError(f"{name} must use https:// when ENV=production")
