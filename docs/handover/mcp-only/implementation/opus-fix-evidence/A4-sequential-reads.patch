@@ -1,0 +1,13 @@
+--- a/services/mcp/src/frontdesk_mcp/booking.py
++++ b/services/mcp/src/frontdesk_mcp/booking.py
+@@ -219,8 +219,8 @@
+             deadline, date=date_param, doctor_id=request.doctorId, department=request.departmentId)
+         try:
+             if request.doctorId and request.session:
+-                profile, board = await asyncio.gather(self._profile(request.doctorId, deadline), board_read,
+-                                                     return_exceptions=True)
++                profile = await self._profile(request.doctorId, deadline)
++                board = await board_read
+                 if isinstance(board, BaseException):
+                     raise board
+                 if isinstance(profile, BaseException):

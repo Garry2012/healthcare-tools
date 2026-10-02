@@ -1,0 +1,58 @@
+PATCH: A4-sequential-reads.patch
+BASE: 26ea36dfc30342661c8ab5bb6e4714276f8590fe
+$ uv run --directory services/mcp pytest tests/test_booking.py -k cancelled_create -q --tb=short
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_cancelled_create_cancels_both_owner_reads_without_writing ________
+tests/test_booking.py:574: in test_cancelled_create_cancels_both_owner_reads_without_writing
+    await started["board"].wait()
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+tests/test_booking.py:572: in test_cancelled_create_cancels_both_owner_reads_without_writing
+    async with asyncio.timeout(1):
+               ^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/timeouts.py:116: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+=============================== warnings summary ===============================
+tests/test_booking.py::test_cancelled_create_cancels_both_owner_reads_without_writing
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+tests/test_booking.py::test_cancelled_create_cancels_both_owner_reads_without_writing
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_booking.py::test_cancelled_create_cancels_both_owner_reads_without_writing
+1 failed, 60 deselected, 2 warnings in 2.09s
+<sys>:0: RuntimeWarning: coroutine 'OpsClient.get_availability' was never awaited
+EXIT: 1
+SOURCE RESTORED
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 56%]
+........................................................................ [ 75%]
+........................................................................ [ 94%]
+...................                                                      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+379 passed, 11 deselected, 2 warnings in 24.29s
+EXIT: 0

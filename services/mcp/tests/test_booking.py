@@ -546,7 +546,7 @@ async def test_cancelled_create_cancels_both_owner_reads_without_writing(make_se
     from frontdesk_mcp.tools import Services
     from frontdesk_stubs import ops as ops_stub
 
-    h = harness.build(make_settings(allow_budget_overrides=True, write_deadline_seconds=2))
+    h = harness.build(make_settings(allow_budget_overrides=True, write_deadline_seconds=2, request_timeout_seconds=2))
     started = {"profile": asyncio.Event(), "board": asyncio.Event()}
     cancelled = {"profile": asyncio.Event(), "board": asyncio.Event()}
     writes = []
@@ -572,6 +572,7 @@ async def test_cancelled_create_cancels_both_owner_reads_without_writing(make_se
         async with asyncio.timeout(1):
             await started["profile"].wait()
             await started["board"].wait()
+        assert not cancelled["profile"].is_set() and not cancelled["board"].is_set()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
