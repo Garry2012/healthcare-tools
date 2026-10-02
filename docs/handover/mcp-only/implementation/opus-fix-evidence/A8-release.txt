@@ -1,0 +1,136 @@
+$ uv run --directory services/mcp pytest tests/test_deploy.py -q --tb=short
+...............F....F...FFFFFFFFF                                        [100%]
+=================================== FAILURES ===================================
+_ test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env _
+tests/test_deploy.py:195: in test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env
+    assert "SMOKE_EXPECT_KNOWLEDGE=required" in log
+E   AssertionError: assert 'SMOKE_EXPECT_KNOWLEDGE=required' in '\n== validate the adapter configuration offline (settings, pack, tool schema)\n/Users/garima/conductor/workspaces/hea...call_summary)\nNext:             register with ContextForge (deploy/contextforge/register.py), then AZURE.md §tests.\n'
+____ test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret ____
+tests/test_deploy.py:295: in test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret
+    removal = result.stderr.index("az containerapp secret remove")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ValueError: substring not found
+___ test_smoke_rejects_profile_dependency_mismatch[required-not_configured] ____
+tests/test_deploy.py:345: in test_smoke_rejects_profile_dependency_mismatch
+    with pytest.raises((RuntimeError, ValueError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE any of (RuntimeError, ValueError)
+__________ test_smoke_rejects_profile_dependency_mismatch[absent-ok] ___________
+tests/test_deploy.py:345: in test_smoke_rejects_profile_dependency_mismatch
+    with pytest.raises((RuntimeError, ValueError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE any of (RuntimeError, ValueError)
+__________ test_smoke_rejects_profile_dependency_mismatch[invalid-ok] __________
+tests/test_deploy.py:345: in test_smoke_rejects_profile_dependency_mismatch
+    with pytest.raises((RuntimeError, ValueError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE any of (RuntimeError, ValueError)
+___ test_smoke_rejects_malformed_dependencies_without_attribute_error[body0] ___
+tests/test_deploy.py:362: in test_smoke_rejects_malformed_dependencies_without_attribute_error
+    await SMOKE["check_http"](http, "https://adapter.example")
+../../deploy/azure/smoke.py:38: in check_http
+    if dependencies.status_code != 200 or dependencies.json().get("operational", {}).get("status") != "ok":
+                                          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'list' object has no attribute 'get'
+____ test_smoke_rejects_malformed_dependencies_without_attribute_error[bad] ____
+tests/test_deploy.py:362: in test_smoke_rejects_malformed_dependencies_without_attribute_error
+    await SMOKE["check_http"](http, "https://adapter.example")
+../../deploy/azure/smoke.py:38: in check_http
+    if dependencies.status_code != 200 or dependencies.json().get("operational", {}).get("status") != "ok":
+                                          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+___ test_smoke_rejects_malformed_dependencies_without_attribute_error[None] ____
+tests/test_deploy.py:362: in test_smoke_rejects_malformed_dependencies_without_attribute_error
+    await SMOKE["check_http"](http, "https://adapter.example")
+../../deploy/azure/smoke.py:38: in check_http
+    if dependencies.status_code != 200 or dependencies.json().get("operational", {}).get("status") != "ok":
+                                          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute 'get'
+___ test_smoke_rejects_malformed_dependencies_without_attribute_error[body3] ___
+tests/test_deploy.py:362: in test_smoke_rejects_malformed_dependencies_without_attribute_error
+    await SMOKE["check_http"](http, "https://adapter.example")
+../../deploy/azure/smoke.py:38: in check_http
+    if dependencies.status_code != 200 or dependencies.json().get("operational", {}).get("status") != "ok":
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'list' object has no attribute 'get'
+___ test_smoke_rejects_malformed_dependencies_without_attribute_error[body4] ___
+tests/test_deploy.py:362: in test_smoke_rejects_malformed_dependencies_without_attribute_error
+    await SMOKE["check_http"](http, "https://adapter.example")
+../../deploy/azure/smoke.py:43: in check_http
+    return dependencies.json().get("knowledge", {}).get("status") != "not_configured"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'list' object has no attribute 'get'
+___ test_smoke_rejects_malformed_dependencies_without_attribute_error[body5] ___
+tests/test_deploy.py:361: in test_smoke_rejects_malformed_dependencies_without_attribute_error
+    with pytest.raises(RuntimeError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE RuntimeError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env
+FAILED tests/test_deploy.py::test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret
+FAILED tests/test_deploy.py::test_smoke_rejects_profile_dependency_mismatch[required-not_configured]
+FAILED tests/test_deploy.py::test_smoke_rejects_profile_dependency_mismatch[absent-ok]
+FAILED tests/test_deploy.py::test_smoke_rejects_profile_dependency_mismatch[invalid-ok]
+FAILED tests/test_deploy.py::test_smoke_rejects_malformed_dependencies_without_attribute_error[body0]
+FAILED tests/test_deploy.py::test_smoke_rejects_malformed_dependencies_without_attribute_error[bad]
+FAILED tests/test_deploy.py::test_smoke_rejects_malformed_dependencies_without_attribute_error[None]
+FAILED tests/test_deploy.py::test_smoke_rejects_malformed_dependencies_without_attribute_error[body3]
+FAILED tests/test_deploy.py::test_smoke_rejects_malformed_dependencies_without_attribute_error[body4]
+FAILED tests/test_deploy.py::test_smoke_rejects_malformed_dependencies_without_attribute_error[body5]
+11 failed, 22 passed, 2 warnings in 6.71s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 54%]
+........................................................................ [ 72%]
+........................................................................ [ 90%]
+........................................                                 [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+400 passed, 11 deselected, 2 warnings in 16.35s
+EXIT: 0
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 54%]
+........................................................................ [ 72%]
+........................................................................ [ 90%]
+........................................                                 [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+400 passed, 11 deselected, 2 warnings in 16.13s
+EXIT: 0

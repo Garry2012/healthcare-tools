@@ -31,3 +31,9 @@ printf 'export KNOWLEDGE_BASE_URL=%q\n' "$knowledge"
 printf 'export KNOWLEDGE_E2E_BASE_URL=%q\n' "$knowledge"
 printf 'export BENCH_KNOWLEDGE_BASE_URL=%q\n' "$knowledge"
 printf 'export DEPLOY_PROFILE=%q\n' "$profile"
+
+if [[ -n "$knowledge" ]]; then
+  printf 'export SMOKE_EXPECT_KNOWLEDGE=required\n'
+else
+  printf 'export SMOKE_EXPECT_KNOWLEDGE=absent\n'
+fi

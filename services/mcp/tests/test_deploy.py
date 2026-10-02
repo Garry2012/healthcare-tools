@@ -40,7 +40,8 @@ async def test_http_checks_require_readiness_dependency_health_and_auth(ready, d
         if path == "/ready":
             return httpx.Response(ready, json={"status": "ready" if ready == 200 else "starting"})
         if path == "/dependencies":
-            return httpx.Response(deps, json={"operational": {"status": "ok" if deps == 200 else "unavailable"}})
+            return httpx.Response(deps, json={"operational": {"status": "ok" if deps == 200 else "unavailable"},
+                                             "knowledge": {"status": "configured"}})
         return httpx.Response(200, json={"status": "ok"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
@@ -103,6 +104,7 @@ def test_main_requires_https_and_never_leaks(monkeypatch, capsys):
     monkeypatch.setenv("MCP_URL", "http://adapter.example/mcp/")
     monkeypatch.setenv("MCP_BEARER_TOKEN", "secret-must-not-be-printed")
     monkeypatch.setenv("SMOKE_LANGUAGE", "en")
+    monkeypatch.setenv("SMOKE_EXPECT_KNOWLEDGE", "required")
     assert SMOKE["main"]() == 1
     monkeypatch.setenv("MCP_URL", "https://adapter.example/mcp/")
 
@@ -192,6 +194,8 @@ def test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env
     secrets_line = [line for line in log.splitlines() if "az containerapp secret set" in line][0]
     for name in ("mcp-token", "mcp-lifecycle-token", "ops-client-id", "ops-client-secret", "knowledge-token"):
         assert f"{name}=keyvaultref:" in secrets_line, name
+    assert "SMOKE_EXPECT_KNOWLEDGE=required" in log
+    assert "az containerapp secret remove" not in log
     assert "az containerapp create" not in log  # the existing app is upgraded, not recreated
 
 
@@ -290,6 +294,10 @@ def test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret(tmp_p
     assert "KNOWLEDGE_BEARER_TOKEN=secretref:" not in result.stderr
     assert "KNOWLEDGE_BASE_URL=" in result.stderr and "KNOWLEDGE_BEARER_TOKEN=" in result.stderr
     assert "az containerapp update" in result.stderr
+    removal = result.stderr.index("az containerapp secret remove")
+    assert result.stderr.index("--replace-env-vars") < removal
+    assert "--secret-names knowledge-token" in result.stderr
+    assert "SMOKE_EXPECT_KNOWLEDGE=absent" in result.stderr
 
 
 @pytest.mark.parametrize("body,error", [
@@ -321,3 +329,36 @@ async def test_unconfigured_smoke_refuses_mismatched_or_error_results(body, erro
     async with Client(remote) as client:
         with pytest.raises(RuntimeError, match="configuration and tool result disagree"):
             await SMOKE["check_tools"](client, "en", "General Medicine", knowledge_configured=False)
+
+
+@pytest.mark.parametrize("expected,status", [("required", "not_configured"), ("absent", "configured"),
+                                            ("invalid", "ok")])
+async def test_smoke_rejects_profile_dependency_mismatch(monkeypatch, expected, status):
+    monkeypatch.setenv("SMOKE_EXPECT_KNOWLEDGE", expected)
+
+    def owner(request):
+        if request.url.path == "/dependencies":
+            return httpx.Response(200, json={"operational": {"status": "ok"}, "knowledge": {"status": status}})
+        if request.url.path == "/mcp/":
+            return httpx.Response(401)
+        return httpx.Response(200, json={"status": "ready" if request.url.path == "/ready" else "ok"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(owner)) as http:
+        with pytest.raises((RuntimeError, ValueError)):
+            await SMOKE["check_http"](http, "https://adapter.example")
+
+
+@pytest.mark.parametrize("body", [[], "bad", None, {"operational": []},
+                                  {"operational": {"status": "ok"}, "knowledge": []},
+                                  {"operational": {"status": "ok"}}])
+async def test_smoke_rejects_malformed_dependencies_without_attribute_error(body):
+    def owner(request):
+        if request.url.path == "/dependencies":
+            return httpx.Response(200, json=body) if body is not None else httpx.Response(200, content=b"null")
+        if request.url.path == "/mcp/":
+            return httpx.Response(401)
+        return httpx.Response(200, json={"status": "ready" if request.url.path == "/ready" else "ok"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(owner)) as http:
+        with pytest.raises(RuntimeError):
+            await SMOKE["check_http"](http, "https://adapter.example")

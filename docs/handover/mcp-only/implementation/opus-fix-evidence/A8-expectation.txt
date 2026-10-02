@@ -1,0 +1,32 @@
+PATCH: A8-expectation.patch
+BASE: 86b41765e6c3ebd78ba61c176343ce2660df3495
+$ uv run --directory services/mcp pytest tests/test_deploy.py -k profile_dependency_mismatch -q --tb=short
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+___ test_smoke_rejects_profile_dependency_mismatch[required-not_configured] ____
+tests/test_deploy.py:347: in test_smoke_rejects_profile_dependency_mismatch
+    with pytest.raises((RuntimeError, ValueError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE any of (RuntimeError, ValueError)
+______ test_smoke_rejects_profile_dependency_mismatch[absent-configured] _______
+tests/test_deploy.py:347: in test_smoke_rejects_profile_dependency_mismatch
+    with pytest.raises((RuntimeError, ValueError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE any of (RuntimeError, ValueError)
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_smoke_rejects_profile_dependency_mismatch[required-not_configured]
+FAILED tests/test_deploy.py::test_smoke_rejects_profile_dependency_mismatch[absent-configured]
+2 failed, 1 passed, 30 deselected, 2 warnings in 0.50s
+EXIT: 1
+SOURCE RESTORED

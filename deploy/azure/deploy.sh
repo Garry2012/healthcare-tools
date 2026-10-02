@@ -196,6 +196,14 @@ if exists az containerapp show -g "$RG" -n "$APP"; then
   # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
   run az containerapp secret set -g "$RG" -n "$APP" --secrets $SECRETS -o none
   run az containerapp update -g "$RG" -n "$APP" --image "$MCP_IMAGE" --replace-env-vars "${ENV_VARS[@]}" -o none
+  if [[ -z "$KNOWLEDGE_BASE_URL" ]]; then
+    # Inspect names only; an already-absent reference is a no-op. Query/remove failures still stop release.
+    knowledge_ref="$(out az containerapp show -g "$RG" -n "$APP" \
+      --query "properties.configuration.secrets[?name=='$KNOWLEDGE_SECRET'].name" -o tsv)"
+    if [[ -n "$knowledge_ref" ]]; then
+      run az containerapp secret remove -g "$RG" -n "$APP" --secret-names "$KNOWLEDGE_SECRET" -o none
+    fi
+  fi
   # Legacy secrets (agent-token for the retired API) stay attached until the retirement step removes them.
 else
   # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
@@ -240,11 +248,13 @@ step "verify: latest revision ready, dependencies, authentication, three convers
 wait_ready
 MCP_HOST="$(out az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv)"
 LANG1="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^TENANT_SUPPORTED_LANGUAGES=//p' | cut -d, -f1)"
+SMOKE_EXPECT_KNOWLEDGE=absent
+[[ -z "$KNOWLEDGE_BASE_URL" ]] || SMOKE_EXPECT_KNOWLEDGE=required
 if [[ -n "$DRY" ]]; then
-  show uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
+  show env "SMOKE_EXPECT_KNOWLEDGE=$SMOKE_EXPECT_KNOWLEDGE" uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 else
   MCP_URL="https://$MCP_HOST/mcp/" MCP_BEARER_TOKEN="$MCP_TOKEN" MCP_LIFECYCLE_BEARER_TOKEN="$LIFECYCLE_TOKEN" \
-    SMOKE_LANGUAGE="$LANG1" uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
+    SMOKE_LANGUAGE="$LANG1" SMOKE_EXPECT_KNOWLEDGE="$SMOKE_EXPECT_KNOWLEDGE" uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 fi
 
 step "done: $P"

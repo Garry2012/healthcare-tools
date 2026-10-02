@@ -29,18 +29,33 @@ KNOWLEDGE_OK = {"ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIR
 
 
 async def check_http(http: httpx.AsyncClient, root: str) -> bool:
+    expectation = os.environ.get("SMOKE_EXPECT_KNOWLEDGE", "required")
+    if expectation not in ("required", "absent"):
+        raise ValueError("SMOKE_EXPECT_KNOWLEDGE must be required or absent")
     for path, expected in (("health", "ok"), ("ready", "ready")):
         response = await http.get(f"{root}/{path}")
         response.raise_for_status()
-        if response.json().get("status") != expected:
+        body = response.json()
+        if not isinstance(body, dict) or body.get("status") != expected:
             raise RuntimeError(f"unexpected {path} response")
     dependencies = await http.get(f"{root}/dependencies", params={"refresh": "1"})
-    if dependencies.status_code != 200 or dependencies.json().get("operational", {}).get("status") != "ok":
-        raise RuntimeError("operational dependency is not healthy")  # a release needs working reads
+    if dependencies.status_code != 200:
+        raise RuntimeError("operational dependency is not healthy")
+    body = dependencies.json()
+    if not isinstance(body, dict):
+        raise RuntimeError("malformed dependencies response")
+    operational, knowledge = body.get("operational"), body.get("knowledge")
+    if not isinstance(operational, dict) or operational.get("status") != "ok":
+        raise RuntimeError("operational dependency is not healthy")
+    if not isinstance(knowledge, dict) or knowledge.get("status") not in ("configured", "not_configured"):
+        raise RuntimeError("malformed knowledge dependency response")
+    configured = knowledge["status"] == "configured"
+    if configured != (expectation == "required"):
+        raise RuntimeError("knowledge configuration does not match the deployment profile")
     response = await http.post(f"{root}/mcp/", json={})
     if response.status_code != 401:
         raise RuntimeError("MCP accepted an unauthenticated request")
-    return dependencies.json().get("knowledge", {}).get("status") != "not_configured"
+    return configured
 
 
 async def check_tools(client: Client, language: str, department: str, *, knowledge_configured: bool = True) -> None:
@@ -101,6 +116,8 @@ def main() -> int:
         url = os.environ["MCP_URL"]
         token = os.environ["MCP_BEARER_TOKEN"]
         language = os.environ["SMOKE_LANGUAGE"]
+        if os.environ["SMOKE_EXPECT_KNOWLEDGE"] not in ("required", "absent"):
+            raise ValueError("invalid knowledge expectation")
         department = os.environ.get("SMOKE_DEPARTMENT", "General Medicine")
         lifecycle_token = os.environ.get("MCP_LIFECYCLE_BEARER_TOKEN") or None
         if not url.startswith("https://") or not token or not language:

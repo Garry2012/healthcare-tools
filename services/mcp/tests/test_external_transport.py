@@ -34,6 +34,7 @@ def required(name: str) -> str:
 
 
 async def test_release_smoke_against_the_deployed_adapter():
+    required("SMOKE_EXPECT_KNOWLEDGE")  # supplied by scripts/env.sh from the selected profile
     url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
     lifecycle = os.environ.get("MCP_E2E_LIFECYCLE_BEARER") or None
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
