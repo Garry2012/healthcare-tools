@@ -22,7 +22,7 @@ Transport: Streamable HTTP
 URL: https://mcp-<provider>.<environment domain>/mcp/
 Authorization: Bearer <Key Vault: mcp-token>            (three in-call tools)
 Authorization: Bearer <Key Vault: mcp-lifecycle-token>  (record_call_summary at call end only)
-Headers: X-Call-Id, X-Caller-Number, X-Caller-Verification, X-Turn-Context, X-Operation-Id,
+Headers: X-Call-Id, X-Caller-Number, X-Caller-Verification, X-Operation-Id,
          X-Call-Started-At, X-Call-Duration-Seconds   (LIVEKIT.md)
 ```
 
@@ -33,8 +33,7 @@ Headers: X-Call-Id, X-Caller-Number, X-Caller-Verification, X-Turn-Context, X-Op
   currently binds directly to the legacy `api-demo-hospital` REST API with agent/staff tokens. That
   API is being retired; appointments and summaries must go through MCP (one appointment authority:
   Manoj's service). Remove the direct REST binding and forward the headers above.
-- Live Azure tests of the new adapter against the owners' services have not been run yet (their
-  hosts are not available to this repository). Test the complete path with synthetic data before any
-  production rollout.
+- Prior Manoj/canary evidence is historical; this routing-removal revision is not deployed or voice-path verified. Test the complete path with designated synthetic data before rollout.
+- Implement the every-turn emergency guardrail and explicit agent instructions in [LIVEKIT.md](LIVEKIT.md). Scheduling no longer contacts knowledge.
 
 Further integration details: [LIVEKIT.md](LIVEKIT.md), [CONTEXTFORGE.md](CONTEXTFORGE.md).

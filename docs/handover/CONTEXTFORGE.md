@@ -37,7 +37,6 @@ incoming `Authorization` header: ContextForge must use its stored MCP credential
 X-Call-Id
 X-Caller-Number
 X-Caller-Verification
-X-Turn-Context
 X-Operation-Id
 X-Call-Started-At
 X-Call-Duration-Seconds
@@ -125,3 +124,7 @@ References: [IBM header passthrough](https://ibm.github.io/mcp-context-forge/1.0
 [IBM MCP client URL examples](https://github.com/IBM/mcp-context-forge).
 The request fields and version above were checked against this deployed instance's authenticated
 OpenAPI, not inferred from a different release's examples.
+
+After this change, refresh discovered descriptions/output schemas for schema `2026-10-02.1`.
+Remove the obsolete transcript-header forwarding entry. Keep all identity, operation and lifecycle headers.
+Load `make agent-instructions` explicitly in the voice agent; do not assume gateway forwarding of MCP initialize instructions.

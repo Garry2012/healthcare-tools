@@ -48,11 +48,12 @@ For MCP machine authentication, use `POST /auth/token` relative to the configure
 
 Use the full configured base URL without legacy `/api/v1` stripping. Test construction of token and operation URLs for both backend and no-prefix mock. Maintain a persistent client and independent pool/timeouts for each service. Cache tokens per tenant/client/service, refresh before expiry with a safety margin, and allow only one concurrent refresh. On a genuine authentication rejection, invalidate and refresh once only if the remaining operation deadline permits; retries of mutations retain the same operation key and payload. Never request staff scopes to bypass a failure.
 
-`/health` checks the MCP process. `/ready` checks local configuration and initialized components; do not perform a fresh token request or require an undocumented downstream `/ready` on every probe. Report each dependency's health separately using bounded background checks and agreed authenticated operations. Release smoke tests must still verify actual external reads; local readiness alone is not a release pass. A knowledge dependency failure affects tools that need its routing decision, without stopping MCP from returning accurate failure results or finalizing summaries through a working operational service.
+`/health` checks the MCP process. `/ready` checks local configuration and initialized components; do not perform a fresh token request or require an undocumented downstream `/ready` on every probe. Report each dependency's health separately using bounded background checks and agreed authenticated operations. Release smoke tests must still verify actual external reads; local readiness alone is not a release pass. A knowledge dependency failure affects only search_knowledge, without stopping MCP from returning accurate failure results or finalizing summaries through a working operational service.
 
 **Interim working-hours journey**
 
-1. For an availability or appointment-create request, obtain the original utterance, language and relevant turn context from the trusted voice-platform context. MCP always obtains Shobhit's routing decision for that context before presenting routine scheduling results or dispatching a create; it does not decide locally whether the text contains symptoms. The check is an internal service call, not dependent on the LLM explicitly choosing `search_knowledge`. Independent directory/board reads may overlap the check. Shobhit's emergency/desk/clarification outcome takes precedence over entering a routine booking journey; only a response permitting that journey allows it to continue. Missing context, an unknown response shape or unavailable routing must not be treated as clearance. This is orchestration, not local detection logic.
+1. The LLM chooses the tool. Named doctor/department requests go directly to availability; symptom-only requests go to search_knowledge, then availability with the returned department. No scheduling tool calls knowledge. The voice platform owns emergency detection on every turn and must resolve safety state before dispatching writes; see LIVEKIT.md. The user's 2 October approval removes the optional booking-reason check too; reasonVerbatim remains data forwarded to Manoj.
+
 2. Call `listDepartments` (`GET /departments`) to obtain department names and IDs, and `searchDoctors` (`GET /doctors?query=...`) with the doctor's name as heard. Use the returned IDs for follow-up requests. If several doctors match, ask the caller which one; if a department phrase cannot be matched confidently to a returned name, clarify. Specialized synonym, phonetic and multilingual matching is deferred, not a prerequisite for using these endpoints.
 3. For a resolved doctor and requested date, obtain `getDoctor` (`GET /doctors/{doctorId}`) and `getAvailability` (`GET /availability?doctorId=...&date=...`). These reads can run in parallel once their inputs are known. Use the literal `today` when the request is for today, or the confirmed ISO date. Preserve all usual-schedule windows (`daysOfWeek`, `start`, `end`, optional `label`) and all per-session board rows. A missing usual schedule does not invalidate a confirmed board entry, including an ON_CALL doctor's entry.
 4. Present the usual schedule together with the board's date/session-specific status. Current board timing/status takes precedence over routine hours: IN can support a current attendance statement, LATE reports the supplied revised expectation, CANCELLED means that session is cancelled, and NOT_CONFIRMED/UNKNOWN must remain unconfirmed/unknown. For UNKNOWN, including stale/missing entries represented as UNKNOWN by Manoj, stop the appointment flow: ask the caller's name and callback number, tell them someone from the hospital will call back, and save only a call summary. Do not transfer, create an appointment, offer an alternate booking or launch any other action for this fallback. Apply expectedEndTime expiry and keep each session distinct; a morning confirmation says nothing about evening. This is consumption of backend facts, not recreating its scheduling engine.
@@ -69,51 +70,28 @@ The live board acts as a status/timing overlay, not merely a filter that removes
 sequenceDiagram
   participant V as Voice agent
   participant M as MCP through ContextForge
-  participant O as Manoj backend
-  participant K as Shobhit knowledge service
-  V->>M: get_doctor_availability plus trusted original turn context
-  par Routing for every availability request
-    M->>K: Agreed routing contract
-    K-->>M: Routing decision or explicit service failure
-  and Independent directory lookup when inputs permit
-    M->>O: searchDoctors query or listDepartments
-    O-->>M: Directory records with names and IDs
+  participant O as Manoj API
+  participant K as Knowledge service
+  Note over V: Every-turn emergency guardrail belongs here
+  opt Hospital question or symptoms needing a department
+    V->>M: search_knowledge(question verbatim, language)
+    M->>K: One agreed knowledge request
+    K-->>M: Answer / department / clarify / transfer / no answer
+    M-->>V: Typed outcome and nextStep
   end
-  alt Routing requires escalation, clarification or is unavailable
-    M-->>V: Required routing or failure outcome; no routine appointment
-  else Routing permits routine journey
-  opt Several matches or unclear department
-    M-->>V: Returned choices for caller clarification
-    V->>M: Caller-selected target
-  end
-  V->>M: Requested date, today or confirmed ISO date
-  par Independent reads after doctor and date are known
-    M->>O: getDoctor with resolved doctor ID
-    O-->>M: Usual working-hour sessions
-  and Live board for requested date
-    M->>O: getAvailability with doctorId and date
-    O-->>M: Per-session status and timing updates
-  end
-  alt Requested availability is UNKNOWN
-    M-->>V: Callback-only outcome
-    V->>V: Ask caller name and number; say someone will call back
-    V->>M: record_call_summary at call completion
-    M->>O: POST /call-summaries, outcome CALLBACK_NOTED
-    O-->>M: Stored summary
-  else Continue appointment journey where appropriate
-    M-->>V: Working hours qualified by board status, no slot claims
-    V->>V: Confirm preferred time and patient details
-    V->>M: manage_booking create plus current trusted context
-    M->>K: Routing check including any new caller information
-    K-->>M: Routing decision
-    alt Routing permits creation and caller confirmed
-      M->>O: POST /appointments with stable operation key
-      O-->>M: Appointment with status NOTED
-      M-->>V: Request recorded, preferred time not reserved
-    else Routing blocks routine creation
-      M-->>V: Required routing or failure outcome; no appointment write
-    end
-  end
+  V->>M: get_doctor_availability(target, date)
+  M->>O: Directory resolution, then parallel profile and board
+  O-->>M: Owner facts
+  M-->>V: Board-qualified hours / choices / callback-only / failure
+  alt UNKNOWN
+    V->>V: Ask name and callback number; hospital callback, no booking
+    V->>M: Lifecycle summary at call end
+    M->>O: POST /call-summaries (CALLBACK_NOTED)
+  else Caller confirms and voice guardrail allows the write
+    V->>M: manage_booking CREATE
+    M->>O: Recheck board; then POST /appointments with stable key
+    O-->>M: NOTED / rejection / uncertain write
+    M-->>V: Honest outcome; never promise a reserved time
   end
 ```
 
@@ -121,7 +99,7 @@ For “any physician tomorrow,” use the department list to establish the reque
 
 Configure the facility's IANA timezone and inject a controllable clock for tests. Use the full board date plus local time for expiry; a future session is not expired merely because its clock time has passed today, and a past entry is not current attendance. Confirm weekday selection in facility time around midnight. Qualify `DoctorDetail.dataConfirmed=false` data as unconfirmed; missing optional confirmation metadata is not proof of approval. Never use `patientsPerHour` to allocate capacity or derive patient arrival times.
 
-One `get_doctor_availability` invocation composes directory search, profile, board and the required routing check internally. It returns a complete result or clarification choices. The diagram's caller-clarification branch represents a genuine additional conversation turn, not separate model-facing search/profile tools. Facility clock handling and formatting explicit dates are basic adapter responsibilities; richer spoken-date/name/synonym interpretation remains deferred.
+One `get_doctor_availability` invocation composes directory search, profile and board internally. It returns a complete result or clarification choices. The diagram's caller-clarification branch represents a genuine additional conversation turn, not separate model-facing search/profile tools. Facility clock handling and formatting explicit dates are basic adapter responsibilities; richer spoken-date/name/synonym interpretation remains deferred.
 
 **Planned MCP tool surface**
 
@@ -195,11 +173,11 @@ Validate the success body before acknowledging storage. Derive returned status s
 
 **Shobhit integration requirements**
 
-The knowledge contract needs explicit machine-readable outcomes for at least emergency transfer, desk transfer, clarification, approved department routing, permission to continue the routine journey, approved hospital answer, no answer and service failure. These are requirements for contract discussion, not invented current endpoint fields. A hospital-information no-answer is not interchangeable with a successful routing check that permits routine scheduling.
+The provisional single-request knowledge contract needs answer, no-answer, clarification, approved department, desk and emergency outcomes. Service failure is separate. See knowledge_contract.py; the owner has not accepted this proposal. Scheduling requires no knowledge permission.
 
-For symptom routing, carry original utterance and language, preserve approved department references and clarify their mapping to Manoj's tenant directory. Shobhit decides the route; Manoj supplies operational department identity and staffing truth. `hasConsultant=false` must still prevent a claim that a consultant is offered. Do not reinterpret a knowledge answer as an operational promise.
+For symptom routing, carry the verbatim question argument and language, preserve approved department references and clarify their mapping to Manoj's tenant directory. Shobhit decides the route; Manoj supplies operational department identity and staffing truth. `hasConsultant=false` must still prevent a claim that a consultant is offered. Do not reinterpret a knowledge answer as an operational promise.
 
-For red flags, test mixed-language symptoms, a named-doctor request containing a danger sign, negation/ambiguity and missing/slow knowledge responses. The initial implementation defaults to no routine scheduling result or appointment creation without a valid required routing response; return a routing-service-unavailable outcome for the agent's established assistance handling. The precise caller-facing outage handling remains a Shobhit/product contract item before cutover. Do not build a local classifier to decide a request is safe to bypass the check. Read-only prefetch may complete, but its success must not hide the unavailable check. Knowledge failure must not prevent a previously finalized call summary from being stored through an otherwise working Manoj service. A valid UNKNOWN board response after the routing gate uses the user's callback-only rule, never a transfer substituted for that rule.
+For red flags, the voice team must test mixed-language symptoms, named-doctor danger signs, negation, missing/slow classifier responses, stale tasks and interruption/write races. The classifier runs on every turn outside MCP; search_knowledge can also return an emergency when explicitly selected. No local classifier or hidden scheduling gate is permitted. Before the voice guardrail is deployed, emergency protection is limited to model judgement, explicit instructions and selected knowledge calls. User/Shobhit/clinical-owner acceptance of that interim risk and voice-team agreement are required before merge/cutover. UNKNOWN remains callback-only and failed board reads remain failures.
 
 For hospital information, return approved speakable text, language and provenance, with explicit no-answer/clarification handling. No model-invented medical advice or translation of approved text is added in MCP. No knowledge service interface or live implementation was supplied in this turn.
 
@@ -231,15 +209,15 @@ Measure end of caller speech to first audible useful result at the caller. Fille
 | Endpointing and residual STT | 150 ms |
 | Model selects tool/arguments | 150 ms |
 | Gateway, MCP orchestration and transport | 70 ms |
-| Downstream critical path, including the required routing decision | 180 ms |
+| Downstream critical path for the selected tool | 180 ms |
 | Model produces useful answer | 180 ms |
 | TTS start and media playout | 170 ms |
 | Headroom | 100 ms |
 | Total planning allocation | 1,000 ms |
 
-These allocations are engineering hypotheses, not measurements or a proof obtained by adding stage percentiles. Derive an absolute tool deadline from the remaining turn budget, reserving response/TTS time, and measure the complete journey directly. Availability may require doctor search followed by parallel profile/board reads while Shobhit evaluates the trusted turn. Known IDs and valid cached profile data remove directory hops; the fresh board and applicable routing decision still remain. A creation must wait for its current routing decision and confirmation before its write.
+These allocations are engineering hypotheses, not measurements or a proof obtained by adding stage percentiles. Derive an absolute tool deadline from the remaining turn budget, reserving response/TTS time, and measure the complete journey directly. Availability may require doctor search followed by parallel profile/board reads without a knowledge call. Known IDs and valid cached profile data remove directory hops; the fresh board still remains. A creation requires caller confirmation and a fresh board; the voice platform enforces its safety state before dispatch.
 
-Cache tenant-bound department/profile data with bounded TTL and agreed invalidation; cache neither live-board truth across turns nor a routing clearance across changed caller information. Preserve persistent connections and warm OAuth tokens. Bound directory pagination and profile fan-out; show incomplete results explicitly rather than claim no match. Keep one model-facing availability invocation for the internal composition. Add an early latency spike as soon as the real service hosts exist, from the intended MCP region; if the downstream critical path cannot fit, discuss service placement or owner-provided aggregation then, not speculative aggregation endpoints now.
+Cache tenant-bound department/profile data with bounded TTL and agreed invalidation; cache neither live-board truth across turns nor knowledge results across changed caller questions. Preserve persistent connections and warm OAuth tokens. Bound directory pagination and profile fan-out; show incomplete results explicitly rather than claim no match. Keep one model-facing availability invocation for the internal composition. Add an early latency spike as soon as the real service hosts exist, from the intended MCP region; if the downstream critical path cannot fit, discuss service placement or owner-provided aggregation then, not speculative aggregation endpoints now.
 
 Measure p50/p95/p99 with cold/warm token, DNS/TLS, process/model state, English/Kannada/Hindi inputs and realistic concurrency. Trace call/turn/operation IDs through speech end, gateway/MCP spans, downstreams, model response and first audible result without logging patient data. Inject latency/errors in stubs to verify deadline behavior, then measure real Manoj/Shobhit/gateway/voice paths. Contract-mock timing is not production evidence. Call summaries and their retries run after the call, outside this budget.
 
@@ -249,7 +227,7 @@ Measure p50/p95/p99 with cold/warm token, DNS/TLS, process/model state, English/
 |---|---|---|
 | 1. Consumer contracts and boundaries | Pin the operational spec and quoting-only correction process; define the four MCP input/output envelopes, trusted call metadata, timezone, mutation identity and summary lifecycle. Record Shobhit's pending interface separately. Carry forward the UNKNOWN callback decision. | Enough consumer contract detail for implementation tasks; no slot or advanced interpretation prerequisite. External assumptions labelled. |
 | 2. Independent test foundation | Separate dev/test operational and knowledge stubs; MCP contract snapshots; backend-free runner/CI job. Operational fixtures cover directory, profiles, session board, appointment lifecycle, auth and summaries. Knowledge fixtures cover routing/answers/failure. Controlled clocks and commit-then-drop-response cases; no engines or PostgreSQL. Start real-host latency spike when hosts arrive. | Mandatory integration tests run without API source/virtualenv/database. Missing specs or accidentally skipped required suites fail. Provisional knowledge fixtures are not represented as an agreed production contract. |
-| 3. MCP and platform integration | Adapt tools/config/server/prompts; independent clients/auth; identity and routing gates; deadlines/replay; programmatic call-end summary. Update gateway discovery, tool access and context forwarding. Coordinate changing default CI/tests with repointing the adapter. | Four tool contracts verified through MCP HTTP and stub journeys; ordinary model tool selection cannot finalize a call early. |
+| 3. MCP and platform integration | Adapt tools/config/server/prompts; independent clients/auth; identity guards and explicit knowledge selection; deadlines/replay; programmatic call-end summary. Update gateway discovery, tool access and context forwarding. Coordinate changing default CI/tests with repointing the adapter. | Four tool contracts verified through MCP HTTP and stub journeys; ordinary model tool selection cannot finalize a call early. |
 | 4. External verification | Run the same consumer suite against designated owner test services; verify actual gateway schema refresh/header isolation, lifecycle persistence, synthetic lifecycle writes and real voice latency. | Agreed contracts/auth/caller verification and callback-summary workflow exercised; one-second metric measured under stated conditions. Safe degradation and no false success demonstrated. |
 | 5. Cutover and complete source retirement | Canary compatible MCP/gateway/prompt versions, keep one appointment authority, verify required data handoff, remove all legacy source/tooling and update documentation. | Clean checkout installs/builds/tests/deploys MCP without the legacy API, its environment, PostgreSQL, migrations or seed/apply jobs. Rollback path verified. |
 | 6. Azure retirement and closure | Refresh the [resource inventory](AZURE-RETIREMENT.md), resolve shared ownership/data retention, retire obsolete API apps/jobs/images/database assets/secrets/grants after cutover, and remove exclusively obsolete resource groups. Preserve or relocate required shared consumers before removing parent resources. | No unexplained old backend resources or active references remain; retained shared resources have an owner/purpose, retained data has an agreed disposition, MCP/voice smoke passes and residual cost is reviewed. Code removal alone is not completion. |
@@ -296,7 +274,7 @@ Execute source removal and infrastructure decommission as distinct steps within 
 | UNKNOWN callback | Today/future and stale/missing entries returned as UNKNOWN collect name/number and save CALLBACK_NOTED only. No appointment, transfer, alternate booking, notification or task; never treat a failed board request as successful UNKNOWN. |
 | Basic lookup | Department IDs, free-text doctor search, multiple-choice clarification, explicit dates, pagination and unknown gender/language. Preserve incompleteness; advanced multilingual/synonym parsing is deferred. |
 | Identity | Model phone/header/tenant override rejected; configured E.164 normalization; missing/unsupported verification; cross-number family access refused; concurrent calls/tenants isolated; patient/callback contact never reused as authorization. |
-| Routing | A named-doctor request containing symptoms reaches Shobhit automatically; escalation/clarification prevents routine create. A revised caller utterance needs a current decision. Missing context or routing failure cannot become clearance. Verify actual trusted original text reaches the service. |
+| Routing | Availability and booking make zero knowledge requests. search_knowledge makes one verbatim request. Voice-side tests prove every-turn emergency coverage, stale-result handling and write ordering. |
 | Writes | Concurrent same-intent retry, changed payload, correction after definite rejection, uncertain commit, malformed success, replay after later mutation, missing call ID, 429/5xx/401 and total deadlines. Never uncertain write → success; never new key just because a response was lost. |
 | Summaries | Call-end-only access, trusted metadata after disconnect, fixed-payload 200 replay, lost response, supported/unsupported languages, 500-character limit preserving callback details, known completed outcome surviving hang-up. No separate callback task. |
 | Runtime/release | OAuth skew/single-flight/401 handling, mock/backend prefixes, local readiness plus separate dependency health, refreshed four-tool schemas/prompts, read-only production smoke, production cannot use development stubs. |
@@ -310,7 +288,7 @@ Execute source removal and infrastructure decommission as distinct steps within 
 |---|---|
 | OPUS-01 | Resolved by user: UNKNOWN → name/number, callback statement, summary only. The review's permissive UNKNOWN-booking alternative is not adopted. |
 | OPUS-02 | Trusted authorization separated from patient contact; model phone override removed; normalization/verification and initial family limitation explicit. |
-| OPUS-03 | Mandatory internal Shobhit routing orchestration with original turn context; safe reads may overlap; mutation waits. Outage wording remains an external contract decision. |
+| OPUS-03 | Superseded by the user-approved 2 October decision: explicit knowledge tool, emergency guardrail in the voice platform, no scheduling gate. |
 | OPUS-04 | Stable logical operation identity/frozen payload, distinct uncertain outcomes, validated responses and total-deadline retries. Body-hash-only deduplication is not adopted. |
 | OPUS-05 | Programmatic call-end summary with controlled access, immutable retry body, trusted metadata and outcome-aware disconnection handling. |
 | OPUS-06 | One composed availability tool, provisional full response budget, early real-host spike and measured end-to-end distribution. |

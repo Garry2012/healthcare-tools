@@ -30,17 +30,9 @@ should prepare these rows. We will not modify Manoj's database or guess that a t
 
 ## Shobhit — knowledge and routing
 
-> Please share your versioned OpenAPI, HTTPS base URL and secure auth reference for hospital answers,
-> symptom/department routing and red-flag decisions, including clarify/no-answer/outage outcomes.
-> Confirm how we send original caller words, language and earlier appointment reasons (`turn` /
-> `additionalText` in our provisional contract); keep the bearer at the agreed vault reference,
-> not in chat. We need a representative EN/KN/HI test set and your expected service latency.
+> Please share readiness, versioned OpenAPI, HTTPS test URL and secure auth reference for a single knowledge request returning an answer, no answer, clarification, department, desk or emergency decision. Our question/language consumer proposal is in knowledge_contract.py; please confirm it or supply your own contract, EN/KN/HI fixtures and latency evidence.
 
-Our `/v1/route` and `/v1/answer` shapes are provisional, not an imposed owner contract. Once supplied,
-we adapt the client and fixtures and set `KNOWLEDGE_BASE_URL` once in `deploy/environments/live.env`;
-`knowledge-token` is the current credential reference. Deployment, tests and benchmarks then use it.
-The complete in-call tool budget is 300 ms, potentially including both operational and knowledge
-calls. Agree and measure per-service time allocations; the one-second voice target is not yet proven.
+The provisional `/v1/answer` is a consumer proposal, not an imposed API. The voice platform separately needs an every-turn emergency classifier contract, covering conversation context, stale results, outages and transfer destinations. Scheduling tools do not call knowledge. Set the agreed provider URL once in `deploy/environments/live.env`; keep its bearer in Key Vault. The 300 ms tool allocation and one-second voice target still require real-path measurements.
 
 ## Rajiv — voice integration
 

@@ -31,7 +31,7 @@ The LLM chooses a tool and arguments; the LiveKit runtime/MCP client executes th
 
 Generated client types are acceptable if they represent the public interface only. Do not generate server scaffolding. Development stubs are contract fixtures excluded from production, not an alternative scheduling or knowledge implementation. A developer can install, build and run mandatory MCP tests without either owner's source or database. Live integration needs their designated test service or labelled fixture servers.
 
-MCP remains model-independent: there is no second LLM, agent loop, embedding call, database query or local interpretation/retrieval engine inside it. Its small orchestration layer combines the contracted facts needed for one caller request. It forwards original turn context to Shobhit and consumes that service's routing decision; it does not implement clinical detection itself.
+MCP remains model-independent: there is no second LLM, agent loop, embedding call, database query or local interpretation/retrieval engine inside it. Its small orchestration layer combines the contracted facts needed for one caller request. Only search_knowledge forwards its verbatim question to the knowledge owner. Availability and booking call only Manoj. The voice platform owns every-turn emergency detection, including safety state before dispatching a write.
 
 ## Cleanup is part of completion
 
@@ -72,10 +72,12 @@ These are engineering targets, not measured guarantees or MCP protocol requireme
 
 To keep the adapter thin and fast:
 
-- Reuse async HTTP connections and warm tokens; bound request/response sizes and fan-out. Cache only permitted stable directory/profile data, not current board truth or stale routing clearance.
-- Overlap independent reads and the required Shobhit routing check. Once the doctor is resolved, profile and board can run together. An appointment write waits for current routing clearance and caller confirmation. Search-dependent reads cannot all be called parallel by assumption.
+- Reuse async HTTP connections and warm tokens; bound request/response sizes and fan-out. Cache only permitted stable directory/profile data, not current board truth or stale knowledge answers.
+- Overlap independent Manoj reads. Once the doctor is resolved, profile and board can run together. An appointment write requires caller confirmation and a current board check. Search-dependent reads cannot all be called parallel by assumption.
 - Keep the gateway, MCP and owner services close enough in network terms to meet the measured budget. Bound cold-start delays with the chosen hosting setup; include cold starts in reporting.
 - Keep summaries and durable retry work after the call in platform infrastructure. Do not add a database/queue backend to MCP or retry long writes during speech turns. Cancelling a local request does not prove a remote appointment was undone.
-- Measure the gateway separately and trace the entire LiveKit path. Owner API latency and any knowledge-service LLM work count against the same response budget. If either service is too slow, negotiate placement/contract performance with its owner; do not copy its implementation into MCP or bypass routing.
+- Measure the gateway separately and trace the entire LiveKit path. Owner API latency and any knowledge-service LLM work count against the same response budget. If either service is too slow, negotiate placement/contract performance with its owner; do not copy its implementation into MCP or invent local interpretation.
 
 Run an early real-host latency experiment before completing the migration. Report p50/p95/p99 and failure rates under declared concurrency, cold/warm tokens and English/Kannada/Hindi scenarios. Include at least known-doctor hours+board, name search, ambiguity, appointment write, knowledge routing, outage and lost-write-response cases. The [LiveKit observability guidance](https://docs.livekit.io/testing/observability/data/) provides turn/component timings; [audio simulations](https://docs.livekit.io/testing/simulations/) distinguish generated-audio timing from what the caller actually hears. Verify actual useful audio at the caller, including tool follow-up turns, rather than relying on an incomplete sum of component timings.
+
+The 2 October routing-removal decision is in DECISIONS.md. Until the voice guardrail is implemented, model judgement and explicit instructions are the scheduling emergency protection. Owner agreement and residual-risk acceptance remain release requirements.
