@@ -223,8 +223,6 @@ class BookingService:
                                                      return_exceptions=True)
                 if isinstance(board, BaseException):
                     raise board
-                if isinstance(profile, BaseException):
-                    raise profile
             else:
                 profile, board = None, await board_read
         except (Unavailable, Malformed) as exc:

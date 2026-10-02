@@ -89,7 +89,7 @@ class AvailabilityService:
 
         try:
             fetched = await self._prefetch(request, date_param, deadline)
-            return await self._compose(request, fetched, requested, today, now, base)
+            return self._compose(request, fetched, requested, today, now, base)
         except READ_ERRORS as exc:
             return self._service_error(exc, base)
 
@@ -171,7 +171,7 @@ class AvailabilityService:
             exc.stage = "board"  # type: ignore[attr-defined]
             raise
 
-    async def _compose(self, request, fetched, requested, today, now, base) -> outcomes.AvailabilityResult:
+    def _compose(self, request, fetched, requested, today, now, base) -> outcomes.AvailabilityResult:
         if fetched["kind"] == "doctor":
             return self._doctor(fetched["doctor_id"], fetched["profile"], fetched["board"], requested, today, now,
                                 request.session, base)

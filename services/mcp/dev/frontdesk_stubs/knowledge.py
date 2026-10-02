@@ -22,10 +22,6 @@ from frontdesk_mcp import knowledge_contract as kc
 DATA = Path(__file__).parent / "data/demo_hospital.json"
 
 
-
-
-
-
 def load_answers() -> list[dict[str, Any]]:
     return json.loads(DATA.read_text(encoding="utf-8"))["answers"]
 
@@ -35,9 +31,7 @@ class KnowledgeStubState:
     bearer: str = "dev-knowledge-secret"
     answers: list[dict[str, Any]] = field(default_factory=load_answers)
     fail_next: list[int] = field(default_factory=list)
-    fail_next_for: list[tuple[str, int]] = field(default_factory=list)  # (path, status): one failure for that path
     malformed_next: list[bool] = field(default_factory=list)
-    malformed_next_for: list[str] = field(default_factory=list)  # paths answering {"unexpected": true} once
     delay_seconds: float = 0.0
 
 
@@ -47,17 +41,9 @@ def create_app(state: KnowledgeStubState) -> Starlette:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         return None
 
-    async def scenario(path: str = "") -> Response | None:
+    async def scenario() -> Response | None:
         if state.delay_seconds:
             await asyncio.sleep(state.delay_seconds)
-        for i, (prefix, status) in enumerate(state.fail_next_for):
-            if path.startswith(prefix):
-                del state.fail_next_for[i]
-                return JSONResponse({"error": "injected"}, status_code=status)
-        for i, prefix in enumerate(state.malformed_next_for):
-            if path.startswith(prefix):
-                del state.malformed_next_for[i]
-                return JSONResponse({"unexpected": True})
         if state.fail_next:
             return JSONResponse({"error": "injected"}, status_code=state.fail_next.pop(0))
         if state.malformed_next:
@@ -68,7 +54,7 @@ def create_app(state: KnowledgeStubState) -> Starlette:
     async def answer(request: Request) -> Response:
         if refused := denied(request):
             return refused
-        if blocked := await scenario(kc.ANSWER_PATH):
+        if blocked := await scenario():
             return blocked
         body = await request.json()
         question = str(body.get("question", "")).strip().casefold()
