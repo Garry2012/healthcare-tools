@@ -211,7 +211,7 @@ async def test_external_cancellation_propagates_through_knowledge(make_settings)
             stopped.set()
 
     services = Services.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2,
-                                            request_timeout_seconds=2),
+                                            write_deadline_seconds=2, request_timeout_seconds=2),
                               knowledge_transport=httpx.MockTransport(owner))
     task = asyncio.create_task(services.search.search(
         CallContext(), KnowledgeRequest(question="private question", language="en")))

@@ -30,3 +30,150 @@ FAILED tests/test_knowledge.py::test_external_cancellation_propagates_through_kn
 1 failed, 42 deselected, 2 warnings in 0.88s
 EXIT: 1
 SOURCE RESTORED
+PATCH: A6-cancellation.patch
+BASE: 8575979d9d94244f8bf7e28b7d5becfb57552ce9
+$ uv run --directory services/mcp pytest tests/test_knowledge.py -k external_cancellation -q --tb=short
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_external_cancellation_propagates_through_knowledge ____________
+tests/test_knowledge.py:222: in test_external_cancellation_propagates_through_knowledge
+    with pytest.raises(asyncio.CancelledError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE CancelledError
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_client:knowledge_client.py:55 knowledge_unreachable
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_external_cancellation_propagates_through_knowledge
+1 failed, 42 deselected, 2 warnings in 0.93s
+EXIT: 1
+SOURCE RESTORED
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+.........................................................F.............. [ 56%]
+........................................................................ [ 75%]
+........................................................................ [ 94%]
+....................                                                     [100%]
+=================================== FAILURES ===================================
+___________ test_owner_failure_is_not_an_answer[timeout-UNAVAILABLE] ___________
+
+make_settings = <function make_settings.<locals>.factory at 0x10c30c2c0>
+failure = 'timeout', detail = 'UNAVAILABLE'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10c11e470>
+
+    @pytest.mark.parametrize("failure,detail", [
+        ("timeout", "UNAVAILABLE"), ("network", "UNAVAILABLE"), (401, "UNAVAILABLE"), (403, "UNAVAILABLE"),
+        (503, "UNAVAILABLE"), ("json", "MALFORMED"), ([], "MALFORMED"), ({}, "MALFORMED"),
+        ({"outcome": "invented"}, "MALFORMED"), ({"outcome": "ANSWERED"}, "MALFORMED"),
+        ({"outcome": "CLARIFY"}, "MALFORMED"), ({"outcome": "ROUTE_DEPARTMENT"}, "MALFORMED"),
+        ({"outcome": "ROUTE_DEPARTMENT", "department": {"name": " "}}, "MALFORMED"),
+        ({"outcome": "ANSWERED", "answer": {"text": " ", "language": "en"}}, "MALFORMED"),
+    ])
+    async def test_owner_failure_is_not_an_answer(make_settings, failure, detail, caplog):
+        requests = []
+        cancelled = asyncio.Event()
+
+        async def owner(request):
+            requests.append(request)
+            if failure == "timeout":
+                try:
+                    await asyncio.sleep(1)
+                finally:
+                    cancelled.set()
+            if failure == "network":
+                raise httpx.ConnectError("private upstream error", request=request)
+            if isinstance(failure, int):
+                return httpx.Response(failure, text="private upstream error")
+            if failure == "json":
+                return httpx.Response(200, text="not json")
+            return httpx.Response(200, json=failure)
+
+        services = Services.build(make_settings(read_deadline_seconds=0.05),
+                                  knowledge_transport=httpx.MockTransport(owner))
+        try:
+            started = asyncio.get_running_loop().time()
+            result = await services.search.search(
+                CallContext(), KnowledgeRequest(question="private caller question", language="en"))
+            assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+            assert result.answer is None and result.routing is None and len(requests) == 1
+            assert "private upstream error" not in result.model_dump_json()
+            assert "private caller question" not in caplog.text and "private upstream error" not in caplog.text
+            if failure == "timeout":
+>               assert cancelled.is_set() and asyncio.get_running_loop().time() - started < 0.3
+E               assert (True and (558535.143536041 - 558534.622944708) < 0.3)
+E                +  where True = is_set()
+E                +    where is_set = <asyncio.locks.Event object at 0x10c20aab0 [set]>.is_set
+E                +  and   558535.143536041 = time()
+E                +    where time = <_UnixSelectorEventLoop running=True closed=False debug=False>.time
+E                +      where <_UnixSelectorEventLoop running=True closed=False debug=False> = <built-in function get_running_loop>()
+E                +        where <built-in function get_running_loop> = asyncio.get_running_loop
+
+tests/test_knowledge.py:98: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_client:knowledge_client.py:55 knowledge_unreachable
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[timeout-UNAVAILABLE]
+1 failed, 379 passed, 11 deselected, 2 warnings in 23.09s
+make: *** [test-fast] Error 1
+EXIT: 2
+$ uv run --directory services/mcp pytest tests/test_knowledge.py -k external_cancellation or owner_failure -q --tb=short
+...............                                                          [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+15 passed, 28 deselected, 2 warnings in 0.94s
+EXIT: 0
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 56%]
+........................................................................ [ 75%]
+........................................................................ [ 94%]
+....................                                                     [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+380 passed, 11 deselected, 2 warnings in 22.45s
+EXIT: 0
