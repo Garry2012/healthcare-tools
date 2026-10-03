@@ -3,7 +3,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 MCP := services/mcp
 
-.PHONY: up up-mcp down test test-fast test-e2e lint build schema agent-instructions demo bench logs
+.PHONY: up up-mcp down test test-fast test-e2e lint build schema demo bench logs
 
 up: ## Start the adapter against the two local development stubs (profiles mcp + stubs)
 	$(COMPOSE) --profile stubs up -d --build --wait
@@ -32,10 +32,6 @@ build: ## Build the production image (stubs and fixtures are not in it)
 schema: ## Print the pinned tool surface (compare with tests/contracts/mcp-tools.snapshot.json)
 	@cd $(MCP) && eval "$$(../../scripts/rollout-env.sh ../../rollouts/$${PROVIDER_ID:-demo-hospital})" && \
 	  ENV=development OPS_BASE_URL=http://127.0.0.1:8200/api/v1 uv run frontdesk-mcp schema
-
-agent-instructions: ## Print versioned rules for the voice team's Agent(instructions=...)
-	@cd $(MCP) && eval "$$(../../scripts/rollout-env.sh ../../rollouts/$${PROVIDER_ID:-demo-hospital})" && \
-	  ENV=development OPS_BASE_URL=http://127.0.0.1:8200/api/v1 uv run frontdesk-mcp agent-instructions
 
 demo: ## In-process walk-through of the four tools against the stubs (dev/demo.py)
 	cd $(MCP) && uv run python dev/demo.py

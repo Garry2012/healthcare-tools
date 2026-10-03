@@ -308,18 +308,13 @@ async def test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failur
         await h.aclose()
 
 
-def test_agent_instructions_command_exports_versioned_rules_without_credentials():
+def test_cli_exposes_only_server_and_schema_commands():
     import subprocess
 
-    result = subprocess.run(["make", "agent-instructions"], cwd=Path(__file__).resolve().parents[3],
-                            capture_output=True, text=True, check=False)
-    assert result.returncode == 0, result.stderr
-    assert f"Tool schema {prompt.SCHEMA_VERSION}." in result.stdout
-    for rule in ("NOTED", "CALLBACK_REQUIRED", "UNCERTAIN", "search_knowledge", "emergency"):
-        assert rule in result.stdout
-    assert "secret" not in result.stdout.casefold() and "Bearer" not in result.stdout
-    artifact = Path(__file__).resolve().parents[3] / "docs/handover/mcp-only/AGENT-INSTRUCTIONS.txt"
-    assert result.stdout.encode() == artifact.read_bytes()
+    result = subprocess.run(["frontdesk-mcp", "--help"], capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+    assert "{serve,schema}" in result.stdout
+
 
 
 def test_instructions_follow_real_knowledge_steps():
