@@ -1,0 +1,130 @@
+$ python3 /tmp/opus_final_audit.py
+Active roots; excludes historical reports, evidence, ignored briefs, builds and caches.
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ _Routing services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ _routing_outcome services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ _routing_out services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ routing_task services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ RouteRequest services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ RouteResponse services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ CLEARANCE services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ additionalText services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ TurnEcho services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ TurnContext services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ TurnFailure services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ UTTERANCE_MAX services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ _turn services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ X-Turn-Context services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ ROUTING_UNAVAILABLE services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ ASK_ROUTING_CLARIFICATION services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ ROUTE_PATH services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ fail_next_for services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ malformed_next_for services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/TESTING.md docs/handover/mcp-only/README.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+(no output)
+EXIT: 1
+Intentional negative tests for forbidden headers:
+$ rg -n turncontext|x-turn-context services/mcp/tests/test_server.py
+26:             "turncontext", "x-turn-context", "utterance", "tenant", "tenantid", "principal",
+EXIT: 0
+ROUTING_REQUIRED remains valid only for knowledge; check scoped scheduler models:
+PASS AvailabilityResult has no routing field or routing outcome
+PASS BookingResult has no routing field or routing outcome
+PASS availability.py no knowledge dependency
+PASS booking.py no knowledge dependency
+$ git diff --exit-code aa11591 -- .claude/agents
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+  from ._compat import httpx2
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+  from ._compat import httpx2
+(no output)
+EXIT: 0
+PASS date rule byte-identical to aa11591: "Dates: pass date='today' or an explicit date YYYY-MM-DD the caller confirmed; every result carries facilityToday and weekday to help you confirm. Never work out a relative date yourself: ask for the day."
+PASS make schema: byte-identical to services/mcp/tests/contracts/mcp-tools.snapshot.json (43369 bytes)
+PASS make agent-instructions: byte-identical to docs/handover/mcp-only/AGENT-INSTRUCTIONS.txt (2684 bytes)
+$ git diff aa11591 --numstat -- services/mcp/src
+2	2	services/mcp/src/frontdesk_mcp/availability.py
+0	2	services/mcp/src/frontdesk_mcp/booking.py
+10	0	services/mcp/src/frontdesk_mcp/config.py
+4	3	services/mcp/src/frontdesk_mcp/knowledge.py
+2	0	services/mcp/src/frontdesk_mcp/knowledge_client.py
+30	5	services/mcp/src/frontdesk_mcp/knowledge_contract.py
+2	2	services/mcp/src/frontdesk_mcp/packs/healthcare.json
+6	5	services/mcp/src/frontdesk_mcp/prompt.py
+EXIT: 0
+aa11591 SOURCE TOTAL: 56 added 19 deleted; NET 37
+$ git diff 73a0832 --numstat -- services/mcp/src
+31	110	services/mcp/src/frontdesk_mcp/availability.py
+11	48	services/mcp/src/frontdesk_mcp/booking.py
+5	2	services/mcp/src/frontdesk_mcp/cli.py
+12	2	services/mcp/src/frontdesk_mcp/config.py
+1	46	services/mcp/src/frontdesk_mcp/context.py
+18	53	services/mcp/src/frontdesk_mcp/knowledge.py
+5	21	services/mcp/src/frontdesk_mcp/knowledge_client.py
+58	55	services/mcp/src/frontdesk_mcp/knowledge_contract.py
+6	8	services/mcp/src/frontdesk_mcp/outcomes.py
+5	5	services/mcp/src/frontdesk_mcp/packs/healthcare.json
+10	6	services/mcp/src/frontdesk_mcp/prompt.py
+3	3	services/mcp/src/frontdesk_mcp/tools.py
+EXIT: 0
+73a0832 SOURCE TOTAL: 165 added 359 deleted; NET -194
+PASS 4813d0e 6 files
+PASS 60e22b5 8 files
+PASS 26ea36d 9 files
+PASS f3ad09e 3 files
+PASS 8575979 10 files
+PASS 7494629 2 files
+PASS 0b90773 5 files
+PASS 86b4176 4 files
+PASS 96aa23d 9 files
+PASS b8df289 8 files
+PASS 0c6179d 7 files
+PASS a4f8715 4 files
+PASS 8e6b768 9 files
+$ git diff --check aa11591 -- . :(exclude)**/*.patch
+(no output)
+EXIT: 0
+$ uvx vulture services/mcp/src --min-confidence 80
+(no output)
+EXIT: 0
+EXIT: 0

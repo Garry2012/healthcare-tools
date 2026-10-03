@@ -1,0 +1,173 @@
+Correction baseline aa11591; staged hand-back included, this stat receipt itself excluded.
+
+$ git diff --stat aa11591
+ deploy/azure/deploy.sh                             |  16 +-
+ deploy/azure/smoke.py                              |  25 +-
+ deploy/environments/README.md                      |   8 +-
+ docs/DECISIONS.md                                  |  19 ++
+ docs/architecture/TARGET.md                        |   2 +-
+ docs/handover/CONTEXTFORGE.md                      |  13 +-
+ docs/handover/LIVEKIT.md                           | 353 ++++++++++++++-------
+ docs/handover/OWNER-INTEGRATION-MESSAGES.md        |   8 +-
+ docs/handover/TESTING.md                           |  14 +-
+ docs/handover/mcp-only/AGENT-INSTRUCTIONS.txt      |   2 +-
+ docs/handover/mcp-only/README.md                   |   2 +-
+ .../mcp-only/implementation/OPUS-FIX-PLAN.md       |  18 ++
+ .../mcp-only/implementation/OPUS-FIX-REPORT.md     | 261 +++++++++++++++
+ .../opus-fix-evidence/A1-A5-green.txt              |  73 +++++
+ .../implementation/opus-fix-evidence/A1-A5-red.txt | 349 ++++++++++++++++++++
+ .../opus-fix-evidence/A2-A10-green.txt             |  22 ++
+ .../opus-fix-evidence/A2-A10-red.txt               |  58 ++++
+ .../implementation/opus-fix-evidence/A3.txt        | 168 ++++++++++
+ .../opus-fix-evidence/A4-sequential-reads.patch    |  13 +
+ .../opus-fix-evidence/A4-sequential-reads.txt      |  58 ++++
+ .../opus-fix-evidence/A6-artifact.patch            |   5 +
+ .../opus-fix-evidence/A6-artifact.txt              | 184 +++++++++++
+ .../opus-fix-evidence/A6-cancellation.patch        |  11 +
+ .../opus-fix-evidence/A6-cancellation.txt          | 179 +++++++++++
+ .../opus-fix-evidence/A6-matrix-choices.patch      |  11 +
+ .../opus-fix-evidence/A6-matrix-choices.txt        |  40 +++
+ .../opus-fix-evidence/A6-matrix-doctors.patch      |  11 +
+ .../opus-fix-evidence/A6-matrix-doctors.txt        | 112 +++++++
+ .../opus-fix-evidence/A6-privacy.patch             |  10 +
+ .../opus-fix-evidence/A6-privacy.txt               | 184 +++++++++++
+ .../opus-fix-evidence/A6-transcript-argument.patch |  10 +
+ .../opus-fix-evidence/A6-transcript-argument.txt   |  46 +++
+ .../implementation/opus-fix-evidence/A7-audit.py   |  17 +
+ .../opus-fix-evidence/A7-cleanup.txt               |  32 ++
+ .../opus-fix-evidence/A8-expectation.patch         |  11 +
+ .../opus-fix-evidence/A8-expectation.txt           |  32 ++
+ .../opus-fix-evidence/A8-release.txt               | 136 ++++++++
+ .../opus-fix-evidence/A8-settings.txt              | 163 ++++++++++
+ .../implementation/opus-fix-evidence/A9-audit.py   |  18 ++
+ .../implementation/opus-fix-evidence/A9-docs.txt   |  38 +++
+ .../B1-availability-knowledge.patch                |  36 +++
+ .../B1-availability-knowledge.txt                  | 303 ++++++++++++++++++
+ .../opus-fix-evidence/C-livekit-audit.py           |  20 ++
+ .../implementation/opus-fix-evidence/C-livekit.txt |  81 +++++
+ .../implementation/opus-fix-evidence/README.md     |  63 ++++
+ .../opus-fix-evidence/final-audit.txt              | 130 ++++++++
+ .../opus-fix-evidence/final-suite.txt              |  49 +++
+ .../opus-fix-evidence/handback-fast.txt            |  22 ++
+ .../opus-fix-evidence/patch-replay.txt             |  40 +++
+ .../opus-fix-evidence/prior-01-empty-input.patch   |  11 +
+ .../prior-02-routing-speech.patch                  |   9 +
+ .../opus-fix-evidence/prior-03-deadline.patch      |  11 +
+ .../prior-04-smoke-envelope.patch                  |  11 +
+ .../opus-fix-evidence/prior-05-bench-write.patch   |  11 +
+ .../opus-fix-evidence/prior-06-stub-path.patch     |   8 +
+ .../prior-07-date-validation.patch                 |  11 +
+ scripts/env.sh                                     |   6 +
+ .../dev/frontdesk_stubs/data/demo_hospital.json    |   4 +-
+ services/mcp/dev/frontdesk_stubs/knowledge.py      |  18 +-
+ services/mcp/src/frontdesk_mcp/availability.py     |   4 +-
+ services/mcp/src/frontdesk_mcp/booking.py          |   2 -
+ services/mcp/src/frontdesk_mcp/config.py           |  10 +
+ services/mcp/src/frontdesk_mcp/knowledge.py        |   7 +-
+ services/mcp/src/frontdesk_mcp/knowledge_client.py |   2 +
+ .../mcp/src/frontdesk_mcp/knowledge_contract.py    |  35 +-
+ .../mcp/src/frontdesk_mcp/packs/healthcare.json    |   4 +-
+ services/mcp/src/frontdesk_mcp/prompt.py           |  11 +-
+ .../mcp/tests/contracts/mcp-tools.snapshot.json    |   7 +-
+ services/mcp/tests/test_availability.py            |  10 +
+ services/mcp/tests/test_booking.py                 |   3 +-
+ services/mcp/tests/test_deploy.py                  |  43 ++-
+ services/mcp/tests/test_external_transport.py      |   1 +
+ services/mcp/tests/test_knowledge.py               | 104 +++++-
+ services/mcp/tests/test_server.py                  |  30 +-
+ services/mcp/tests/test_settings.py                |  17 +
+ services/mcp/tests/test_stubs.py                   |   3 +
+ 76 files changed, 3674 insertions(+), 195 deletions(-)
+
+$ git diff --name-status aa11591
+M	deploy/azure/deploy.sh
+M	deploy/azure/smoke.py
+M	deploy/environments/README.md
+M	docs/DECISIONS.md
+M	docs/architecture/TARGET.md
+M	docs/handover/CONTEXTFORGE.md
+M	docs/handover/LIVEKIT.md
+M	docs/handover/OWNER-INTEGRATION-MESSAGES.md
+M	docs/handover/TESTING.md
+M	docs/handover/mcp-only/AGENT-INSTRUCTIONS.txt
+M	docs/handover/mcp-only/README.md
+A	docs/handover/mcp-only/implementation/OPUS-FIX-PLAN.md
+A	docs/handover/mcp-only/implementation/OPUS-FIX-REPORT.md
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A1-A5-green.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A1-A5-red.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A2-A10-green.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A2-A10-red.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A3.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A4-sequential-reads.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A4-sequential-reads.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-artifact.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-artifact.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-cancellation.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-cancellation.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-matrix-choices.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-matrix-choices.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-matrix-doctors.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-matrix-doctors.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-privacy.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-privacy.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-transcript-argument.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A6-transcript-argument.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A7-audit.py
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A7-cleanup.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A8-expectation.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A8-expectation.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A8-release.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A8-settings.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A9-audit.py
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/A9-docs.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/B1-availability-knowledge.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/B1-availability-knowledge.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/C-livekit-audit.py
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/C-livekit.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/README.md
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/final-audit.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/final-suite.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/handback-fast.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/patch-replay.txt
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/prior-01-empty-input.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/prior-02-routing-speech.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/prior-03-deadline.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/prior-04-smoke-envelope.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/prior-05-bench-write.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/prior-06-stub-path.patch
+A	docs/handover/mcp-only/implementation/opus-fix-evidence/prior-07-date-validation.patch
+M	scripts/env.sh
+M	services/mcp/dev/frontdesk_stubs/data/demo_hospital.json
+M	services/mcp/dev/frontdesk_stubs/knowledge.py
+M	services/mcp/src/frontdesk_mcp/availability.py
+M	services/mcp/src/frontdesk_mcp/booking.py
+M	services/mcp/src/frontdesk_mcp/config.py
+M	services/mcp/src/frontdesk_mcp/knowledge.py
+M	services/mcp/src/frontdesk_mcp/knowledge_client.py
+M	services/mcp/src/frontdesk_mcp/knowledge_contract.py
+M	services/mcp/src/frontdesk_mcp/packs/healthcare.json
+M	services/mcp/src/frontdesk_mcp/prompt.py
+M	services/mcp/tests/contracts/mcp-tools.snapshot.json
+M	services/mcp/tests/test_availability.py
+M	services/mcp/tests/test_booking.py
+M	services/mcp/tests/test_deploy.py
+M	services/mcp/tests/test_external_transport.py
+M	services/mcp/tests/test_knowledge.py
+M	services/mcp/tests/test_server.py
+M	services/mcp/tests/test_settings.py
+M	services/mcp/tests/test_stubs.py
+
+$ git diff --stat 73a0832 -- services/mcp/src
+ services/mcp/src/frontdesk_mcp/availability.py     | 141 +++++----------------
+ services/mcp/src/frontdesk_mcp/booking.py          |  59 ++-------
+ services/mcp/src/frontdesk_mcp/cli.py              |   7 +-
+ services/mcp/src/frontdesk_mcp/config.py           |  14 +-
+ services/mcp/src/frontdesk_mcp/context.py          |  47 +------
+ services/mcp/src/frontdesk_mcp/knowledge.py        |  71 +++--------
+ services/mcp/src/frontdesk_mcp/knowledge_client.py |  26 +---
+ .../mcp/src/frontdesk_mcp/knowledge_contract.py    | 113 +++++++++--------
+ services/mcp/src/frontdesk_mcp/outcomes.py         |  14 +-
+ .../mcp/src/frontdesk_mcp/packs/healthcare.json    |  10 +-
+ services/mcp/src/frontdesk_mcp/prompt.py           |  16 ++-
+ services/mcp/src/frontdesk_mcp/tools.py            |   6 +-
+ 12 files changed, 165 insertions(+), 359 deletions(-)
