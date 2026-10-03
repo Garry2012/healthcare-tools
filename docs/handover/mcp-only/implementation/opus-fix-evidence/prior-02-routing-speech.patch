@@ -1,0 +1,9 @@
+--- a/services/mcp/src/frontdesk_mcp/knowledge.py
++++ b/services/mcp/src/frontdesk_mcp/knowledge.py
+@@ -43,5 +43,5 @@
+         step = {"EMERGENCY_TRANSFER": "TRANSFER_EMERGENCY", "DESK_TRANSFER": "TRANSFER_DESK",
+                 "ROUTE_DEPARTMENT": "CHECK_AVAILABILITY"}[response.outcome]
+         return outcomes.KnowledgeResult(outcome="ROUTING_REQUIRED", nextStep=step, **common,
+-                                        routing=outcomes.Routing(decision=response.outcome, speak=speech,
++                                        routing=outcomes.Routing(decision=response.outcome, speak=None,
+                                             department=response.department.name if response.department else None))

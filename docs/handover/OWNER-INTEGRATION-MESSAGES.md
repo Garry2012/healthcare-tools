@@ -30,36 +30,28 @@ should prepare these rows. We will not modify Manoj's database or guess that a t
 
 ## Shobhit — knowledge and routing
 
-> Please share your versioned OpenAPI, HTTPS base URL and secure auth reference for hospital answers,
-> symptom/department routing and red-flag decisions, including clarify/no-answer/outage outcomes.
-> Confirm how we send original caller words, language and earlier appointment reasons (`turn` /
-> `additionalText` in our provisional contract); keep the bearer at the agreed vault reference,
-> not in chat. We need a representative EN/KN/HI test set and your expected service latency.
+> Please share readiness, versioned OpenAPI, HTTPS test URL and secure auth reference for a single knowledge request returning an answer, no answer, clarification, department, desk or emergency decision. Our question/language consumer proposal is in knowledge_contract.py; please confirm it or supply your own contract, EN/KN/HI fixtures and latency evidence.
 
-Our `/v1/route` and `/v1/answer` shapes are provisional, not an imposed owner contract. Once supplied,
-we adapt the client and fixtures and set `KNOWLEDGE_BASE_URL` once in `deploy/environments/live.env`;
-`knowledge-token` is the current credential reference. Deployment, tests and benchmarks then use it.
-The complete in-call tool budget is 300 ms, potentially including both operational and knowledge
-calls. Agree and measure per-service time allocations; the one-second voice target is not yet proven.
+The provisional `/v1/answer` is a consumer proposal, not an imposed API. The voice platform separately needs an every-turn emergency classifier contract, covering conversation context, stale results, outages and transfer destinations. Scheduling tools do not call knowledge. Set the agreed provider URL once in `deploy/environments/live.env`; keep its bearer in Key Vault. The 300 ms tool allocation and one-second voice target still require real-path measurements.
 
 ## Rajiv — voice integration
 
 > Connect the voice backend to the healthcare virtual-server MCP URL issued by the existing IBM
-> ContextForge gateway, using a scoped voice-client token. Forward trusted per-call/per-turn headers
-> (`X-Call-Id`, caller number + verification, original turn context, stable operation ID); the platform
+> ContextForge gateway, using a scoped voice-client token. Forward trusted per-call/per-operation headers
+> (`X-Call-Id`, caller number + verification, stable operation ID); the platform
 > must set them, not the LLM. At call end, invoke `record_call_summary` directly on the MCP canary with
 > the separate `mcp-lifecycle-token`, timing headers and a durable retry queue. UNKNOWN availability
 > means collect name/number and save a callback summary only. Follow the linked integration contracts
 > and validate a full call before removing the voice services' old REST binding.
 
-- [Voice contract and exact headers](LIVEKIT.md)
+- [MCP interface and trusted headers](VOICE-TEAM.md)
 - [Gateway URLs, setup and credential separation](CONTEXTFORGE.md)
 - Conversation tools: `get_doctor_availability`, `manage_booking`, `search_knowledge`.
 - Call-end URL: `https://mcp-demo-hospital-canary.icytree-6543aaa9.centralindia.azurecontainerapps.io/mcp/`.
 - The platform handles confirmations, immutable retry payloads and stable IDs. A lost write response
   is UNCERTAIN, not a confirmed failure; do not issue a fresh booking with a new operation ID.
-- Test simultaneous calls and EN/KN/HI encoded turn headers; gateway byte limits can be smaller than
-  the adapter's character limit. Never truncate original caller words to make a header fit.
+- Test simultaneous calls and per-write operation headers through the local booking wrapper. Pass EN/KN/HI
+  caller words in the explicit knowledge question body, never a transcript header; never truncate them.
 
 ## Rajiv — expose Stratum without moving its implementation here
 

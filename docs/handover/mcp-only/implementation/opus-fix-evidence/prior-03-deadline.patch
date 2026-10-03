@@ -1,0 +1,11 @@
+--- a/services/mcp/src/frontdesk_mcp/knowledge_client.py
++++ b/services/mcp/src/frontdesk_mcp/knowledge_client.py
+@@ -47,7 +47,7 @@
+             raise KnowledgeUnavailable("NOT_CONFIGURED")
+         try:
+             timeout = deadline.timeout(self.settings.request_timeout_seconds)
+-            async with asyncio.timeout(timeout):  # wall-clock cap: httpx's timeout is per phase/chunk
++            async with asyncio.timeout(2):  # wall-clock cap: httpx's timeout is per phase/chunk
+                 response = await self.http.post(path, json=body, timeout=timeout)
+         except DeadlineExceeded as exc:
+             raise KnowledgeUnavailable("UNAVAILABLE") from exc

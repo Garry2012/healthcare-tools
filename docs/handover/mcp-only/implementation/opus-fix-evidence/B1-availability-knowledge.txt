@@ -1,0 +1,303 @@
+$ uv run --directory services/mcp pytest tests/test_availability.py -k independent_of_knowledge -q --tb=short
+FFFFFFFF..........                                                       [100%]
+=================================== FAILURES ===================================
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST] _
+tests/test_availability.py:422: in test_availability_is_independent_of_knowledge_and_transcript
+    result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+src/frontdesk_mcp/availability.py:92: in get
+    await self.knowledge.answer("unwanted gate", "en", ctx, deadline)
+src/frontdesk_mcp/knowledge_client.py:77: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_availability.py:416: in forbidden
+    raise AssertionError("availability must not contact knowledge")
+E   AssertionError: availability must not contact knowledge
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target1-AVAILABILITY-OFFER_APPOINTMENT_REQUEST] _
+tests/test_availability.py:422: in test_availability_is_independent_of_knowledge_and_transcript
+    result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+src/frontdesk_mcp/availability.py:92: in get
+    await self.knowledge.answer("unwanted gate", "en", ctx, deadline)
+src/frontdesk_mcp/knowledge_client.py:77: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_availability.py:416: in forbidden
+    raise AssertionError("availability must not contact knowledge")
+E   AssertionError: availability must not contact knowledge
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target2-CLARIFICATION_NEEDED-ASK_WHICH_DOCTOR] _
+tests/test_availability.py:422: in test_availability_is_independent_of_knowledge_and_transcript
+    result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+src/frontdesk_mcp/availability.py:92: in get
+    await self.knowledge.answer("unwanted gate", "en", ctx, deadline)
+src/frontdesk_mcp/knowledge_client.py:77: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_availability.py:416: in forbidden
+    raise AssertionError("availability must not contact knowledge")
+E   AssertionError: availability must not contact knowledge
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target3-AVAILABILITY-ASK_WHICH_DOCTOR] _
+tests/test_availability.py:422: in test_availability_is_independent_of_knowledge_and_transcript
+    result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+src/frontdesk_mcp/availability.py:92: in get
+    await self.knowledge.answer("unwanted gate", "en", ctx, deadline)
+src/frontdesk_mcp/knowledge_client.py:77: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_availability.py:416: in forbidden
+    raise AssertionError("availability must not contact knowledge")
+E   AssertionError: availability must not contact knowledge
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target4-AVAILABILITY-ASK_WHICH_DOCTOR] _
+tests/test_availability.py:422: in test_availability_is_independent_of_knowledge_and_transcript
+    result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+src/frontdesk_mcp/availability.py:92: in get
+    await self.knowledge.answer("unwanted gate", "en", ctx, deadline)
+src/frontdesk_mcp/knowledge_client.py:77: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_availability.py:416: in forbidden
+    raise AssertionError("availability must not contact knowledge")
+E   AssertionError: availability must not contact knowledge
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target5-CALLBACK_REQUIRED-ASK_CALLBACK_DETAILS] _
+tests/test_availability.py:422: in test_availability_is_independent_of_knowledge_and_transcript
+    result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+src/frontdesk_mcp/availability.py:92: in get
+    await self.knowledge.answer("unwanted gate", "en", ctx, deadline)
+src/frontdesk_mcp/knowledge_client.py:77: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_availability.py:416: in forbidden
+    raise AssertionError("availability must not contact knowledge")
+E   AssertionError: availability must not contact knowledge
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target6-NOT_FOUND-ASK_TO_REPHRASE] _
+tests/test_availability.py:422: in test_availability_is_independent_of_knowledge_and_transcript
+    result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+src/frontdesk_mcp/availability.py:92: in get
+    await self.knowledge.answer("unwanted gate", "en", ctx, deadline)
+src/frontdesk_mcp/knowledge_client.py:77: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_availability.py:416: in forbidden
+    raise AssertionError("availability must not contact knowledge")
+E   AssertionError: availability must not contact knowledge
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target7-INVALID_REQUEST-ASK_TO_REPHRASE] _
+tests/test_availability.py:422: in test_availability_is_independent_of_knowledge_and_transcript
+    result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+src/frontdesk_mcp/availability.py:92: in get
+    await self.knowledge.answer("unwanted gate", "en", ctx, deadline)
+src/frontdesk_mcp/knowledge_client.py:77: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_availability.py:416: in forbidden
+    raise AssertionError("availability must not contact knowledge")
+E   AssertionError: availability must not contact knowledge
+=============================== warnings summary ===============================
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target1-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target2-CLARIFICATION_NEEDED-ASK_WHICH_DOCTOR]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target3-AVAILABILITY-ASK_WHICH_DOCTOR]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target4-AVAILABILITY-ASK_WHICH_DOCTOR]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target5-CALLBACK_REQUIRED-ASK_CALLBACK_DETAILS]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target6-NOT_FOUND-ASK_TO_REPHRASE]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target7-INVALID_REQUEST-ASK_TO_REPHRASE]
+8 failed, 10 passed, 42 deselected, 2 warnings in 0.54s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 54%]
+........................................................................ [ 72%]
+........................................................................ [ 90%]
+........................................                                 [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+400 passed, 11 deselected, 2 warnings in 16.35s
+EXIT: 0

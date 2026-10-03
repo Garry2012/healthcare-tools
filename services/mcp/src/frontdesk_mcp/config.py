@@ -105,7 +105,15 @@ class Settings(BaseSettings):
     @field_validator("ops_base_url", "knowledge_base_url")
     @classmethod
     def _strip_slash(cls, value: str) -> str:
+        value = value.strip()
+        if value and not value.rstrip("/"):
+            raise ValueError("owner base URL must not contain only slashes")
         return value.rstrip("/")
+
+    @field_validator("knowledge_bearer_token")
+    @classmethod
+    def _knowledge_token(cls, value: SecretStr) -> SecretStr:
+        return SecretStr(value.get_secret_value().strip())
 
     @field_validator("accepted_caller_verification")
     @classmethod
@@ -172,6 +180,8 @@ class Settings(BaseSettings):
     def _guards(self) -> Settings:
         packs.load(self.domain_pack)
         if self.env != "development":
+            if bool(self.knowledge_base_url) != bool(self.knowledge_bearer_token.get_secret_value()):
+                raise ValueError("KNOWLEDGE_BASE_URL and KNOWLEDGE_BEARER_TOKEN must both be set or both empty")
             if self.mcp_dev_caller_number:
                 raise ValueError("MCP_DEV_CALLER_NUMBER is allowed only when ENV=development")
             gateway = self.mcp_bearer_token.get_secret_value()
@@ -181,10 +191,10 @@ class Settings(BaseSettings):
                                  "decided by the bearer)")
             if not (self.ops_client_id and self.ops_client_secret.get_secret_value()):
                 raise ValueError("OPS_CLIENT_ID and OPS_CLIENT_SECRET are required outside development")
-            if not self.knowledge_base_url:
-                raise ValueError("KNOWLEDGE_BASE_URL is required outside development (no local knowledge fallback)")
         if self.env == "production":
             for name, url in (("OPS_BASE_URL", self.ops_base_url), ("KNOWLEDGE_BASE_URL", self.knowledge_base_url)):
+                if name == "KNOWLEDGE_BASE_URL" and not url:
+                    continue  # only the knowledge tool is unavailable; scheduling remains independent
                 if not url.startswith("https://"):
                     # Caller numbers, names and symptoms cross these hops: never in clear text in production.
                     raise ValueError(f"{name} must use https:// when ENV=production")

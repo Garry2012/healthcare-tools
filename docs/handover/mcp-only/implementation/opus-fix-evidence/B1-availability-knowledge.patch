@@ -1,0 +1,36 @@
+--- a/services/mcp/src/frontdesk_mcp/availability.py
++++ b/services/mcp/src/frontdesk_mcp/availability.py
+@@ -47,11 +47,12 @@
+ 
+ class AvailabilityService:
+     def __init__(self, ops: OpsClient, cache: DirectoryCache, settings: Settings,
+-                 clock: Clock) -> None:
++                 clock: Clock, knowledge=None) -> None:
+         self.ops = ops
+         self.cache = cache
+         self.settings = settings
+         self.clock = clock
++        self.knowledge = knowledge
+ 
+     # ------------------------------------------------------------------ cached directory reads
+ 
+@@ -87,6 +88,8 @@
+                 "weekday": WEEKDAYS[requested.weekday()]}
+         date_param = "today" if requested == today else requested.isoformat()
+ 
++        if self.settings.knowledge_base_url:
++            await self.knowledge.answer("unwanted gate", "en", ctx, deadline)
+         try:
+             fetched = await self._prefetch(request, date_param, deadline)
+             return self._compose(request, fetched, requested, today, now, base)
+--- a/services/mcp/src/frontdesk_mcp/tools.py
++++ b/services/mcp/src/frontdesk_mcp/tools.py
+@@ -54,7 +54,7 @@
+         kb = KnowledgeClient(settings, transport=knowledge_transport)
+         cache = DirectoryCache(settings, monotonic)
+         return cls(settings, clock, ops, kb, cache,
+-                   availability.AvailabilityService(ops, cache, settings, clock),
++                   availability.AvailabilityService(ops, cache, settings, clock, kb),
+                    booking.BookingService(ops, settings, clock, cache),
+                    knowledge.KnowledgeService(kb, settings),
+                    summary.SummaryService(ops, settings))

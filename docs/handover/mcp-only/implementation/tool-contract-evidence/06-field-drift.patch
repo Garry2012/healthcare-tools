@@ -1,0 +1,11 @@
+--- a/docs/handover/VOICE-TEAM.md
++++ b/docs/handover/VOICE-TEAM.md
+@@ -47,7 +47,7 @@
+ 
+ | Field path | Type / constraints (JSON Schema) | Presence | Meaning |
+ |---|---|---|---|
+-| `get_doctor_availability.input.date` | `{"maxLength":10,"type":"string"}` | required | Required date: 'today' or YYYY-MM-DD. Other relative dates are not accepted. |
++| `get_doctor_availability.input.date` | `{"maxLength":11,"type":"string"}` | required | Required date: 'today' or YYYY-MM-DD. Other relative dates are not accepted. |
+ | `get_doctor_availability.input.departmentId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Directory identifier for a selected department; optional alternative to departmentName. |
+ | `get_doctor_availability.input.departmentName` | `{"anyOf":[{"maxLength":100,"type":"string"},{"type":"null"}]}` | optional | Department or speciality name for directory search; optional. |
+ | `get_doctor_availability.input.doctorId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Directory identifier for a selected doctor; optional alternative to doctorName. |

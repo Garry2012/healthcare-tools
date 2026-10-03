@@ -1,9 +1,7 @@
-"""Domain packs for the words the LLM reads (docs/architecture/TARGET.md A3, A10).
+"""Domain-specific tool descriptions and neutral contract facts.
 
-The tool surface (names, parameters, behaviour) is the same in every domain; a pack gives only
-its own words: who the agent is (`role`), the instructions that are the domain's alone, and the
-tool and parameter descriptions. The core rules and the rollout's languages are added by
-`prompt.instructions`. A pack must describe every tool, and may only describe parameters that exist.
+The tool surface is common across packs; each pack supplies its domain label, factual summary
+and parameter descriptions. Rollout languages and display name are supplied by prompt.instructions.
 """
 
 from __future__ import annotations
@@ -23,8 +21,8 @@ class ToolText:
 @dataclass(frozen=True)
 class Pack:
     name: str
-    role: str  # "a hospital voice agent"
-    instructions: str  # the domain's own rules; never a core rule
+    role: str  # domain label
+    instructions: str  # neutral domain facts
     tools: dict[str, ToolText]
 
 

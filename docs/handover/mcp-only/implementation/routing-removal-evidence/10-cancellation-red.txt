@@ -1,0 +1,30 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_cancelled_create_cancels_both_owner_reads_without_writing ________
+tests/test_booking.py:589: in test_cancelled_create_cancels_both_owner_reads_without_writing
+    await cancelled["board"].wait()
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+tests/test_booking.py:587: in test_cancelled_create_cancels_both_owner_reads_without_writing
+    async with asyncio.timeout(0.1):
+               ^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/timeouts.py:116: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+=============================== warnings summary ===============================
+tests/test_booking.py::test_cancelled_create_cancels_both_owner_reads_without_writing
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+tests/test_booking.py::test_cancelled_create_cancels_both_owner_reads_without_writing
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_booking.py::test_cancelled_create_cancels_both_owner_reads_without_writing
+1 failed, 60 deselected, 2 warnings in 1.21s

@@ -1,5 +1,7 @@
 # Implementation review report (1 October 2026)
 
+> Historical evidence/instructions for the pre-removal revision. Scheduling-gate statements are superseded by the user-approved K1 decision in docs/DECISIONS.md and ROUTING-REMOVAL-REVIEW.md. Do not implement or deploy from this historical document.
+
 Branch `Garry2012/mcp-external-api` → PR #11 against `main`. Tested code commit after the architect's
 re-review pass: **`d1ec197`** (earlier passes: `e9c6bc5` self-review fixes, `04e282b` AR-01..08, `4af9628` follow-ups; reports
 may be committed afterwards and reference the code SHA). Author: Claude Fable 5.1 acting as

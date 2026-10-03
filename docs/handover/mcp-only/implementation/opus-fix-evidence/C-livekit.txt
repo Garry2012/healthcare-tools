@@ -1,0 +1,81 @@
+$ python3 docs/handover/mcp-only/implementation/opus-fix-evidence/C-livekit-audit.py
+FAIL: C1 concrete local booking wrapper and per-intent transport
+FAIL: C2 current-version write barrier inside wrapper
+FAIL: C3 callback capture and shutdown finalization
+FAIL: C4 force interrupt, transfer, duplicate policy and startup check
+FAIL: current rollout-specific instructions
+EXIT: 1
+$ python3 docs/handover/mcp-only/implementation/opus-fix-evidence/C-livekit-audit.py
+PASS: C1 concrete local booking wrapper and per-intent transport
+FAIL: C2 current-version write barrier inside wrapper
+PASS: C3 callback capture and shutdown finalization
+PASS: C4 force interrupt, transfer, duplicate policy and startup check
+PASS: current rollout-specific instructions
+EXIT: 1
+$ python3 docs/handover/mcp-only/implementation/opus-fix-evidence/C-livekit-audit.py
+PASS: C1 concrete local booking wrapper and per-intent transport
+PASS: C2 current-version write barrier inside wrapper
+PASS: C3 callback capture and shutdown finalization
+PASS: C4 force interrupt, transfer, duplicate policy and startup check
+PASS: current rollout-specific instructions
+EXIT: 0
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 54%]
+........................................................................ [ 72%]
+........................................................................ [ 90%]
+........................................                                 [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+400 passed, 11 deselected, 2 warnings in 24.71s
+EXIT: 0
+$ python3 docs/handover/mcp-only/implementation/opus-fix-evidence/C-livekit-audit.py
+PASS: C1 concrete local booking wrapper and per-intent transport
+PASS: C2 current-version write barrier inside wrapper
+PASS: C3 callback capture and shutdown finalization
+PASS: C4 force interrupt, transfer, duplicate policy and startup check
+FAIL: callback transition on booking board recheck
+PASS: current rollout-specific instructions
+EXIT: 1
+$ python3 docs/handover/mcp-only/implementation/opus-fix-evidence/C-livekit-audit.py
+PASS: C1 concrete local booking wrapper and per-intent transport
+PASS: C2 current-version write barrier inside wrapper
+PASS: C3 callback capture and shutdown finalization
+PASS: C4 force interrupt, transfer, duplicate policy and startup check
+PASS: callback transition on booking board recheck
+PASS: current rollout-specific instructions
+EXIT: 0
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 54%]
+........................................................................ [ 72%]
+........................................................................ [ 90%]
+........................................                                 [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+400 passed, 11 deselected, 2 warnings in 23.22s
+EXIT: 0

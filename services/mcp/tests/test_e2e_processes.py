@@ -65,13 +65,13 @@ def processes():
 
 async def test_release_smoke_passes_against_real_processes(processes):
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "lifecycle-e2e", "en", "General Medicine")
+    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "lifecycle-e2e", "en",
+                         "General Medicine", "required")
 
 
 async def test_journey_and_lifecycle_through_real_transport(processes):
     base = processes["mcp"]
-    headers = {"Authorization": "Bearer gateway-e2e", **harness.headers(call_id="e2e-1", operation_id="op-e2e-1",
-                                                                       turn="Dr Garima tomorrow please")}
+    headers = {"Authorization": "Bearer gateway-e2e", **harness.headers(call_id="e2e-1", operation_id="op-e2e-1")}
     # The stub's board for a far future date is UNKNOWN unless scripted: script a confirmed session first.
     httpx.post(f"{processes['ops']}/__stub/scenario", json={"boards": {"2099-01-05": [
         {"doctorId": "doc_garima", "session": "Morning", "status": "NOT_CONFIRMED", "expectedTime": "09:00",
@@ -91,7 +91,7 @@ async def test_journey_and_lifecycle_through_real_transport(processes):
                                                             "summaryText": "x"}, raise_on_error=False)
         assert refused.is_error
     lifecycle = {"Authorization": "Bearer lifecycle-e2e", **harness.headers(
-        call_id="e2e-1", turn=None, started_at="2026-10-01T10:00:00+05:30", duration="120")}
+        call_id="e2e-1", started_at="2026-10-01T10:00:00+05:30", duration="120")}
     async with Client(StreamableHttpTransport(f"{base}/mcp/", headers=lifecycle)) as c:
         assert [t.name for t in await c.list_tools()] == ["record_call_summary"]
         stored = (await c.call_tool("record_call_summary", {

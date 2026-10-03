@@ -1,0 +1,50 @@
+ services/mcp/src/frontdesk_mcp/availability.py     | 141 +++++----------------
+ services/mcp/src/frontdesk_mcp/booking.py          |  61 ++-------
+ services/mcp/src/frontdesk_mcp/cli.py              |   7 +-
+ services/mcp/src/frontdesk_mcp/config.py           |   4 +-
+ services/mcp/src/frontdesk_mcp/context.py          |  47 +------
+ services/mcp/src/frontdesk_mcp/knowledge.py        |  70 +++-------
+ services/mcp/src/frontdesk_mcp/knowledge_client.py |  24 +---
+ .../mcp/src/frontdesk_mcp/knowledge_contract.py    |  84 +++++-------
+ services/mcp/src/frontdesk_mcp/outcomes.py         |  14 +-
+ .../mcp/src/frontdesk_mcp/packs/healthcare.json    |  10 +-
+ services/mcp/src/frontdesk_mcp/prompt.py           |  11 +-
+ services/mcp/src/frontdesk_mcp/tools.py            |   6 +-
+ 12 files changed, 124 insertions(+), 355 deletions(-)
+Active runtime/test/tooling/current-document roots: services/mcp/src, services/mcp/tests, services/mcp/dev, deploy, scripts, .claude/agents, CLAUDE.md, README.md, .env.example, docs/architecture, docs/handover/LIVEKIT.md, docs/handover/CONTEXTFORGE.md, docs/handover/VOICE-TEAM.md, docs/handover/OWNER-INTEGRATION-MESSAGES.md, docs/handover/mcp-only/PLAN.md, docs/handover/mcp-only/TARGET-STATE.md, docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+Excluded: gitignored user briefs/temp, virtualenv/cache/builds, historical reports, this proof log.
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ _Routing services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ _routing_outcome services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ _routing_out services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ routing_task services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ RouteRequest services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ RouteResponse services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ CLEARANCE services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ additionalText services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ TurnEcho services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ TurnContext services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ TurnFailure services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ UTTERANCE_MAX services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ _turn services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ X-Turn-Context services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ ROUTING_UNAVAILABLE services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ ASK_ROUTING_CLARIFICATION services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+$ grep -rnIw --exclude=*.pyc --exclude-dir=__pycache__ ROUTE_PATH services/mcp/src services/mcp/tests services/mcp/dev deploy scripts .claude/agents CLAUDE.md README.md .env.example docs/architecture docs/handover/LIVEKIT.md docs/handover/CONTEXTFORGE.md docs/handover/VOICE-TEAM.md docs/handover/OWNER-INTEGRATION-MESSAGES.md docs/handover/mcp-only/PLAN.md docs/handover/mcp-only/TARGET-STATE.md docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+exit 1: zero active hits
+SOURCE TOTAL: +124 -355; net -231

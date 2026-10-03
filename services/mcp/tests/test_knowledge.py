@@ -1,155 +1,250 @@
-"""search_knowledge: approved hospital answers, clarification, desk routing and no-answer outcomes come
-from Shobhit's service and are returned verbatim; a failure is a failure, never an answer."""
-
+"""Single knowledge exchange: owner wording and decisions, never an implicit scheduling gate."""
 from __future__ import annotations
 
+import asyncio
+import json
+
+import httpx
 import pytest
+from pydantic import ValidationError
 
-from frontdesk_mcp import knowledge
-
-from . import harness
-
-
-@pytest.fixture
-async def h(make_settings):
-    built = harness.build(make_settings())
-    yield built
-    await built.aclose()
+from frontdesk_mcp.context import CallContext
+from frontdesk_mcp.knowledge import KnowledgeRequest
+from frontdesk_mcp.tools import Services
 
 
-async def ask(h, question: str, language: str = "en", ctx=None):
-    service = knowledge.KnowledgeService(h.knowledge, h.settings)
-    return await service.search(ctx or h.ctx(), knowledge.KnowledgeRequest(question=question, language=language))
+@pytest.mark.parametrize("payload,outcome,step", [
+    ({"outcome": "ANSWERED", "answer": {"text": "ಪಾರ್ಕಿಂಗ್ ಇದೆ", "language": "kn"}, "sourceId": "parking"},
+     "ANSWERED", "SPEAK_ANSWER"),
+    ({"outcome": "NO_ANSWER"}, "NO_ANSWER", "SAY_NO_ANSWER_AND_OFFER_DESK"),
+    ({"outcome": "CLARIFY", "answer": {"text": "Which service?", "language": "en"}},
+     "CLARIFICATION_NEEDED", "ASK_CLARIFICATION"),
+    ({"outcome": "DESK_TRANSFER", "destination": "desk"}, "ROUTING_REQUIRED", "TRANSFER_DESK"),
+    ({"outcome": "EMERGENCY_TRANSFER", "answer": {"text": "Owner emergency instruction", "language": "en"}},
+     "ROUTING_REQUIRED", "TRANSFER_EMERGENCY"),
+    ({"outcome": "ROUTE_DEPARTMENT", "department": {"name": "Paediatrics"}},
+     "ROUTING_REQUIRED", "CHECK_AVAILABILITY"),
+])
+async def test_one_exchange_maps_owner_outcome_without_transcript(make_settings, payload, outcome, step, caplog):
+    requests = []
 
+    async def owner(request):
+        requests.append(request)
+        return httpx.Response(200, json=payload)
 
-async def test_approved_answer_is_returned_verbatim_in_the_callers_language(h):
-    result = await ask(h, "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", "kn")
-    assert result.outcome == "ANSWERED" and result.nextStep == "SPEAK_ANSWER"
-    assert result.answer.language == "kn" and result.answer.text.startswith("ಹೌದು. ನೆಲಮಾಳಿಗೆಯಲ್ಲಿ")
-    assert result.sourceId == "kb_parking"
-
-
-async def test_the_question_and_call_id_reach_the_service_unchanged(h):
-    await ask(h, "  Is There Parking?  ", "en")
-    import json
-
-    from frontdesk_mcp import knowledge_contract as kc
-
-    answers = [r for r in h.requests if r.url.host == "knowledge-stub.test" and r.url.path == kc.ANSWER_PATH]
-    body = json.loads(answers[-1].content)
-    assert body == {"question": "  Is There Parking?  ", "language": "en", "callId": "call-1",
-                    "turn": {"utterance": "is Dr Garima in today", "language": "en"}}
-
-
-async def test_desk_transfer_answers_carry_the_destination(h):
-    result = await ask(h, "cashless")
-    assert result.outcome == "ROUTING_REQUIRED" and result.nextStep == "TRANSFER_DESK"
-    assert result.destination == "insurance" and "insurance desk" in result.answer.text
-
-
-async def test_clarification_and_no_answer_are_distinct_from_each_other_and_from_failure(h):
-    clarify = await ask(h, "fees kitna hai", "hi")
-    assert clarify.outcome == "CLARIFICATION_NEEDED" and clarify.nextStep == "ASK_CLARIFICATION"
-    assert clarify.answer.language == "hi"
-    none = await ask(h, "what is the meaning of life")
-    assert none.outcome == "NO_ANSWER" and none.nextStep == "SAY_NO_ANSWER_AND_OFFER_DESK" and none.answer is None
-
-
-@pytest.mark.parametrize("break_it,detail", [("outage", "UNAVAILABLE"), ("malformed", "MALFORMED")])
-async def test_answer_service_problems_are_could_not_check_never_an_answer(h, break_it, detail):
-    """Routing cleared; the answer call failed: a failure, with the routing decision still reported."""
-    from frontdesk_mcp import knowledge_contract as kc
-
-    if break_it == "outage":
-        h.knowledge_state.fail_next_for.append((kc.ANSWER_PATH, 503))
-    else:
-        h.knowledge_state.malformed_next_for.append(kc.ANSWER_PATH)
-    result = await ask(h, "parking")
-    assert result.outcome == "COULD_NOT_CHECK" and result.nextStep == "SAY_COULD_NOT_CHECK"
-    assert result.detail == detail and result.answer is None and result.routing.decision == "CONTINUE"
-
-
-@pytest.mark.parametrize("break_it,detail", [("unconfigured", "ROUTING_NOT_CONFIGURED"),
-                                             ("slow", "ROUTING_UNAVAILABLE")])
-async def test_knowledge_service_unreachable_means_no_routing_and_no_answer(make_settings, break_it, detail):
-    settings = make_settings()
-    if break_it == "unconfigured":
-        settings = make_settings(env="development", knowledge_base_url="")
-    if break_it == "slow":
-        settings = make_settings(allow_budget_overrides=True, read_deadline_seconds=0.3, write_deadline_seconds=0.3,
-                                 summary_deadline_seconds=0.3, request_timeout_seconds=0.2)
-    hh = harness.build(settings)
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(owner))
     try:
-        if break_it == "slow":
-            hh.knowledge_state.delay_seconds = 5
-        result = await ask(hh, "parking")
-        assert result.outcome == "ROUTING_UNAVAILABLE" and result.nextStep == "TRANSFER_DESK"
-        assert result.detail == detail and result.answer is None
+        question = "  ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ  "
+        result = await services.search.search(CallContext(call_id="call-1"),
+                                             KnowledgeRequest(question=question, language="kn"))
+        assert (result.outcome, result.nextStep) == (outcome, step)
+        [request] = requests
+        assert request.url.path == "/v1/answer" and request.method == "POST"
+        assert request.headers["authorization"] == "Bearer knowledge-secret"
+        assert json.loads(request.content) == {"question": question, "language": "kn", "callId": "call-1"}
+        if "answer" in payload and payload["outcome"] in ("ANSWERED", "CLARIFY"):
+            assert result.answer.model_dump() == payload["answer"]
+        if payload["outcome"] in ("EMERGENCY_TRANSFER", "DESK_TRANSFER", "ROUTE_DEPARTMENT"):
+            assert result.answer is None
+            assert result.routing.decision == payload["outcome"]
+            assert (result.routing.speak.model_dump() if result.routing.speak else None) == payload.get("answer")
+        if "department" in payload:
+            assert result.routing.department == "Paediatrics"
+        assert result.destination == payload.get("destination")
+        assert result.sourceId == payload.get("sourceId")
+        assert question not in caplog.text
     finally:
-        await hh.aclose()
+        await services.aclose()
 
 
-async def test_an_empty_question_is_invalid_without_a_call(h):
-    result = await ask(h, "   ")
-    assert result.outcome == "INVALID_REQUEST"
-    assert not [r for r in h.requests if r.url.host == "knowledge-stub.test"]
+@pytest.mark.parametrize("failure,detail", [
+    ("timeout", "UNAVAILABLE"), ("network", "UNAVAILABLE"), (401, "UNAVAILABLE"), (403, "UNAVAILABLE"),
+    (503, "UNAVAILABLE"), ("json", "MALFORMED"), ([], "MALFORMED"), ({}, "MALFORMED"),
+    ({"outcome": "invented"}, "MALFORMED"), ({"outcome": "ANSWERED"}, "MALFORMED"),
+    ({"outcome": "CLARIFY"}, "MALFORMED"), ({"outcome": "ROUTE_DEPARTMENT"}, "MALFORMED"),
+    ({"outcome": "ROUTE_DEPARTMENT", "department": {"name": " "}}, "MALFORMED"),
+    ({"outcome": "ANSWERED", "answer": {"text": " ", "language": "en"}}, "MALFORMED"),
+])
+async def test_owner_failure_is_not_an_answer(make_settings, failure, detail, caplog):
+    requests = []
+    cancelled = asyncio.Event()
+
+    async def owner(request):
+        requests.append(request)
+        if failure == "timeout":
+            try:
+                await asyncio.sleep(1)
+            finally:
+                cancelled.set()
+        if failure == "network":
+            raise httpx.ConnectError("private upstream error", request=request)
+        if isinstance(failure, int):
+            return httpx.Response(failure, text="private upstream error")
+        if failure == "json":
+            return httpx.Response(200, text="not json")
+        return httpx.Response(200, json=failure)
+
+    services = Services.build(make_settings(read_deadline_seconds=0.05),
+                              knowledge_transport=httpx.MockTransport(owner))
+    try:
+        started = asyncio.get_running_loop().time()
+        result = await services.search.search(
+            CallContext(), KnowledgeRequest(question="private caller question", language="en"))
+        assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+        assert result.answer is None and result.routing is None and len(requests) == 1
+        assert "private upstream error" not in result.model_dump_json()
+        assert "private caller question" not in caplog.text and "private upstream error" not in caplog.text
+        if failure == "timeout":
+            assert cancelled.is_set() and asyncio.get_running_loop().time() - started < 0.3
+    finally:
+        await services.aclose()
 
 
-async def test_the_trusted_turn_travels_with_the_question(h):
-    """Review fix: the model's question may omit the danger sign the caller actually said."""
-    import json
+@pytest.mark.parametrize("question,language", [("", "en"), ("  ", "en"), ("parking", " ")])
+async def test_empty_input_does_not_call_owner(make_settings, question, language):
+    async def forbidden(request):
+        raise AssertionError("invalid input must not reach owner")
 
-    from frontdesk_mcp import knowledge_contract as kc
-
-    await ask(h, "where is cardiology", "en", h.ctx(turn="my father has chest pain, where is cardiology?"))
-    answers = [r for r in h.requests if r.url.host == "knowledge-stub.test" and r.url.path == kc.ANSWER_PATH]
-    body = json.loads(answers[-1].content)
-    assert body["turn"] == {"utterance": "my father has chest pain, where is cardiology?", "language": "en"}
-
-
-# ------------------------------------------------------------------ architect review AR-02
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(forbidden))
+    try:
+        result = await services.search.search(CallContext(), KnowledgeRequest(question=question, language=language))
+        assert (result.outcome, result.nextStep) == ("INVALID_REQUEST", "ASK_TO_REPHRASE")
+    finally:
+        await services.aclose()
 
 
-async def test_a_danger_sign_in_the_trusted_turn_routes_before_any_answer(h):
-    """AR-02: the owner's routing decision over the caller's words comes first; a general question does not
-    bypass it."""
-    from frontdesk_stubs.knowledge import Decision
+async def test_question_limit_preserves_entire_question_and_rejects_overflow(make_settings):
+    requests = []
 
-    text = "my father has chest pain, where is cardiology?"
-    h.knowledge_state.decisions.insert(0, Decision((text,), "EMERGENCY_TRANSFER",
-                                                  speak={"text": "Connecting you to emergency.", "language": "en"}))
-    result = await ask(h, "where is cardiology", "en", h.ctx(turn=text))
-    assert result.outcome == "ROUTING_REQUIRED" and result.nextStep == "TRANSFER_EMERGENCY"
-    assert result.routing.decision == "EMERGENCY_TRANSFER" and result.routing.speak.text.startswith("Connecting")
-    assert result.answer is None
-    assert len(h.knowledge_state.routed) == 1 and h.knowledge_state.routed[0]["utterance"] == text
+    async def owner(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={"outcome": "NO_ANSWER"})
 
-
-async def test_department_routing_is_returned_with_the_answer(h):
-    result = await ask(h, "parking", "en", h.ctx(turn="I need a children's doctor"))
-    assert result.outcome == "ANSWERED" and result.routing.decision == "ROUTE_DEPARTMENT"
-    assert result.routing.department == "Paediatrics"
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(owner))
+    try:
+        question = "ಕ" * 499 + "?"
+        result = await services.search.search(CallContext(), KnowledgeRequest(question=question, language="kn"))
+        assert result.outcome == "NO_ANSWER" and requests == [{"question": question, "language": "kn"}]
+        with pytest.raises(ValidationError):
+            KnowledgeRequest(question=question + "!", language="kn")
+        assert len(requests) == 1
+    finally:
+        await services.aclose()
 
 
-async def test_clarification_from_routing_takes_precedence(h):
-    result = await ask(h, "parking", "en", h.ctx(turn="my child has stomach pain"))
-    assert result.outcome == "ROUTING_REQUIRED" and result.nextStep == "ASK_ROUTING_CLARIFICATION"
-    assert result.routing.speak.text.startswith("Is this for a child")
+@pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                         ("DESK_TRANSFER", "TRANSFER_DESK")])
+@pytest.mark.parametrize("field,bad", [
+    ("answer", {"text": "Owner instruction", "language": " "}),
+    ("answer", {"text": "x" * 1001, "language": "en"}),
+    ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+])
+async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+    payload = {"outcome": outcome, "destination": "desk", field: bad}
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json=payload)))
+    try:
+        result = await services.search.search(
+            CallContext(), KnowledgeRequest(question="private question", language="en"))
+        assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+        assert result.destination == "desk"
+        assert getattr(result, "answer" if field == "answer" else "sourceId") is None
+        assert result.routing.department is None
+        records = [r for r in caplog.records if r.message == "knowledge_optional_field_dropped"]
+        assert [r.fields for r in records] == [{"field": field}]
+        assert "owner-private" not in caplog.text and "private question" not in caplog.text
+        assert "Owner instruction" not in caplog.text
+    finally:
+        await services.aclose()
 
 
-async def test_plain_faq_is_answered_once_routing_clears(h):
-    result = await ask(h, "parking", "en", h.ctx(turn="is there parking"))
-    assert result.outcome == "ANSWERED" and result.routing.decision == "CONTINUE"
+@pytest.mark.parametrize("content_type", ["text/html", "text/plain", ""])
+async def test_knowledge_refuses_non_json_media_type(make_settings, content_type):
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, content=b'{"outcome":"NO_ANSWER"}',
+                                      headers={"content-type": content_type})))
+    try:
+        result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+        assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+    finally:
+        await services.aclose()
 
 
-@pytest.mark.parametrize("break_it,detail", [("missing_turn", "TURN_CONTEXT_MISSING"),
-                                             ("outage", "ROUTING_UNAVAILABLE")])
-async def test_knowledge_without_a_routing_decision_is_not_an_answer(h, break_it, detail):
-    ctx = h.ctx(turn=None) if break_it == "missing_turn" else h.ctx()
-    if break_it == "outage":
-        from frontdesk_mcp import knowledge_contract as kc
+@pytest.mark.parametrize("field", ["destination", "sourceId"])
+@pytest.mark.parametrize("length", [64, 65])
+async def test_knowledge_metadata_is_bounded(make_settings, field, length):
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"outcome": "ANSWERED",
+            "answer": {"text": "Parking is available.", "language": "en"}, field: "x" * length})))
+    try:
+        result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+        if length == 64:
+            assert result.outcome == "ANSWERED" and getattr(result, field) == "x" * 64
+        else:
+            assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+    finally:
+        await services.aclose()
 
-        h.knowledge_state.fail_next_for.append((kc.ROUTE_PATH, 503))
-    result = await ask(h, "parking", "en", ctx)
-    assert result.outcome == "ROUTING_UNAVAILABLE" and result.nextStep == "TRANSFER_DESK" and result.detail == detail
-    assert result.answer is None
+
+@pytest.mark.parametrize("outcome", ["EMERGENCY_TRANSFER", "DESK_TRANSFER", "ROUTE_DEPARTMENT"])
+async def test_routing_speech_has_one_authoritative_location(make_settings, outcome):
+    payload = {"outcome": outcome, "answer": {"text": "Owner wording", "language": "en"},
+               "department": {"name": "Paediatrics"}}
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json=payload)))
+    try:
+        result = await services.search.search(CallContext(), KnowledgeRequest(question="caller words", language="en"))
+        assert result.answer is None
+        assert result.routing.speak.text == "Owner wording" and result.routing.speak.language == "en"
+        assert result.model_dump_json().count("Owner wording") == 1
+    finally:
+        await services.aclose()
+
+
+async def test_external_cancellation_propagates_through_knowledge(make_settings):
+    started, stopped = asyncio.Event(), asyncio.Event()
+
+    async def owner(request):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    services = Services.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2,
+                                            write_deadline_seconds=2, request_timeout_seconds=2),
+                              knowledge_transport=httpx.MockTransport(owner))
+    task = asyncio.create_task(services.search.search(
+        CallContext(), KnowledgeRequest(question="private question", language="en")))
+    try:
+        async with asyncio.timeout(1):
+            await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert stopped.is_set()
+    finally:
+        task.cancel()
+        await services.aclose()
+
+
+@pytest.mark.parametrize("outcome", ["ROUTE_DEPARTMENT", "CLARIFY"])
+@pytest.mark.parametrize("field,bad", [
+    ("answer", {"text": "private answer", "language": " "}),
+    ("sourceId", {"private": "owner-private"}), ("destination", "x" * 65),
+])
+async def test_non_transfer_decision_rejects_invalid_optional_field(make_settings, outcome, field, bad, caplog):
+    payload = {"outcome": outcome, "answer": {"text": "Owner text", "language": "en"},
+               "department": {"name": "Paediatrics"}, field: bad}
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json=payload)))
+    try:
+        result = await services.search.search(
+            CallContext(), KnowledgeRequest(question="private question", language="en"))
+        assert (result.outcome, result.nextStep, result.detail) == (
+            "COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "MALFORMED")
+        assert result.answer is None and result.routing is None
+        assert "private question" not in caplog.text and "owner-private" not in caplog.text
+        assert "private answer" not in caplog.text and "x" * 65 not in caplog.text
+    finally:
+        await services.aclose()

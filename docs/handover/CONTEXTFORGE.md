@@ -16,8 +16,9 @@ not register anything or change Azure settings. Do not provision a second gatewa
 | Separate call-end bearer | `mcp-lifecycle-token` in that vault; never attach it to the conversational registration |
 | Existing admin access | Email from gateway `PLATFORM_ADMIN_EMAIL`; password reference `mcpgw-platform-admin-password` in that vault |
 
-The canary currently has no working knowledge host. Discovery can be verified now; successful
-availability/CREATE/knowledge journeys require Shobhit's contract and service. The gateway's actual
+The 2 October inspection found no working knowledge host on the canary. In the revised adapter,
+availability and booking depend on Manoj only; knowledge queries need the agreed knowledge host.
+The revision in this branch is not claimed deployed. The gateway's actual
 voice-facing URL is created in step 3 below, not the gateway base URL alone.
 
 ```text
@@ -37,7 +38,6 @@ incoming `Authorization` header: ContextForge must use its stored MCP credential
 X-Call-Id
 X-Caller-Number
 X-Caller-Verification
-X-Turn-Context
 X-Operation-Id
 X-Call-Started-At
 X-Call-Duration-Seconds
@@ -108,10 +108,10 @@ gateway. Do not put `record_call_summary` in this conversational virtual server.
   an unauthorized token cannot invoke them. Inspect complete input schemas and tool descriptions.
 - Prove headers reach the adapter and stay isolated between simultaneous calls. Missing identity
   must be refused; the valid-identity LIST must actually reach Manoj, not merely avoid refusal.
-- Test EN/KN/HI original turn text end to end. ContextForge documents a **4 KB header-value limit**;
-  JSON + UTF-8 + base64 expansion can exceed it before our 4,000-character utterance limit. Test
-  encoded byte sizes and explicit failure handling; never silently truncate the caller's words.
-- Through the virtual server, complete routed availability, confirmed booking and knowledge
+- Test EN/KN/HI question bodies end to end and fail explicitly on oversized questions; never truncate.
+  Scheduling requires no transcript header. Verify operation IDs are request-scoped through the local
+  booking wrapper and the gateway; no shared-header mutation between concurrent requests.
+- Through the virtual server, complete direct availability, caller-confirmed booking requests and explicit knowledge
   journeys once owner inputs exist. Invoke call-end summary separately with its lifecycle bearer;
   verify retries/replay and UNKNOWN -> callback summary only.
 - Measure gateway overhead and successful full voice responses from the deployed region under
@@ -125,3 +125,7 @@ References: [IBM header passthrough](https://ibm.github.io/mcp-context-forge/1.0
 [IBM MCP client URL examples](https://github.com/IBM/mcp-context-forge).
 The request fields and version above were checked against this deployed instance's authenticated
 OpenAPI, not inferred from a different release's examples.
+
+After this change, refresh discovered descriptions/output schemas for schema `2026-10-03.3`.
+Remove the obsolete transcript-header forwarding entry. Keep all identity, operation and lifecycle headers.
+The published tool contract is [VOICE-TEAM.md](VOICE-TEAM.md); server metadata contains neutral tool facts. Voice prompts and behaviour belong to the consuming team.

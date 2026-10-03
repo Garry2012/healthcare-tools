@@ -1,0 +1,142 @@
+Baseline 231f10a through staged final hand-back; this receipt itself excluded.
+
+$ git diff --cached 231f10a --stat
+
+ CLAUDE.md                                          |   6 +-
+ Makefile                                           |   6 +-
+ README.md                                          |   7 +-
+ deploy/azure/smoke.py                              |  13 +-
+ docs/DECISIONS.md                                  |  40 +-
+ docs/handover/AZURE.md                             |   2 +-
+ docs/handover/CONTEXTFORGE.md                      |   4 +-
+ docs/handover/LIVEKIT.md                           | 255 -------------
+ docs/handover/ONBOARDING.md                        |   2 +-
+ docs/handover/OWNER-INTEGRATION-MESSAGES.md        |   2 +-
+ docs/handover/TESTING.md                           |   2 +-
+ docs/handover/VOICE-TEAM.md                        | 344 +++++++++++++++--
+ docs/handover/mcp-only/AGENT-INSTRUCTIONS.txt      |   1 -
+ docs/handover/mcp-only/PLAN.md                     |  87 ++---
+ docs/handover/mcp-only/README.md                   |  12 +-
+ docs/handover/mcp-only/TARGET-STATE.md             |  28 +-
+ .../mcp-only/implementation/OPEN-DEPENDENCIES.md   |   6 +-
+ .../implementation/TOOL-CONTRACT-REPORT.md         | 425 +++++++++++++++++++++
+ .../tool-contract-evidence/01-missing-env.patch    |  11 +
+ .../tool-contract-evidence/01-missing-env.txt      |  57 +++
+ .../tool-contract-evidence/01-profile-env.patch    |  11 +
+ .../tool-contract-evidence/01-profile-env.txt      |  25 ++
+ .../tool-contract-evidence/01-smoke.txt            |  59 +++
+ .../tool-contract-evidence/02-invalid-answer.patch |  11 +
+ .../tool-contract-evidence/02-invalid-answer.txt   |  33 ++
+ .../tool-contract-evidence/02-knowledge.txt        | 130 +++++++
+ .../tool-contract-evidence/02-widen-transfer.patch |  11 +
+ .../tool-contract-evidence/02-widen-transfer.txt   |  67 ++++
+ .../tool-contract-evidence/03-profile.txt          |  53 +++
+ .../tool-contract-evidence/04-delete.txt           |  45 +++
+ .../tool-contract-evidence/05-text.txt             | 100 +++++
+ .../tool-contract-evidence/06-field-drift.patch    |  11 +
+ .../tool-contract-evidence/06-field-drift.txt      |  26 ++
+ .../tool-contract-evidence/06-interface.txt        | 160 ++++++++
+ .../tool-contract-evidence/06-meaning-audit.py     |  16 +
+ .../tool-contract-evidence/06-meanings.txt         |  34 ++
+ .../tool-contract-evidence/06-outcome-drift.patch  |  11 +
+ .../tool-contract-evidence/06-outcome-drift.txt    |  24 ++
+ .../tool-contract-evidence/07-current-doc-audit.py |  13 +
+ .../tool-contract-evidence/07-current-docs.txt     |  42 ++
+ .../tool-contract-evidence/08-ownership-audit.py   |  17 +
+ .../tool-contract-evidence/08-ownership.txt        |  36 ++
+ .../tool-contract-evidence/09-full-suite.txt       |  49 +++
+ .../tool-contract-evidence/10-final-audit.py       |  46 +++
+ .../tool-contract-evidence/10-final-audit.txt      |  71 ++++
+ .../tool-contract-evidence/11-handback-fast.txt    |  22 ++
+ services/mcp/README.md                             |   2 +-
+ services/mcp/src/frontdesk_mcp/booking.py          |   2 +
+ services/mcp/src/frontdesk_mcp/cli.py              |   7 +-
+ .../mcp/src/frontdesk_mcp/knowledge_contract.py    |   2 +-
+ services/mcp/src/frontdesk_mcp/outcomes.py         |   8 +-
+ services/mcp/src/frontdesk_mcp/packs.py            |  12 +-
+ .../mcp/src/frontdesk_mcp/packs/healthcare.json    |  79 ++--
+ services/mcp/src/frontdesk_mcp/prompt.py           |  56 +--
+ .../mcp/tests/contracts/mcp-tools.snapshot.json    |  95 ++---
+ services/mcp/tests/test_booking.py                 |  30 ++
+ services/mcp/tests/test_deploy.py                  |  41 +-
+ services/mcp/tests/test_e2e_processes.py           |   3 +-
+ services/mcp/tests/test_external_transport.py      |   3 +-
+ services/mcp/tests/test_knowledge.py               |  25 +-
+ services/mcp/tests/test_server.py                  | 138 +++++--
+ 61 files changed, 2326 insertions(+), 610 deletions(-)
+
+$ git diff --cached 231f10a --name-status
+
+M	CLAUDE.md
+M	Makefile
+M	README.md
+M	deploy/azure/smoke.py
+M	docs/DECISIONS.md
+M	docs/handover/AZURE.md
+M	docs/handover/CONTEXTFORGE.md
+D	docs/handover/LIVEKIT.md
+M	docs/handover/ONBOARDING.md
+M	docs/handover/OWNER-INTEGRATION-MESSAGES.md
+M	docs/handover/TESTING.md
+M	docs/handover/VOICE-TEAM.md
+D	docs/handover/mcp-only/AGENT-INSTRUCTIONS.txt
+M	docs/handover/mcp-only/PLAN.md
+M	docs/handover/mcp-only/README.md
+M	docs/handover/mcp-only/TARGET-STATE.md
+M	docs/handover/mcp-only/implementation/OPEN-DEPENDENCIES.md
+A	docs/handover/mcp-only/implementation/TOOL-CONTRACT-REPORT.md
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/01-missing-env.patch
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/01-missing-env.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/01-profile-env.patch
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/01-profile-env.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/01-smoke.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/02-invalid-answer.patch
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/02-invalid-answer.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/02-knowledge.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/02-widen-transfer.patch
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/02-widen-transfer.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/03-profile.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/04-delete.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/05-text.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/06-field-drift.patch
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/06-field-drift.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/06-interface.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/06-meaning-audit.py
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/06-meanings.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/06-outcome-drift.patch
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/06-outcome-drift.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/07-current-doc-audit.py
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/07-current-docs.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/08-ownership-audit.py
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/08-ownership.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/09-full-suite.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/10-final-audit.py
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/10-final-audit.txt
+A	docs/handover/mcp-only/implementation/tool-contract-evidence/11-handback-fast.txt
+M	services/mcp/README.md
+M	services/mcp/src/frontdesk_mcp/booking.py
+M	services/mcp/src/frontdesk_mcp/cli.py
+M	services/mcp/src/frontdesk_mcp/knowledge_contract.py
+M	services/mcp/src/frontdesk_mcp/outcomes.py
+M	services/mcp/src/frontdesk_mcp/packs.py
+M	services/mcp/src/frontdesk_mcp/packs/healthcare.json
+M	services/mcp/src/frontdesk_mcp/prompt.py
+M	services/mcp/tests/contracts/mcp-tools.snapshot.json
+M	services/mcp/tests/test_booking.py
+M	services/mcp/tests/test_deploy.py
+M	services/mcp/tests/test_e2e_processes.py
+M	services/mcp/tests/test_external_transport.py
+M	services/mcp/tests/test_knowledge.py
+M	services/mcp/tests/test_server.py
+
+$ git diff --cached 231f10a --numstat -- services/mcp/src
+
+2	0	services/mcp/src/frontdesk_mcp/booking.py
+2	5	services/mcp/src/frontdesk_mcp/cli.py
+1	1	services/mcp/src/frontdesk_mcp/knowledge_contract.py
+4	4	services/mcp/src/frontdesk_mcp/outcomes.py
+5	7	services/mcp/src/frontdesk_mcp/packs.py
+41	38	services/mcp/src/frontdesk_mcp/packs/healthcare.json
+10	46	services/mcp/src/frontdesk_mcp/prompt.py
+
+ALL TRACKED CHANGE (excluding this receipt): +2326 / -610; NET +1716

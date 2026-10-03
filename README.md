@@ -1,6 +1,6 @@
 # Front-desk MCP adapter — voice-agent tools for a hospital
 
-Four MCP tools for a LiveKit voice agent, implemented as a thin adapter over two owner services.
+Four MCP tools for calling applications, implemented as a thin adapter over two owner services.
 This repository contains the adapter only; it owns no data and runs no backend.
 
 ```
@@ -21,7 +21,7 @@ Caller ⇄ LiveKit voice agent (STT, LLM, TTS)
   reports under `implementation/`).
 - **Owner contract:** `docs/handover/mcp-only/contracts/manoj-openapi-20260930.yaml` (pinned, hashed).
 - **Adapter:** `services/mcp/README.md`.
-- **Integration:** `docs/handover/LIVEKIT.md` (headers and lifecycle the platform must send),
+- **Integration:** `docs/handover/VOICE-TEAM.md` (tool interface, authentication and trusted headers),
   `docs/handover/CONTEXTFORGE.md`, `docs/handover/AZURE.md`, `docs/handover/TESTING.md`.
 
 ## Five-minute start
@@ -55,3 +55,6 @@ rollouts/       demo-hospital/rollout.env: tenant identity (timezone, calling co
 deploy/         docker-compose.yml, environments/{mock,live}.env, azure/deploy.sh + smoke.py, contextforge/register.py
 docs/           handover/mcp-only (plan, contracts, implementation evidence), handover/*.md, DECISIONS.md
 ```
+
+Scheduling tools call only Manoj; the LLM explicitly chooses `search_knowledge` for information or symptoms.
+Voice behaviour and prompts belong to the voice team; the published interface is [VOICE-TEAM.md](docs/handover/VOICE-TEAM.md).

@@ -1,0 +1,13 @@
+............................................................             [100%]
+=============================== warnings summary ===============================
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+60 passed, 2 warnings in 1.79s

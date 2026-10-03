@@ -80,21 +80,6 @@
     {"doctorId": "doc_kiran_hegde", "session": "Evening", "status": "IN", "expectedTime": "17:00", "expectedEndTime": "19:00", "updatedMinutesAgo": 400, "updatedBy": "vinay", "source": "DESK"},
     {"doctorId": "doc_anil_sharma", "session": "Morning", "status": "IN", "expectedTime": "10:00", "expectedEndTime": "13:00", "updatedMinutesAgo": 30, "updatedBy": "frontdesk1", "source": "DESK"}
   ],
-  "routing": {
-    "_comment": "PROVISIONAL knowledge fixtures: scripted utterances → the decision Shobhit's service would return. Exact-match table, not a classifier. Replace with his published contract.",
-    "decisions": [
-      {"utterances": ["ಎದೆ ನೋವು ಜಾಸ್ತಿ ಇದೆ", "ಅಪ್ಪನಿಗೆ chest pain", "सीने में दर्द हो रहा है", "seene mein dard", "stomach pain and vomiting blood", "khansi mein khoon aa raha hai", "back pain, cannot move legs", "Dr Garima, I have chest pain", "is dr garima there, my father has chest pain", "chest pain, my left arm is numb"],
-       "decision": "EMERGENCY_TRANSFER", "speak": {"text": "This may be an emergency. I am connecting you to the emergency desk now.", "language": "en"}},
-      {"utterances": ["severe stomach pain", "ತುಂಬಾ ತಲೆ ನೋವು"], "decision": "DESK_TRANSFER",
-       "speak": {"text": "Let me connect you to the front desk so a person can help.", "language": "en"}},
-      {"utterances": ["my child has stomach pain"], "decision": "CLARIFY",
-       "speak": {"text": "Is this for a child? Would you like Paediatrics or General Medicine?", "language": "en"}},
-      {"utterances": ["pet mein dard hai", "ಹೊಟ್ಟೆ ನೋವು"], "decision": "ROUTE_DEPARTMENT", "department": {"name": "General Medicine"}},
-      {"utterances": ["I need a children's doctor", "ಮಕ್ಕಳ ಡಾಕ್ಟರ್"], "decision": "ROUTE_DEPARTMENT", "department": {"name": "Paediatrics"}},
-      {"utterances": ["I want to talk about my bill"], "decision": "DESK_TRANSFER",
-       "speak": {"text": "I will connect you to the billing desk.", "language": "en"}}
-    ]
-  },
   "answers": [
     {"id": "kb_opd_hours", "questions": ["opd timings", "what time does the hospital open", "hospital timings", "opd kab khulta hai", "hospital kab khulta hai", "ಆಸ್ಪತ್ರೆ ಎಷ್ಟು ಗಂಟೆಗೆ ತೆರೆಯುತ್ತದೆ", "अस्पताल कितने बजे खुलता है"],
      "answers": {"en": "The outpatient department is open every day, 9 AM to 8 PM. Emergency is open all day, every day.", "kn": "ಹೊರರೋಗಿ ವಿಭಾಗ ಪ್ರತಿದಿನ ಬೆಳಿಗ್ಗೆ 9 ರಿಂದ ರಾತ್ರಿ 8 ರವರೆಗೆ ತೆರೆದಿರುತ್ತದೆ. ತುರ್ತು ವಿಭಾಗ ದಿನದ 24 ಗಂಟೆಯೂ ತೆರೆದಿರುತ್ತದೆ.", "hi": "ओपीडी हर दिन सुबह 9 बजे से रात 8 बजे तक खुली रहती है। इमरजेंसी चौबीसों घंटे खुली रहती है।"}},
@@ -108,11 +93,17 @@
      "answers": {"en": "We are at 12 Example Road, next to the City Bus Stand. I can send the location by SMS if you like.", "kn": "ನಾವು 12 ಎಕ್ಸಾಂಪಲ್ ರಸ್ತೆ, ನಗರ ಬಸ್ ನಿಲ್ದಾಣದ ಪಕ್ಕದಲ್ಲಿದ್ದೇವೆ.", "hi": "हम 12 एग्ज़ाम्पल रोड पर, सिटी बस स्टैंड के बगल में हैं।"}},
     {"id": "kb_insurance", "questions": ["do you take insurance", "cashless", "is my insurance accepted", "insurance chalega", "ವಿಮೆ ತೆಗೆದುಕೊಳ್ಳುತ್ತೀರಾ", "बीमा चलेगा"],
      "answers": {"en": "Cashless insurance depends on your insurer and policy. I will connect you to the insurance desk.", "kn": "ಕ್ಯಾಶ್‌ಲೆಸ್ ವಿಮೆ ನಿಮ್ಮ ವಿಮಾ ಕಂಪನಿಯ ಮೇಲೆ ಅವಲಂಬಿತವಾಗಿದೆ. ನಾನು ನಿಮ್ಮನ್ನು ವಿಮಾ ವಿಭಾಗಕ್ಕೆ ಸಂಪರ್ಕಿಸುತ್ತೇನೆ.", "hi": "कैशलेस बीमा आपकी बीमा कंपनी और पॉलिसी पर निर्भर है। मैं आपको इंश्योरेंस डेस्क से जोड़ता हूँ।"},
-     "outcome": "TRANSFER_DESK", "destination": "insurance"},
+     "outcome": "DESK_TRANSFER", "destination": "insurance"},
     {"id": "kb_cancel_policy", "questions": ["is there a cancellation fee", "cancel charges", "cancel karne ka charge", "ರದ್ದು ಮಾಡಿದರೆ ಶುಲ್ಕ ಇದೆಯಾ", "कैंसल करने का चार्ज"],
      "answers": {"en": "There is no charge to cancel or move an appointment. Please let us know as early as you can.", "kn": "ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ರದ್ದು ಮಾಡಲು ಅಥವಾ ಬದಲಿಸಲು ಯಾವುದೇ ಶುಲ್ಕ ಇಲ್ಲ.", "hi": "अपॉइंटमेंट कैंसल करने या बदलने का कोई चार्ज नहीं है। कृपया जितनी जल्दी हो सके बताइए।"}},
     {"id": "kb_clarify_fee", "questions": ["how much does it cost", "fees kitna hai", "ಫೀಸ್ ಎಷ್ಟು", "फीस कितनी है"],
-     "outcome": "CLARIFICATION_NEEDED",
-     "answers": {"en": "The consultation fee depends on the doctor. Which doctor or department do you mean?", "kn": "ಸಮಾಲೋಚನಾ ಶುಲ್ಕ ವೈದ್ಯರನ್ನು ಅವಲಂಬಿಸಿದೆ. ಯಾವ ವೈದ್ಯರು ಅಥವಾ ವಿಭಾಗ?", "hi": "परामर्श शुल्क डॉक्टर पर निर्भर करता है। कौन से डॉक्टर या विभाग?"}}
+     "outcome": "CLARIFY",
+     "answers": {"en": "The consultation fee depends on the doctor. Which doctor or department do you mean?", "kn": "ಸಮಾಲೋಚನಾ ಶುಲ್ಕ ವೈದ್ಯರನ್ನು ಅವಲಂಬಿಸಿದೆ. ಯಾವ ವೈದ್ಯರು ಅಥವಾ ವಿಭಾಗ?", "hi": "परामर्श शुल्क डॉक्टर पर निर्भर करता है। कौन से डॉक्टर या विभाग?"}},
+    {"id": "routing-0", "questions": ["ಎದೆ ನೋವು ಜಾಸ್ತಿ ಇದೆ", "ಅಪ್ಪನಿಗೆ chest pain", "सीने में दर्द हो रहा है", "seene mein dard", "stomach pain and vomiting blood", "khansi mein khoon aa raha hai", "back pain, cannot move legs", "Dr Garima, I have chest pain", "is dr garima there, my father has chest pain", "chest pain, my left arm is numb"], "outcome": "EMERGENCY_TRANSFER", "answers": {"en": "This may be an emergency. I am connecting you to the emergency desk now."}},
+    {"id": "routing-1", "questions": ["severe stomach pain", "ತುಂಬಾ ತಲೆ ನೋವು"], "outcome": "DESK_TRANSFER", "answers": {"en": "Let me connect you to the front desk so a person can help."}},
+    {"id": "routing-2", "questions": ["my child has stomach pain"], "outcome": "CLARIFY", "answers": {"en": "Is this for a child? Would you like Paediatrics or General Medicine?"}},
+    {"id": "routing-3", "questions": ["pet mein dard hai", "ಹೊಟ್ಟೆ ನೋವು"], "outcome": "ROUTE_DEPARTMENT", "answers": {"en": "I can check the General Medicine department for you."}, "department": {"name": "General Medicine"}},
+    {"id": "routing-4", "questions": ["I need a children's doctor", "ಮಕ್ಕಳ ಡಾಕ್ಟರ್"], "outcome": "ROUTE_DEPARTMENT", "answers": {"en": "I can check the Paediatrics department for you."}, "department": {"name": "Paediatrics"}},
+    {"id": "routing-5", "questions": ["I want to talk about my bill"], "outcome": "DESK_TRANSFER", "answers": {"en": "I will connect you to the billing desk."}}
   ]
 }

@@ -1,0 +1,53 @@
+$ uv run --directory services/mcp pytest tests/test_booking.py -k unexpected_profile -q --tb=short
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_create_propagates_unexpected_profile_failure_without_writing _______
+tests/test_booking.py:610: in test_create_propagates_unexpected_profile_failure_without_writing
+    await services.booking.manage(h.ctx(operation_id="op-1"),
+src/frontdesk_mcp/booking.py:128: in manage
+    return await self._create(ctx, request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/booking.py:236: in _create
+    usual = board_scope.usual_sessions_on(profile, weekday)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/board_scope.py:83: in usual_sessions_on
+    return [s.label for s in profile.usualSchedule if s.label and weekday in s.daysOfWeek]
+                             ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'RuntimeError' object has no attribute 'usualSchedule'
+=============================== warnings summary ===============================
+tests/test_booking.py::test_create_propagates_unexpected_profile_failure_without_writing
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+tests/test_booking.py::test_create_propagates_unexpected_profile_failure_without_writing
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_booking.py::test_create_propagates_unexpected_profile_failure_without_writing
+1 failed, 61 deselected, 2 warnings in 1.00s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 17%]
+........................................................................ [ 35%]
+........................................................................ [ 52%]
+........................................................................ [ 70%]
+........................................................................ [ 87%]
+..................................................                       [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+410 passed, 11 deselected, 2 warnings in 22.98s
+EXIT: 0

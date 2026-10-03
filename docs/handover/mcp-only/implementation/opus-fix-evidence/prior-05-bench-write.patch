@@ -1,0 +1,11 @@
+--- a/services/mcp/dev/bench.py
++++ b/services/mcp/dev/bench.py
+@@ -59,7 +59,7 @@
+     "booking_create": ("manage_booking", {"action": "CREATE", "patientName": "Bench Patient",
+                                           "patientMobile": "9000000101", "doctorId": DOCTOR_ID, "visitDate": "today",
+                                           "preferredTime": "09:30", "callerConfirmed": True},
+-                       {"NOTED"}, ("GET /availability", "POST /appointments")),
++                       {"NOTED", "CALLBACK_REQUIRED"}, ("GET /availability",)),
+ }
+ 
+ 

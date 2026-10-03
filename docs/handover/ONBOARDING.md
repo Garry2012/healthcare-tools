@@ -17,7 +17,7 @@ its owner-service endpoints. Onboarding changes no code.
    (`AZURE.md`, `CONTEXTFORGE.md`). The smoke must pass against the owners' designated test tenant
    before the hospital's own.
 5. **Voice platform.** The platform must forward the trusted headers and invoke `record_call_summary`
-   with the lifecycle bearer at call end (`LIVEKIT.md`).
+   with the lifecycle bearer at call end (`VOICE-TEAM.md`).
 
 Directory data, schedules, approved answers and routing rules are the owners': the adapter reads
 them through their contracts and holds none of them.

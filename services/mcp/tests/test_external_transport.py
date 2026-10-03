@@ -34,10 +34,12 @@ def required(name: str) -> str:
 
 
 async def test_release_smoke_against_the_deployed_adapter():
+    required("SMOKE_EXPECT_KNOWLEDGE")  # supplied by scripts/env.sh from the selected profile
     url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
     lifecycle = os.environ.get("MCP_E2E_LIFECYCLE_BEARER") or None
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](url, bearer, lifecycle, "en", os.environ.get("MCP_E2E_DEPARTMENT", "General Medicine"))
+    await smoke["smoke"](url, bearer, lifecycle, "en", os.environ.get("MCP_E2E_DEPARTMENT", "General Medicine"),
+                         os.environ["SMOKE_EXPECT_KNOWLEDGE"])
     if lifecycle is None:
         pytest.fail("BLOCKED: MCP_E2E_LIFECYCLE_BEARER not set; conversational checks passed, lifecycle unverified")
 
@@ -57,7 +59,7 @@ async def test_trusted_headers_are_forwarded_by_the_deployed_transport():
 
 async def test_backend_lookup_succeeds_through_the_deployed_adapter():
     """Backend layer: the owner answered a real appointment lookup through the deployment (FOUND/NOT_FOUND).
-    COULD_NOT_CHECK, ROUTING_UNAVAILABLE or a refusal fails this gate."""
+    COULD_NOT_CHECK, UNKNOWN_OUTCOME or a refusal fails this gate."""
     url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
     headers = {"Authorization": f"Bearer {bearer}", **harness.headers(call_id=f"gate-{uuid.uuid4().hex[:8]}")}
     async with Client(StreamableHttpTransport(url, headers=headers)) as c:

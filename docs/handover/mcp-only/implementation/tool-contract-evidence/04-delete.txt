@@ -1,0 +1,45 @@
+$ uv run --directory services/mcp pytest tests/test_server.py -k cli_exposes -q --tb=short
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_cli_exposes_only_server_and_schema_commands _______________
+tests/test_server.py:316: in test_cli_exposes_only_server_and_schema_commands
+    assert "{serve,schema}" in result.stdout
+E   AssertionError: assert '{serve,schema}' in 'usage: frontdesk-mcp [-h] {serve,schema,agent-instructions}\n\npositional arguments:\n  {serve,schema,agent-instructions}\n\noptions:\n  -h, --help            show this help message and exit\n'
+E    +  where 'usage: frontdesk-mcp [-h] {serve,schema,agent-instructions}\n\npositional arguments:\n  {serve,schema,agent-instructions}\n\noptions:\n  -h, --help            show this help message and exit\n' = CompletedProcess(args=['frontdesk-mcp', '--help'], returncode=0, stdout='usage: frontdesk-mcp [-h] {serve,schema,agent...uthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.\n  from ._compat import httpx2\n').stdout
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_cli_exposes_only_server_and_schema_commands
+1 failed, 20 deselected, 2 warnings in 1.79s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 17%]
+........................................................................ [ 35%]
+........................................................................ [ 52%]
+........................................................................ [ 70%]
+........................................................................ [ 87%]
+..................................................                       [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+410 passed, 11 deselected, 2 warnings in 23.10s
+EXIT: 0

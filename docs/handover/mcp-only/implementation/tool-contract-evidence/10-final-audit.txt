@@ -1,0 +1,71 @@
+$ python3 /tmp/contract_final_audit.py
+$ grep -rnHF LIVEKIT.md <102 active tracked files>
+(no output)
+EXIT: 1
+$ grep -rnHF AGENT-INSTRUCTIONS.txt <102 active tracked files>
+(no output)
+EXIT: 1
+$ grep -rnHF agent-instructions <102 active tracked files>
+(no output)
+EXIT: 1
+$ grep -rnHF CORE_RULES <102 active tracked files>
+(no output)
+EXIT: 1
+PASS zero references in active tracked files; dated reports/evidence excluded, user temp/ untouched.
+PASS deleted: docs/handover/LIVEKIT.md
+PASS deleted: docs/handover/mcp-only/AGENT-INSTRUCTIONS.txt
+$ git diff --exit-code 231f10a -- .claude/agents
+(no output)
+EXIT: 0
+$ git diff --exit-code 231f10a -- services/mcp/src/frontdesk_mcp/availability.py services/mcp/src/frontdesk_mcp/tools.py services/mcp/src/frontdesk_mcp/context.py services/mcp/src/frontdesk_mcp/identity.py services/mcp/src/frontdesk_mcp/summary.py services/mcp/src/frontdesk_mcp/ops_client.py services/mcp/src/frontdesk_mcp/config.py services/mcp/src/frontdesk_mcp/server.py
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+  from ._compat import httpx2
+(no output)
+EXIT: 0
+PASS date validation, dispatch, identity/lifecycle, summary and operational client source unchanged.
+PASS all tool names/scopes/annotations/constraints/enums/required fields/defaults identical to baseline.
+PASS make schema byte-identical; version 2026-10-03.3
+Server instructions characters: 2683 -> 634
+$ git diff 231f10a --numstat -- services/mcp/src
+2	0	services/mcp/src/frontdesk_mcp/booking.py
+2	5	services/mcp/src/frontdesk_mcp/cli.py
+1	1	services/mcp/src/frontdesk_mcp/knowledge_contract.py
+4	4	services/mcp/src/frontdesk_mcp/outcomes.py
+5	7	services/mcp/src/frontdesk_mcp/packs.py
+41	38	services/mcp/src/frontdesk_mcp/packs/healthcare.json
+10	46	services/mcp/src/frontdesk_mcp/prompt.py
+EXIT: 0
+SOURCE NET 231f10a -36
+$ git diff 73a0832 --numstat -- services/mcp/src
+31	110	services/mcp/src/frontdesk_mcp/availability.py
+13	48	services/mcp/src/frontdesk_mcp/booking.py
+12	2	services/mcp/src/frontdesk_mcp/config.py
+1	46	services/mcp/src/frontdesk_mcp/context.py
+18	53	services/mcp/src/frontdesk_mcp/knowledge.py
+5	21	services/mcp/src/frontdesk_mcp/knowledge_client.py
+58	55	services/mcp/src/frontdesk_mcp/knowledge_contract.py
+10	12	services/mcp/src/frontdesk_mcp/outcomes.py
+5	7	services/mcp/src/frontdesk_mcp/packs.py
+41	38	services/mcp/src/frontdesk_mcp/packs/healthcare.json
+10	42	services/mcp/src/frontdesk_mcp/prompt.py
+3	3	services/mcp/src/frontdesk_mcp/tools.py
+EXIT: 0
+SOURCE NET 73a0832 -230
+PASS commit file limit: bcaf57f 10
+PASS commit file limit: 546264c 7
+PASS commit file limit: 99c8c47 3
+PASS commit file limit: f3350bb 6
+PASS commit file limit: 243a995 7
+PASS commit file limit: b217700 9
+PASS commit file limit: 20f5983 10
+PASS commit file limit: 54720ba 7
+$ git diff --check 231f10a -- . :(exclude)**/*.patch
+(no output)
+EXIT: 0
+$ uvx vulture services/mcp/src --min-confidence 80
+(no output)
+EXIT: 0
+EXIT: 0

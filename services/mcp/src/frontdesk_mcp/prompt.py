@@ -1,51 +1,19 @@
-"""The server instructions the LLM reads: core rules + the domain's words + the rollout's values.
-
-Core rules hold for every rollout: explicit dates, board-qualified hours, NOTED not confirmed, the
-UNKNOWN callback policy, confirmed writes and uncertain results, identity and routing failures, verbatim
-approved answers. The pack adds only its own words; the rollout supplies languages and display name.
-SCHEMA_VERSION is pinned with the tool schemas (tests/contracts/mcp-tools.snapshot.json) so gateway and
-voice-agent caches are refreshed deliberately when the surface changes.
-"""
+"""Neutral MCP contract metadata, domain facts and rollout identity."""
 
 from __future__ import annotations
 
 from .packs import Pack
 
-SCHEMA_VERSION = "2026-10-01.4"
-
-CORE_RULES = (
-    "Dates: pass date='today' or an explicit date YYYY-MM-DD the caller confirmed; every result carries "
-    "facilityToday and weekday to help you confirm. Never work out a relative date yourself: ask for the day.",
-    "get_doctor_availability returns usual hours qualified by the live board per session. Speak the board status "
-    "(IN, LATE with its expectedTime, CANCELLED, NOT_CONFIRMED, expired) and never present usual hours as today's "
-    "attendance.",
-    "There are no slots, tokens or guaranteed times: a preferred time is a request. manage_booking CREATE returns "
-    "NOTED: say the request is recorded with that preferred time; never say 'confirmed' or 'booked'.",
-    "CALLBACK_REQUIRED (board UNKNOWN today or on a later date): stop the appointment journey. Ask 'May I have your "
-    "name and a callback number?' and then say 'Someone from the hospital will call you back.' Do not book, "
-    "transfer, offer another doctor or date, or promise when; the call summary records it as CALLBACK_NOTED.",
-    "Before CREATE, CANCEL or RESCHEDULE, read the details back and get a clear yes; only then set "
-    "callerConfirmed=true and call manage_booking once for that intent. UNCERTAIN means it may or may not be "
-    "recorded: say so and transfer to the desk; never retry it as a new request.",
-    "IDENTITY_UNAVAILABLE: the caller's number could not be verified for looking up or changing appointments; do "
-    "not ask for another number to use instead, offer the desk.",
-    "ROUTING_REQUIRED: follow nextStep (TRANSFER_EMERGENCY at once, TRANSFER_DESK, or ask routing.speak) and speak "
-    "routing.speak.text verbatim when present. ROUTING_UNAVAILABLE, COULD_NOT_CHECK or COULD_NOT_RECORD: say the "
-    "system could not check right now and offer the desk; never say that no one is available.",
-    "CLARIFICATION_NEEDED: offer the returned choices (complete=false means there are more) and ask; never choose "
-    "for the caller. NOT_FOUND: ask the caller to repeat the name or department once, then offer the desk.",
-    "For general questions (hours, parking, reports, payment, directions) call search_knowledge and speak "
-    "answer.text exactly as given; add nothing.",
-)
-
-LANGUAGES = (
-    "Languages: set `language` to the language the caller is speaking ({codes}). Pass names, departments and "
-    "questions as heard, untranslated; speak approved answers in the language they come back in."
-)
+SCHEMA_VERSION = "2026-10-03.3"
 
 
 def instructions(pack: Pack, languages: tuple[str, ...], display_name: str = "") -> str:
     at = f" at {display_name}" if display_name else ""
-    rules = (*CORE_RULES[:4], pack.instructions, *CORE_RULES[4:])
-    return " ".join((f"Front-desk tools for {pack.role}{at}.", *rules, LANGUAGES.format(codes=", ".join(languages)),
-                     f"Tool schema {SCHEMA_VERSION}."))
+    return " ".join((
+        f"MCP tools for {pack.role}{at}.", pack.instructions,
+        "Availability date accepts only 'today' or YYYY-MM-DD; other relative dates are not accepted.",
+        "NOTED is a recorded appointment request, not a confirmed or reserved time.",
+        "CALLBACK_REQUIRED denotes UNKNOWN board availability; UNCERTAIN denotes an unverified write result.",
+        "Call summaries require lifecycle authentication; the other three tools require gateway authentication.",
+        f"Supported languages: {', '.join(languages)}. Tool schema {SCHEMA_VERSION}.",
+    ))

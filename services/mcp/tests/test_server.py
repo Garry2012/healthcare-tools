@@ -22,8 +22,9 @@ from .conftest import serving
 
 SNAPSHOT = Path(__file__).parent / "contracts/mcp-tools.snapshot.json"
 FORBIDDEN = {"x-call-id", "xcallid", "callid", "x-caller-number", "xcallernumber", "callernumber", "callernumbers",
-             "idempotency-key", "idempotencykey", "operationid", "x-operation-id", "turncontext", "x-turn-context",
-             "utterance", "tenant", "tenantid", "principal", "startedat", "durationseconds"}
+             "idempotency-key", "idempotencykey", "operationid", "x-operation-id",
+             "turncontext", "x-turn-context", "utterance", "tenant", "tenantid", "principal",
+             "startedat", "durationseconds"}
 CONVERSATIONAL = ["get_doctor_availability", "manage_booking", "search_knowledge"]
 
 
@@ -69,7 +70,7 @@ async def test_conversational_principal_gets_exactly_three_tools_without_trusted
     assert booking.annotations.readOnlyHint is False and booking.annotations.destructiveHint is True
     availability = next(t for t in tools if t.name == "get_doctor_availability")
     assert availability.annotations.readOnlyHint is True
-    assert "call you back" in instructions and "NOTED" in instructions
+    assert "NOTED" in instructions and prompt.SCHEMA_VERSION in instructions
 
 
 async def test_lifecycle_principal_gets_exactly_the_summary_tool(served):
@@ -100,7 +101,7 @@ def test_tool_schemas_match_the_pinned_snapshot(make_settings):
 
 async def test_the_whole_journey_over_http(served):
     base, h = served
-    async with client(base, operation_id="op-1", turn="is Dr Garima in tomorrow") as c:
+    async with client(base, operation_id="op-1") as c:
         found = await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "2026-10-02"})
         assert found.structured_content["outcome"] == "CALLBACK_REQUIRED"  # tomorrow's board is UNKNOWN in the fixture
         today = (await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "today"})
@@ -137,7 +138,7 @@ async def test_the_whole_journey_over_http(served):
         cancelled = (await c.call_tool("manage_booking", {"action": "CANCEL", "appointmentId": appointment_id,
                                                           "callerConfirmed": True})).structured_content
         assert cancelled["outcome"] == "CANCELLED"
-    async with client(base, token="lifecycle-token", turn=None, started_at="2026-10-01T09:58:00+05:30",
+    async with client(base, token="lifecycle-token", started_at="2026-10-01T09:58:00+05:30",
                       duration="240") as c:
         stored = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_CANCELLED", "appointmentId": appointment_id,
@@ -229,21 +230,39 @@ async def test_log_lines_carry_the_call_id_not_the_caller(served):
     assert "garima" not in json.dumps(lines).lower()
 
 
-def test_the_pack_describes_exactly_the_four_tools_and_no_core_rule():
-    pack = packs.load("healthcare")
-    assert set(pack.tools) == {*CONVERSATIONAL, "record_call_summary"}
-    words = " ".join([pack.instructions, *(t.description for t in pack.tools.values())]).casefold()
-    for rule in prompt.CORE_RULES:
-        assert rule.casefold()[:60] not in words, rule
-    assert "slot" not in words
+def test_pack_describes_exactly_the_four_tools():
+    assert set(packs.load("healthcare").tools) == {*CONVERSATIONAL, "record_call_summary"}
 
 
-def test_instructions_cover_the_fixed_policies(make_settings):
+def test_published_tool_text_contains_facts_not_behaviour_scripts(make_settings):
+    from frontdesk_mcp.cli import schema_document
+
+    document = schema_document(make_settings())
+    text = [document["instructions"]]
+
+    def descriptions(value):
+        if isinstance(value, dict):
+            text.extend(v for k, v in value.items() if k == "description")
+            for child in value.values():
+                descriptions(child)
+        elif isinstance(value, list):
+            for child in value:
+                descriptions(child)
+
+    descriptions(document["tools"])
+    forbidden = ("say ", "never say", "ask ", "transfer immediately", "speak ", "pass ",
+                 "read back", "read-back", "do not", "never ", "collect ", "use ")
+    for entry in text:
+        for phrase in forbidden:
+            assert phrase not in entry.casefold(), (phrase, entry)
+
+
+def test_server_instructions_are_short_contract_facts():
     text = prompt.instructions(packs.load("healthcare"), ("en", "kn", "hi"), "Demo Hospital")
-    for phrase in ("call you back", "CALLBACK_REQUIRED", "NOTED", "never say", "UNCERTAIN", "IDENTITY_UNAVAILABLE",
-                   "ROUTING_UNAVAILABLE", "explicit date", "(en, kn, hi)", "Demo Hospital"):
-        assert phrase in text, phrase
-    assert "slotId" not in text and "never say 'confirmed'" in text
+    assert len(text) < 1000
+    for fact in ("Demo Hospital", "en, kn, hi", "YYYY-MM-DD", "relative dates are not accepted",
+                 "NOTED", "CALLBACK_REQUIRED", "UNCERTAIN", prompt.SCHEMA_VERSION):
+        assert fact in text
 
 
 def test_principal_contextvar_is_not_set_by_headers(make_settings):
@@ -290,3 +309,99 @@ def test_an_external_suite_exists_for_owner_designated_services():
     assert "test_external.py" in out.stdout
     collected = re.search(r"(\d+)(?:/\d+)? tests? collected", out.stdout)
     assert collected and int(collected.group(1)) >= 3, out.stdout[-300:]
+
+
+async def test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failure(make_settings, capsys):
+    import runpy
+
+    smoke = runpy.run_path(str(Path(__file__).resolve().parents[3] / "deploy/azure/smoke.py"))
+    settings = make_settings(knowledge_base_url="", knowledge_bearer_token="")
+    h = harness.build(settings)
+    app = create_app(settings, ops_transport=h.ops.http._transport, clock=h.clock)
+    try:
+        async with serving(app) as base:
+            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "lifecycle-token", "en", "General Medicine", "absent")
+        assert "knowledge: NOT_CONFIGURED" in capsys.readouterr().out
+    finally:
+        await h.aclose()
+
+
+def test_cli_exposes_only_server_and_schema_commands():
+    import subprocess
+
+    result = subprocess.run(["frontdesk-mcp", "--help"], capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+    assert "{serve,schema}" in result.stdout
+
+
+
+def test_routing_object_cannot_claim_a_clarification_decision():
+    from pydantic import ValidationError
+
+    from frontdesk_mcp.outcomes import Routing
+
+    with pytest.raises(ValidationError):
+        Routing(decision="CLARIFY")
+
+
+def _interface_rows():
+    text = (Path(__file__).resolve().parents[3] / "docs/handover/VOICE-TEAM.md").read_text()
+    rows = {}
+    for line in text.splitlines():
+        if line.startswith("| `"):
+            cells = [c.strip().strip("`") for c in line.strip("|").split(" | ")]
+            assert cells[0] not in rows, f"duplicate interface row: {cells[0]}"
+            rows[cells[0]] = cells[1:]
+    return text, rows
+
+
+def test_interface_parameter_and_output_tables_match_pinned_schema():
+    snapshot = json.loads((Path(__file__).parent / "contracts/mcp-tools.snapshot.json").read_text())
+    text, rows = _interface_rows()
+    assert f"Schema version: `{snapshot['schemaVersion']}`" in text
+    expected = {}
+
+    def wire_shape(value):
+        # Descriptions are separate prose; output defaults include existing callback text,
+        # which is intentionally not reproduced as a spoken script in the interface document.
+        if isinstance(value, dict):
+            return {k: wire_shape(v) for k, v in value.items() if k not in ("title", "description", "default")}
+        if isinstance(value, list):
+            return [wire_shape(v) for v in value]
+        return value
+
+    for tool in snapshot["tools"]:
+        for kind, schema in (("input", tool["inputSchema"]), ("output", tool["outputSchema"])):
+            objects = [("", schema), *[(f"$defs.{name}.", definition)
+                                      for name, definition in schema.get("$defs", {}).items()]]
+            for prefix, obj in objects:
+                for field, shape in obj.get("properties", {}).items():
+                    key = f"{tool['name']}.{kind}.{prefix}{field}"
+                    expected[key] = (wire_shape(shape), "required" if field in obj.get("required", []) else "optional")
+                    assert key in rows, f"missing interface field: {key}"
+                    cells = rows[key]
+                    assert len(cells) == 3 and cells[2], f"missing field meaning: {key}"
+                    assert (json.loads(cells[0]), cells[1]) == expected[key], key
+                    if kind == "input":
+                        assert cells[2] == shape["description"], key
+    actual = {key for key in rows if ".input." in key or ".output." in key}
+    assert actual == set(expected)
+
+
+def test_interface_describes_every_outcome_and_next_step():
+    from typing import get_args
+
+    from frontdesk_mcp import outcomes
+
+    _, rows = _interface_rows()
+    models = {"get_doctor_availability": outcomes.AvailabilityResult, "manage_booking": outcomes.BookingResult,
+              "search_knowledge": outcomes.KnowledgeResult, "record_call_summary": outcomes.SummaryResult}
+    expected = set()
+    for name, model in models.items():
+        for field in ("outcome", "nextStep"):
+            for value in get_args(model.model_fields[field].annotation):
+                key = f"{name}.{field}.{value}"
+                expected.add(key)
+                assert key in rows and len(rows[key]) == 1 and rows[key][0], f"undocumented meaning: {key}"
+    actual = {key for key in rows if ".outcome." in key or ".nextStep." in key}
+    assert actual == expected

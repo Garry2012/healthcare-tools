@@ -14,13 +14,11 @@ Published 1 October 2026; implementation delivered the same day on branch `Garry
 
 The application before this work had three MCP tools, our REST backend and PostgreSQL. The target has four MCP tools consuming Manoj's operational API and Shobhit's knowledge service, with no application database or backend engine in this repository.
 
-## Implementation assignment
+## Current integration contract
 
-[FABLE-MASTER-PROMPT.md](FABLE-MASTER-PROMPT.md) is the comprehensive execution prompt for the coding agent working in this workspace. It covers implementation, tests, voice/gateway integration, source and Azure retirement, self-review, and the evidence to return for architect review. Giving the prompt to an agent starts a separate implementation assignment; publishing it has not implemented or cleaned up the system.
-
-## Implementation assignment
-
-[FABLE-MASTER-PROMPT.md](FABLE-MASTER-PROMPT.md) is the comprehensive execution prompt for the coding agent working in this workspace. It covers implementation, tests, voice/gateway integration, source and Azure retirement, self-review, and the evidence to return for architect review. Giving the prompt to an agent starts a separate implementation assignment; publishing it has not implemented or cleaned up the system.
+[VOICE-TEAM.md](../VOICE-TEAM.md) defines the four MCP tools and their interface. Voice prompts,
+behaviour, guardrails and SDK wiring are owned by the voice team. The original Fable assignment is a
+dated historical artifact, not current integration guidance.
 
 ## Read in this order
 
@@ -38,9 +36,9 @@ Existing architecture, API specs and setup documents outside this directory desc
 - Keep this repository; adapt MCP in place. Manoj owns operational rules and persistence. Shobhit owns knowledge retrieval, symptom routing and red-flag decisions.
 - Four target tools: `get_doctor_availability`, `manage_booking`, `search_knowledge`, `record_call_summary`.
 - Availability combines the doctor's usual hours with the date/session-specific live board. No invented slots or capacity. A successful appointment request is NOTED, not a reserved appointment time.
-- UNKNOWN availability, today or future: collect caller name and callback number, say someone from the hospital will call back, and save only a call summary with CALLBACK_NOTED. No booking, transfer, alternative booking, notification or separate callback task. Failed reads are not valid UNKNOWN responses.
+- UNKNOWN availability, today or future, prevents the affected booking write and produces callback-only metadata. CALLBACK_NOTED summaries carry callback contact details; MCP creates no telephone transfer, notification or separate callback task. Failed reads are not valid UNKNOWN responses.
 - Department IDs come from the department list; doctor search accepts free text; appointment dates use confirmed ISO dates. Advanced multilingual interpretation and synonym/fuzzy matching are deferred, not new endpoint prerequisites.
-- Preserve the plan's trusted caller identity, routing gate, stable write identity, uncertain-write handling and call-end-only summary access. The platform owns durable finalization/retries; MCP remains stateless.
+- Preserve the plan's trusted caller identity, explicit knowledge selection, stable write identity, uncertain-write handling and call-end-only summary access. The platform owns durable finalization/retries; MCP remains stateless.
 - Target one second from end of caller speech to first useful audible response. The budget is provisional until measured on the real voice path; call summaries are outside it.
 
 ## Review and build on another laptop

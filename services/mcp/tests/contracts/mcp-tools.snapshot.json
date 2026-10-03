@@ -1,6 +1,6 @@
 {
-  "instructions": "Front-desk tools for a hospital voice agent. Dates: pass date='today' or an explicit date YYYY-MM-DD the caller confirmed; every result carries facilityToday and weekday to help you confirm. Never work out a relative date yourself: ask for the day. get_doctor_availability returns usual hours qualified by the live board per session. Speak the board status (IN, LATE with its expectedTime, CANCELLED, NOT_CONFIRMED, expired) and never present usual hours as today's attendance. There are no slots, tokens or guaranteed times: a preferred time is a request. manage_booking CREATE returns NOTED: say the request is recorded with that preferred time; never say 'confirmed' or 'booked'. CALLBACK_REQUIRED (board UNKNOWN today or on a later date): stop the appointment journey. Ask 'May I have your name and a callback number?' and then say 'Someone from the hospital will call you back.' Do not book, transfer, offer another doctor or date, or promise when; the call summary records it as CALLBACK_NOTED. Help one patient per call. Whether the caller's words contain a danger sign is decided by the hospital's routing service, never by you: follow its decision in routing. Before CREATE, CANCEL or RESCHEDULE, read the details back and get a clear yes; only then set callerConfirmed=true and call manage_booking once for that intent. UNCERTAIN means it may or may not be recorded: say so and transfer to the desk; never retry it as a new request. IDENTITY_UNAVAILABLE: the caller's number could not be verified for looking up or changing appointments; do not ask for another number to use instead, offer the desk. ROUTING_REQUIRED: follow nextStep (TRANSFER_EMERGENCY at once, TRANSFER_DESK, or ask routing.speak) and speak routing.speak.text verbatim when present. ROUTING_UNAVAILABLE, COULD_NOT_CHECK or COULD_NOT_RECORD: say the system could not check right now and offer the desk; never say that no one is available. CLARIFICATION_NEEDED: offer the returned choices (complete=false means there are more) and ask; never choose for the caller. NOT_FOUND: ask the caller to repeat the name or department once, then offer the desk. For general questions (hours, parking, reports, payment, directions) call search_knowledge and speak answer.text exactly as given; add nothing. Languages: set `language` to the language the caller is speaking (en, kn, hi). Pass names, departments and questions as heard, untranslated; speak approved answers in the language they come back in. Tool schema 2026-10-01.4.",
-  "schemaVersion": "2026-10-01.4",
+  "instructions": "MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service. Availability date accepts only 'today' or YYYY-MM-DD; other relative dates are not accepted. NOTED is a recorded appointment request, not a confirmed or reserved time. CALLBACK_REQUIRED denotes UNKNOWN board availability; UNCERTAIN denotes an unverified write result. Call summaries require lifecycle authentication; the other three tools require gateway authentication. Supported languages: en, kn, hi. Tool schema 2026-10-03.3.",
+  "schemaVersion": "2026-10-03.3",
   "tools": [
     {
       "annotations": {
@@ -8,11 +8,11 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Check a doctor's or a department's availability for today or an explicit date. Resolves the doctor or department from the hospital directory (asking for a choice when several match), then returns the usual hours qualified by the live board for each session: IN, LATE (with expected time), CANCELLED, NOT_CONFIRMED or UNKNOWN. UNKNOWN returns CALLBACK_REQUIRED: collect name and callback number only.",
+      "description": "Doctor or department working hours qualified by the live availability board for a date. Applies to directory and availability queries. IN, LATE, CANCELLED, NOT_CONFIRMED and UNKNOWN are board statuses; usual hours are independent of live attendance. Ambiguous directory matches return choices. CALLBACK_REQUIRED means the board is UNKNOWN and no appointment can be recorded; callback contact details are recorded in a call summary with CALLBACK_NOTED. A mixed result can contain individual doctors with journey=CALLBACK_ONLY.",
       "inputSchema": {
         "properties": {
           "date": {
-            "description": "'today', or the explicit YYYY-MM-DD date the caller confirmed.",
+            "description": "Required date: 'today' or YYYY-MM-DD. Other relative dates are not accepted.",
             "maxLength": 10,
             "type": "string"
           },
@@ -27,7 +27,7 @@
               }
             ],
             "default": null,
-            "description": "A departmentId from an earlier result's departmentChoices, when the caller has chosen."
+            "description": "Directory identifier for a selected department; optional alternative to departmentName."
           },
           "departmentName": {
             "anyOf": [
@@ -40,7 +40,7 @@
               }
             ],
             "default": null,
-            "description": "The department or speciality as the caller said it, when they named one."
+            "description": "Department or speciality name for directory search; optional."
           },
           "doctorId": {
             "anyOf": [
@@ -53,7 +53,7 @@
               }
             ],
             "default": null,
-            "description": "A doctorId from an earlier result's choices or doctors, when the caller has chosen."
+            "description": "Directory identifier for a selected doctor; optional alternative to doctorName."
           },
           "doctorName": {
             "anyOf": [
@@ -66,7 +66,7 @@
               }
             ],
             "default": null,
-            "description": "The doctor's name as the caller said it, when they named one. Never corrected."
+            "description": "Doctor name for directory search, in the caller's original wording; optional."
           },
           "gender": {
             "anyOf": [
@@ -82,7 +82,7 @@
               }
             ],
             "default": null,
-            "description": "Only if the caller asked for a lady or a male doctor."
+            "description": "Optional doctor gender filter: FEMALE or MALE."
           },
           "session": {
             "anyOf": [
@@ -95,7 +95,7 @@
               }
             ],
             "default": null,
-            "description": "Only if the caller asked about a particular session (morning, evening) as they said it."
+            "description": "Optional session label, such as morning or evening, restricting the board scope."
           }
         },
         "required": [
@@ -199,7 +199,7 @@
             "type": "object"
           },
           "Callback": {
-            "description": "The UNKNOWN policy: collect name and number, say someone will call back, record a summary only.",
+            "description": "Callback metadata for UNKNOWN availability; summary outcome is CALLBACK_NOTED.",
             "properties": {
               "ask": {
                 "default": "May I have your name and a callback number?",
@@ -325,7 +325,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "Background hours only, never today's position. null when the profile was not fetched.",
+                "description": "Usual working hours, independent of live attendance. null when the profile was not fetched.",
                 "title": "Usualsessions"
               }
             },
@@ -377,67 +377,6 @@
               "departments"
             ],
             "title": "DoctorChoice",
-            "type": "object"
-          },
-          "Routing": {
-            "properties": {
-              "decision": {
-                "enum": [
-                  "CONTINUE",
-                  "ROUTE_DEPARTMENT",
-                  "CLARIFY",
-                  "DESK_TRANSFER",
-                  "EMERGENCY_TRANSFER"
-                ],
-                "title": "Decision",
-                "type": "string"
-              },
-              "department": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "title": "Department"
-              },
-              "speak": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Speech"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null
-              }
-            },
-            "required": [
-              "decision"
-            ],
-            "title": "Routing",
-            "type": "object"
-          },
-          "Speech": {
-            "properties": {
-              "language": {
-                "title": "Language",
-                "type": "string"
-              },
-              "text": {
-                "title": "Text",
-                "type": "string"
-              }
-            },
-            "required": [
-              "text",
-              "language"
-            ],
-            "title": "Speech",
             "type": "object"
           },
           "UsualSessionOut": {
@@ -559,9 +498,7 @@
               "ASK_WHICH_DOCTOR",
               "ASK_WHICH_DEPARTMENT",
               "ASK_CALLBACK_DETAILS",
-              "TRANSFER_EMERGENCY",
               "TRANSFER_DESK",
-              "ASK_ROUTING_CLARIFICATION",
               "ASK_TO_REPHRASE",
               "SAY_COULD_NOT_CHECK",
               "ASK_EXPLICIT_DATE"
@@ -574,8 +511,6 @@
               "AVAILABILITY",
               "CLARIFICATION_NEEDED",
               "CALLBACK_REQUIRED",
-              "ROUTING_REQUIRED",
-              "ROUTING_UNAVAILABLE",
               "NOT_FOUND",
               "COULD_NOT_CHECK",
               "INVALID_REQUEST"
@@ -606,17 +541,6 @@
             ],
             "default": null,
             "title": "Retryafterseconds"
-          },
-          "routing": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/Routing"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
           },
           "sessionMatched": {
             "anyOf": [
@@ -671,11 +595,11 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Record (CREATE), list (LIST), cancel (CANCEL) or move (RESCHEDULE) an appointment request. CREATE needs the patient's name and mobile read back, the chosen doctorId or departmentId, the confirmed visit date and optional preferred time; success is NOTED (recorded, not a reserved time). LIST, CANCEL and RESCHEDULE work on the verified caller's own number only. Every write needs callerConfirmed=true after reading the details back.",
+      "description": "CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require callerConfirmed=true and trusted call/operation headers. CREATE requires patientName, patientMobile, doctorId or departmentId, and visitDate. LIST/CANCEL/RESCHEDULE require verified caller identity. NOTED means a request is recorded, not a confirmed or reserved time. UNCERTAIN means the write may have committed without a verified result. CALLBACK_REQUIRED means the live board is UNKNOWN and the write was not submitted.",
       "inputSchema": {
         "properties": {
           "action": {
-            "description": "CREATE a request, LIST the caller's requests, CANCEL or RESCHEDULE one of them.",
+            "description": "Required action: CREATE, LIST, CANCEL or RESCHEDULE.",
             "enum": [
               "CREATE",
               "LIST",
@@ -695,11 +619,11 @@
               }
             ],
             "default": null,
-            "description": "CANCEL/RESCHEDULE: the appointmentId from LIST or CREATE."
+            "description": "Required for CANCEL/RESCHEDULE: identifier of the appointment request."
           },
           "callerConfirmed": {
             "default": false,
-            "description": "true only after the caller clearly agreed to the read-back details.",
+            "description": "Boolean declaring the caller's approval of this write; true is required for CREATE/CANCEL/RESCHEDULE.",
             "type": "boolean"
           },
           "departmentId": {
@@ -713,7 +637,7 @@
               }
             ],
             "default": null,
-            "description": "CREATE: the chosen departmentId when no particular doctor was chosen."
+            "description": "CREATE department identifier when no individual doctor is selected."
           },
           "doctorId": {
             "anyOf": [
@@ -726,7 +650,7 @@
               }
             ],
             "default": null,
-            "description": "CREATE: the chosen doctorId from get_doctor_availability (or departmentId instead)."
+            "description": "CREATE doctor identifier; doctorId or departmentId is required, but not both."
           },
           "fromDate": {
             "anyOf": [
@@ -739,7 +663,8 @@
                 "type": "null"
               }
             ],
-            "default": null
+            "default": null,
+            "description": "Optional LIST lower date filter in YYYY-MM-DD format; past dates are accepted."
           },
           "newPreferredTime": {
             "anyOf": [
@@ -753,7 +678,7 @@
               }
             ],
             "default": null,
-            "description": "RESCHEDULE: the new preferred time, HH:MM, if given."
+            "description": "Optional RESCHEDULE preferred time in HH:MM 24-hour format."
           },
           "newVisitDate": {
             "anyOf": [
@@ -767,7 +692,7 @@
               }
             ],
             "default": null,
-            "description": "RESCHEDULE: the new confirmed date, YYYY-MM-DD."
+            "description": "Required for RESCHEDULE: new date in YYYY-MM-DD format, today or later in facility time."
           },
           "patientMobile": {
             "anyOf": [
@@ -780,7 +705,7 @@
               }
             ],
             "default": null,
-            "description": "CREATE: the patient's 10-digit mobile, read back digit by digit. Contact data only."
+            "description": "Required for CREATE: 10-digit contact mobile. This is contact data, not caller authority."
           },
           "patientName": {
             "anyOf": [
@@ -793,7 +718,7 @@
               }
             ],
             "default": null,
-            "description": "CREATE: the patient's name, spelled back."
+            "description": "Required for CREATE: patient name; nonblank, at most 100 characters."
           },
           "preferredTime": {
             "anyOf": [
@@ -807,7 +732,7 @@
               }
             ],
             "default": null,
-            "description": "CREATE: the time the caller would like to come, HH:MM 24-hour, if they gave one."
+            "description": "Optional CREATE preferred time in HH:MM 24-hour format; a request, not a reserved time."
           },
           "reasonVerbatim": {
             "anyOf": [
@@ -820,7 +745,7 @@
               }
             ],
             "default": null,
-            "description": "CREATE/CANCEL: the caller's own words for the reason. Never an interpretation."
+            "description": "Optional CREATE/CANCEL reason in the caller's original words; forwarded without interpretation."
           },
           "session": {
             "anyOf": [
@@ -833,7 +758,7 @@
               }
             ],
             "default": null,
-            "description": "CREATE: the board session the caller chose from get_doctor_availability (e.g. Morning), when the doctor has several that day."
+            "description": "Optional CREATE board session label restricting the selected doctor's availability scope."
           },
           "status": {
             "anyOf": [
@@ -850,7 +775,8 @@
                 "type": "null"
               }
             ],
-            "default": null
+            "default": null,
+            "description": "Optional LIST appointment-status filter."
           },
           "toDate": {
             "anyOf": [
@@ -863,7 +789,8 @@
                 "type": "null"
               }
             ],
-            "default": null
+            "default": null,
+            "description": "Optional LIST upper date filter in YYYY-MM-DD format; past dates are accepted."
           },
           "visitDate": {
             "anyOf": [
@@ -877,7 +804,7 @@
               }
             ],
             "default": null,
-            "description": "CREATE: the confirmed visit date, YYYY-MM-DD."
+            "description": "Required for CREATE: visit date in YYYY-MM-DD format, today or later in facility time."
           }
         },
         "required": [
@@ -890,7 +817,7 @@
       "outputSchema": {
         "$defs": {
           "AppointmentOut": {
-            "description": "The minimum the agent needs to speak about a request: no contact number, no reason text.",
+            "description": "Appointment request data, excluding contact numbers and reason text.",
             "properties": {
               "appointmentId": {
                 "title": "Appointmentid",
@@ -961,7 +888,7 @@
             "type": "object"
           },
           "Callback": {
-            "description": "The UNKNOWN policy: collect name and number, say someone will call back, record a summary only.",
+            "description": "Callback metadata for UNKNOWN availability; summary outcome is CALLBACK_NOTED.",
             "properties": {
               "ask": {
                 "default": "May I have your name and a callback number?",
@@ -981,67 +908,6 @@
               }
             },
             "title": "Callback",
-            "type": "object"
-          },
-          "Routing": {
-            "properties": {
-              "decision": {
-                "enum": [
-                  "CONTINUE",
-                  "ROUTE_DEPARTMENT",
-                  "CLARIFY",
-                  "DESK_TRANSFER",
-                  "EMERGENCY_TRANSFER"
-                ],
-                "title": "Decision",
-                "type": "string"
-              },
-              "department": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "title": "Department"
-              },
-              "speak": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Speech"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null
-              }
-            },
-            "required": [
-              "decision"
-            ],
-            "title": "Routing",
-            "type": "object"
-          },
-          "Speech": {
-            "properties": {
-              "language": {
-                "title": "Language",
-                "type": "string"
-              },
-              "text": {
-                "title": "Text",
-                "type": "string"
-              }
-            },
-            "required": [
-              "text",
-              "language"
-            ],
-            "title": "Speech",
             "type": "object"
           }
         },
@@ -1107,8 +973,6 @@
               "ASK_TO_CORRECT",
               "SAY_UNCERTAIN_AND_TRANSFER",
               "TRANSFER_DESK",
-              "TRANSFER_EMERGENCY",
-              "ASK_ROUTING_CLARIFICATION",
               "ASK_CALLBACK_DETAILS",
               "ASK_CONFIRMATION",
               "SAY_COULD_NOT_RECORD",
@@ -1128,8 +992,6 @@
               "CONFLICT",
               "UNCERTAIN",
               "IDENTITY_UNAVAILABLE",
-              "ROUTING_REQUIRED",
-              "ROUTING_UNAVAILABLE",
               "CALLBACK_REQUIRED",
               "CONFIRMATION_REQUIRED",
               "OPERATION_CONTEXT_MISSING",
@@ -1151,17 +1013,6 @@
             ],
             "default": null,
             "title": "Retryafterseconds"
-          },
-          "routing": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/Routing"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
           }
         },
         "required": [
@@ -1178,16 +1029,16 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Answer a general question about the hospital (hours, visiting, parking, payment, reports, directions, insurance) from approved answers. Speak answer.text as given. Not for doctors' availability or appointments.",
+      "description": "One knowledge-service request for hospital information or symptom-to-department routing. It does not read availability or change appointments. ANSWERED and CLARIFICATION_NEEDED carry owner-provided text in answer.text. Routing results carry text only in routing.speak, when present. TRANSFER_EMERGENCY means the knowledge service decided the caller needs emergency help; TRANSFER_DESK means desk assistance; CHECK_AVAILABILITY identifies a department in routing.department. NO_ANSWER is an owner decision; COULD_NOT_CHECK is a service failure.",
       "inputSchema": {
         "properties": {
           "language": {
-            "description": "The language the caller is speaking.",
+            "description": "Required nonblank language code, up to 16 characters; forwarded unchanged to the knowledge service.",
             "maxLength": 16,
             "type": "string"
           },
           "question": {
-            "description": "The caller's question as spoken, in any language.",
+            "description": "Required original question, untranslated and unsummarised; nonblank, maximum 500 characters.",
             "maxLength": 500,
             "type": "string"
           }
@@ -1206,9 +1057,7 @@
             "properties": {
               "decision": {
                 "enum": [
-                  "CONTINUE",
                   "ROUTE_DEPARTMENT",
-                  "CLARIFY",
                   "DESK_TRANSFER",
                   "EMERGENCY_TRANSFER"
                 ],
@@ -1275,7 +1124,7 @@
               }
             ],
             "default": null,
-            "description": "Approved text to speak exactly as given."
+            "description": "Knowledge-service answer or clarification text."
           },
           "destination": {
             "anyOf": [
@@ -1308,7 +1157,7 @@
               "ASK_CLARIFICATION",
               "TRANSFER_DESK",
               "TRANSFER_EMERGENCY",
-              "ASK_ROUTING_CLARIFICATION",
+              "CHECK_AVAILABILITY",
               "SAY_COULD_NOT_CHECK",
               "ASK_TO_REPHRASE"
             ],
@@ -1321,7 +1170,6 @@
               "NO_ANSWER",
               "CLARIFICATION_NEEDED",
               "ROUTING_REQUIRED",
-              "ROUTING_UNAVAILABLE",
               "COULD_NOT_CHECK",
               "INVALID_REQUEST"
             ],
@@ -1368,7 +1216,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Call-end lifecycle only (not for use during the conversation): store the hospital-facing summary of the completed call. Call identity and timing come from the platform. For a callback after UNKNOWN availability use outcome CALLBACK_NOTED with the caller's name and callback number.",
+      "description": "Store the completed call's hospital-facing summary. Available only to the lifecycle bearer. Call identity and timing come from trusted headers. CALLBACK_NOTED records callback contact details after UNKNOWN availability; it does not create an appointment or a separate callback task. STORED is a new summary; REPLAYED is the existing result for the same call and payload; UNCERTAIN means persistence could not be verified.",
       "inputSchema": {
         "properties": {
           "appointmentId": {
@@ -1382,7 +1230,7 @@
               }
             ],
             "default": null,
-            "description": "The appointment created or changed, when applicable."
+            "description": "Optional identifier of the appointment request associated with the call."
           },
           "callerMobile": {
             "anyOf": [
@@ -1395,7 +1243,7 @@
               }
             ],
             "default": null,
-            "description": "The 10-digit callback number only when the caller gave it; never the caller ID."
+            "description": "Optional caller-provided 10-digit callback number; required for CALLBACK_NOTED. Distinct from caller ID."
           },
           "callerName": {
             "anyOf": [
@@ -1408,7 +1256,7 @@
               }
             ],
             "default": null,
-            "description": "The caller's name when they gave it (required for CALLBACK_NOTED)."
+            "description": "Caller-provided name; required for CALLBACK_NOTED, optional otherwise."
           },
           "doctorId": {
             "anyOf": [
@@ -1421,10 +1269,10 @@
               }
             ],
             "default": null,
-            "description": "The doctor the call was about, when applicable."
+            "description": "Optional identifier of the doctor associated with the call."
           },
           "intent": {
-            "description": "What the caller wanted.",
+            "description": "Required call-intent category.",
             "enum": [
               "AVAILABILITY",
               "BOOKING",
@@ -1453,10 +1301,10 @@
               }
             ],
             "default": null,
-            "description": "The language the call was handled in."
+            "description": "Optional call language; en, kn and hi primary codes map to the operational contract. Other codes are omitted upstream."
           },
           "outcome": {
-            "description": "How the call ended from the hospital's point of view.",
+            "description": "Required hospital-facing call outcome category.",
             "enum": [
               "RESOLVED_BY_AGENT",
               "APPOINTMENT_NOTED",
@@ -1482,10 +1330,10 @@
               }
             ],
             "default": null,
-            "description": "For CALLBACK_NOTED: the date the caller asked about (YYYY-MM-DD), kept whole in the summary."
+            "description": "Optional requested date in YYYY-MM-DD format; preserved in CALLBACK_NOTED summary text when supplied."
           },
           "summaryText": {
-            "description": "One or two sentences for the admin UI; never a transcript.",
+            "description": "Required nonblank call summary, up to 2000 input characters. Stored text is limited to 500 characters including preserved callback metadata.",
             "maxLength": 2000,
             "type": "string"
           },
@@ -1500,7 +1348,7 @@
               }
             ],
             "default": null,
-            "description": "Desk or department the call was handed to, for transfer outcomes."
+            "description": "Optional destination associated with a transfer outcome."
           }
         },
         "required": [

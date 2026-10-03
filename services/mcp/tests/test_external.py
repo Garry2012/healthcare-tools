@@ -105,22 +105,16 @@ async def test_an_absent_bearer_is_refused_by_the_service(settings):
 
 
 async def test_availability_tool_end_to_end_against_the_service(settings):
-    """Exact behaviour depends on the knowledge host: without it the honest outcome is ROUTING_UNAVAILABLE."""
-    which = mode()
+    """Scheduling reads work independently of knowledge configuration."""
+    mode()
     kb = KnowledgeClient(settings)
     ops = OpsClient(settings)
     try:
-        service = availability.AvailabilityService(ops, kb, DirectoryCache(settings), settings, SystemClock())
-        ctx = context.from_headers(harness.headers(call_id=f"ext-{uuid.uuid4().hex[:8]}", turn="availability today"),
+        service = availability.AvailabilityService(ops, DirectoryCache(settings), settings, SystemClock())
+        ctx = context.from_headers(harness.headers(call_id=f"ext-{uuid.uuid4().hex[:8]}"),
                                    settings)
         department = os.environ.get("OPS_E2E_DEPARTMENT", "General Medicine")
         result = await service.get(ctx, availability.AvailabilityRequest(date="today", departmentName=department))
-        if not os.environ.get("KNOWLEDGE_E2E_BASE_URL"):
-            # Without a knowledge host the tool must refuse (no clearance). That is the safe behaviour, but it
-            # verifies nothing about the operational API, so this gate is BLOCKED, not passed.
-            assert result.outcome == "ROUTING_UNAVAILABLE", result
-            pytest.fail("BLOCKED: KNOWLEDGE_E2E_BASE_URL is not set; the availability tool cannot be verified "
-                        f"end to end against the {which} operational service without a routing decision")
         assert result.outcome in ("AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND"), result
     finally:
         await ops.aclose()
@@ -136,7 +130,6 @@ async def _write_gate(ops: OpsClient) -> None:
     tenant = required("OPS_E2E_WRITE_TENANT")
     if mode() != "live":
         pytest.fail("BLOCKED: the write journey needs a stateful live test tenant; the Prism mock keeps no state")
-    required("KNOWLEDGE_E2E_BASE_URL")
     await gates.assert_authenticated_write_tenant(ops, tenant)
 
 
@@ -148,12 +141,11 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
     ops, kb = OpsClient(settings), KnowledgeClient(settings)
     try:
         await _write_gate(ops)
-        svc = booking.BookingService(ops, kb, settings, SystemClock())
+        svc = booking.BookingService(ops, settings, SystemClock())
         call_id = f"ext-{uuid.uuid4().hex[:8]}"
 
         def ctx(op: str):
-            return context.from_headers(harness.headers(call_id=call_id, operation_id=f"{call_id}-{op}",
-                                                        turn="appointment please"), settings)
+            return context.from_headers(harness.headers(call_id=call_id, operation_id=f"{call_id}-{op}"), settings)
 
         created = await svc.manage(ctx("create"), booking.BookingRequest(
             action="CREATE", patientName="Synthetic Test Patient", patientMobile=harness.CALLER[3:], doctorId=doctor_id,
@@ -170,12 +162,12 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
             action="CANCEL", appointmentId=appointment_id, callerConfirmed=True))
         assert cancelled.outcome == "CANCELLED", cancelled
         stored = await summary.SummaryService(ops, settings).record(context.from_headers(harness.headers(
-            call_id=call_id, turn=None, started_at=datetime.now(UTC).isoformat(), duration="60"), settings),
+            call_id=call_id, started_at=datetime.now(UTC).isoformat(), duration="60"), settings),
             summary.SummaryRequest(intent="BOOKING", outcome="APPOINTMENT_CANCELLED", appointmentId=appointment_id,
                                    summaryText="External synthetic journey: created, moved, cancelled."))
         assert stored.outcome == "STORED", stored
         replay = await summary.SummaryService(ops, settings).record(context.from_headers(harness.headers(
-            call_id=call_id, turn=None, started_at=datetime.now(UTC).isoformat(), duration="60"), settings),
+            call_id=call_id, started_at=datetime.now(UTC).isoformat(), duration="60"), settings),
             summary.SummaryRequest(intent="BOOKING", outcome="APPOINTMENT_CANCELLED", appointmentId=appointment_id,
                                    summaryText="External synthetic journey: created, moved, cancelled."))
         assert replay.outcome == "REPLAYED" and replay.summaryId == stored.summaryId
@@ -191,10 +183,9 @@ async def test_negative_unknown_date_is_callback_only_and_writes_nothing(setting
     ops, kb = OpsClient(settings), KnowledgeClient(settings)
     try:
         await _write_gate(ops)
-        svc = booking.BookingService(ops, kb, settings, SystemClock())
+        svc = booking.BookingService(ops, settings, SystemClock())
         call_id = f"ext-{uuid.uuid4().hex[:8]}"
-        ctx = context.from_headers(harness.headers(call_id=call_id, operation_id=f"{call_id}-create",
-                                                   turn="appointment please"), settings)
+        ctx = context.from_headers(harness.headers(call_id=call_id, operation_id=f"{call_id}-create"), settings)
         window = booking.BookingRequest(action="LIST", fromDate=unknown_date, toDate=unknown_date)
         before = gates.assert_list_succeeded(await svc.manage(ctx, window))  # the baseline itself must succeed
         result = await svc.manage(ctx, booking.BookingRequest(
@@ -216,7 +207,7 @@ async def test_knowledge_search_against_the_real_host(settings):
     kb = KnowledgeClient(settings)
     try:
         result = await knowledge.KnowledgeService(kb, settings).search(
-            context.from_headers(harness.headers(call_id="ext-kb", turn="is there parking"), settings),
+            context.from_headers(harness.headers(call_id="ext-kb"), settings),
             knowledge.KnowledgeRequest(question="parking", language="en"))
         assert result.outcome in ("ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED"), result
     finally:

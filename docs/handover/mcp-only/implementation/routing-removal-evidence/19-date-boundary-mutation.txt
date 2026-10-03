@@ -1,0 +1,49 @@
+MUTATION: accept invalid date as today; new matrix boundary must reject it.
+$ uv run pytest tests/test_availability.py -k independent_of_knowledge -q --tb=short
+........F........F                                                       [100%]
+=================================== FAILURES ===================================
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target8-INVALID_REQUEST-ASK_EXPLICIT_DATE] _
+tests/test_availability.py:424: in test_availability_is_independent_of_knowledge_and_transcript
+    assert (result.outcome, result.nextStep) == (expected, step)
+E   AssertionError: assert ('AVAILABILIT...MENT_REQUEST') == ('INVALID_REQ...XPLICIT_DATE')
+E
+E     At index 0 diff: 'AVAILABILITY' != 'INVALID_REQUEST'
+E     Use -v to get more diff
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target8-INVALID_REQUEST-ASK_EXPLICIT_DATE] _
+tests/test_availability.py:424: in test_availability_is_independent_of_knowledge_and_transcript
+    assert (result.outcome, result.nextStep) == (expected, step)
+E   AssertionError: assert ('AVAILABILIT...MENT_REQUEST') == ('INVALID_REQ...XPLICIT_DATE')
+E
+E     At index 0 diff: 'AVAILABILITY' != 'INVALID_REQUEST'
+E     Use -v to get more diff
+=============================== warnings summary ===============================
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target8-INVALID_REQUEST-ASK_EXPLICIT_DATE]
+FAILED tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target8-INVALID_REQUEST-ASK_EXPLICIT_DATE]
+2 failed, 16 passed, 42 deselected, 2 warnings in 0.90s
+
+SOURCE RESTORED
+$ uv run pytest tests/test_availability.py -k independent_of_knowledge -q --tb=short
+..................                                                       [100%]
+=============================== warnings summary ===============================
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-OFFER_APPOINTMENT_REQUEST]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+18 passed, 42 deselected, 2 warnings in 0.67s

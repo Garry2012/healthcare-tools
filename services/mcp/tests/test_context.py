@@ -3,17 +3,11 @@ gateway; the model never supplies it. Deadlines are one budget per invocation; t
 
 from __future__ import annotations
 
-import base64
-import json
 from datetime import UTC, datetime
 
 import pytest
 
 from frontdesk_mcp import clock, context, identity
-
-
-def b64(obj) -> str:
-    return base64.urlsafe_b64encode(json.dumps(obj).encode()).decode().rstrip("=")
 
 
 def test_deadline_counts_down_and_caps_each_request():
@@ -34,20 +28,18 @@ def test_fixed_clock_reports_facility_local_date(make_settings):
 def test_headers_become_a_call_context(make_settings):
     headers = {
         "x-call-id": "call-77", "x-caller-number": "+919000000101", "x-caller-verification": "SIP_CALLER_ID",
-        "x-turn-context": b64({"utterance": "ನಾಳೆ ಡಾ ಗರಿಮಾ ಇರ್ತಾರಾ", "language": "kn", "turnId": "t3"}),
         "x-operation-id": "op-1", "x-call-started-at": "2026-10-01T10:00:00+05:30", "x-call-duration-seconds": "184",
     }
     ctx = context.from_headers(headers, make_settings())
     assert ctx.call_id == "call-77" and ctx.caller_number == "+919000000101"
     assert ctx.caller_verification == "SIP_CALLER_ID" and ctx.operation_id == "op-1"
-    assert ctx.turn.utterance == "ನಾಳೆ ಡಾ ಗರಿಮಾ ಇರ್ತಾರಾ" and ctx.turn.language == "kn" and ctx.turn.turn_id == "t3"
     assert ctx.call_started_at == datetime.fromisoformat("2026-10-01T10:00:00+05:30")
     assert ctx.call_duration_seconds == 184
 
 
 def test_absent_headers_are_absent_not_defaulted(make_settings):
     ctx = context.from_headers({}, make_settings())
-    assert ctx.call_id is None and ctx.caller_number is None and ctx.turn is None
+    assert ctx.call_id is None and ctx.caller_number is None
     assert ctx.operation_id is None and ctx.call_started_at is None and ctx.call_duration_seconds is None
     assert ctx.caller_verification is None
 
@@ -61,8 +53,7 @@ def test_a_forwarded_number_without_a_verification_header_is_unverified(make_set
 
 @pytest.mark.parametrize("header,value", [
     ("x-call-id", "x" * 65), ("x-call-id", "bad id/with?chars"), ("x-operation-id", "../op"),
-    ("x-turn-context", "not-base64!"), ("x-turn-context", b64({"language": "kn"})),
-    ("x-turn-context", b64(["utterance"])), ("x-call-started-at", "yesterday"), ("x-call-duration-seconds", "-1"),
+    ("x-call-started-at", "yesterday"), ("x-call-duration-seconds", "-1"),
     ("x-call-duration-seconds", "ten"),
 ])
 def test_malformed_trusted_headers_are_treated_as_absent(make_settings, header, value):
@@ -112,19 +103,3 @@ def test_mobile_fields_match_the_contract_pattern():
 
 
 # ------------------------------------------------------------------ architect review AR-01
-
-
-def test_a_long_trusted_utterance_is_preserved_whole(make_settings):
-    text = "I would like an appointment. " * 40 + "I have chest pain"  # 1,177 characters; the tail decides
-    ctx = context.from_headers({"x-turn-context": b64({"utterance": text, "language": "en"})}, make_settings())
-    assert ctx.turn is not None and ctx.turn.utterance == text and ctx.turn_failure is None
-
-
-def test_an_oversized_turn_context_is_refused_not_truncated(make_settings):
-    text = "x" * (context.UTTERANCE_MAX + 1)
-    ctx = context.from_headers({"x-turn-context": b64({"utterance": text, "language": "en"})}, make_settings())
-    assert ctx.turn is None and ctx.turn_failure == "TURN_CONTEXT_OVERSIZED"
-    absent = context.from_headers({}, make_settings())
-    assert absent.turn is None and absent.turn_failure == "TURN_CONTEXT_MISSING"
-    broken = context.from_headers({"x-turn-context": "not-base64!"}, make_settings())
-    assert broken.turn is None and broken.turn_failure == "TURN_CONTEXT_MALFORMED"

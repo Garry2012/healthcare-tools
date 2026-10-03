@@ -1,0 +1,294 @@
+
+MUTATION: knowledge empty-input guard
+COMMAND: uv run pytest tests/test_knowledge.py -k empty_input -q --tb=short
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__________________ test_empty_input_does_not_call_owner[-en] ___________________
+tests/test_knowledge.py:107: in test_empty_input_does_not_call_owner
+    result = await services.search.search(CallContext(), KnowledgeRequest(question=question, language=language))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge.py:29: in search
+    response = await self.knowledge.answer(request.question, request.language, ctx,
+src/frontdesk_mcp/knowledge_client.py:75: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_knowledge.py:103: in forbidden
+    raise AssertionError("invalid input must not reach owner")
+E   AssertionError: invalid input must not reach owner
+_________________ test_empty_input_does_not_call_owner[  -en] __________________
+tests/test_knowledge.py:107: in test_empty_input_does_not_call_owner
+    result = await services.search.search(CallContext(), KnowledgeRequest(question=question, language=language))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge.py:29: in search
+    response = await self.knowledge.answer(request.question, request.language, ctx,
+src/frontdesk_mcp/knowledge_client.py:75: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_knowledge.py:103: in forbidden
+    raise AssertionError("invalid input must not reach owner")
+E   AssertionError: invalid input must not reach owner
+_______________ test_empty_input_does_not_call_owner[parking- ] ________________
+tests/test_knowledge.py:107: in test_empty_input_does_not_call_owner
+    result = await services.search.search(CallContext(), KnowledgeRequest(question=question, language=language))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge.py:29: in search
+    response = await self.knowledge.answer(request.question, request.language, ctx,
+src/frontdesk_mcp/knowledge_client.py:75: in answer
+    data = await self._post(kc.ANSWER_PATH, body, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/knowledge_client.py:51: in _post
+    response = await self.http.post(path, json=body, timeout=timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1859: in post
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/mock.py:41: in handle_async_request
+    response = await response
+               ^^^^^^^^^^^^^^
+tests/test_knowledge.py:103: in forbidden
+    raise AssertionError("invalid input must not reach owner")
+E   AssertionError: invalid input must not reach owner
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_empty_input_does_not_call_owner[-en] - A...
+FAILED tests/test_knowledge.py::test_empty_input_does_not_call_owner[  -en]
+FAILED tests/test_knowledge.py::test_empty_input_does_not_call_owner[parking- ]
+3 failed, 21 deselected, 2 warnings in 1.07s
+EXIT: 1
+
+MUTATION: knowledge approved routing speech
+COMMAND: uv run pytest tests/test_knowledge.py -k one_exchange -q --tb=short
+....F.                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_one_exchange_maps_owner_outcome_without_transcript[payload4-ROUTING_REQUIRED-TRANSFER_EMERGENCY] _
+tests/test_knowledge.py:49: in test_one_exchange_maps_owner_outcome_without_transcript
+    assert (result.routing.speak.model_dump() if result.routing.speak else None) == payload.get("answer")
+E   AssertionError: assert None == {'text': 'Owner emergency instruction', 'language': 'en'}
+E    +  where {'text': 'Owner emergency instruction', 'language': 'en'} = <built-in method get of dict object at 0x10badfdc0>('answer')
+E    +    where <built-in method get of dict object at 0x10badfdc0> = {'outcome': 'EMERGENCY_TRANSFER', 'answer': {'text': 'Owner emergency instruction', 'language': 'en'}}.get
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_one_exchange_maps_owner_outcome_without_transcript[payload4-ROUTING_REQUIRED-TRANSFER_EMERGENCY]
+1 failed, 5 passed, 18 deselected, 2 warnings in 0.72s
+EXIT: 1
+
+MUTATION: knowledge deadline cap
+COMMAND: uv run pytest tests/test_knowledge.py -k owner_failure -q --tb=short
+F.............                                                           [100%]
+=================================== FAILURES ===================================
+___________ test_owner_failure_is_not_an_answer[timeout-UNAVAILABLE] ___________
+tests/test_knowledge.py:91: in test_owner_failure_is_not_an_answer
+    assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", detail)
+E   AssertionError: assert ('COULD_NOT_C..., 'MALFORMED') == ('COULD_NOT_C...'UNAVAILABLE')
+E
+E     At index 2 diff: 'MALFORMED' != 'UNAVAILABLE'
+E     Use -v to get more diff
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_owner_failure_is_not_an_answer[timeout-UNAVAILABLE]
+1 failed, 13 passed, 10 deselected, 2 warnings in 1.78s
+EXIT: 1
+
+MUTATION: smoke inconsistent knowledge envelope
+COMMAND: uv run pytest tests/test_deploy.py -k unconfigured_smoke -q --tb=short
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+___ test_unconfigured_smoke_refuses_mismatched_or_error_results[body0-False] ___
+tests/test_deploy.py:322: in test_unconfigured_smoke_refuses_mismatched_or_error_results
+    with pytest.raises(RuntimeError, match="configuration and tool result disagree"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE RuntimeError
+___ test_unconfigured_smoke_refuses_mismatched_or_error_results[body1-False] ___
+tests/test_deploy.py:322: in test_unconfigured_smoke_refuses_mismatched_or_error_results
+    with pytest.raises(RuntimeError, match="configuration and tool result disagree"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE RuntimeError
+___ test_unconfigured_smoke_refuses_mismatched_or_error_results[body2-True] ____
+tests/test_deploy.py:322: in test_unconfigured_smoke_refuses_mismatched_or_error_results
+    with pytest.raises(RuntimeError, match="configuration and tool result disagree"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE RuntimeError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_unconfigured_smoke_refuses_mismatched_or_error_results[body0-False]
+FAILED tests/test_deploy.py::test_unconfigured_smoke_refuses_mismatched_or_error_results[body1-False]
+FAILED tests/test_deploy.py::test_unconfigured_smoke_refuses_mismatched_or_error_results[body2-True]
+3 failed, 21 deselected, 2 warnings in 0.71s
+EXIT: 1
+
+MUTATION: bench refuses callback as write success
+COMMAND: uv run pytest tests/test_bench.py -k real_create -q --tb=short
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_garima-1] _
+tests/test_bench.py:79: in test_stub_benchmark_measures_a_real_create_at_the_fixture_date
+    assert create["expected_outcomes"] == ["NOTED"]
+E   AssertionError: assert ['CALLBACK_REQUIRED', 'NOTED'] == ['NOTED']
+E
+E     At index 0 diff: 'CALLBACK_REQUIRED' != 'NOTED'
+E     Left contains one more item: 'NOTED'
+E     Use -v to get more diff
+_ test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_rohan_shetty-0] _
+tests/test_bench.py:79: in test_stub_benchmark_measures_a_real_create_at_the_fixture_date
+    assert create["expected_outcomes"] == ["NOTED"]
+E   AssertionError: assert ['CALLBACK_REQUIRED', 'NOTED'] == ['NOTED']
+E
+E     At index 0 diff: 'CALLBACK_REQUIRED' != 'NOTED'
+E     Left contains one more item: 'NOTED'
+E     Use -v to get more diff
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_bench.py::test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_garima-1]
+FAILED tests/test_bench.py::test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_rohan_shetty-0]
+2 failed, 4 deselected, 2 warnings in 3.48s
+EXIT: 1
+
+MUTATION: knowledge stub single endpoint
+COMMAND: uv run pytest tests/test_stubs.py -k "knowledge or routing or answers" -q --tb=short
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+___________________ test_knowledge_stub_requires_its_bearer ____________________
+tests/test_stubs.py:241: in test_knowledge_stub_requires_its_bearer
+    assert response.status_code == 401
+E   assert 404 == 401
+E    +  where 404 = <Response [404 Not Found]>.status_code
+_______ test_routing_fixtures_are_an_exact_match_table_not_a_classifier ________
+tests/test_stubs.py:254: in test_routing_fixtures_are_an_exact_match_table_not_a_classifier
+    assert (await route("Dr Garima, I have chest pain"))["outcome"] == "EMERGENCY_TRANSFER"
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_stubs.py:251: in route
+    assert response.status_code == 200
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+__________ test_answers_come_back_verbatim_in_the_requested_language ___________
+tests/test_stubs.py:268: in test_answers_come_back_verbatim_in_the_requested_language
+    headers=auth)).json()
+                   ^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_models.py:832: in json
+    return jsonlib.loads(self.content, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/decoder.py:363: in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+E   json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+___________________________ test_knowledge_scenarios ___________________________
+tests/test_stubs.py:285: in test_knowledge_scenarios
+    assert (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"},
+E   assert 404 == 503
+E    +  where 404 = <Response [404 Not Found]>.status_code
+=========================== short test summary info ============================
+FAILED tests/test_stubs.py::test_knowledge_stub_requires_its_bearer - assert ...
+FAILED tests/test_stubs.py::test_routing_fixtures_are_an_exact_match_table_not_a_classifier
+FAILED tests/test_stubs.py::test_answers_come_back_verbatim_in_the_requested_language
+FAILED tests/test_stubs.py::test_knowledge_scenarios - assert 404 == 503
+4 failed, 10 deselected in 0.25s
+EXIT: 1

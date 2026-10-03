@@ -34,16 +34,18 @@ clock, so a result never depends on when you run it.
   visible; expectedEndTime expiry in facility time on the requested date; midnight weekday; UNKNOWN
   (stale, missing, future) → callback-only; board failure → COULD_NOT_CHECK; profile failure with a good
   board; ON_CALL; session scoping; ambiguity and incompleteness; department queries with one board call;
-  no consultant; routing decisions from the trusted turn; routing outage/malformed/missing/slow never
-  clear; directory/profile cached, board not.
-- **Booking:** NOTED with frozen body and target-free key; confirmation; call/operation context; routing gate
-  over the trusted turn plus `reasonVerbatim` before a create (and for a cancel/reschedule reason); live-board
-  check before a create (UNKNOWN date → callback-only, board failure → COULD_NOT_RECORD) overlapping routing;
+  no consultant; zero knowledge requests with configured, failing or absent knowledge;
+  directory/profile cached, board not.
+- **Booking:** NOTED with frozen body and target-free key; confirmation; call/operation context; caller reasons forwarded
+  on supported owner actions without a knowledge gate; live-board check before a create
+  (UNKNOWN date → callback-only, board failure → COULD_NOT_RECORD), overlapping the profile read when needed;
   same-intent replay; changed payload or target → conflict; concurrent same intent; validation before any call;
   owner rejection; lost response → UNCERTAIN then reconciliation by the same key; any failure after a sent
   attempt → UNCERTAIN; unavailable, malformed, auth; trusted number only (bare number unverified, dictated
   number never used); stricter verification policy; neutral not-found for another caller's appointment.
-- **Knowledge:** verbatim answers, clarification, desk routing, no answer; failures never answers.
+- **Knowledge:** one explicit exchange; verbatim answers and clarification; department, desk and emergency
+  decisions; routing speech only once; malformed optional fields cannot erase a valid transfer decision;
+  non-JSON and malformed responses fail honestly; external cancellation propagates and failure logs omit caller words.
 - **Summaries:** trusted timing; frozen body; replay; CALLBACK_NOTED rules; 500 characters without
   losing name/number; language mapping; transfer field rules; hang-up outcomes; failed persistence;
   lost response; wrong scope; independence from the knowledge service; lifecycle access gate.
@@ -58,5 +60,5 @@ clock, so a result never depends on when you run it.
 
 `make demo` walks the four tools against the stubs and prints every result. For a running stack
 (`make up`), point an MCP client at `http://127.0.0.1:8100/mcp/` with `Authorization: Bearer
-$MCP_BEARER_TOKEN` and the headers described in `LIVEKIT.md`; `curl http://127.0.0.1:8100/dependencies`
+$MCP_BEARER_TOKEN` and the headers described in `VOICE-TEAM.md`; `curl http://127.0.0.1:8100/dependencies`
 shows the owner-service status.

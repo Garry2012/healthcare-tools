@@ -1,5 +1,5 @@
 """manage_booking: Manoj's appointment contract with trusted identity, confirmed intent, a stable
-operation key and frozen payload, the routing gate before a create, and honest outcomes that keep
+operation key and frozen payload, the board check before a create, and honest outcomes that keep
 validated success, definite rejection and uncertain completion apart."""
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ async def h(make_settings):
 
 
 def service(h) -> booking.BookingService:
-    return booking.BookingService(h.ops, h.knowledge, h.settings, h.clock)
+    return booking.BookingService(h.ops, h.settings, h.clock)
 
 
 async def run(h, ctx=None, **args):
@@ -67,18 +67,6 @@ async def test_writes_refuse_without_trusted_call_and_operation_context(h, missi
     result = await run(h, ctx, **CREATE)
     assert result.outcome == "OPERATION_CONTEXT_MISSING" and result.nextStep == "SAY_COULD_NOT_RECORD"
     assert sent(h, "/appointments") == []
-
-
-async def test_create_waits_for_a_current_routing_clearance(h):
-    emergency = await run(h, h.ctx(operation_id="op-1", turn="Dr Garima, I have chest pain"), **CREATE)
-    assert emergency.outcome == "ROUTING_REQUIRED" and emergency.nextStep == "TRANSFER_EMERGENCY"
-    h.knowledge_state.fail_next.append(503)
-    outage = await run(h, h.ctx(operation_id="op-2"), **CREATE)
-    assert outage.outcome == "ROUTING_UNAVAILABLE" and outage.detail == "ROUTING_UNAVAILABLE"
-    missing = await run(h, h.ctx(operation_id="op-3", turn=None), **CREATE)
-    assert missing.outcome == "ROUTING_UNAVAILABLE" and missing.detail == "TURN_CONTEXT_MISSING"
-    assert sent(h, "/appointments") == [] and len(h.ops_state.appointments) == 0
-    assert h.knowledge_state.routed[0]["utterance"] == "Dr Garima, I have chest pain"
 
 
 async def test_same_intent_replays_the_same_write(h):
@@ -302,29 +290,6 @@ async def test_a_changed_target_under_the_same_operation_is_a_conflict_not_a_sec
     assert len(h.ops_state.appointments) == 1
 
 
-async def test_the_callers_reason_reaches_routing_before_a_create(h):
-    """Review fix: the trusted turn may be just 'yes'; the reason the caller gave earlier must be routed too."""
-    result = await run(h, h.ctx(operation_id="op-1", turn="yes"),
-                       **{**CREATE, "reasonVerbatim": "chest pain, my left arm is numb"})
-    assert result.outcome == "ROUTING_REQUIRED" and result.nextStep == "TRANSFER_EMERGENCY"
-    assert sent(h, "/appointments") == []
-    routed = h.knowledge_state.routed[-1]
-    assert routed["utterance"] == "yes" and routed["additionalText"] == ["chest pain, my left arm is numb"]
-
-
-async def test_a_cancel_or_reschedule_reason_is_routed_too_but_absence_costs_nothing(h):
-    h.ops_state.set_board("2026-10-03", [{"doctorId": "doc_garima", "session": "Morning", "status": "NOT_CONFIRMED",
-                                          "expectedTime": "09:00", "expectedEndTime": "12:00", "updatedMinutesAgo": 1}])
-    created = await run(h, h.ctx(operation_id="op-1"), **CREATE)
-    before = len(h.knowledge_state.routed)
-    plain = await run(h, h.ctx(operation_id="op-2"), action="RESCHEDULE",
-                      appointmentId=created.appointment.appointmentId, newVisitDate="2026-10-03", callerConfirmed=True)
-    assert plain.outcome == "CHANGED" and len(h.knowledge_state.routed) == before  # no free text, no routing call
-    danger = await run(h, h.ctx(operation_id="op-3"), action="CANCEL", appointmentId=created.appointment.appointmentId,
-                       reasonVerbatim="chest pain, my left arm is numb", callerConfirmed=True)
-    assert danger.outcome == "ROUTING_REQUIRED" and sent(h, "/cancel") == []
-
-
 async def test_create_checks_the_board_server_side_and_refuses_an_unknown_date(h):
     """Review fix: the callback-only rule must not depend on the model obeying nextStep."""
     tomorrow = await run(h, **{**CREATE, "visitDate": "2026-10-02"})  # fixture board: tomorrow is UNKNOWN
@@ -352,43 +317,22 @@ async def test_a_failed_board_read_blocks_the_create_honestly(h):
     assert sent(h, "/appointments") == []
 
 
-async def test_board_check_overlaps_the_routing_check(make_settings):
+async def test_create_owner_calls_fit_the_diagnostic_budget(make_settings):
     import time
 
     hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
                                      write_deadline_seconds=2.5, request_timeout_seconds=1.5))
     try:
-        hh.knowledge_state.delay_seconds = 0.3
         hh.ops_state.delay_seconds = 0.3
         started = time.monotonic()
         result = await run(hh, hh.ctx(operation_id="op-1"), **CREATE)
         elapsed = time.monotonic() - started
-        assert result.outcome == "NOTED" and elapsed < 0.95, elapsed  # routing ∥ board (0.3) + write (0.3) + token
+        assert result.outcome == "NOTED" and elapsed < 0.95, elapsed  # board (0.3) + write (0.3) + token
     finally:
         await hh.aclose()
 
 
 # ------------------------------------------------------------------ architect review AR-01, AR-04
-
-
-async def test_the_decisive_tail_of_a_long_utterance_still_blocks_the_create(h):
-    """AR-01: 1,177 characters whose last words carry the danger sign must reach routing whole."""
-    from frontdesk_stubs.knowledge import Decision
-
-    text = "I would like an appointment. " * 40 + "I have chest pain"
-    h.knowledge_state.decisions.insert(0, Decision((text,), "EMERGENCY_TRANSFER"))
-    result = await run(h, h.ctx(operation_id="op-long", turn=text), **CREATE)
-    assert result.outcome == "ROUTING_REQUIRED" and result.nextStep == "TRANSFER_EMERGENCY"
-    assert sent(h, "/appointments") == [] and h.knowledge_state.routed[-1]["utterance"] == text
-
-
-async def test_an_oversized_turn_context_refuses_the_write(h):
-    from frontdesk_mcp import context as context_module
-
-    text = "x" * (context_module.UTTERANCE_MAX + 1)
-    result = await run(h, h.ctx(operation_id="op-big", turn=text), **CREATE)
-    assert result.outcome == "ROUTING_UNAVAILABLE" and result.detail == "TURN_CONTEXT_OVERSIZED"
-    assert sent(h, "/appointments") == []
 
 
 MIXED_BOARD = [
@@ -403,7 +347,7 @@ async def test_create_scope_follows_the_session_the_caller_chose(h):
     from frontdesk_mcp import availability
 
     h.ops_state.set_board("2026-10-01", MIXED_BOARD)
-    service = availability.AvailabilityService(h.ops, h.knowledge, h.cache, h.settings, h.clock)
+    service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
     morning = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today",
                                                                            session="Morning"))
     assert morning.outcome == "AVAILABILITY" and morning.nextStep == "OFFER_APPOINTMENT_REQUEST"
@@ -449,7 +393,7 @@ async def test_availability_and_create_agree_when_an_unlabelled_unknown_row_is_p
          "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
         {"doctorId": "doc_garima", "status": "UNKNOWN", "updatedMinutesAgo": 1},
     ])
-    service = availability.AvailabilityService(h.ops, h.knowledge, h.cache, h.settings, h.clock)
+    service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
     morning = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today",
                                                                            session="Morning"))
     created = await run(h, h.ctx(operation_id="op-m"), **{**CREATE, "session": "Morning"})
@@ -473,7 +417,7 @@ async def test_department_create_uses_the_same_session_scope_as_availability(h):
         {"doctorId": "doc_arjun_menon", "session": "Evening", "status": "IN", "expectedTime": "17:00",
          "expectedEndTime": "20:00", "updatedMinutesAgo": 1},
     ])
-    service = availability.AvailabilityService(h.ops, h.knowledge, h.cache, h.settings, h.clock)
+    service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
     morning = await service.get(h.ctx(), availability.AvailabilityRequest(departmentId="dept_genmed", date="today",
                                                                            session="Morning"))
     assert morning.outcome == "CALLBACK_REQUIRED"
@@ -498,7 +442,7 @@ async def test_a_missing_row_for_a_usual_session_today_is_unknown_for_create_too
 
     h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "session": "Afternoon", "status": "IN",
                                           "expectedTime": "15:00", "expectedEndTime": "17:00", "updatedMinutesAgo": 1}])
-    service = availability.AvailabilityService(h.ops, h.knowledge, h.cache, h.settings, h.clock)
+    service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
     morning = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today",
                                                                            session="Morning"))
     assert morning.outcome == "CALLBACK_REQUIRED" and morning.detail == "SESSION_ROW_MISSING"
@@ -514,7 +458,7 @@ async def test_unresolved_scope_with_any_unknown_is_callback_for_create_as_for_a
     from frontdesk_mcp import availability
 
     h.ops_state.set_board("2026-10-01", MIXED_BOARD)
-    service = availability.AvailabilityService(h.ops, h.knowledge, h.cache, h.settings, h.clock)
+    service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
     whole = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today"))
     created = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "preferredTime": None})
     assert whole.outcome == created.outcome == "CALLBACK_REQUIRED"
@@ -540,3 +484,133 @@ async def test_reschedule_of_an_unknown_appointment_is_still_the_owners_neutral_
     result = await run(h, h.ctx(operation_id="op-1"), action="RESCHEDULE", appointmentId="appt_9999",
                        newVisitDate="2026-10-02", callerConfirmed=True)
     assert result.outcome == "NOT_FOUND"
+
+
+@pytest.mark.parametrize("reason", [None, "fever for three days", "chest pain, my left arm is numb"])
+async def test_booking_journey_forwards_reason_without_knowledge_or_transcript(make_settings, reason):
+    import httpx
+
+    from frontdesk_mcp.context import CallContext
+    from frontdesk_mcp.tools import Services
+    from frontdesk_stubs import ops as ops_stub
+
+    settings = make_settings()
+    h = harness.build(settings)
+    calls = []
+    owner_requests = []
+    inner = httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1"))
+
+    async def forbidden(request):
+        calls.append(request)
+        raise AssertionError("booking must not contact knowledge")
+
+    async def owner(request):
+        owner_requests.append(request)
+        return await inner.handle_async_request(request)
+
+    services = Services.build(settings, clock=h.clock, ops_transport=httpx.MockTransport(owner),
+                              knowledge_transport=httpx.MockTransport(forbidden))
+    try:
+        ctx = CallContext(call_id="call-1", caller_number=harness.CALLER,
+                          caller_verification="SIP_CALLER_ID", operation_id="create")
+        result = await services.booking.manage(ctx, booking.BookingRequest(**{**CREATE, "reasonVerbatim": reason}))
+        assert result.outcome == "NOTED" and result.appointment.status == "NOTED"
+        listed = await services.booking.manage(ctx, booking.BookingRequest(action="LIST"))
+        assert listed.outcome == "FOUND" and len(listed.appointments) == 1
+        for action, expected in [("RESCHEDULE", "CHANGED"), ("CANCEL", "CANCELLED")]:
+            ctx = CallContext(call_id="call-1", caller_number=harness.CALLER,
+                              caller_verification="SIP_CALLER_ID", operation_id=action)
+            result = await services.booking.manage(ctx, booking.BookingRequest(
+                action=action, appointmentId=result.appointment.appointmentId, callerConfirmed=True,
+                newVisitDate="2026-10-01" if action == "RESCHEDULE" else None,
+                newPreferredTime="10:00" if action == "RESCHEDULE" else None, reasonVerbatim=reason))
+            assert result.outcome == expected
+        bodies = {r.url.path.rsplit("/", 1)[-1]: json.loads(r.content)
+                  for r in owner_requests if r.method == "POST" and "/appointments" in r.url.path}
+        if reason:
+            assert bodies["appointments"]["reasonVerbatim"] == reason
+            assert bodies["cancel"]["reason"] == reason
+        else:
+            assert "reasonVerbatim" not in bodies["appointments"] and "reason" not in bodies["cancel"]
+        assert calls == [] and len(h.ops_state.appointments) == 1
+        assert next(iter(h.ops_state.appointments.values()))["status"] == "CANCELLED"
+    finally:
+        await services.aclose()
+        await h.aclose()
+
+
+async def test_cancelled_create_cancels_both_owner_reads_without_writing(make_settings):
+    import httpx
+
+    from frontdesk_mcp.context import CallContext
+    from frontdesk_mcp.tools import Services
+    from frontdesk_stubs import ops as ops_stub
+
+    h = harness.build(make_settings(allow_budget_overrides=True, write_deadline_seconds=2, request_timeout_seconds=2))
+    started = {"profile": asyncio.Event(), "board": asyncio.Event()}
+    cancelled = {"profile": asyncio.Event(), "board": asyncio.Event()}
+    writes = []
+    inner = httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1"))
+
+    async def owner(request):
+        kind = ("profile" if "/doctors/" in request.url.path
+                else "board" if "/availability" in request.url.path else None)
+        if kind:
+            started[kind].set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled[kind].set()
+        if request.url.path.endswith("/appointments"):
+            writes.append(request)
+        return await inner.handle_async_request(request)
+
+    services = Services.build(h.settings, clock=h.clock, ops_transport=httpx.MockTransport(owner))
+    task = asyncio.create_task(services.booking.manage(CallContext(call_id="call-1", operation_id="op-1"),
+                                booking.BookingRequest(**{**CREATE, "session": "Morning"})))
+    try:
+        async with asyncio.timeout(1):
+            await started["profile"].wait()
+            await started["board"].wait()
+        assert not cancelled["profile"].is_set() and not cancelled["board"].is_set()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        async with asyncio.timeout(0.1):
+            await cancelled["profile"].wait()
+            await cancelled["board"].wait()
+        assert writes == []
+    finally:
+        task.cancel()
+        await services.aclose()
+        await h.aclose()
+
+
+async def test_create_propagates_unexpected_profile_failure_without_writing(make_settings):
+    import httpx
+
+    from frontdesk_mcp.tools import Services
+    from frontdesk_stubs import ops as ops_stub
+
+    h = harness.build(make_settings())
+    inner = httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1"))
+    writes = []
+    failure = RuntimeError("profile boundary failed unexpectedly")
+
+    async def owner(request):
+        if "/doctors/" in request.url.path:
+            raise failure
+        if request.url.path.endswith("/appointments") and request.method == "POST":
+            writes.append(request)
+        return await inner.handle_async_request(request)
+
+    services = Services.build(h.settings, clock=h.clock, ops_transport=httpx.MockTransport(owner))
+    try:
+        with pytest.raises(RuntimeError, match="profile boundary failed unexpectedly") as caught:
+            await services.booking.manage(h.ctx(operation_id="op-1"),
+                                          booking.BookingRequest(**{**CREATE, "session": "Morning"}))
+        assert caught.value is failure
+        assert writes == [] and h.ops_state.appointments == {}
+    finally:
+        await services.aclose()
+        await h.aclose()

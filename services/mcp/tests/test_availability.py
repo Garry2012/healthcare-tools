@@ -1,5 +1,5 @@
-"""get_doctor_availability: directory + profile + live board composed in one invocation, qualified by
-the required routing decision; UNKNOWN stops the appointment journey (callback only); a failed board
+"""get_doctor_availability: directory + profile + live board composed in one invocation, without knowledge calls.
+UNKNOWN stops the appointment journey (callback only); a failed board
 is a service error, never 'no availability'; no slots are ever invented."""
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ async def h(make_settings):
 
 
 def service(h) -> availability.AvailabilityService:
-    return availability.AvailabilityService(h.ops, h.knowledge, h.cache, h.settings, h.clock)
+    return availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
 
 
 async def ask(h, ctx=None, **args):
@@ -238,63 +238,9 @@ async def test_unmatched_department_name_offers_the_real_list(h):
     assert "Dental" not in [c.name for c in result.departmentChoices]  # hasConsultant=false is not offered
 
 
-async def test_routing_decision_comes_from_the_trusted_turn_not_the_model_argument(h):
-    ctx = h.ctx(turn="Dr Garima, I have chest pain")
-    result = await ask(h, ctx, doctorName="garima")
-    assert result.outcome == "ROUTING_REQUIRED" and result.nextStep == "TRANSFER_EMERGENCY"
-    assert result.routing.decision == "EMERGENCY_TRANSFER" and "emergency" in result.routing.speak.text.lower()
-    assert result.doctors == [] and result.choices == []
-    assert h.knowledge_state.routed[-1]["utterance"] == "Dr Garima, I have chest pain"
-    assert h.knowledge_state.routed[-1]["callId"] == "call-1"
-
-
-async def test_desk_and_clarify_decisions_block_routine_results(h):
-    desk = await ask(h, h.ctx(turn="severe stomach pain"), doctorName="garima")
-    assert desk.outcome == "ROUTING_REQUIRED" and desk.nextStep == "TRANSFER_DESK" and desk.doctors == []
-    clarify = await ask(h, h.ctx(turn="my child has stomach pain"), departmentName="paediatrics")
-    assert clarify.outcome == "ROUTING_REQUIRED" and clarify.nextStep == "ASK_ROUTING_CLARIFICATION"
-    assert clarify.routing.speak.text.startswith("Is this for a child")
-
-
-async def test_routed_department_fills_a_missing_target(h):
-    result = await ask(h, h.ctx(turn="I need a children's doctor"))
-    assert result.outcome == "AVAILABILITY" and result.department.name == "Paediatrics"
-    assert [d.doctorId for d in result.doctors] == ["doc_meera_kulkarni"]
-    assert result.routing.decision == "ROUTE_DEPARTMENT"
-
-
-async def test_no_target_and_no_routed_department_is_invalid(h):
+async def test_no_target_is_invalid(h):
     result = await ask(h)
     assert result.outcome == "INVALID_REQUEST" and result.detail == "TARGET_REQUIRED"
-
-
-@pytest.mark.parametrize("break_it", ["missing_turn", "outage", "malformed", "unconfigured", "slow"])
-async def test_routing_problems_never_become_clearance(make_settings, break_it):
-    settings = make_settings()
-    if break_it == "unconfigured":
-        settings = make_settings(env="development", knowledge_base_url="")
-    hh = harness.build(settings)
-    try:
-        ctx = hh.ctx(turn=None) if break_it == "missing_turn" else hh.ctx()
-        if break_it == "outage":
-            hh.knowledge_state.fail_next.append(503)
-        if break_it == "malformed":
-            hh.knowledge_state.malformed_next.append(True)
-        if break_it == "slow":
-            await hh.aclose()
-            hh = harness.build(make_settings(read_deadline_seconds=0.3, write_deadline_seconds=0.3,
-                                             summary_deadline_seconds=0.3, request_timeout_seconds=0.2))
-            hh.knowledge_state.delay_seconds = 5
-            ctx = hh.ctx()
-        result = await ask(hh, ctx, doctorId="doc_garima")
-        assert result.outcome == "ROUTING_UNAVAILABLE" and result.doctors == []
-        assert result.nextStep == "TRANSFER_DESK"
-        expected = {"missing_turn": "TURN_CONTEXT_MISSING", "outage": "ROUTING_UNAVAILABLE",
-                    "malformed": "ROUTING_MALFORMED", "unconfigured": "ROUTING_NOT_CONFIGURED",
-                    "slow": "ROUTING_UNAVAILABLE"}[break_it]
-        assert result.detail == expected
-    finally:
-        await hh.aclose()
 
 
 async def test_directory_and_profile_are_cached_but_the_board_is_not(h):
@@ -333,29 +279,13 @@ async def test_gender_filter_reaches_the_directory(h):
     assert [d.doctorId for d in result.doctors] == ["doc_garima"]
 
 
-async def test_an_escalating_routing_decision_is_not_delayed_by_a_slow_directory(make_settings):
-    """Review fix: the directory prefetch is cancelled, not awaited, once routing says transfer."""
+async def test_known_doctor_profile_and_board_overlap(make_settings):
+    """Profile and board overlap when the doctor is already known."""
     import time
 
     hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
                                      write_deadline_seconds=2.5, request_timeout_seconds=1.5))
     try:
-        hh.ops_state.delay_seconds = 1.0
-        started = time.monotonic()
-        result = await ask(hh, hh.ctx(turn="severe stomach pain"), doctorName="garima")
-        assert result.outcome == "ROUTING_REQUIRED" and time.monotonic() - started < 0.6
-    finally:
-        await hh.aclose()
-
-
-async def test_known_doctor_reads_overlap_the_routing_check(make_settings):
-    """Review fix: profile and board start together with routing when the doctor is already known."""
-    import time
-
-    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
-                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
-    try:
-        hh.knowledge_state.delay_seconds = 0.3
         hh.ops_state.delay_seconds = 0.3
         started = time.monotonic()
         result = await ask(hh, doctorId="doc_garima")
@@ -442,17 +372,74 @@ async def test_profile_failure_with_no_board_row_is_could_not_check_not_not_foun
     assert result.outcome == "COULD_NOT_CHECK" and result.detail == "PROFILE_UNAVAILABLE"
 
 
-async def test_single_match_search_starts_profile_and_board_before_routing_finishes(make_settings):
+async def test_single_match_search_then_profile_and_board_overlap(make_settings):
     import time
 
     hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
                                      write_deadline_seconds=2.5, request_timeout_seconds=1.5))
     try:
-        hh.knowledge_state.delay_seconds = 0.4
-        hh.ops_state.delay_seconds = 0.2  # search 0.2 then profile ∥ board 0.2 = 0.4, overlapping routing 0.4
+        hh.ops_state.delay_seconds = 0.2  # search 0.2 then profile ∥ board 0.2 = 0.4, independent reads
         started = time.monotonic()
         result = await ask(hh, doctorName="garima")
         elapsed = time.monotonic() - started
-        assert result.outcome == "AVAILABILITY" and elapsed < 0.55, elapsed  # serial after routing would be ≥ 0.6
+        assert result.outcome == "AVAILABILITY" and elapsed < 0.55, elapsed  # serial owner reads would be ≥ 0.6
     finally:
         await hh.aclose()
+
+
+@pytest.mark.parametrize("target,expected,step", [
+    ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+    ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+    ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+    ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+    ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+    ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+    ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+    ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+    ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+])
+@pytest.mark.parametrize("configured", [True, False])
+async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
+                                                                    step, configured):
+    import httpx
+
+    from frontdesk_mcp.context import CallContext
+    from frontdesk_mcp.tools import Services
+    from frontdesk_stubs import ops as ops_stub
+
+    settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+    h = harness.build(settings)
+    knowledge_requests = []
+
+    async def forbidden(request):
+        knowledge_requests.append(request)
+        raise AssertionError("availability must not contact knowledge")
+
+    services = Services.build(settings, clock=h.clock,
+                              ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                              knowledge_transport=httpx.MockTransport(forbidden))
+    try:
+        result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+            **{"date": "today", **target}))
+        assert (result.outcome, result.nextStep) == (expected, step)
+        assert result.facilityToday == "2026-10-01"
+        assert knowledge_requests == []
+        if expected == "AVAILABILITY":
+            assert result.doctors and result.doctors[0].board
+        if expected == "AVAILABILITY":
+            ids = {doctor.doctorId for doctor in result.doctors}
+            assert ids == ({"doc_anil_sharma", "doc_ravi_sharma"}
+                           if "departmentId" in target or "departmentName" in target else {"doc_garima"})
+            assert result.choices == []
+        if expected == "CLARIFICATION_NEEDED":
+            assert {choice.doctorId for choice in result.choices} == {"doc_anil_sharma", "doc_ravi_sharma"}
+            assert result.doctors == []
+        if expected == "NOT_FOUND":
+            assert result.doctors == [] and result.choices == [] and result.departmentChoices == []
+        if expected == "CALLBACK_REQUIRED":
+            assert result.callback.summaryOutcome == "CALLBACK_NOTED"
+        if not target:
+            assert result.detail == "TARGET_REQUIRED"
+    finally:
+        await services.aclose()
+        await h.aclose()

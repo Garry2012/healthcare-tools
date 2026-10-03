@@ -1,0 +1,349 @@
+$ uv run --directory services/mcp pytest tests/test_knowledge.py -q
+........................FFFFFFFFFFF..FF                                  [100%]
+=================================== FAILURES ===================================
+_ test_transfer_survives_invalid_optional_field[answer-bad0-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba37f60>
+outcome = 'EMERGENCY_TRANSFER', step = 'TRANSFER_EMERGENCY', field = 'answer'
+bad = {'text': 'Owner instruction', 'language': ' '}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10b94f350>
+
+    @pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                             ("DESK_TRANSFER", "TRANSFER_DESK")])
+    @pytest.mark.parametrize("field,bad", [
+        ("answer", {"text": "Owner instruction", "language": " "}),
+        ("answer", {"text": "x" * 1001, "language": "en"}),
+        ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+    ])
+    async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+        payload = {"outcome": outcome, "destination": "desk", field: bad}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+>           assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'decision'
+
+tests/test_knowledge.py:145: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.knowledge_client:knowledge_client.py:79 knowledge_answer_malformed
+_ test_transfer_survives_invalid_optional_field[answer-bad0-DESK_TRANSFER-TRANSFER_DESK] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba36520>
+outcome = 'DESK_TRANSFER', step = 'TRANSFER_DESK', field = 'answer'
+bad = {'text': 'Owner instruction', 'language': ' '}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10b9d3df0>
+
+    @pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                             ("DESK_TRANSFER", "TRANSFER_DESK")])
+    @pytest.mark.parametrize("field,bad", [
+        ("answer", {"text": "Owner instruction", "language": " "}),
+        ("answer", {"text": "x" * 1001, "language": "en"}),
+        ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+    ])
+    async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+        payload = {"outcome": outcome, "destination": "desk", field: bad}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+>           assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'decision'
+
+tests/test_knowledge.py:145: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.knowledge_client:knowledge_client.py:79 knowledge_answer_malformed
+_ test_transfer_survives_invalid_optional_field[answer-bad1-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba37ce0>
+outcome = 'EMERGENCY_TRANSFER', step = 'TRANSFER_EMERGENCY', field = 'answer'
+bad = {'text': 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'language': 'en'}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10ba32050>
+
+    @pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                             ("DESK_TRANSFER", "TRANSFER_DESK")])
+    @pytest.mark.parametrize("field,bad", [
+        ("answer", {"text": "Owner instruction", "language": " "}),
+        ("answer", {"text": "x" * 1001, "language": "en"}),
+        ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+    ])
+    async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+        payload = {"outcome": outcome, "destination": "desk", field: bad}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+>           assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'decision'
+
+tests/test_knowledge.py:145: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.knowledge_client:knowledge_client.py:79 knowledge_answer_malformed
+_ test_transfer_survives_invalid_optional_field[answer-bad1-DESK_TRANSFER-TRANSFER_DESK] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba37560>
+outcome = 'DESK_TRANSFER', step = 'TRANSFER_DESK', field = 'answer'
+bad = {'text': 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'language': 'en'}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10ba31450>
+
+    @pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                             ("DESK_TRANSFER", "TRANSFER_DESK")])
+    @pytest.mark.parametrize("field,bad", [
+        ("answer", {"text": "Owner instruction", "language": " "}),
+        ("answer", {"text": "x" * 1001, "language": "en"}),
+        ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+    ])
+    async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+        payload = {"outcome": outcome, "destination": "desk", field: bad}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+>           assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'decision'
+
+tests/test_knowledge.py:145: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.knowledge_client:knowledge_client.py:79 knowledge_answer_malformed
+_ test_transfer_survives_invalid_optional_field[department-bad2-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba37880>
+outcome = 'EMERGENCY_TRANSFER', step = 'TRANSFER_EMERGENCY'
+field = 'department', bad = {'name': ' '}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10ba58b90>
+
+    @pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                             ("DESK_TRANSFER", "TRANSFER_DESK")])
+    @pytest.mark.parametrize("field,bad", [
+        ("answer", {"text": "Owner instruction", "language": " "}),
+        ("answer", {"text": "x" * 1001, "language": "en"}),
+        ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+    ])
+    async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+        payload = {"outcome": outcome, "destination": "desk", field: bad}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+>           assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'decision'
+
+tests/test_knowledge.py:145: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.knowledge_client:knowledge_client.py:79 knowledge_answer_malformed
+_ test_transfer_survives_invalid_optional_field[department-bad2-DESK_TRANSFER-TRANSFER_DESK] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba36160>
+outcome = 'DESK_TRANSFER', step = 'TRANSFER_DESK', field = 'department'
+bad = {'name': ' '}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10ba59220>
+
+    @pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                             ("DESK_TRANSFER", "TRANSFER_DESK")])
+    @pytest.mark.parametrize("field,bad", [
+        ("answer", {"text": "Owner instruction", "language": " "}),
+        ("answer", {"text": "x" * 1001, "language": "en"}),
+        ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+    ])
+    async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+        payload = {"outcome": outcome, "destination": "desk", field: bad}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+>           assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'decision'
+
+tests/test_knowledge.py:145: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.knowledge_client:knowledge_client.py:79 knowledge_answer_malformed
+_ test_transfer_survives_invalid_optional_field[sourceId-bad3-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10bac9260>
+outcome = 'EMERGENCY_TRANSFER', step = 'TRANSFER_EMERGENCY', field = 'sourceId'
+bad = {'private': 'owner-private'}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10ba50130>
+
+    @pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                             ("DESK_TRANSFER", "TRANSFER_DESK")])
+    @pytest.mark.parametrize("field,bad", [
+        ("answer", {"text": "Owner instruction", "language": " "}),
+        ("answer", {"text": "x" * 1001, "language": "en"}),
+        ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+    ])
+    async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+        payload = {"outcome": outcome, "destination": "desk", field: bad}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+>           assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'decision'
+
+tests/test_knowledge.py:145: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.knowledge_client:knowledge_client.py:79 knowledge_answer_malformed
+_ test_transfer_survives_invalid_optional_field[sourceId-bad3-DESK_TRANSFER-TRANSFER_DESK] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10bac98a0>
+outcome = 'DESK_TRANSFER', step = 'TRANSFER_DESK', field = 'sourceId'
+bad = {'private': 'owner-private'}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10ba512b0>
+
+    @pytest.mark.parametrize("outcome,step", [("EMERGENCY_TRANSFER", "TRANSFER_EMERGENCY"),
+                                             ("DESK_TRANSFER", "TRANSFER_DESK")])
+    @pytest.mark.parametrize("field,bad", [
+        ("answer", {"text": "Owner instruction", "language": " "}),
+        ("answer", {"text": "x" * 1001, "language": "en"}),
+        ("department", {"name": " "}), ("sourceId", {"private": "owner-private"}),
+    ])
+    async def test_transfer_survives_invalid_optional_field(make_settings, outcome, step, field, bad, caplog):
+        payload = {"outcome": outcome, "destination": "desk", field: bad}
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload)))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+>           assert (result.outcome, result.nextStep, result.routing.decision) == ("ROUTING_REQUIRED", step, outcome)
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'decision'
+
+tests/test_knowledge.py:145: AttributeError
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.knowledge_client:knowledge_client.py:79 knowledge_answer_malformed
+____________ test_knowledge_refuses_non_json_media_type[text/html] _____________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba379c0>
+content_type = 'text/html'
+
+    @pytest.mark.parametrize("content_type", ["text/html", "text/plain", ""])
+    async def test_knowledge_refuses_non_json_media_type(make_settings, content_type):
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=b'{"outcome":"NO_ANSWER"}',
+                                          headers={"content-type": content_type})))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+>           assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+E           AssertionError: assert ('NO_ANSWER', None) == ('COULD_NOT_C..., 'MALFORMED')
+E
+E             At index 0 diff: 'NO_ANSWER' != 'COULD_NOT_CHECK'
+E             Use -v to get more diff
+
+tests/test_knowledge.py:163: AssertionError
+____________ test_knowledge_refuses_non_json_media_type[text/plain] ____________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba36160>
+content_type = 'text/plain'
+
+    @pytest.mark.parametrize("content_type", ["text/html", "text/plain", ""])
+    async def test_knowledge_refuses_non_json_media_type(make_settings, content_type):
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=b'{"outcome":"NO_ANSWER"}',
+                                          headers={"content-type": content_type})))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+>           assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+E           AssertionError: assert ('NO_ANSWER', None) == ('COULD_NOT_C..., 'MALFORMED')
+E
+E             At index 0 diff: 'NO_ANSWER' != 'COULD_NOT_CHECK'
+E             Use -v to get more diff
+
+tests/test_knowledge.py:163: AssertionError
+_________________ test_knowledge_refuses_non_json_media_type[] _________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba37d80>
+content_type = ''
+
+    @pytest.mark.parametrize("content_type", ["text/html", "text/plain", ""])
+    async def test_knowledge_refuses_non_json_media_type(make_settings, content_type):
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=b'{"outcome":"NO_ANSWER"}',
+                                          headers={"content-type": content_type})))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+>           assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+E           AssertionError: assert ('NO_ANSWER', None) == ('COULD_NOT_C..., 'MALFORMED')
+E
+E             At index 0 diff: 'NO_ANSWER' != 'COULD_NOT_CHECK'
+E             Use -v to get more diff
+
+tests/test_knowledge.py:163: AssertionError
+______________ test_knowledge_metadata_is_bounded[65-destination] ______________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba37380>
+field = 'destination', length = 65
+
+    @pytest.mark.parametrize("field", ["destination", "sourceId"])
+    @pytest.mark.parametrize("length", [64, 65])
+    async def test_knowledge_metadata_is_bounded(make_settings, field, length):
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"outcome": "ANSWERED",
+                "answer": {"text": "Parking is available.", "language": "en"}, field: "x" * length})))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+            if length == 64:
+                assert result.outcome == "ANSWERED" and getattr(result, field) == "x" * 64
+            else:
+>               assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+E               AssertionError: assert ('ANSWERED', None) == ('COULD_NOT_C..., 'MALFORMED')
+E
+E                 At index 0 diff: 'ANSWERED' != 'COULD_NOT_CHECK'
+E                 Use -v to get more diff
+
+tests/test_knowledge.py:179: AssertionError
+_______________ test_knowledge_metadata_is_bounded[65-sourceId] ________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10859d4e0>
+field = 'sourceId', length = 65
+
+    @pytest.mark.parametrize("field", ["destination", "sourceId"])
+    @pytest.mark.parametrize("length", [64, 65])
+    async def test_knowledge_metadata_is_bounded(make_settings, field, length):
+        services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"outcome": "ANSWERED",
+                "answer": {"text": "Parking is available.", "language": "en"}, field: "x" * length})))
+        try:
+            result = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
+            if length == 64:
+                assert result.outcome == "ANSWERED" and getattr(result, field) == "x" * 64
+            else:
+>               assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "MALFORMED")
+E               AssertionError: assert ('ANSWERED', None) == ('COULD_NOT_C..., 'MALFORMED')
+E
+E                 At index 0 diff: 'ANSWERED' != 'COULD_NOT_CHECK'
+E                 Use -v to get more diff
+
+tests/test_knowledge.py:179: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[answer-bad0-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[answer-bad0-DESK_TRANSFER-TRANSFER_DESK]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[answer-bad1-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[answer-bad1-DESK_TRANSFER-TRANSFER_DESK]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[department-bad2-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[department-bad2-DESK_TRANSFER-TRANSFER_DESK]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[sourceId-bad3-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[sourceId-bad3-DESK_TRANSFER-TRANSFER_DESK]
+FAILED tests/test_knowledge.py::test_knowledge_refuses_non_json_media_type[text/html]
+FAILED tests/test_knowledge.py::test_knowledge_refuses_non_json_media_type[text/plain]
+FAILED tests/test_knowledge.py::test_knowledge_refuses_non_json_media_type[]
+FAILED tests/test_knowledge.py::test_knowledge_metadata_is_bounded[65-destination]
+FAILED tests/test_knowledge.py::test_knowledge_metadata_is_bounded[65-sourceId]
+13 failed, 26 passed, 2 warnings in 1.40s
+EXIT: 1
