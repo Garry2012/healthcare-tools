@@ -126,6 +126,6 @@ References: [IBM header passthrough](https://ibm.github.io/mcp-context-forge/1.0
 The request fields and version above were checked against this deployed instance's authenticated
 OpenAPI, not inferred from a different release's examples.
 
-After this change, refresh discovered descriptions/output schemas for schema `2026-10-02.1`.
+After this change, refresh discovered descriptions/output schemas for schema `2026-10-03.3`.
 Remove the obsolete transcript-header forwarding entry. Keep all identity, operation and lifecycle headers.
-Load `make agent-instructions` explicitly in the voice agent; do not assume gateway forwarding of MCP initialize instructions.
+The published tool contract is [VOICE-TEAM.md](VOICE-TEAM.md); server metadata contains neutral tool facts. Voice prompts and behaviour belong to the consuming team.

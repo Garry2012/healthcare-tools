@@ -1,0 +1,42 @@
+$ python3 docs/handover/mcp-only/implementation/tool-contract-evidence/07-current-doc-audit.py
+FAIL: CLAUDE.md: LIVEKIT.md
+FAIL: README.md: LIVEKIT.md, agent-instructions
+FAIL: services/mcp/README.md: agent-instructions
+FAIL: docs/handover/AZURE.md: LIVEKIT.md
+FAIL: docs/handover/TESTING.md: LIVEKIT.md
+FAIL: docs/handover/ONBOARDING.md: LIVEKIT.md
+FAIL: docs/handover/OWNER-INTEGRATION-MESSAGES.md: LIVEKIT.md
+FAIL: docs/handover/CONTEXTFORGE.md: agent-instructions
+EXIT: 1
+$ python3 docs/handover/mcp-only/implementation/tool-contract-evidence/07-current-doc-audit.py
+PASS: CLAUDE.md
+PASS: README.md
+PASS: services/mcp/README.md
+PASS: docs/handover/AZURE.md
+PASS: docs/handover/TESTING.md
+PASS: docs/handover/ONBOARDING.md
+PASS: docs/handover/OWNER-INTEGRATION-MESSAGES.md
+PASS: docs/handover/CONTEXTFORGE.md
+EXIT: 0
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 17%]
+........................................................................ [ 35%]
+........................................................................ [ 52%]
+........................................................................ [ 70%]
+........................................................................ [ 87%]
+...................................................                      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+411 passed, 11 deselected, 2 warnings in 23.81s
+EXIT: 0

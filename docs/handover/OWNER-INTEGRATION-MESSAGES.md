@@ -44,7 +44,7 @@ The provisional `/v1/answer` is a consumer proposal, not an imposed API. The voi
 > means collect name/number and save a callback summary only. Follow the linked integration contracts
 > and validate a full call before removing the voice services' old REST binding.
 
-- [Voice contract and exact headers](LIVEKIT.md)
+- [MCP interface and trusted headers](VOICE-TEAM.md)
 - [Gateway URLs, setup and credential separation](CONTEXTFORGE.md)
 - Conversation tools: `get_doctor_availability`, `manage_booking`, `search_knowledge`.
 - Call-end URL: `https://mcp-demo-hospital-canary.icytree-6543aaa9.centralindia.azurecontainerapps.io/mcp/`.

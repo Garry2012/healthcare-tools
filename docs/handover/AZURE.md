@@ -41,7 +41,7 @@ references. `--replace-env-vars` on update, so a removed setting falls back to i
 
 Run ContextForge from its official image with `ENABLE_HEADER_PASSTHROUGH=true` and register the
 adapter (`CONTEXTFORGE.md`). Give the voice platform the gateway bearer for the three in-call tools
-and the lifecycle bearer for `record_call_summary` only (`LIVEKIT.md`).
+and the lifecycle bearer for `record_call_summary` only (`VOICE-TEAM.md`).
 
 ## Test in Azure
 

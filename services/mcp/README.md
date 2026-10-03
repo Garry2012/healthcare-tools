@@ -32,4 +32,4 @@ availability, booking, knowledge, summary, access, tools, server, prompt, packs/
 `dev/frontdesk_stubs/` (development stubs and fixtures; never in the image); `tests/`.
 
 Scheduling has no knowledge dependency. An empty knowledge URL leaves only `search_knowledge` unavailable.
-Export versioned voice instructions with `make agent-instructions` at the repository root; paste into the voice Agent.
+The tool interface, parameters and result meanings are documented in `docs/handover/VOICE-TEAM.md` at the repository root.

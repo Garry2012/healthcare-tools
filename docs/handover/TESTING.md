@@ -60,5 +60,5 @@ clock, so a result never depends on when you run it.
 
 `make demo` walks the four tools against the stubs and prints every result. For a running stack
 (`make up`), point an MCP client at `http://127.0.0.1:8100/mcp/` with `Authorization: Bearer
-$MCP_BEARER_TOKEN` and the headers described in `LIVEKIT.md`; `curl http://127.0.0.1:8100/dependencies`
+$MCP_BEARER_TOKEN` and the headers described in `VOICE-TEAM.md`; `curl http://127.0.0.1:8100/dependencies`
 shows the owner-service status.
