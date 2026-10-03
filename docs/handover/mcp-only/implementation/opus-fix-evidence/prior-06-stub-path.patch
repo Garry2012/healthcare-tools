@@ -1,0 +1,8 @@
+--- a/services/mcp/dev/frontdesk_stubs/knowledge.py
++++ b/services/mcp/dev/frontdesk_stubs/knowledge.py
+@@ -86,4 +86,4 @@
+                 return JSONResponse(payload)
+         return JSONResponse({"outcome": "NO_ANSWER"})
+ 
+-    return Starlette(routes=[Route(kc.ANSWER_PATH, answer, methods=["POST"])])
++    return Starlette(routes=[Route("/broken", answer, methods=["POST"])])

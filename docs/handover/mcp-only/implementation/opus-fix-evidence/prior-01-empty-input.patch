@@ -1,0 +1,11 @@
+--- a/services/mcp/src/frontdesk_mcp/knowledge.py
++++ b/services/mcp/src/frontdesk_mcp/knowledge.py
+@@ -23,7 +23,7 @@
+         self.settings = settings
+ 
+     async def search(self, ctx: CallContext, request: KnowledgeRequest) -> outcomes.KnowledgeResult:
+-        if not request.question.strip() or not request.language.strip():
++        if False:
+             return outcomes.KnowledgeResult(outcome="INVALID_REQUEST", nextStep="ASK_TO_REPHRASE")
+         try:
+             response = await self.knowledge.answer(request.question, request.language, ctx,

@@ -1,0 +1,40 @@
+$ python3 /tmp/opus_patch_check.py
+PASS A4-sequential-reads.patch base=f3ad09e (git apply --check, isolated files)
+PASS A6-artifact.patch base=8575979 (git apply --check, isolated files)
+PASS A6-cancellation.patch base=8575979 (git apply --check, isolated files)
+PASS A6-matrix-choices.patch base=0c6179d (git apply --check, isolated files)
+PASS A6-matrix-doctors.patch base=0c6179d (git apply --check, isolated files)
+PASS A6-privacy.patch base=8575979 (git apply --check, isolated files)
+PASS A6-transcript-argument.patch base=8575979 (git apply --check, isolated files)
+PASS A8-expectation.patch base=96aa23d (git apply --check, isolated files)
+PASS B1-availability-knowledge.patch base=0c6179d (git apply --check, isolated files)
+PASS prior-01-empty-input.patch base=aa11591 (git apply --check, isolated files)
+PASS prior-02-routing-speech.patch base=aa11591 (git apply --check, isolated files)
+PASS prior-03-deadline.patch base=aa11591 (git apply --check, isolated files)
+PASS prior-04-smoke-envelope.patch base=aa11591 (git apply --check, isolated files)
+PASS prior-05-bench-write.patch base=aa11591 (git apply --check, isolated files)
+PASS prior-06-stub-path.patch base=aa11591 (git apply --check, isolated files)
+PASS prior-07-date-validation.patch base=aa11591 (git apply --check, isolated files)
+EXIT: 0
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 54%]
+........................................................................ [ 72%]
+........................................................................ [ 90%]
+........................................                                 [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+400 passed, 11 deselected, 2 warnings in 23.54s
+EXIT: 0

@@ -1,0 +1,11 @@
+--- a/services/mcp/src/frontdesk_mcp/availability.py
++++ b/services/mcp/src/frontdesk_mcp/availability.py
+@@ -101,7 +101,7 @@
+         if text.lower() == "today":
+             return today, None
+         if not ISO_DATE.fullmatch(text):
+-            return None, "DATE_FORMAT"
++            return today, None
+         try:
+             parsed = date.fromisoformat(text)
+         except ValueError:
