@@ -35,32 +35,38 @@ Rejected alternatives: keep the mandatory gate (coupled outages and incomplete t
 transcripts through headers (wrong layer and mutable-client/concurrency risk), or hide the gate behind
 a feature flag/optional reason check (two paths and the same service coupling).
 
-Consequences: remove obsolete context/client/fixture paths together; version descriptions and schemas;
-explicitly inject generated rules into the voice Agent. Preserve trusted identity, caller confirmation,
-live-board UNKNOWN handling, idempotency and uncertain-write reporting. KB contract remains a consumer
-proposal until accepted by its owner. Voice implementation and acceptance scenarios are in LIVEKIT.md.
-
-Residual risk: the voice platform must implement every-turn emergency checking and prevent writes
-racing unresolved checks. Before then, scheduling has only model judgement/instructions and explicit
-knowledge selection as emergency protection. User architectural approval does not constitute clinical
-acceptance: Shobhit/voice-team agreement and user/clinical-owner acceptance of the interim risk are
-required before merge/cutover. No consent or voice verification is claimed in this change.
+Consequences: remove obsolete context/client/fixture paths together; version tool descriptions and
+schemas. Trusted identity, confirmation, live-board UNKNOWN handling, idempotency and uncertain-write
+reporting remain adapter invariants. The knowledge contract remains provisional until owner acceptance.
+MCP does not observe every conversation turn; voice behaviour and application acceptance are external
+responsibilities, now explicitly separated by K2 below.
 
 ### K1 correction review — 3 October 2026
 
 The single-request knowledge boundary now validates the decision before optional metadata. A valid
 emergency/desk transfer survives malformed optional fields; those fields are dropped with a
-field-free event. Other malformed responses fail explicitly. Require JSON and bounded owner strings.
+field-name-only event. Other malformed responses fail explicitly. Require JSON and bounded owner strings.
 Routing speech appears only in routing.speak, while answers and clarification use answer.text; the
-injected rules describe the actual next steps. Schema is 2026-10-03.2. No date-rule change.
+tool contract describes the result codes. Current schema is 2026-10-03.3; date validation is unchanged.
 
 Scheduling-only configuration means both knowledge URL and bearer are empty; partial production
 configuration is rejected. Deployment supplies its expected knowledge state to smoke and removes an
 obsolete app secret reference only after removing the environment reference. These paths have offline
 tests; no cloud change was performed in the correction pass.
 
-The [LiveKit handover](handover/LIVEKIT.md) specifies a local raw-schema booking wrapper with immutable
-per-intent transport headers and the current-turn safety barrier, local callback capture into userdata,
-durable lifecycle finalization and a local transfer mechanism. These are voice-platform implementations
-to build and verify, not new adapter services. No classifier call has been restored inside scheduling.
-K1's residual risk and pending owner acceptance remain unchanged.
+## K2 — MCP publishes only the tool contract (3 October 2026)
+
+Decision: MCP publishes only the tool contract: endpoint/transport, authentication scopes, trusted
+headers, parameters, output fields and outcome/nextStep meanings. The single interface document is
+[VOICE-TEAM.md](handover/VOICE-TEAM.md), checked against the pinned schema. The server retains short,
+neutral contract metadata, not conversational rules.
+
+Voice-agent behaviour, prompts, guardrails and LiveKit wiring belong to the voice team. The separate
+voice-design document and instruction-export command are retired. This supersedes K1's earlier
+voice-guidance deliverable; it does not reintroduce knowledge checks inside scheduling.
+
+Tool implementations, field names, validation, status mappings and response defaults stay compatible,
+including existing callback text fields. Date accepts today or YYYY-MM-DD; other relative dates remain
+unsupported. This text change does not decide future date interpretation. Clinical/application design,
+voice implementation and their acceptance remain outside this repository; no owner consent or deployed
+behaviour is asserted by publishing this contract.

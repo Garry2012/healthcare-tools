@@ -27,7 +27,7 @@ The public interfaces are the only dependency on either owner's implementation: 
 | Rich multilingual date interpretation, ambiguous-name handling and department synonyms will be developed as we proceed | Start with the existing department list, free-text doctor search and explicit calendar dates. No new interpretation endpoint is a prerequisite. Basic caller clarification is sufficient when the returned choices or date are unclear; do not copy the legacy interpretation engine. |
 | Shobhit owns symptom routing, red-flag detection and hospital information | Consume explicit routing/emergency/approved-answer results from the knowledge service. Do not ask Manoj to implement clinical routing or retain the old lexical engine locally. |
 | Call summaries need an MCP tool | Add a proposed `record_call_summary` tool using `createCallSummary`. Route call finalization through MCP; do not require a separate direct REST writer in the voice platform. |
-| UNKNOWN availability means callback details and call summary only | Ask for the caller's name and callback number, tell them someone from the hospital will call back, and save the details in the call summary with outcome CALLBACK_NOTED. No appointment, transfer, alternate booking, notification or separate callback task is created. Applies to today and future dates when the requested availability is UNKNOWN. |
+| UNKNOWN availability means callback details and call summary only | UNKNOWN prevents appointment writes; CALLBACK_NOTED summaries carry callback contact details. No appointment, transfer, alternate booking, notification or separate callback task is created. Applies to today and future dates when the requested availability is UNKNOWN. |
 
 **What the published contract changes**
 
@@ -50,52 +50,33 @@ Use the full configured base URL without legacy `/api/v1` stripping. Test constr
 
 `/health` checks the MCP process. `/ready` checks local configuration and initialized components; do not perform a fresh token request or require an undocumented downstream `/ready` on every probe. Report each dependency's health separately using bounded background checks and agreed authenticated operations. Release smoke tests must still verify actual external reads; local readiness alone is not a release pass. A knowledge dependency failure affects only search_knowledge, without stopping MCP from returning accurate failure results or finalizing summaries through a working operational service.
 
-**Interim working-hours journey**
+**Tool calls and owner reads**
 
-1. The LLM chooses the tool. Named doctor/department requests go directly to availability; symptom-only requests go to search_knowledge, then availability with the returned department. No scheduling tool calls knowledge. The voice platform owns emergency detection on every turn and must resolve safety state before dispatching writes; see LIVEKIT.md. The user's 2 October approval removes the optional booking-reason check too; reasonVerbatim remains data forwarded to Manoj.
+The current consumer interface is [VOICE-TEAM.md](../VOICE-TEAM.md). MCP publishes facts and wire
+requirements; conversation design and tool selection belong to the calling application.
 
-2. Call `listDepartments` (`GET /departments`) to obtain department names and IDs, and `searchDoctors` (`GET /doctors?query=...`) with the doctor's name as heard. Use the returned IDs for follow-up requests. If several doctors match, ask the caller which one; if a department phrase cannot be matched confidently to a returned name, clarify. Specialized synonym, phonetic and multilingual matching is deferred, not a prerequisite for using these endpoints.
-3. For a resolved doctor and requested date, obtain `getDoctor` (`GET /doctors/{doctorId}`) and `getAvailability` (`GET /availability?doctorId=...&date=...`). These reads can run in parallel once their inputs are known. Use the literal `today` when the request is for today, or the confirmed ISO date. Preserve all usual-schedule windows (`daysOfWeek`, `start`, `end`, optional `label`) and all per-session board rows. A missing usual schedule does not invalidate a confirmed board entry, including an ON_CALL doctor's entry.
-4. Present the usual schedule together with the board's date/session-specific status. Current board timing/status takes precedence over routine hours: IN can support a current attendance statement, LATE reports the supplied revised expectation, CANCELLED means that session is cancelled, and NOT_CONFIRMED/UNKNOWN must remain unconfirmed/unknown. For UNKNOWN, including stale/missing entries represented as UNKNOWN by Manoj, stop the appointment flow: ask the caller's name and callback number, tell them someone from the hospital will call back, and save only a call summary. Do not transfer, create an appointment, offer an alternate booking or launch any other action for this fallback. Apply expectedEndTime expiry and keep each session distinct; a morning confirmation says nothing about evening. This is consumption of backend facts, not recreating its scheduling engine.
-5. Read back the patient's preferred date/time and details. Use a confirmed explicit calendar date formatted as `YYYY-MM-DD` and local time as `HH:MM` in `AppointmentCreate`, with `doctorId`, `patientName`, `mobile`, `visitDate`, optional `expectedTime` and unchanged `reasonVerbatim`. Inject trusted `callId` and an idempotency key. ISO dates are an ordinary wire format, not a contract defect. Until richer spoken-date handling is designed, ask for an explicit day/month/year or clarification rather than silently guessing ambiguous or relative dates.
-6. On a valid success, state that the request is recorded with that preferred time. On timeout after submission, state uncertainty rather than claiming that it failed or succeeded. No fake slot or `BOOKED` equivalence is introduced.
+1. Availability and booking call only Manoj. search_knowledge makes one explicit knowledge request.
+   reasonVerbatim is operational data forwarded without interpretation.
+2. Directory reads resolve names and department IDs. Ambiguity returns structured choices; specialized
+   phonetic, synonym and multilingual interpretation remains external service work.
+3. Resolved-doctor profile and live-board reads run concurrently. Usual windows and session-specific
+   board rows remain distinct; missing routine hours do not invalidate a board entry.
+4. UNKNOWN returns callback metadata and prevents the affected booking write. Failed reads return
+   service failures. NOTED denotes a recorded request; UNCERTAIN denotes an unverified write result.
+5. Write inputs require callerConfirmed=true, the trusted call/operation identifiers and explicit
+   ISO dates/local HH:MM times. These are tool requirements, not conversational scripts. Relative-date
+   interpretation is outside the adapter; existing date validation is unchanged.
 
 Working hours spanning multiple sessions or two hours remain complete windows. A caller's preferred time is an expectation, not proof of capacity. Validation of appointment dates, allowable times, doctor changes and any future slot allocation belongs to Manoj. Do not build these operational rules into the stub or MCP.
 
-Steps 5–6 apply only when continuing the appointment journey; UNKNOWN takes the callback-only branch instead. This user-selected policy supersedes both the earlier desk-handoff proposal and Opus's suggestion to permit a NOTED appointment for UNKNOWN. It changes the consumer policy in the plan without editing Manoj's supplied specification. A transport failure remains a service error and must not be silently relabelled as a valid UNKNOWN board response.
+The callback-only outcome changes no owner scheduling rule. MCP creates no appointment or separate
+callback task for UNKNOWN; the lifecycle summary can record CALLBACK_NOTED. A transport failure is
+not a valid UNKNOWN board response.
 
 The live board acts as a status/timing overlay, not merely a filter that removes rows. Keep cancelled and unknown sessions visible in the structured result so the agent can explain them. Prefer supplied expectedTime/expectedEndTime for the specific board session without adding delayMinutes again to a possibly already revised time. Do not infer a missing end time or join ambiguous session labels arbitrarily. On board failure, report that current status could not be checked; do not turn standard hours into a successful current-availability answer. Tests should distinguish normal, late, cancelled, unconfirmed, unknown/stale, expired, multiple-session and on-call cases. The slot API remains a separate future capability.
 
-```mermaid
-sequenceDiagram
-  participant V as Voice agent
-  participant M as MCP through ContextForge
-  participant O as Manoj API
-  participant K as Knowledge service
-  Note over V: Every-turn emergency guardrail belongs here
-  opt Hospital question or symptoms needing a department
-    V->>M: search_knowledge(question verbatim, language)
-    M->>K: One agreed knowledge request
-    K-->>M: Answer / department / clarify / transfer / no answer
-    M-->>V: Typed outcome and nextStep
-  end
-  V->>M: get_doctor_availability(target, date)
-  M->>O: Directory resolution, then parallel profile and board
-  O-->>M: Owner facts
-  M-->>V: Board-qualified hours / choices / callback-only / failure
-  alt UNKNOWN
-    V->>V: Ask name and callback number; hospital callback, no booking
-    V->>M: Lifecycle summary at call end
-    M->>O: POST /call-summaries (CALLBACK_NOTED)
-  else Caller confirms and voice guardrail allows the write
-    V->>M: manage_booking CREATE
-    M->>O: Recheck board; then POST /appointments with stable key
-    O-->>M: NOTED / rejection / uncertain write
-    M-->>V: Honest outcome; never promise a reserved time
-  end
-```
-
-For “any physician tomorrow,” use the department list to establish the requested department and obtain its ID, clarifying the name with the caller if needed. List that department's doctors and let the caller select when necessary; do not independently rank clinical suitability. Confirm an explicit calendar date if relative-date handling is not yet implemented. Fetch the department's board with `GET /availability?department=...&date=...` rather than one board call per doctor; pass exactly one of department or doctorId. Directory/profile reads for already identified candidates may run in bounded parallel with the board request. Don't return only the first few doctors/windows as though complete.
+Department availability uses one department board read, not one board call per doctor. Directory
+results preserve ambiguity and completeness; the adapter does not rank clinical suitability.
 
 Configure the facility's IANA timezone and inject a controllable clock for tests. Use the full board date plus local time for expiry; a future session is not expired merely because its clock time has passed today, and a past entry is not current attendance. Confirm weekday selection in facility time around midnight. Qualify `DoctorDetail.dataConfirmed=false` data as unconfirmed; missing optional confirmation metadata is not proof of approval. Never use `patientsPerHour` to allocate capacity or derive patient arrival times.
 
@@ -114,7 +95,7 @@ The initial plan has four MCP tools. Update tool discovery assertions, registrat
 
 **Trusted caller identity and appointment access**
 
-Keep patient contact separate from caller authorization. Create accepts the dictated/read-back patient name and contact mobile; those fields do not establish authority to view or change existing appointments. LIST, CANCEL and RESCHEDULE must derive `mobile`/`callerMobile` from authenticated, tenant-bound platform context at the agreed verification level. Remove the legacy model-visible LIST phone override; model fields cannot set caller headers, tenant, authorization basis or idempotency keys. Bind forwarded context to the actual call and isolate concurrent callers.
+Keep patient contact separate from caller authorization. Create accepts the supplied patient name and contact mobile; those fields do not establish authority to view or change existing appointments. LIST, CANCEL and RESCHEDULE must derive `mobile`/`callerMobile` from authenticated, tenant-bound platform context at the agreed verification level. Remove the legacy model-visible LIST phone override; model fields cannot set caller headers, tenant, authorization basis or idempotency keys. Bind forwarded context to the actual call and isolate concurrent callers.
 
 Normalize verified phone context using an explicitly configured supported country rule and validate the contract's ten-digit Mobile field. Do not strip arbitrary prefixes or take the last ten digits. A trusted SIP caller-number header alone is not universal proof of ownership; the platform and Manoj must agree what verification the authenticated MCP consumer is asserting. Web/WhatsApp integrations must supply their own authenticated channel context under that same policy.
 
@@ -155,19 +136,17 @@ Shared transport calls `POST /auth/token` (`issueMachineToken`) for Manoj machin
 
 The REST endpoint already exists in the published contract. Required fields are `callId`, `startedAt`, `intent` and `outcome`; optional fields are `durationSeconds`, `language` (EN/KN/HI), `callerMobile`, `transferredTo`, `doctorId`, `appointmentId` and `summaryText` (maximum 500 characters).
 
-For the confirmed UNKNOWN callback flow, set `outcome=CALLBACK_NOTED`, put the caller-provided callback number in `callerMobile`, and include the caller's name and the requested doctor/date with the UNKNOWN reason in `summaryText`. There is no structured caller-name field in this contract, so do not invent one. Use the actual call intent (for example AVAILABILITY), trusted call metadata and known doctor ID where applicable. Omit `appointmentId` and `transferredTo` for this callback-only outcome. Suggested spoken wording: “May I have your name and callback number? Someone from the hospital will call you back.” Do not invent a callback deadline. Persist through `record_call_summary` only; no separate callback record, scheduling mutation or outbound-notification action. A failed summary write is not a successful saved callback request.
+The MCP summary input adds callerName and requestedDate to the operational contract fields. For
+CALLBACK_NOTED, callerName/callerMobile are required; appointmentId/transferredTo are rejected.
+requestedDate is optional and preserved when provided. The input summary can be up to 2000 characters;
+composition preserves callback metadata within the owner's 500-character stored-text limit.
 
-Acceptance check: for today's or a future requested session with UNKNOWN, including stale/missing cases returned as UNKNOWN, collect the name/number and send exactly the call-summary business write with CALLBACK_NOTED. Assert no appointment mutation, transfer, alternate booking or separate notification/task. Retry a lost summary response safely using the same finalized payload and callId.
-
-Proposed model/lifecycle inputs include final intent/outcome, brief summary and relevant target IDs. Inject authoritative callId, start time and measured duration from platform call context, not invented model values. The platform must make this metadata available during finalization, even after the caller disconnects; additional trusted headers/context will need gateway allowlisting and tests. Keep `callerMobile` optional and follow the contract's “only when the caller gave it” rule rather than copying caller ID automatically.
-
-Recommend invoking this tool from the call-completion lifecycle, outside the one-second customer-response path. The result is stored with `calls.write`. The API promises 201 for a new summary and 200 for an existing callId, returning the original unchanged. Therefore do not post a provisional summary mid-call and expect later retries to update it. Stable, tenant-bound call identity, idempotent retry and an observable finalization queue should live in the platform's lifecycle infrastructure; MCP remains stateless and does not add a persistence backend.
-
-The MCP server has four tools, but ordinary in-call model selection must not be able to finalize an irreversible summary prematurely. Configure and verify separate conversational versus authenticated call-end access using the gateway/platform's supported tool filtering or equivalent lifecycle restriction. The platform invokes `record_call_summary` programmatically after the call; no fifth tool or separate REST writer is required. Verify the actual gateway mechanism rather than assuming a visibility feature exists.
-
-Construct the complete final payload once from authoritative lifecycle metadata and observed actions, then retain that identical body for retries. Do not recompute duration, wording or timestamps on every attempt. Use the endpoint's documented callId deduplication; if also sending Idempotency-Key, bind it to the same finalized summary and confirm precedence with Manoj. Start time/duration/verification context must travel through authenticated, allowlisted metadata and remain available after disconnection.
-
-For abrupt hang-up, retain a known completed outcome such as APPOINTMENT_NOTED or CALLBACK_NOTED when justified by the call record; use ABANDONED only when the observed journey warrants it. Use OTHER for genuinely unknown intent. Map supported language tags to EN/KN/HI, otherwise omit the optional language field. Produce a complete summary within 500 characters, preserving callback name/context when required; never silently drop essential callback details by arbitrary truncation. The platform owns eventual retry/failed-finalization monitoring; MCP does not create an outbound callback task or notification for UNKNOWN.
+Trusted call identity and timezone-aware start time are required headers; duration is optional.
+The lifecycle bearer exposes only this tool. The conversational bearer cannot finalize summaries.
+STORED and REPLAYED distinguish new and replayed verified persistence; UNCERTAIN and failure codes
+remain explicit. Same-call retries identify the same frozen payload. Durable lifecycle/retry
+infrastructure belongs to the calling platform; MCP has no database or queue. The interface document
+defines these fields and result meanings without specifying agent behaviour or implementation.
 
 Validate the success body before acknowledging storage. Derive returned status such as stored/replayed from verified HTTP/result data; errors/timeouts must not be reported as success. Do not send transcripts/audio, and do not expose staff-only summary read endpoints. Test normal storage, same-call replay, dropped response after commit, malformed data, wrong scope and failure without delaying patient speech.
 
@@ -177,7 +156,9 @@ The provisional single-request knowledge contract needs answer, no-answer, clari
 
 For symptom routing, carry the verbatim question argument and language, preserve approved department references and clarify their mapping to Manoj's tenant directory. Shobhit decides the route; Manoj supplies operational department identity and staffing truth. `hasConsultant=false` must still prevent a claim that a consultant is offered. Do not reinterpret a knowledge answer as an operational promise.
 
-For red flags, the voice team must test mixed-language symptoms, named-doctor danger signs, negation, missing/slow classifier responses, stale tasks and interruption/write races. The classifier runs on every turn outside MCP; search_knowledge can also return an emergency when explicitly selected. No local classifier or hidden scheduling gate is permitted. Before the voice guardrail is deployed, emergency protection is limited to model judgement, explicit instructions and selected knowledge calls. User/Shobhit/clinical-owner acceptance of that interim risk and voice-team agreement are required before merge/cutover. UNKNOWN remains callback-only and failed board reads remain failures.
+search_knowledge can return emergency or desk decisions from its owner. It is an explicit tool,
+not a conversation monitor. Voice prompts, guardrails and application-level acceptance belong to the
+voice team. No local classifier or hidden scheduling gate is part of MCP.
 
 For hospital information, return approved speakable text, language and provenance, with explicit no-answer/clarification handling. No model-invented medical advice or translation of approved text is added in MCP. No knowledge service interface or live implementation was supplied in this turn.
 
