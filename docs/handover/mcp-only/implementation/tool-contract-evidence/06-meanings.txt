@@ -1,0 +1,34 @@
+$ python3 docs/handover/mcp-only/implementation/tool-contract-evidence/06-meaning-audit.py
+FAIL: availability ambiguity is directory-only
+FAIL: knowledge clarification is owner text
+FAIL: availability not-found is directory-only
+FAIL: booking not-found is verified caller scope
+FAIL: staleness is owner supplied
+FAIL: expiry is today-only with status exclusions
+EXIT: 1
+$ python3 docs/handover/mcp-only/implementation/tool-contract-evidence/06-meaning-audit.py
+PASS: availability ambiguity is directory-only
+PASS: knowledge clarification is owner text
+PASS: availability not-found is directory-only
+PASS: booking not-found is verified caller scope
+PASS: staleness is owner supplied
+PASS: expiry is today-only with status exclusions
+EXIT: 0
+$ python3 docs/handover/mcp-only/implementation/tool-contract-evidence/06-meaning-audit.py
+FAIL: callback summary exclusions
+PASS: availability ambiguity is directory-only
+PASS: knowledge clarification is owner text
+PASS: availability not-found is directory-only
+PASS: booking not-found is verified caller scope
+PASS: staleness is owner supplied
+PASS: expiry is today-only with status exclusions
+EXIT: 1
+$ python3 docs/handover/mcp-only/implementation/tool-contract-evidence/06-meaning-audit.py
+PASS: callback summary exclusions
+PASS: availability ambiguity is directory-only
+PASS: knowledge clarification is owner text
+PASS: availability not-found is directory-only
+PASS: booking not-found is verified caller scope
+PASS: staleness is owner supplied
+PASS: expiry is today-only with status exclusions
+EXIT: 0

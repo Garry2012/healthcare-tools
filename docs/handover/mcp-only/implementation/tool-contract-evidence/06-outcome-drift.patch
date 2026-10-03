@@ -1,0 +1,11 @@
+--- a/docs/handover/VOICE-TEAM.md
++++ b/docs/handover/VOICE-TEAM.md
+@@ -111,7 +111,7 @@
+ 
+ | Code | Meaning |
+ |---|---|
+-| `get_doctor_availability.outcome.AVAILABILITY` | Directory/schedule/board data are returned. Individual doctors can still have journey=CALLBACK_ONLY. |
++| `get_doctor_availability.outcome.AVAILABILITY` |  |
+ | `get_doctor_availability.outcome.CLARIFICATION_NEEDED` | The result contains ambiguous directory choices or a knowledge-service clarification. |
+ | `get_doctor_availability.outcome.CALLBACK_REQUIRED` | The relevant board is UNKNOWN; an appointment write is not submitted. Callback details belong to a CALLBACK_NOTED summary. |
+ | `get_doctor_availability.outcome.NOT_FOUND` | No matching directory entry or verified-caller appointment was found. |

@@ -342,3 +342,66 @@ def test_routing_object_cannot_claim_a_clarification_decision():
 
     with pytest.raises(ValidationError):
         Routing(decision="CLARIFY")
+
+
+def _interface_rows():
+    text = (Path(__file__).resolve().parents[3] / "docs/handover/VOICE-TEAM.md").read_text()
+    rows = {}
+    for line in text.splitlines():
+        if line.startswith("| `"):
+            cells = [c.strip().strip("`") for c in line.strip("|").split(" | ")]
+            assert cells[0] not in rows, f"duplicate interface row: {cells[0]}"
+            rows[cells[0]] = cells[1:]
+    return text, rows
+
+
+def test_interface_parameter_and_output_tables_match_pinned_schema():
+    snapshot = json.loads((Path(__file__).parent / "contracts/mcp-tools.snapshot.json").read_text())
+    text, rows = _interface_rows()
+    assert f"Schema version: `{snapshot['schemaVersion']}`" in text
+    expected = {}
+
+    def wire_shape(value):
+        # Descriptions are separate prose; output defaults include existing callback text,
+        # which is intentionally not reproduced as a spoken script in the interface document.
+        if isinstance(value, dict):
+            return {k: wire_shape(v) for k, v in value.items() if k not in ("title", "description", "default")}
+        if isinstance(value, list):
+            return [wire_shape(v) for v in value]
+        return value
+
+    for tool in snapshot["tools"]:
+        for kind, schema in (("input", tool["inputSchema"]), ("output", tool["outputSchema"])):
+            objects = [("", schema), *[(f"$defs.{name}.", definition)
+                                      for name, definition in schema.get("$defs", {}).items()]]
+            for prefix, obj in objects:
+                for field, shape in obj.get("properties", {}).items():
+                    key = f"{tool['name']}.{kind}.{prefix}{field}"
+                    expected[key] = (wire_shape(shape), "required" if field in obj.get("required", []) else "optional")
+                    assert key in rows, f"missing interface field: {key}"
+                    cells = rows[key]
+                    assert len(cells) == 3 and cells[2], f"missing field meaning: {key}"
+                    assert (json.loads(cells[0]), cells[1]) == expected[key], key
+                    if kind == "input":
+                        assert cells[2] == shape["description"], key
+    actual = {key for key in rows if ".input." in key or ".output." in key}
+    assert actual == set(expected)
+
+
+def test_interface_describes_every_outcome_and_next_step():
+    from typing import get_args
+
+    from frontdesk_mcp import outcomes
+
+    _, rows = _interface_rows()
+    models = {"get_doctor_availability": outcomes.AvailabilityResult, "manage_booking": outcomes.BookingResult,
+              "search_knowledge": outcomes.KnowledgeResult, "record_call_summary": outcomes.SummaryResult}
+    expected = set()
+    for name, model in models.items():
+        for field in ("outcome", "nextStep"):
+            for value in get_args(model.model_fields[field].annotation):
+                key = f"{name}.{field}.{value}"
+                expected.add(key)
+                assert key in rows and len(rows[key]) == 1 and rows[key][0], f"undocumented meaning: {key}"
+    actual = {key for key in rows if ".outcome." in key or ".nextStep." in key}
+    assert actual == expected
