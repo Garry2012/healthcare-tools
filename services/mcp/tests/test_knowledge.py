@@ -150,7 +150,8 @@ async def test_transfer_survives_invalid_optional_field(make_settings, outcome, 
         assert result.destination == "desk"
         assert getattr(result, "answer" if field == "answer" else "sourceId") is None
         assert result.routing.department is None
-        assert "knowledge_optional_field_dropped" in caplog.text
+        records = [r for r in caplog.records if r.message == "knowledge_optional_field_dropped"]
+        assert [r.fields for r in records] == [{"field": field}]
         assert "owner-private" not in caplog.text and "private question" not in caplog.text
         assert "Owner instruction" not in caplog.text
     finally:
@@ -224,4 +225,26 @@ async def test_external_cancellation_propagates_through_knowledge(make_settings)
         assert stopped.is_set()
     finally:
         task.cancel()
+        await services.aclose()
+
+
+@pytest.mark.parametrize("outcome", ["ROUTE_DEPARTMENT", "CLARIFY"])
+@pytest.mark.parametrize("field,bad", [
+    ("answer", {"text": "private answer", "language": " "}),
+    ("sourceId", {"private": "owner-private"}), ("destination", "x" * 65),
+])
+async def test_non_transfer_decision_rejects_invalid_optional_field(make_settings, outcome, field, bad, caplog):
+    payload = {"outcome": outcome, "answer": {"text": "Owner text", "language": "en"},
+               "department": {"name": "Paediatrics"}, field: bad}
+    services = Services.build(make_settings(), knowledge_transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json=payload)))
+    try:
+        result = await services.search.search(
+            CallContext(), KnowledgeRequest(question="private question", language="en"))
+        assert (result.outcome, result.nextStep, result.detail) == (
+            "COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "MALFORMED")
+        assert result.answer is None and result.routing is None
+        assert "private question" not in caplog.text and "owner-private" not in caplog.text
+        assert "private answer" not in caplog.text and "x" * 65 not in caplog.text
+    finally:
         await services.aclose()

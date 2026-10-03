@@ -1,0 +1,130 @@
+$ uv run --directory services/mcp pytest tests/test_knowledge.py -k transfer_survives or non_transfer_decision -q --tb=short
+FFFFFFFF......                                                           [100%]
+=================================== FAILURES ===================================
+_ test_transfer_survives_invalid_optional_field[answer-bad0-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY] _
+tests/test_knowledge.py:154: in test_transfer_survives_invalid_optional_field
+    assert [r.fields for r in records] == [{"field": field}]
+            ^^^^^^^^
+E   AttributeError: 'LogRecord' object has no attribute 'fields'
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_contract:knowledge_contract.py:73 knowledge_optional_field_dropped
+_ test_transfer_survives_invalid_optional_field[answer-bad0-DESK_TRANSFER-TRANSFER_DESK] _
+tests/test_knowledge.py:154: in test_transfer_survives_invalid_optional_field
+    assert [r.fields for r in records] == [{"field": field}]
+            ^^^^^^^^
+E   AttributeError: 'LogRecord' object has no attribute 'fields'
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_contract:knowledge_contract.py:73 knowledge_optional_field_dropped
+_ test_transfer_survives_invalid_optional_field[answer-bad1-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY] _
+tests/test_knowledge.py:154: in test_transfer_survives_invalid_optional_field
+    assert [r.fields for r in records] == [{"field": field}]
+            ^^^^^^^^
+E   AttributeError: 'LogRecord' object has no attribute 'fields'
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_contract:knowledge_contract.py:73 knowledge_optional_field_dropped
+_ test_transfer_survives_invalid_optional_field[answer-bad1-DESK_TRANSFER-TRANSFER_DESK] _
+tests/test_knowledge.py:154: in test_transfer_survives_invalid_optional_field
+    assert [r.fields for r in records] == [{"field": field}]
+            ^^^^^^^^
+E   AttributeError: 'LogRecord' object has no attribute 'fields'
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_contract:knowledge_contract.py:73 knowledge_optional_field_dropped
+_ test_transfer_survives_invalid_optional_field[department-bad2-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY] _
+tests/test_knowledge.py:154: in test_transfer_survives_invalid_optional_field
+    assert [r.fields for r in records] == [{"field": field}]
+            ^^^^^^^^
+E   AttributeError: 'LogRecord' object has no attribute 'fields'
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_contract:knowledge_contract.py:73 knowledge_optional_field_dropped
+_ test_transfer_survives_invalid_optional_field[department-bad2-DESK_TRANSFER-TRANSFER_DESK] _
+tests/test_knowledge.py:154: in test_transfer_survives_invalid_optional_field
+    assert [r.fields for r in records] == [{"field": field}]
+            ^^^^^^^^
+E   AttributeError: 'LogRecord' object has no attribute 'fields'
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_contract:knowledge_contract.py:73 knowledge_optional_field_dropped
+_ test_transfer_survives_invalid_optional_field[sourceId-bad3-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY] _
+tests/test_knowledge.py:154: in test_transfer_survives_invalid_optional_field
+    assert [r.fields for r in records] == [{"field": field}]
+            ^^^^^^^^
+E   AttributeError: 'LogRecord' object has no attribute 'fields'
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_contract:knowledge_contract.py:73 knowledge_optional_field_dropped
+_ test_transfer_survives_invalid_optional_field[sourceId-bad3-DESK_TRANSFER-TRANSFER_DESK] _
+tests/test_knowledge.py:154: in test_transfer_survives_invalid_optional_field
+    assert [r.fields for r in records] == [{"field": field}]
+            ^^^^^^^^
+E   AttributeError: 'LogRecord' object has no attribute 'fields'
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.knowledge_contract:knowledge_contract.py:73 knowledge_optional_field_dropped
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[answer-bad0-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[answer-bad0-DESK_TRANSFER-TRANSFER_DESK]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[answer-bad1-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[answer-bad1-DESK_TRANSFER-TRANSFER_DESK]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[department-bad2-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[department-bad2-DESK_TRANSFER-TRANSFER_DESK]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[sourceId-bad3-EMERGENCY_TRANSFER-TRANSFER_EMERGENCY]
+FAILED tests/test_knowledge.py::test_transfer_survives_invalid_optional_field[sourceId-bad3-DESK_TRANSFER-TRANSFER_DESK]
+8 failed, 6 passed, 35 deselected, 2 warnings in 1.04s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+E501 Line too long (122 > 120)
+   --> tests/test_knowledge.py:242:121
+    |
+240 |         lambda request: httpx.Response(200, json=payload)))
+241 |     try:
+242 |         result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+    |                                                                                                                         ^^
+243 |         assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "MALFORMED")
+244 |         assert result.answer is None and result.routing is None
+    |
+
+E501 Line too long (122 > 120)
+   --> tests/test_knowledge.py:243:121
+    |
+241 |     try:
+242 |         result = await services.search.search(CallContext(), KnowledgeRequest(question="private question", language="en"))
+243 |         assert (result.outcome, result.nextStep, result.detail) == ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "MALFORMED")
+    |                                                                                                                         ^^
+244 |         assert result.answer is None and result.routing is None
+245 |         assert "private question" not in caplog.text and "owner-private" not in caplog.text
+    |
+
+Found 2 errors.
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 17%]
+........................................................................ [ 35%]
+........................................................................ [ 52%]
+........................................................................ [ 70%]
+........................................................................ [ 88%]
+.................................................                        [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+409 passed, 11 deselected, 2 warnings in 22.99s
+EXIT: 0

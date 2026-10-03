@@ -70,7 +70,7 @@ class AnswerResponse(_Model):
         except ValidationError:
             if info.data.get("outcome") not in ("EMERGENCY_TRANSFER", "DESK_TRANSFER"):
                 raise
-            logger.warning("knowledge_optional_field_dropped")
+            logger.warning("knowledge_optional_field_dropped", extra={"fields": {"field": info.field_name}})
             return None
 
     @model_validator(mode="after")

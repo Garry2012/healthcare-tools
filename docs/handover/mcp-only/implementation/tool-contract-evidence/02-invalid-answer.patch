@@ -1,0 +1,11 @@
+--- a/services/mcp/src/frontdesk_mcp/knowledge_contract.py
++++ b/services/mcp/src/frontdesk_mcp/knowledge_contract.py
+@@ -66,7 +66,7 @@
+                           info: ValidationInfo) -> Any:
+         # outcome is declared first, so its validated value is available before optional fields.
+         try:
+-            return handler(value)
++            return handler({"text": "invented", "language": "en"} if info.field_name == "answer" else value)
+         except ValidationError:
+             if info.data.get("outcome") not in ("EMERGENCY_TRANSFER", "DESK_TRANSFER"):
+                 raise

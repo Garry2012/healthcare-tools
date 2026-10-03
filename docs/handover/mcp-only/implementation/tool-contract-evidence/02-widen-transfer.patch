@@ -1,0 +1,11 @@
+--- a/services/mcp/src/frontdesk_mcp/knowledge_contract.py
++++ b/services/mcp/src/frontdesk_mcp/knowledge_contract.py
+@@ -68,7 +68,7 @@
+         try:
+             return handler(value)
+         except ValidationError:
+-            if info.data.get("outcome") not in ("EMERGENCY_TRANSFER", "DESK_TRANSFER"):
++            if info.data.get("outcome") not in ("EMERGENCY_TRANSFER", "DESK_TRANSFER", "ROUTE_DEPARTMENT", "CLARIFY"):
+                 raise
+             logger.warning("knowledge_optional_field_dropped")
+             return None
