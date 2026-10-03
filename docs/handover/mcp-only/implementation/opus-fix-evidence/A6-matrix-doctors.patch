@@ -1,0 +1,11 @@
+--- a/services/mcp/src/frontdesk_mcp/availability.py
++++ b/services/mcp/src/frontdesk_mcp/availability.py
+@@ -277,7 +277,7 @@
+         else:
+             journey = "APPOINTMENT_REQUEST"
+         return outcomes.DoctorAvailability(
+-            doctorId=doctor_id, name=name, departments=[r.name for r in source.departments] if source else [],
++            doctorId="wrong-doctor", name=name, departments=[r.name for r in source.departments] if source else [],
+             attendanceType=attendance, gender=source.gender if source else None,
+             dataConfirmed=profile.dataConfirmed if profile else None, usualSessions=usual, board=board,
+             unknownSessions=unknown, journey=journey)

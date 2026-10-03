@@ -1,0 +1,11 @@
+--- a/services/mcp/src/frontdesk_mcp/availability.py
++++ b/services/mcp/src/frontdesk_mcp/availability.py
+@@ -182,7 +182,7 @@
+             choices = [outcomes.DoctorChoice(doctorId=d.id, name=d.name, departments=[r.name for r in d.departments],
+                                              gender=d.gender) for d in page.items]
+             return outcomes.AvailabilityResult(outcome="CLARIFICATION_NEEDED", nextStep="ASK_WHICH_DOCTOR", **base,
+-                                               choices=choices, complete=page.total <= len(page.items),
++                                               choices=[], complete=page.total <= len(page.items),
+                                                totalMatches=page.total)
+         departments: list[contract.Department] = fetched["departments"]
+         offered = [_choice(d) for d in departments if d.active and d.hasConsultant]

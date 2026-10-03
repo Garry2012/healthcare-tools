@@ -426,6 +426,16 @@ async def test_availability_is_independent_of_knowledge_and_transcript(make_sett
         assert knowledge_requests == []
         if expected == "AVAILABILITY":
             assert result.doctors and result.doctors[0].board
+        if expected == "AVAILABILITY":
+            ids = {doctor.doctorId for doctor in result.doctors}
+            assert ids == ({"doc_anil_sharma", "doc_ravi_sharma"}
+                           if "departmentId" in target or "departmentName" in target else {"doc_garima"})
+            assert result.choices == []
+        if expected == "CLARIFICATION_NEEDED":
+            assert {choice.doctorId for choice in result.choices} == {"doc_anil_sharma", "doc_ravi_sharma"}
+            assert result.doctors == []
+        if expected == "NOT_FOUND":
+            assert result.doctors == [] and result.choices == [] and result.departmentChoices == []
         if expected == "CALLBACK_REQUIRED":
             assert result.callback.summaryOutcome == "CALLBACK_NOTED"
         if not target:
