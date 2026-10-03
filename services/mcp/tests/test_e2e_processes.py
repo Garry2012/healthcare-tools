@@ -65,7 +65,8 @@ def processes():
 
 async def test_release_smoke_passes_against_real_processes(processes):
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "lifecycle-e2e", "en", "General Medicine")
+    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "lifecycle-e2e", "en",
+                         "General Medicine", "required")
 
 
 async def test_journey_and_lifecycle_through_real_transport(processes):

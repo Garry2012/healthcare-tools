@@ -31,7 +31,8 @@ def _result(body, is_error=False):
 @pytest.mark.parametrize("ready,deps,auth,ok", [
     (200, 200, 401, True), (503, 200, 401, False), (200, 503, 401, False), (200, 200, 200, False),
 ])
-async def test_http_checks_require_readiness_dependency_health_and_auth(ready, deps, auth, ok):
+async def test_http_checks_require_readiness_dependency_health_and_auth(ready, deps, auth, ok, monkeypatch):
+    monkeypatch.setenv("SMOKE_EXPECT_KNOWLEDGE", "absent")  # inherited profile must not configure helper calls
     def handle(request):
         path = request.url.path
         if path == "/mcp/":
@@ -46,10 +47,10 @@ async def test_http_checks_require_readiness_dependency_health_and_auth(ready, d
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
         if ok:
-            await SMOKE["check_http"](http, "https://adapter.example")
+            await SMOKE["check_http"](http, "https://adapter.example", "required")
         else:
             with pytest.raises((RuntimeError, httpx.HTTPStatusError)):
-                await SMOKE["check_http"](http, "https://adapter.example")
+                await SMOKE["check_http"](http, "https://adapter.example", "required")
 
 
 async def test_conversational_tool_set_must_be_exactly_three_and_the_summary_tool_hidden():
@@ -333,8 +334,7 @@ async def test_unconfigured_smoke_refuses_mismatched_or_error_results(body, erro
 
 @pytest.mark.parametrize("expected,status", [("required", "not_configured"), ("absent", "configured"),
                                             ("invalid", "ok")])
-async def test_smoke_rejects_profile_dependency_mismatch(monkeypatch, expected, status):
-    monkeypatch.setenv("SMOKE_EXPECT_KNOWLEDGE", expected)
+async def test_smoke_rejects_profile_dependency_mismatch(expected, status):
 
     def owner(request):
         if request.url.path == "/dependencies":
@@ -345,7 +345,7 @@ async def test_smoke_rejects_profile_dependency_mismatch(monkeypatch, expected, 
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(owner)) as http:
         with pytest.raises((RuntimeError, ValueError)):
-            await SMOKE["check_http"](http, "https://adapter.example")
+            await SMOKE["check_http"](http, "https://adapter.example", expected)
 
 
 @pytest.mark.parametrize("body", [[], "bad", None, {"operational": []},
@@ -361,4 +361,31 @@ async def test_smoke_rejects_malformed_dependencies_without_attribute_error(body
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(owner)) as http:
         with pytest.raises(RuntimeError):
-            await SMOKE["check_http"](http, "https://adapter.example")
+            await SMOKE["check_http"](http, "https://adapter.example", "required")
+
+
+def test_main_requires_knowledge_expectation_before_any_http(monkeypatch, capsys):
+    monkeypatch.setenv("MCP_URL", "https://adapter.example/mcp/")
+    monkeypatch.setenv("MCP_BEARER_TOKEN", "secret-not-printed")
+    monkeypatch.setenv("SMOKE_LANGUAGE", "en")
+    monkeypatch.delenv("SMOKE_EXPECT_KNOWLEDGE", raising=False)
+
+    async def forbidden_http(*args, **kwargs):
+        raise AssertionError("missing expectation must fail before HTTP")
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", forbidden_http)
+    assert SMOKE["main"]() == 1
+    output = capsys.readouterr()
+    assert "smoke test failed" in output.err and "secret-not-printed" not in output.err + output.out
+
+
+@pytest.mark.parametrize("knowledge,expected", [("", "absent"), ("https://kb.example", "required")])
+def test_profile_exports_knowledge_expectation(tmp_path, knowledge, expected):
+    import os
+    import subprocess
+
+    (tmp_path / "fixture.env").write_text(f"OPS_BASE_URL=https://ops.example\nKNOWLEDGE_BASE_URL={knowledge}\n")
+    result = subprocess.run([str(DEPLOY.parent / "scripts/env.sh"), "fixture"], capture_output=True,
+                            text=True, env={**os.environ, "DEPLOY_PROFILE_DIR": str(tmp_path)})
+    assert result.returncode == 0
+    assert f"export SMOKE_EXPECT_KNOWLEDGE={expected}" in result.stdout.splitlines()

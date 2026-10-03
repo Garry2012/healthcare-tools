@@ -38,7 +38,8 @@ async def test_release_smoke_against_the_deployed_adapter():
     url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
     lifecycle = os.environ.get("MCP_E2E_LIFECYCLE_BEARER") or None
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](url, bearer, lifecycle, "en", os.environ.get("MCP_E2E_DEPARTMENT", "General Medicine"))
+    await smoke["smoke"](url, bearer, lifecycle, "en", os.environ.get("MCP_E2E_DEPARTMENT", "General Medicine"),
+                         os.environ["SMOKE_EXPECT_KNOWLEDGE"])
     if lifecycle is None:
         pytest.fail("BLOCKED: MCP_E2E_LIFECYCLE_BEARER not set; conversational checks passed, lifecycle unverified")
 

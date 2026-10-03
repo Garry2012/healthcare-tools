@@ -1,0 +1,11 @@
+--- a/scripts/env.sh
++++ b/scripts/env.sh
+@@ -33,7 +33,7 @@
+ printf 'export DEPLOY_PROFILE=%q\n' "$profile"
+ 
+ if [[ -n "$knowledge" ]]; then
+-  printf 'export SMOKE_EXPECT_KNOWLEDGE=required\n'
++  printf 'export IGNORED_KNOWLEDGE=required\n'
+ else
+   printf 'export SMOKE_EXPECT_KNOWLEDGE=absent\n'
+ fi

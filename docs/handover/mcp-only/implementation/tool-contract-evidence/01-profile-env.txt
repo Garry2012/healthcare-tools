@@ -1,0 +1,25 @@
+$ uv run --directory services/mcp pytest tests/test_deploy.py -k profile_exports -q --tb=short
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_profile_exports_knowledge_expectation[https://kb.example-required] ____
+tests/test_deploy.py:392: in test_profile_exports_knowledge_expectation
+    assert f"export SMOKE_EXPECT_KNOWLEDGE={expected}" in result.stdout.splitlines()
+E   AssertionError: assert 'export SMOKE_EXPECT_KNOWLEDGE=required' in ['export OPS_BASE_URL=https://ops.example', 'export KNOWLEDGE_BASE_URL=https://kb.example', 'export OPS_E2E_BASE_URL=h.../ops.example', 'export KNOWLEDGE_BASE_URL=https://kb.example', 'export KNOWLEDGE_E2E_BASE_URL=https://kb.example', ...]
+E    +  where ['export OPS_BASE_URL=https://ops.example', 'export KNOWLEDGE_BASE_URL=https://kb.example', 'export OPS_E2E_BASE_URL=h.../ops.example', 'export KNOWLEDGE_BASE_URL=https://kb.example', 'export KNOWLEDGE_E2E_BASE_URL=https://kb.example', ...] = <built-in method splitlines of str object at 0x109256c10>()
+E    +    where <built-in method splitlines of str object at 0x109256c10> = 'export OPS_BASE_URL=https://ops.example\nexport KNOWLEDGE_BASE_URL=https://kb.example\nexport OPS_E2E_BASE_URL=https:...export BENCH_KNOWLEDGE_BASE_URL=https://kb.example\nexport DEPLOY_PROFILE=fixture\nexport IGNORED_KNOWLEDGE=required\n'.splitlines
+E    +      where 'export OPS_BASE_URL=https://ops.example\nexport KNOWLEDGE_BASE_URL=https://kb.example\nexport OPS_E2E_BASE_URL=https:...export BENCH_KNOWLEDGE_BASE_URL=https://kb.example\nexport DEPLOY_PROFILE=fixture\nexport IGNORED_KNOWLEDGE=required\n' = CompletedProcess(args=['/Users/garima/conductor/workspaces/healthcare-tools/des-moines/scripts/env.sh', 'fixture'], re..._KNOWLEDGE_BASE_URL=https://kb.example\nexport DEPLOY_PROFILE=fixture\nexport IGNORED_KNOWLEDGE=required\n', stderr='').stdout
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_profile_exports_knowledge_expectation[https://kb.example-required]
+1 failed, 1 passed, 34 deselected, 2 warnings in 0.68s
+EXIT: 1

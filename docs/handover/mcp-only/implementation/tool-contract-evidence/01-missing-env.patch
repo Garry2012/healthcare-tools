@@ -1,0 +1,11 @@
+--- a/deploy/azure/smoke.py
++++ b/deploy/azure/smoke.py
+@@ -116,7 +116,7 @@
+         url = os.environ["MCP_URL"]
+         token = os.environ["MCP_BEARER_TOKEN"]
+         language = os.environ["SMOKE_LANGUAGE"]
+-        if os.environ["SMOKE_EXPECT_KNOWLEDGE"] not in ("required", "absent"):
++        if os.environ.get("SMOKE_EXPECT_KNOWLEDGE", "required") not in ("required", "absent"):
+             raise ValueError("invalid knowledge expectation")
+         department = os.environ.get("SMOKE_DEPARTMENT", "General Medicine")
+         lifecycle_token = os.environ.get("MCP_LIFECYCLE_BEARER_TOKEN") or None

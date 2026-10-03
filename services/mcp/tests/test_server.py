@@ -293,17 +293,16 @@ def test_an_external_suite_exists_for_owner_designated_services():
     assert collected and int(collected.group(1)) >= 3, out.stdout[-300:]
 
 
-async def test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failure(make_settings, capsys, monkeypatch):
+async def test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failure(make_settings, capsys):
     import runpy
 
     smoke = runpy.run_path(str(Path(__file__).resolve().parents[3] / "deploy/azure/smoke.py"))
-    monkeypatch.setenv("SMOKE_EXPECT_KNOWLEDGE", "absent")
     settings = make_settings(knowledge_base_url="", knowledge_bearer_token="")
     h = harness.build(settings)
     app = create_app(settings, ops_transport=h.ops.http._transport, clock=h.clock)
     try:
         async with serving(app) as base:
-            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "lifecycle-token", "en", "General Medicine")
+            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "lifecycle-token", "en", "General Medicine", "absent")
         assert "knowledge: NOT_CONFIGURED" in capsys.readouterr().out
     finally:
         await h.aclose()

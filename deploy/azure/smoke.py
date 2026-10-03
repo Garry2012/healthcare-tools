@@ -28,8 +28,7 @@ KNOWLEDGE_OK = {"ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIR
 
 
 
-async def check_http(http: httpx.AsyncClient, root: str) -> bool:
-    expectation = os.environ.get("SMOKE_EXPECT_KNOWLEDGE", "required")
+async def check_http(http: httpx.AsyncClient, root: str, expectation: str) -> bool:
     if expectation not in ("required", "absent"):
         raise ValueError("SMOKE_EXPECT_KNOWLEDGE must be required or absent")
     for path, expected in (("health", "ok"), ("ready", "ready")):
@@ -94,11 +93,12 @@ async def check_lifecycle_boundary(conversational: Client, lifecycle: Client | N
             raise RuntimeError("the lifecycle bearer does not see exactly the summary tool")
 
 
-async def smoke(url: str, token: str, lifecycle_token: str | None, language: str, department: str) -> None:
+async def smoke(url: str, token: str, lifecycle_token: str | None, language: str, department: str,
+                expectation: str) -> None:
     root = url.removesuffix("/").removesuffix("/mcp")
     async with asyncio.timeout(120):
         async with httpx.AsyncClient(timeout=10) as http:
-            knowledge_configured = await check_http(http, root)
+            knowledge_configured = await check_http(http, root, expectation)
         call_id = f"deploy-smoke-{uuid.uuid4().hex}"
         headers = {"Authorization": f"Bearer {token}", "X-Call-Id": call_id}
         async with Client(StreamableHttpTransport(url, headers=headers), timeout=20) as conversational:
@@ -116,13 +116,14 @@ def main() -> int:
         url = os.environ["MCP_URL"]
         token = os.environ["MCP_BEARER_TOKEN"]
         language = os.environ["SMOKE_LANGUAGE"]
-        if os.environ["SMOKE_EXPECT_KNOWLEDGE"] not in ("required", "absent"):
+        expectation = os.environ["SMOKE_EXPECT_KNOWLEDGE"]
+        if expectation not in ("required", "absent"):
             raise ValueError("invalid knowledge expectation")
         department = os.environ.get("SMOKE_DEPARTMENT", "General Medicine")
         lifecycle_token = os.environ.get("MCP_LIFECYCLE_BEARER_TOKEN") or None
         if not url.startswith("https://") or not token or not language:
             raise ValueError("HTTPS URL, token and rollout language are required")
-        asyncio.run(smoke(url, token, lifecycle_token, language, department))
+        asyncio.run(smoke(url, token, lifecycle_token, language, department, expectation))
     except (KeyError, ValueError, RuntimeError, TimeoutError, httpx.HTTPError, McpError, FastMCPError, ClientError,
             ExceptionGroup):  # expected CLI/transport failures: never print raw dependency errors
         print("Deployment smoke test failed; inspect MCP logs. No success declared.", file=sys.stderr)
