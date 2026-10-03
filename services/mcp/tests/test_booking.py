@@ -584,3 +584,33 @@ async def test_cancelled_create_cancels_both_owner_reads_without_writing(make_se
         task.cancel()
         await services.aclose()
         await h.aclose()
+
+
+async def test_create_propagates_unexpected_profile_failure_without_writing(make_settings):
+    import httpx
+
+    from frontdesk_mcp.tools import Services
+    from frontdesk_stubs import ops as ops_stub
+
+    h = harness.build(make_settings())
+    inner = httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1"))
+    writes = []
+    failure = RuntimeError("profile boundary failed unexpectedly")
+
+    async def owner(request):
+        if "/doctors/" in request.url.path:
+            raise failure
+        if request.url.path.endswith("/appointments") and request.method == "POST":
+            writes.append(request)
+        return await inner.handle_async_request(request)
+
+    services = Services.build(h.settings, clock=h.clock, ops_transport=httpx.MockTransport(owner))
+    try:
+        with pytest.raises(RuntimeError, match="profile boundary failed unexpectedly") as caught:
+            await services.booking.manage(h.ctx(operation_id="op-1"),
+                                          booking.BookingRequest(**{**CREATE, "session": "Morning"}))
+        assert caught.value is failure
+        assert writes == [] and h.ops_state.appointments == {}
+    finally:
+        await services.aclose()
+        await h.aclose()

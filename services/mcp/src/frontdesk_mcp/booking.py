@@ -221,6 +221,8 @@ class BookingService:
             if request.doctorId and request.session:
                 profile, board = await asyncio.gather(self._profile(request.doctorId, deadline), board_read,
                                                      return_exceptions=True)
+                if isinstance(profile, BaseException):
+                    raise profile
                 if isinstance(board, BaseException):
                     raise board
             else:
