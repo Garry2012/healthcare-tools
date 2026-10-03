@@ -70,7 +70,7 @@ async def test_conversational_principal_gets_exactly_three_tools_without_trusted
     assert booking.annotations.readOnlyHint is False and booking.annotations.destructiveHint is True
     availability = next(t for t in tools if t.name == "get_doctor_availability")
     assert availability.annotations.readOnlyHint is True
-    assert "call you back" in instructions and "NOTED" in instructions
+    assert "NOTED" in instructions and prompt.SCHEMA_VERSION in instructions
 
 
 async def test_lifecycle_principal_gets_exactly_the_summary_tool(served):
@@ -230,21 +230,39 @@ async def test_log_lines_carry_the_call_id_not_the_caller(served):
     assert "garima" not in json.dumps(lines).lower()
 
 
-def test_the_pack_describes_exactly_the_four_tools_and_no_core_rule():
-    pack = packs.load("healthcare")
-    assert set(pack.tools) == {*CONVERSATIONAL, "record_call_summary"}
-    words = " ".join([pack.instructions, *(t.description for t in pack.tools.values())]).casefold()
-    for rule in prompt.CORE_RULES:
-        assert rule.casefold()[:60] not in words, rule
-    assert "slot" not in words
+def test_pack_describes_exactly_the_four_tools():
+    assert set(packs.load("healthcare").tools) == {*CONVERSATIONAL, "record_call_summary"}
 
 
-def test_instructions_cover_the_fixed_policies(make_settings):
+def test_published_tool_text_contains_facts_not_behaviour_scripts(make_settings):
+    from frontdesk_mcp.cli import schema_document
+
+    document = schema_document(make_settings())
+    text = [document["instructions"]]
+
+    def descriptions(value):
+        if isinstance(value, dict):
+            text.extend(v for k, v in value.items() if k == "description")
+            for child in value.values():
+                descriptions(child)
+        elif isinstance(value, list):
+            for child in value:
+                descriptions(child)
+
+    descriptions(document["tools"])
+    forbidden = ("say ", "never say", "ask ", "transfer immediately", "speak ", "pass ",
+                 "read back", "read-back", "do not", "never ", "collect ", "use ")
+    for entry in text:
+        for phrase in forbidden:
+            assert phrase not in entry.casefold(), (phrase, entry)
+
+
+def test_server_instructions_are_short_contract_facts():
     text = prompt.instructions(packs.load("healthcare"), ("en", "kn", "hi"), "Demo Hospital")
-    for phrase in ("call you back", "CALLBACK_REQUIRED", "NOTED", "never say", "UNCERTAIN", "IDENTITY_UNAVAILABLE",
-                   "COULD_NOT_CHECK", "explicit date", "(en, kn, hi)", "Demo Hospital"):
-        assert phrase in text, phrase
-    assert "slotId" not in text and "never say 'confirmed'" in text
+    assert len(text) < 1000
+    for fact in ("Demo Hospital", "en, kn, hi", "YYYY-MM-DD", "relative dates are not accepted",
+                 "NOTED", "CALLBACK_REQUIRED", "UNCERTAIN", prompt.SCHEMA_VERSION):
+        assert fact in text
 
 
 def test_principal_contextvar_is_not_set_by_headers(make_settings):
@@ -315,19 +333,6 @@ def test_cli_exposes_only_server_and_schema_commands():
     assert result.returncode == 0
     assert "{serve,schema}" in result.stdout
 
-
-
-def test_instructions_follow_real_knowledge_steps():
-    text = prompt.instructions(packs.load("healthcare"), ("en",), "Demo Hospital")
-    assert "or ask routing.speak" not in text
-    assert "routing.department as departmentName" in text
-    assert "search_knowledge CLARIFICATION_NEEDED: ask answer.text verbatim" in text
-
-
-def test_model_is_told_to_act_on_emergencies_not_defer_to_infrastructure():
-    text = packs.load("healthcare").instructions
-    assert "transfer immediately and do not continue scheduling" in text
-    assert "voice platform" not in text and "guardrail" not in text
 
 
 def test_routing_object_cannot_claim_a_clarification_decision():

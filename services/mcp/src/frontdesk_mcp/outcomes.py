@@ -28,7 +28,7 @@ class Routing(_Out):
 
 
 class Callback(_Out):
-    """The UNKNOWN policy: collect name and number, say someone will call back, record a summary only."""
+    """Callback metadata for UNKNOWN availability; summary outcome is CALLBACK_NOTED."""
 
     ask: str = "May I have your name and a callback number?"
     say: str = "Someone from the hospital will call you back."
@@ -65,7 +65,7 @@ class DoctorAvailability(_Out):
     gender: str | None = None
     dataConfirmed: bool | None = None  # noqa: N815
     usualSessions: list[UsualSessionOut] | None = Field(  # noqa: N815
-        description="Background hours only, never today's position. null when the profile was not fetched.")
+        description="Usual working hours, independent of live attendance. null when the profile was not fetched.")
     board: list[BoardSessionOut]
     unknownSessions: list[str] = []  # noqa: N815
     journey: Journey
@@ -116,7 +116,7 @@ class AvailabilityResult(_Out):
 
 
 class AppointmentOut(_Out):
-    """The minimum the agent needs to speak about a request: no contact number, no reason text."""
+    """Appointment request data, excluding contact numbers and reason text."""
 
     appointmentId: str  # noqa: N815
     status: contract.AppointmentStatus
@@ -162,7 +162,7 @@ KnowledgeNextStep = Literal["SPEAK_ANSWER", "SAY_NO_ANSWER_AND_OFFER_DESK", "ASK
 class KnowledgeResult(_Out):
     outcome: KnowledgeOutcome
     nextStep: KnowledgeNextStep  # noqa: N815
-    answer: Speech | None = Field(default=None, description="Approved text to speak exactly as given.")
+    answer: Speech | None = Field(default=None, description="Knowledge-service answer or clarification text.")
     sourceId: str | None = None  # noqa: N815
     destination: str | None = None
     routing: Routing | None = Field(default=None, description="The owner's routing decision over the caller's words.")

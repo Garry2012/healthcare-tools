@@ -1,0 +1,100 @@
+$ uv run --directory services/mcp pytest tests/test_server.py -k published_tool_text or short_contract -q --tb=short
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+________ test_published_tool_text_contains_facts_not_behaviour_scripts _________
+tests/test_server.py:257: in test_published_tool_text_contains_facts_not_behaviour_scripts
+    assert phrase not in entry.casefold(), (phrase, entry)
+E   AssertionError: ('say ', "Front-desk tools for a hospital voice agent. Dates: pass date='today' or an explicit date YYYY-MM-DD the cal...questions as heard, untranslated; speak approved answers in the language they come back in. Tool schema 2026-10-03.2.")
+E   assert 'say ' not in 'front-desk ...026-10-03.2.'
+E
+E     'say ' is contained here:
+E     ?           ^^^
+E       ns noted: say the request is recorded with that preferred time; never say 'confirmed' or 'booked'. callback_required (board unknown today or on a later date): stop the appointment journey. ask 'may i have your name and a callback number?' and then say 'someone from the hospital will call you back.' do not book, transfer, offer another doctor or date, or promise when; the call summary records it as callback_noted. help one patient per call. if the caller describes a medical emergency, transfer immediately and do not continue scheduling. before create,...
+E
+E     ...Full output truncated (2 lines hidden), use '-vv' to show
+______________ test_server_instructions_are_short_contract_facts _______________
+tests/test_server.py:262: in test_server_instructions_are_short_contract_facts
+    assert len(text) < 1000
+E   assert 2700 < 1000
+E    +  where 2700 = len("Front-desk tools for a hospital voice agent at Demo Hospital. Dates: pass date='today' or an explicit date YYYY-MM-DD... questions as heard, untranslated; speak approved answers in the language they come back in. Tool schema 2026-10-03.2.")
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_published_tool_text_contains_facts_not_behaviour_scripts
+FAILED tests/test_server.py::test_server_instructions_are_short_contract_facts
+2 failed, 18 deselected, 2 warnings in 1.03s
+EXIT: 1
+$ uv run --directory services/mcp pytest tests/test_server.py -k published_tool_text or short_contract -q --tb=short
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+________ test_published_tool_text_contains_facts_not_behaviour_scripts _________
+tests/test_server.py:257: in test_published_tool_text_contains_facts_not_behaviour_scripts
+    assert phrase not in entry.casefold(), (phrase, entry)
+E   AssertionError: ('do not', 'Doctor or department working hours qualified by the live availability board for a date. Applies to directo...rded in a call summary with CALLBACK_NOTED. A mixed result can contain individual doctors with journey=CALLBACK_ONLY.')
+E   assert 'do not' not in 'doctor or d...llback_only.'
+E
+E     'do not' is contained here:
+E     ?           ^^^^^^^^^^
+E       urs alone do not establish attendance. ambiguous directory matches return choices. callback_required means the board is unknown and no appointment can be recorded; callback contact details are recorded in a call summary with callback_noted. a mixed result can contain individual doctors with journey=callback_only.
+E     ?           ^^^^^^^^^^^^^^^^
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_published_tool_text_contains_facts_not_behaviour_scripts
+1 failed, 1 passed, 18 deselected, 2 warnings in 0.96s
+EXIT: 1
+$ uv run --directory services/mcp pytest tests/test_server.py -k published_tool_text or short_contract -q --tb=short
+..                                                                       [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2 passed, 18 deselected, 2 warnings in 0.89s
+EXIT: 0
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 17%]
+........................................................................ [ 35%]
+........................................................................ [ 52%]
+........................................................................ [ 70%]
+........................................................................ [ 88%]
+.................................................                        [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+409 passed, 11 deselected, 2 warnings in 23.61s
+EXIT: 0
