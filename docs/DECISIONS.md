@@ -45,3 +45,22 @@ racing unresolved checks. Before then, scheduling has only model judgement/instr
 knowledge selection as emergency protection. User architectural approval does not constitute clinical
 acceptance: Shobhit/voice-team agreement and user/clinical-owner acceptance of the interim risk are
 required before merge/cutover. No consent or voice verification is claimed in this change.
+
+### K1 correction review — 3 October 2026
+
+The single-request knowledge boundary now validates the decision before optional metadata. A valid
+emergency/desk transfer survives malformed optional fields; those fields are dropped with a
+field-free event. Other malformed responses fail explicitly. Require JSON and bounded owner strings.
+Routing speech appears only in routing.speak, while answers and clarification use answer.text; the
+injected rules describe the actual next steps. Schema is 2026-10-03.2. No date-rule change.
+
+Scheduling-only configuration means both knowledge URL and bearer are empty; partial production
+configuration is rejected. Deployment supplies its expected knowledge state to smoke and removes an
+obsolete app secret reference only after removing the environment reference. These paths have offline
+tests; no cloud change was performed in the correction pass.
+
+The [LiveKit handover](handover/LIVEKIT.md) specifies a local raw-schema booking wrapper with immutable
+per-intent transport headers and the current-turn safety barrier, local callback capture into userdata,
+durable lifecycle finalization and a local transfer mechanism. These are voice-platform implementations
+to build and verify, not new adapter services. No classifier call has been restored inside scheduling.
+K1's residual risk and pending owner acceptance remain unchanged.
