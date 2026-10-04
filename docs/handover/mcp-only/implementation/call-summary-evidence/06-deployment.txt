@@ -1,0 +1,328 @@
+$ uv run --directory services/mcp pytest tests/test_deploy.py -q -k 'upgrading or gateway_verifies'
+FEE                                                                      [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_gateway_verifies_four_tools_and_refreshes_missing_discovery[False] _
+file /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/tests/test_deploy.py, line 236
+  @pytest.mark.parametrize("missing_summary", [False, True])
+  async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, missing_summary):
+      import asyncio
+
+      from frontdesk_mcp.server import create_app
+
+      from .conftest import serving
+
+      app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                       knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+      served = []
+      requests = []
+
+      def gateway(request):
+E       fixture 'h' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, make_settings, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/tests/test_deploy.py:236
+_ ERROR at setup of test_gateway_verifies_four_tools_and_refreshes_missing_discovery[True] _
+file /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/tests/test_deploy.py, line 236
+  @pytest.mark.parametrize("missing_summary", [False, True])
+  async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, missing_summary):
+      import asyncio
+
+      from frontdesk_mcp.server import create_app
+
+      from .conftest import serving
+
+      app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                       knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+      served = []
+      requests = []
+
+      def gateway(request):
+E       fixture 'h' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, make_settings, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/tests/test_deploy.py:236
+=================================== FAILURES ===================================
+_ test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env _
+
+tmp_path = PosixPath('/private/var/folders/6w/_5mz5z1s1cb0tsjf92rvg76w0000gn/T/pytest-of-garima/pytest-249/test_upgrading_an_existing_app0')
+
+    def test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env(tmp_path):
+        """AR-05: the live app has only agent-token/mcp-token; an update with new secretref names must first attach
+        the Key Vault references (and identity/registry access), else the revision fails to start."""
+        out = _dry_run(tmp_path, DEPLOY_ASSUME_EXISTING="1")
+        log = out.stderr
+        assert out.returncode == 0, log[-2000:]
+        secret_set = log.index("az containerapp secret set")
+        identity = log.index("az containerapp identity assign")
+        registry = log.index("az containerapp registry set")
+        update = log.index("az containerapp update -g")
+        assert secret_set < update and identity < update and registry < update, "attach secrets/identity before env"
+        secrets_line = [line for line in log.splitlines() if "az containerapp secret set" in line][0]
+        for name in ("mcp-token", "ops-client-id", "ops-client-secret", "knowledge-token"):
+            assert f"{name}=keyvaultref:" in secrets_line, name
+>       assert "mcp-lifecycle-token" not in log and "MCP_LIFECYCLE" not in log
+E       AssertionError: assert ('mcp-lifecycle-token' not in '\n== valida...md §tests.\n'
+E
+E         'mcp-lifecycle-token' is contained here:
+E           0574c1 -n mcp-lifecycle-token --file /var/folders/6w/_5mz5z1s1cb0tsjf92rvg76w0000gn/T/tmp.Waj9QslocL --encoding utf-8 -o none
+E         ?           +++++++++++++++++++
+E           (dry run: OPS_CLIENT_ID would be required on the first real run)
+E           + az keyvault secret set --vault-name kv-fd-demo-hospi-0574c1 -n ops-client-id --file /var/folders/6w/_5mz5z1s1cb0tsjf92rvg76w0000gn/T/tmp.q8cSx3rIAQ --encoding utf-8 -o none
+E           (dry run: OPS_CLIENT_SECRET would be required on the first real run)...
+E
+E         ...Full output truncated (30 lines hidden), use '-vv' to show)
+
+tests/test_deploy.py:177: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env
+ERROR tests/test_deploy.py::test_gateway_verifies_four_tools_and_refreshes_missing_discovery[False]
+ERROR tests/test_deploy.py::test_gateway_verifies_four_tools_and_refreshes_missing_discovery[True]
+1 failed, 33 deselected, 2 warnings, 2 errors in 2.04s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 16%]
+........................................................................ [ 32%]
+..............................EE........................................ [ 48%]
+........................................................................ [ 64%]
+........................................................................ [ 80%]
+........................................................................ [ 96%]
+...............                                                          [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_gateway_verifies_four_tools_and_refreshes_missing_discovery[False] _
+file /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/tests/test_deploy.py, line 236
+  @pytest.mark.parametrize("missing_summary", [False, True])
+  async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, missing_summary):
+      import asyncio
+
+      from frontdesk_mcp.server import create_app
+
+      from .conftest import serving
+
+      app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                       knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+      served = []
+      requests = []
+
+      def gateway(request):
+E       fixture 'h' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, make_settings, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/tests/test_deploy.py:236
+_ ERROR at setup of test_gateway_verifies_four_tools_and_refreshes_missing_discovery[True] _
+file /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/tests/test_deploy.py, line 236
+  @pytest.mark.parametrize("missing_summary", [False, True])
+  async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, missing_summary):
+      import asyncio
+
+      from frontdesk_mcp.server import create_app
+
+      from .conftest import serving
+
+      app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                       knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+      served = []
+      requests = []
+
+      def gateway(request):
+E       fixture 'h' not found
+>       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, make_settings, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/tests/test_deploy.py:236
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR tests/test_deploy.py::test_gateway_verifies_four_tools_and_refreshes_missing_discovery[False]
+ERROR tests/test_deploy.py::test_gateway_verifies_four_tools_and_refreshes_missing_discovery[True]
+445 passed, 11 deselected, 2 warnings, 2 errors in 23.75s
+make: *** [test-fast] Error 1
+EXIT: 2
+$ uv run --directory services/mcp pytest tests/test_deploy.py -q -k gateway_verifies
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_gateway_verifies_four_tools_and_refreshes_missing_discovery[False] ____
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...('POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109ee8980>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109e110f0>
+missing_summary = False
+
+    @pytest.mark.parametrize("missing_summary", [False, True])
+    async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, missing_summary):
+        import asyncio
+
+        from frontdesk_mcp.server import create_app
+
+        from .conftest import serving
+
+        app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                         knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+        served = []
+        requests = []
+
+        def gateway(request):
+            requests.append((request.method, request.url.path))
+            if request.url.path.endswith("/tools/refresh"):
+                return httpx.Response(200, json={})
+            discovered = served if len(requests) > 1 else [t for t in served if t["name"] != "record_call_summary"]
+            if missing_summary:
+                discovered = [t for t in discovered if t["name"] != "record_call_summary"]
+            return httpx.Response(200, json={"tools": [
+                {"name": f"frontdesk-demo-hospital-{t['name']}", "inputSchema": t["inputSchema"]} for t in discovered]})
+
+        async with serving(app) as base:
+            monkeypatch.setenv("MCP_PUBLIC_URL", f"{base}/mcp/")
+            monkeypatch.setenv("MCP_BEARER_TOKEN", "mcp-token")
+            served = await REGISTER["served_tools"](f"{base}/mcp/", "mcp-token")
+            with httpx.Client(base_url="https://gateway.example", transport=httpx.MockTransport(gateway)) as client:
+                if missing_summary:
+                    with pytest.raises(SystemExit, match="record_call_summary: not discovered"):
+                        await asyncio.to_thread(REGISTER["verify"], client, "gateway-id", "frontdesk-demo-hospital")
+                else:
+>                   await asyncio.to_thread(REGISTER["verify"], client, "gateway-id", "frontdesk-demo-hospital")
+
+tests/test_deploy.py:279:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <httpx.Client object at 0x109fa7770>, gateway_id = 'gateway-id'
+name = 'frontdesk-demo-hospital'
+
+    def verify(client: httpx.Client, gateway_id: str, name: str) -> None:
+        served = asyncio.run(served_tools(env("MCP_PUBLIC_URL"), env("MCP_BEARER_TOKEN")))
+        if sorted(t["name"] for t in served) != sorted(CONVERSATIONAL):
+>           raise SystemExit("the adapter does not serve exactly the three conversational tools to the gateway bearer")
+E           SystemExit: the adapter does not serve exactly the three conversational tools to the gateway bearer
+
+../../deploy/contextforge/register.py:121: SystemExit
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T02:58:29.772984+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [69822]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:29.773814+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:29.773965+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T02:58:29.788366+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:29.788653+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:63184 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:29.890833+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:29.993048+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:29.996229+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:29.996278+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [69822]", "provider": "demo-hospital"}
+____ test_gateway_verifies_four_tools_and_refreshes_missing_discovery[True] ____
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...('POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10a0c4410>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109f45bf0>
+missing_summary = True
+
+    @pytest.mark.parametrize("missing_summary", [False, True])
+    async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, missing_summary):
+        import asyncio
+
+        from frontdesk_mcp.server import create_app
+
+        from .conftest import serving
+
+        app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                         knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+        served = []
+        requests = []
+
+        def gateway(request):
+            requests.append((request.method, request.url.path))
+            if request.url.path.endswith("/tools/refresh"):
+                return httpx.Response(200, json={})
+            discovered = served if len(requests) > 1 else [t for t in served if t["name"] != "record_call_summary"]
+            if missing_summary:
+                discovered = [t for t in discovered if t["name"] != "record_call_summary"]
+            return httpx.Response(200, json={"tools": [
+                {"name": f"frontdesk-demo-hospital-{t['name']}", "inputSchema": t["inputSchema"]} for t in discovered]})
+
+        async with serving(app) as base:
+            monkeypatch.setenv("MCP_PUBLIC_URL", f"{base}/mcp/")
+            monkeypatch.setenv("MCP_BEARER_TOKEN", "mcp-token")
+            served = await REGISTER["served_tools"](f"{base}/mcp/", "mcp-token")
+            with httpx.Client(base_url="https://gateway.example", transport=httpx.MockTransport(gateway)) as client:
+                if missing_summary:
+>                   with pytest.raises(SystemExit, match="record_call_summary: not discovered"):
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AssertionError: Regex pattern did not match.
+E                     Expected regex: 'record_call_summary: not discovered'
+E                     Actual message: 'the adapter does not serve exactly the three conversational tools to the gateway bearer'
+
+tests/test_deploy.py:276: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T02:58:30.094885+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [69822]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:30.094978+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:30.095068+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T02:58:30.096222+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:30.096653+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:63191 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:30.197379+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:30.299598+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:30.300429+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:58:30.300488+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [69822]", "provider": "demo-hospital"}
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_gateway_verifies_four_tools_and_refreshes_missing_discovery[False]
+FAILED tests/test_deploy.py::test_gateway_verifies_four_tools_and_refreshes_missing_discovery[True]
+2 failed, 34 deselected, 2 warnings in 1.36s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 16%]
+........................................................................ [ 32%]
+........................................................................ [ 48%]
+........................................................................ [ 64%]
+........................................................................ [ 80%]
+........................................................................ [ 96%]
+...............                                                          [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+447 passed, 11 deselected, 2 warnings in 23.80s
+EXIT: 0

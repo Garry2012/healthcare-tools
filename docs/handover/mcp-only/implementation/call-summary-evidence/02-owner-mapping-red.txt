@@ -1,0 +1,456 @@
+$ uv run --directory services/mcp pytest tests/test_summary.py -k 'owner_statuses or another_call or unreadable or refusal_after or lost_write or untrusted_owner' -q --tb=short
+FFFFFFFFFFFFFFFFFFFFFFFFFF                                               [100%]
+=================================== FAILURES ===================================
+___ test_owner_statuses_are_mapped_without_returning_diagnostics[201-SAVED] ____
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'STORED'} != {'outcome': 'SAVED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': [],
+E      'nextStep': 'DONE',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 201 Created"
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[200-ALREADY_SAVED] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'ALREADY_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'CONFLICT'} != {'outcome': 'ALREADY_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'CALL_ID_ALREADY_USED',
+E      'fields': [],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 200 OK"
+WARNING  frontdesk_mcp.summary:summary.py:162 summary_call_id_already_used
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[202-NOT_CONFIRMED] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'CONFLICT'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'CALL_ID_ALREADY_USED',
+E      'fields': [],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 202 Accepted"
+WARNING  frontdesk_mcp.summary:summary.py:162 summary_call_id_already_used
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[400-INVALID_REQUEST] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...ryText'], ...} == {'outcome': '...summaryText']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'outcome': 'REJECTED'} != {'outcome': 'INVALID_REQUEST'}
+E     Left contains 4 more items:
+E     {'detail': 'VALIDATION_FAILED',
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 400 Bad Request"
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[401-NOT_SAVED] __
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'COULD_NOT_RECORD'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'AUTH',
+E      'fields': [],
+E      'nextStep': 'RECORD_FAILED',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 401 Unauthorized"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 401 Unauthorized"
+ERROR    frontdesk_mcp.ops_client:ops_client.py:329 ops_rejected_adapter_credentials
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[403-NOT_SAVED] __
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'COULD_NOT_RECORD'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'AUTH',
+E      'fields': [],
+E      'nextStep': 'RECORD_FAILED',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 403 Forbidden"
+ERROR    frontdesk_mcp.ops_client:ops_client.py:329 ops_rejected_adapter_credentials
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[404-NOT_CONFIRMED] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...ryText'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'REJECTED'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'VALIDATION_FAILED',
+E      'fields': ['summaryText'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 404 Not Found"
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[409-NOT_CONFIRMED] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...ryText'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'REJECTED'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'VALIDATION_FAILED',
+E      'fields': ['summaryText'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 409 Conflict"
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[429-NOT_CONFIRMED] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'COULD_NOT_RECORD'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'UPSTREAM',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 429 Too Many Requests"
+WARNING  frontdesk_mcp.ops_client:ops_client.py:332 ops_upstream_error
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[500-NOT_CONFIRMED] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'NO_VERIFIED_RESPONSE',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 500 Internal Server Error"
+WARNING  frontdesk_mcp.ops_client:ops_client.py:315 ops_write_server_error
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[502-NOT_CONFIRMED] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'NO_VERIFIED_RESPONSE',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 502 Bad Gateway"
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[503-NOT_CONFIRMED] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'NO_VERIFIED_RESPONSE',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 503 Service Unavailable"
+WARNING  frontdesk_mcp.ops_client:ops_client.py:315 ops_write_server_error
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[504-NOT_CONFIRMED] _
+tests/test_summary.py:149: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'NO_VERIFIED_RESPONSE',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/auth/token "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: POST http://ops-stub.test/api/v1/call-summaries "HTTP/1.1 504 Gateway Timeout"
+___ test_success_for_another_call_is_not_confirmed_and_logs_named_event[200] ___
+tests/test_summary.py:168: in test_success_for_another_call_is_not_confirmed_and_logs_named_event
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'CONFLICT'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'CALL_ID_ALREADY_USED',
+E      'fields': [],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.summary:summary.py:162 summary_call_id_already_used
+___ test_success_for_another_call_is_not_confirmed_and_logs_named_event[201] ___
+tests/test_summary.py:168: in test_success_for_another_call_is_not_confirmed_and_logs_named_event
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'STORED'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': [],
+E      'nextStep': 'DONE',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_______ test_unreadable_or_incomplete_success_is_not_confirmed[None-200] _______
+tests/test_summary.py:179: in test_unreadable_or_incomplete_success_is_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'MALFORMED_SUCCESS',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.ops_client:ops_client.py:339 ops_malformed_success
+_______ test_unreadable_or_incomplete_success_is_not_confirmed[None-201] _______
+tests/test_summary.py:179: in test_unreadable_or_incomplete_success_is_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'MALFORMED_SUCCESS',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.ops_client:ops_client.py:339 ops_malformed_success
+______ test_unreadable_or_incomplete_success_is_not_confirmed[body1-200] _______
+tests/test_summary.py:179: in test_unreadable_or_incomplete_success_is_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'MALFORMED_SUCCESS',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.ops_client:ops_client.py:347 ops_malformed_success
+______ test_unreadable_or_incomplete_success_is_not_confirmed[body1-201] _______
+tests/test_summary.py:179: in test_unreadable_or_incomplete_success_is_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'MALFORMED_SUCCESS',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.ops_client:ops_client.py:347 ops_malformed_success
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[400] ________
+tests/test_summary.py:188: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'NO_VERIFIED_RESPONSE',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.ops_client:ops_client.py:301 ops_write_unanswered
+WARNING  frontdesk_mcp.ops_client:ops_client.py:309 ops_write_retry_inconclusive
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[401] ________
+tests/test_summary.py:188: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'NO_VERIFIED_RESPONSE',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.ops_client:ops_client.py:301 ops_write_unanswered
+WARNING  frontdesk_mcp.ops_client:ops_client.py:309 ops_write_retry_inconclusive
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[403] ________
+tests/test_summary.py:188: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'NO_VERIFIED_RESPONSE',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.ops_client:ops_client.py:301 ops_write_unanswered
+WARNING  frontdesk_mcp.ops_client:ops_client.py:309 ops_write_retry_inconclusive
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[429] ________
+tests/test_summary.py:188: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'NO_VERIFIED_RESPONSE',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.ops_client:ops_client.py:301 ops_write_unanswered
+WARNING  frontdesk_mcp.ops_client:ops_client.py:309 ops_write_retry_inconclusive
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[503] ________
+tests/test_summary.py:188: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'UNCERTAIN'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': 'NO_VERIFIED_RESPONSE',
+E      'fields': [],
+E      'nextStep': 'RETRY_SAME_PAYLOAD',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.ops_client:ops_client.py:301 ops_write_unanswered
+WARNING  frontdesk_mcp.ops_client:ops_client.py:309 ops_write_retry_inconclusive
+________ test_lost_write_response_then_verified_replay_is_already_saved ________
+tests/test_summary.py:208: in test_lost_write_response_then_verified_replay_is_already_saved
+    assert result.model_dump(mode="json") == {"outcome": "ALREADY_SAVED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'ALREADY_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'REPLAYED'} != {'outcome': 'ALREADY_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': [],
+E      'nextStep': 'DONE',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.ops_client:ops_client.py:301 ops_write_unanswered
+______________ test_untrusted_owner_field_names_are_not_reflected ______________
+tests/test_summary.py:220: in test_untrusted_owner_field_names_are_not_reflected
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["callerMobile"]}
+E   AssertionError: assert {'outcome': '...Mobile'], ...} == {'outcome': '...allerMobile']}
+E
+E     Differing items:
+E     {'fields': ['Lakshmi Rao, 9000000101, asked for Dr. Garima tomorrow morning; callback promised.', 'callerMobile']} != {'fields': ['callerMobile']}
+E     {'outcome': 'REJECTED'} != {'outcome': 'INVALID_REQUEST'}
+E     Left contains 4 more items:
+E     {'detail': 'VALIDATION_FAILED',
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[201-SAVED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[200-ALREADY_SAVED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[202-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[400-INVALID_REQUEST]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[401-NOT_SAVED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[403-NOT_SAVED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[404-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[409-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[429-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[500-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[502-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[503-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[504-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_success_for_another_call_is_not_confirmed_and_logs_named_event[200]
+FAILED tests/test_summary.py::test_success_for_another_call_is_not_confirmed_and_logs_named_event[201]
+FAILED tests/test_summary.py::test_unreadable_or_incomplete_success_is_not_confirmed[None-200]
+FAILED tests/test_summary.py::test_unreadable_or_incomplete_success_is_not_confirmed[None-201]
+FAILED tests/test_summary.py::test_unreadable_or_incomplete_success_is_not_confirmed[body1-200]
+FAILED tests/test_summary.py::test_unreadable_or_incomplete_success_is_not_confirmed[body1-201]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[400]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[401]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[403]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[429]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[503]
+FAILED tests/test_summary.py::test_lost_write_response_then_verified_replay_is_already_saved
+FAILED tests/test_summary.py::test_untrusted_owner_field_names_are_not_reflected
+26 failed, 36 deselected, 2 warnings in 1.11s
+EXIT: 1
