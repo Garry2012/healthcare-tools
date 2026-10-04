@@ -267,11 +267,11 @@ class OpsClient:
             raise Unavailable("TRANSPORT") from exc
         return self._body(response, path)
 
-    async def _write(self, path: str, body: dict[str, Any], key: str, deadline: Deadline) -> tuple[int, Any]:
-        """POST with a frozen body and Idempotency-Key. At most one same-key retry: a request that never
-        left (connect failure) may be resent; a request that may have been committed is resent only because
-        the contract replays the same key, and if that also fails the result is uncertain, not a failure."""
-        headers = {"Idempotency-Key": key}
+    async def _write(self, path: str, body: dict[str, Any], key: str | None, deadline: Deadline) -> tuple[int, Any]:
+        """POST with a frozen body; bookings use Idempotency-Key, summaries use callId. One retry:
+        a request that never left may be resent. A possibly committed request is resent only because
+        the contract deduplicates it; if that also fails the result is uncertain, not a failure."""
+        headers = {"Idempotency-Key": key} if key is not None else {}
         sent = False  # once an attempt may have reached the owner, no later failure is definite
         for attempt in (1, 2):
             started = deadline.remaining()
@@ -409,7 +409,7 @@ class OpsClient:
         status, data = await self._write(path, body, key, deadline)
         return status, self._parse(contract.Appointment, data, "/appointments/{id}/reschedule")
 
-    async def create_call_summary(self, body: dict[str, Any], key: str, deadline: Deadline
+    async def create_call_summary(self, body: dict[str, Any], deadline: Deadline
                                   ) -> tuple[int, contract.CallSummary]:
-        status, data = await self._write("/call-summaries", body, key, deadline)
+        status, data = await self._write("/call-summaries", body, None, deadline)
         return status, self._parse(contract.CallSummary, data, "/call-summaries")

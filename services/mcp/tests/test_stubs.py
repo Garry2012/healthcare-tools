@@ -304,3 +304,17 @@ def test_fixture_data_is_contract_shaped():
         conforms(department, "Department")
     for doctor in data["doctors"]:
         conforms(doctor, "DoctorDetail")
+
+
+async def test_summary_ignores_supplied_idempotency_keys_and_keeps_first_call_body(ops):
+    state, http = ops
+    auth = {**await token(http), "Idempotency-Key": "same-key"}
+    body = {"callId": "first-call", "startedAt": "2026-10-01T09:58:00+05:30",
+            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "First answer."}
+    first = await http.post("/call-summaries", json=body, headers=auth)
+    second = await http.post("/call-summaries", json={**body, "callId": "second-call"}, headers=auth)
+    assert first.status_code == second.status_code == 201
+    repeated = await http.post("/call-summaries", json={**body, "summaryText": "Changed", "outcome": "ABANDONED"},
+                               headers={**auth, "Idempotency-Key": "different-key"})
+    assert repeated.status_code == 200 and repeated.json() == first.json()
+    assert len(state.summaries) == 2 and state.idempotency == {}

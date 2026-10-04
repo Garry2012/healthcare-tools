@@ -286,8 +286,8 @@ async def test_call_summary_distinguishes_stored_from_replayed(make_settings):
     body = {"callId": "call-1", "startedAt": "2026-10-01T10:00:00+05:30", "intent": "AVAILABILITY",
             "outcome": "CALLBACK_NOTED"}
     async with client_for(make_settings(), up) as client:
-        first = await client.create_call_summary(body, "k", dl(8.0))
-        second = await client.create_call_summary(body, "k", dl(8.0))
+        first = await client.create_call_summary(body, dl(8.0))
+        second = await client.create_call_summary(body, dl(8.0))
     assert first[0] == 201 and second[0] == 200 and second[1].id == "cs_1"
 
 
@@ -452,7 +452,7 @@ async def test_summary_writes_use_their_own_cap_not_the_in_call_share(make_setti
     assert settings.request_timeout_seconds == pytest.approx(0.30)
     async with ops_client.OpsClient(settings, transport=SlowTransport()) as client:
         deadline = Deadline(settings.summary_deadline_seconds, cap=settings.summary_deadline_seconds)
-        status, stored = await client.create_call_summary({"x": 1}, "k", deadline)
+        status, stored = await client.create_call_summary({"x": 1}, deadline)
     assert status == 201 and stored.id == "cs_1"
 
 
@@ -511,3 +511,15 @@ async def test_a_429_before_processing_stays_a_definite_unavailable(make_setting
     async with client_for(make_settings(), up) as client:
         with pytest.raises(ops_client.Unavailable):
             await client.create_appointment({"x": 1}, "key", dl(4.0))
+
+
+async def test_summary_retries_same_body_without_a_header_key(make_settings):
+    body = {"callId": "call-1", "startedAt": "2026-10-01T10:00:00+05:30",
+            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Opening hours explained."}
+    stored = {**body, "id": "cs_1", "createdAt": "2026-10-01T10:03:00+05:30"}
+    up = Upstream(responses=[httpx.ReadError("connection lost"), httpx.Response(200, json=stored)])
+    async with client_for(make_settings(), up) as client:
+        status, result = await client.create_call_summary(body, dl())
+    assert status == 200 and result.callId == "call-1"
+    assert len(up.api_requests()) == 2
+    assert all(json.loads(r.content) == body and "idempotency-key" not in r.headers for r in up.api_requests())

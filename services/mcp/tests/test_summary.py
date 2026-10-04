@@ -5,7 +5,6 @@ dropping them to fit 500 characters; a failed write is never reported as a saved
 
 from __future__ import annotations
 
-import hashlib
 import json
 
 import pytest
@@ -49,7 +48,7 @@ async def test_callback_summary_is_stored_with_trusted_timing_and_a_frozen_body(
                        "Asked for Dr. Garima tomorrow morning; board status UNKNOWN.",
     }
     assert "appointmentId" not in body and "transferredTo" not in body
-    assert request.headers["idempotency-key"] == hashlib.sha256(b"demo-hospital|summary|call-1").hexdigest()
+    assert "idempotency-key" not in request.headers
 
 
 async def test_replay_returns_the_original_unchanged(h):

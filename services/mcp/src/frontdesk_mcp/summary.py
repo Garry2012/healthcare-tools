@@ -8,7 +8,6 @@ conflicts. The owner's callId deduplication makes the first accepted summary fin
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 from typing import Any
@@ -42,10 +41,6 @@ class SummaryRequest(BaseModel):
     transferredTo: str | None = Field(default=None, max_length=64, description="Free text, ≤64 characters.")  # noqa: N815
     requestedDate: str | None = Field(  # noqa: N815
         default=None, max_length=10, description="YYYY-MM-DD the caller asked about (kept whole in the summary text).")
-
-
-def summary_key(provider: str, call_id: str) -> str:
-    return hashlib.sha256(f"{provider}|summary|{call_id}".encode()).hexdigest()
 
 
 def contract_language(tag: str | None) -> str | None:
@@ -135,11 +130,10 @@ class SummaryService:
         if fields := self._validate(request):
             return outcomes.SummaryResult(outcome="INVALID_REQUEST", nextStep="FIX_PLATFORM_INPUT", fields=fields)
         body = self.build_body(ctx, request)
-        key = summary_key(self.settings.provider_id, ctx.call_id)
         # After the call: its own budget and per-exchange cap, never the in-call share.
         deadline = Deadline(self.settings.summary_deadline_seconds, cap=self.settings.summary_deadline_seconds)
         try:
-            status, stored = await self.ops.create_call_summary(body, key, deadline)
+            status, stored = await self.ops.create_call_summary(body, deadline)
         except Rejected as exc:
             if exc.code == "IDEMPOTENCY_CONFLICT":
                 return outcomes.SummaryResult(outcome="CONFLICT", nextStep="FIX_PLATFORM_INPUT",
