@@ -279,7 +279,7 @@ async def test_idempotency_conflict_and_state_conflict_are_distinct_rejections(m
     assert str(up.api_requests()[1].url).endswith("/appointments/appt_1/cancel")
 
 
-async def test_call_summary_distinguishes_stored_from_replayed(make_settings):
+async def test_call_summary_preserves_created_and_existing_http_statuses(make_settings):
     stored = {"id": "cs_1", "callId": "call-1", "startedAt": "2026-10-01T10:00:00+05:30", "intent": "AVAILABILITY",
               "outcome": "CALLBACK_NOTED", "createdAt": "2026-10-01T10:03:00+05:30"}
     up = Upstream(responses=[httpx.Response(201, json=stored), httpx.Response(200, json=stored)])

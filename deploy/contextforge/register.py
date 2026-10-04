@@ -181,7 +181,7 @@ def main() -> None:
             created.raise_for_status()
             result = created.json()
             gateway_id = str(result.get("id"))
-            print(f"registered: {result.get('name')} ({gateway_id}), conversational tools: {', '.join(TOOLS)}")
+            print(f"registered: {result.get('name')} ({gateway_id}), tools: {', '.join(TOOLS)}")
         if not args.skip_verify:
             verify(client, gateway_id, args.name)
 

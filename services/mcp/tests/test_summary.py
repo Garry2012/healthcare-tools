@@ -153,6 +153,8 @@ async def test_owner_statuses_are_mapped_without_returning_diagnostics(h, status
         assert any(getattr(r, "fields", {}).get("reason") for r in logs)
     if status == 429:
         assert any(getattr(r, "fields", {}).get("retryAfterSeconds") == 12 for r in logs)
+    if status in (202, 404, 409):
+        assert any(getattr(r, "fields", {}).get("httpStatus") == status for r in logs)
     if status == 201:
         assert any(getattr(r, "fields", {}).get("summaryId") == "cs_1" for r in logs)
     text = "\n".join(JsonFormatter().format(r) for r in caplog.records)

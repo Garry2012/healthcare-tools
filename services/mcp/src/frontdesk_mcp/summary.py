@@ -88,10 +88,12 @@ class SummaryService:
 
     @staticmethod
     def _failure(ctx: CallContext, outcome: outcomes.SummaryOutcome, reason: str,
-                 retry_after: int | None = None) -> outcomes.SummaryResult:
+                 retry_after: int | None = None, *, status: int | None = None) -> outcomes.SummaryResult:
         event = "summary_call_id_mismatch" if reason == "CALL_ID_MISMATCH" else "summary_write_unverified"
-        logger.warning(event, extra={"fields": {"callId": ctx.call_id, "outcome": outcome,
-                                                 "reason": reason, "retryAfterSeconds": retry_after}})
+        fields = {"callId": ctx.call_id, "outcome": outcome, "reason": reason, "retryAfterSeconds": retry_after}
+        if status is not None:
+            fields["httpStatus"] = status
+        logger.warning(event, extra={"fields": fields})
         return outcomes.SummaryResult(outcome=outcome)
 
     async def record(self, ctx: CallContext, request: SummaryRequest) -> outcomes.SummaryResult:
@@ -108,7 +110,7 @@ class SummaryService:
             if exc.status == 400:
                 allowed = set(SummaryRequest.model_fields) | {"callId", "startedAt"}
                 return outcomes.SummaryResult(outcome="INVALID_REQUEST", fields=sorted(set(exc.fields) & allowed))
-            return self._failure(ctx, "NOT_CONFIRMED", "UNEXPECTED_STATUS")
+            return self._failure(ctx, "NOT_CONFIRMED", "UNEXPECTED_STATUS", status=exc.status)
         except UncertainWrite:
             return self._failure(ctx, "NOT_CONFIRMED", "NO_VERIFIED_RESPONSE")
         except Malformed:
@@ -117,7 +119,7 @@ class SummaryService:
             outcome = "NOT_SAVED" if exc.reason == "AUTH" else "NOT_CONFIRMED"
             return self._failure(ctx, outcome, exc.reason, exc.retry_after)
         if status not in (200, 201):
-            return self._failure(ctx, "NOT_CONFIRMED", "UNEXPECTED_STATUS")
+            return self._failure(ctx, "NOT_CONFIRMED", "UNEXPECTED_STATUS", status=status)
         if stored.callId != ctx.call_id:
             return self._failure(ctx, "NOT_CONFIRMED", "CALL_ID_MISMATCH")
         if status == 201:
