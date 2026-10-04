@@ -18,7 +18,8 @@ The application before this work had three MCP tools, our REST backend and Postg
 
 [VOICE-TEAM.md](../VOICE-TEAM.md) defines the four MCP tools and their interface. Voice prompts,
 behaviour, guardrails and SDK wiring are owned by the voice team. The original Fable assignment is a
-dated historical artifact, not current integration guidance.
+dated historical artifact, not current integration guidance. The current summary contract is the
+LLM-called, single-gateway-bearer interface in DECISIONS.md S1, with evidence under implementation/.
 
 ## Read in this order
 
@@ -66,7 +67,7 @@ make demo                  # walk the four tools against the development stubs
 - **Existing main CI is failing.** At source baseline `7e20b4459d0a58422bf3b5ba40a670be94b758f5`, [CI run 36571571806](https://github.com/Garry2012/healthcare-tools/actions/runs/36571571806) failed `test_mcp_offers_every_bookable_position_of_a_session`: the old tool omitted 4 of 7 bookable positions. It reported 50 other MCP tests passing. This predates the handover and is not concealed by changing tests or CI. The migration must preserve complete results or explicitly report incompleteness, although old slot semantics will be retired.
 - The pinned Manoj spec has known schema defects. Preserve the original; prefer an owner correction, or the plan's labelled quoting-only test overlay. No overlay or new stub implementation is supplied in this documentation change.
 - Shobhit's endpoint/schema/auth contract has not been supplied. Proposed fixture behavior must remain labelled provisional.
-- Real service hosts, machine credentials/scopes, caller-verification agreements, replay/board details, gateway lifecycle controls and actual latency measurements remain external dependencies. Credentials are obtained securely, never committed. The public mock does not prove a live working backend.
+- Real service hosts, machine credentials/scopes, caller-verification agreements, replay/board details, gateway access controls and actual latency measurements remain external dependencies. Credentials are obtained securely, never committed. The public mock does not prove a live working backend.
 - No database migration, deployment, cloud cleanup or external service write is part of publishing this handover. Historical data handoff and resource retirement need owner coordination later.
 
 Everything available and necessary for **reviewing and starting** the agreed implementation is tracked here. The missing owner contracts and production evidence cannot be supplied by copying workspace artifacts into Git.

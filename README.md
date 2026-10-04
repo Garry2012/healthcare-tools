@@ -9,7 +9,7 @@ Caller ⇄ LiveKit voice agent (STT, LLM, TTS)
         IBM ContextForge gateway
              ⇅
         frontdesk-mcp (services/mcp): get_doctor_availability · manage_booking · search_knowledge
-                                       record_call_summary (call-end lifecycle bearer only)
+                                       record_call_summary (same gateway bearer)
             /                       \
    HTTPS, machine OAuth              HTTPS, bearer
  Manoj's operational API           Shobhit's knowledge service
@@ -37,7 +37,7 @@ cp .env.example .env && make up   # adapter + stubs on 127.0.0.1:8100 / :8200 / 
 ```
 
 Environments: `eval "$(scripts/env.sh mock)"` (public contract mock, integration tests) or `live` (Manoj's API,
-blank until he supplies the base URL) — see `deploy/environments/README.md`. Deploy with
+configured in the live profile) — see `deploy/environments/README.md`. Deploy with
 `deploy/azure/deploy.sh rollouts/demo-hospital --profile live --dry-run`. Register the adapter in ContextForge:
 `cd services/mcp && uv run python ../../deploy/contextforge/register.py --dry-run`.
 

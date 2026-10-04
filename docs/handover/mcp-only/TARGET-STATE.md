@@ -17,7 +17,7 @@ flowchart TB
   K <--> KD[Shobhit-owned storage]
 ```
 
-The LLM chooses a tool and arguments; the LiveKit runtime/MCP client executes the request through the gateway. Results return along that path for the voice agent to speak. The call-end lifecycle invokes `record_call_summary` separately from ordinary conversational model selection. The four tools remain `get_doctor_availability`, `manage_booking`, `search_knowledge`, and `record_call_summary`.
+The LLM chooses a tool and arguments; the LiveKit runtime/MCP client executes the request through the gateway. Results return along that path for the voice agent to speak. The LLM can select `record_call_summary` through the same authenticated gateway as the other tools. The four tools remain `get_doctor_availability`, `manage_booking`, `search_knowledge`, and `record_call_summary`.
 
 **External service dependencies remain; external implementation dependencies must not.** Calling their APIs requires available services, configured URLs and credentials. It must never require their source checkout, database access, migrations, server image, internal Python packages or implementation SDKs. Each owner supplies a versioned Swagger/OpenAPI interface as the integration authority. Required behavior, errors, auth/scopes and replay semantics must be documented there or in explicitly referenced contract documentation; an endpoint list alone does not establish those guarantees.
 
@@ -39,7 +39,7 @@ Code removal alone does not finish this migration. Follow the [Azure inventory a
 
 Completion requires:
 
-1. External integrations pass consumer and real-service checks; exactly four intended tools are registered with correct lifecycle access.
+1. External integrations pass consumer and real-service checks; exactly four intended tools are registered with gateway authentication.
 2. The old backend source, dependency declarations, database/migration/seed tooling, active legacy setup instructions and automation are removed or explicitly historical as appropriate. No active fallback or import can reach them.
 3. A clean checkout builds and runs mandatory tests/CI without the old API, database or private workspace files. Required suites must not silently skip. Current legacy defects must have relevant consumer coverage after the old slot semantics are retired.
 4. Obsolete Azure API apps/revisions, backend jobs, images, database assets, credentials and access grants are retired after cutover and any required data handoff. Shared resources retain a named owner and purpose, or are separated before removal. Delete an obsolete resource group only after every contained resource is retired or relocated.
@@ -54,7 +54,7 @@ The user's requirement includes future cloud cleanup. This documentation update 
 parameter formats and conditional requirements, output fields, outcome/nextStep meanings, transport,
 authentication and trusted headers. Its field tables are tested against the pinned MCP schema.
 
-The adapter retains input validation, confirmed-write requirements, identity/lifecycle authorization,
+The adapter retains input validation, confirmed-write requirements, trusted identity and gateway authorization,
 compact structured results, idempotency and error semantics. Descriptions and server metadata contain
 facts only. Prompt design, spoken wording, guardrails, tool-selection strategy and LiveKit integration
 are outside this repository. MCP carries no model-specific client or application implementation.
@@ -73,7 +73,7 @@ To keep the adapter thin and fast:
 - Reuse async HTTP connections and warm tokens; bound request/response sizes and fan-out. Cache only permitted stable directory/profile data, not current board truth or stale knowledge answers.
 - Overlap independent Manoj reads. Once the doctor is resolved, profile and board can run together. An appointment write requires caller confirmation and a current board check. Search-dependent reads cannot all be called parallel by assumption.
 - Keep the gateway, MCP and owner services close enough in network terms to meet the measured budget. Bound cold-start delays with the chosen hosting setup; include cold starts in reporting.
-- Keep summaries and durable retry work after the call in platform infrastructure. Do not add a database/queue backend to MCP or retry long writes during speech turns. Cancelling a local request does not prove a remote appointment was undone.
+- Summaries have a separate default 8-second deadline and may be selected by the LLM; their timing is the voice application's responsibility. Durable retries belong to platform infrastructure; no database/queue backend belongs in MCP. Cancelling a local request does not prove a remote appointment was undone.
 - Measure the gateway separately and trace the entire LiveKit path. Owner API latency and any knowledge-service LLM work count against the same response budget. If either service is too slow, negotiate placement/contract performance with its owner; do not copy its implementation into MCP or invent local interpretation.
 
 Real-host MCP measurements still require declared concurrency, cold/warm token state and useful

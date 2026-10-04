@@ -17,13 +17,14 @@ LiveKit voice agent ──MCP + trusted call headers──▶ ContextForge ─�
 |---|---|---|
 | A1 | One deployment per rollout; tenant identity (timezone, calling code, languages) has no default | A wrong default is a wrong hospital |
 | A2 | Four task-level tools; directory, profile and board composed inside one availability call | Fewer model decisions, one round-trip budget |
-| A3 | Trusted context in headers only; principal from the bearer only | Model arguments are untrusted; client-side hiding is not authorization |
+| A3 | Trusted context in headers only; gateway authentication for all four tools | Model arguments are untrusted; client-side hiding is not authorization |
 | A4 | LLM-selected knowledge tool; voice platform owns every-turn emergency detection; no knowledge gates in scheduling | Shobhit owns clinical routing |
 | A5 | UNKNOWN board → callback-only outcome; failed board → COULD_NOT_CHECK | User-fixed policy; failures are never "no availability" |
 | A6 | NOTED, never confirmed; no slot, capacity or arrival computation | The owner contract has no slots |
-| A7 | Frozen write body keyed by sha256(tenant\|call\|action\|operation); UNCERTAIN as a distinct outcome; one same-key retry within the deadline | Lost responses must not mint new intents |
+| A7 | Frozen booking body keyed by sha256(tenant\|call\|action\|operation); UNCERTAIN as a distinct outcome; one same-key retry within the deadline | Lost responses must not mint new intents |
 | A8 | One deadline per invocation covering auth, every call and any retry; warm single-flight token cache; bounded directory cache; board never cached | Voice latency |
 | A9 | Pinned owner contract (hash + quoting-only test overlay) and client-side types asserted by tests; development stubs outside the image; production refuses stub hosts | Contract drift and shadow backends fail loudly |
+| A11 | LLM-called whole-call summary; exact text ≤500; first accepted call ID final; no header idempotency key | Owner contract deduplicates summaries by call ID; five honest outcomes; independent default 8 s deadline |
 | A10 | Pinned tool schema snapshot and `SCHEMA_VERSION`; gateway discovery verified against the adapter | Gateway/voice caches are refreshed deliberately |
 
 ## Latency

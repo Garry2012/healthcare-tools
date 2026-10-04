@@ -9,7 +9,7 @@ history before the MCP-only migration (October 2026) and no longer applies.
 
 | Library (pinned) | Used for | Why this one | Fallback |
 |---|---|---|---|
-| fastmcp 2.14.7, mcp 1.30.0 | MCP server: tools, middleware (lifecycle gate), streamable HTTP | Matches the deployed stack; tags + middleware give a server-side access boundary | The `mcp` SDK's FastMCP directly |
+| fastmcp 2.14.7, mcp 1.30.0 | MCP server: tools and streamable HTTP | Matches the adapter stack; ASGI bearer authentication covers all tools | The `mcp` SDK's FastMCP directly |
 | starlette 1.7.0, uvicorn 0.53.0 | ASGI assembly (/health, /ready, /dependencies, bearer middleware) | FastMCP's own base | — |
 | httpx 0.28.1 | Pooled async clients to both owner services; MockTransport/ASGITransport at the boundary in tests | Explicit timeouts, per-request deadline caps, transport injection | aiohttp |
 | pydantic 2.13.5, pydantic-settings 2.15.0 | Contract types, result envelopes, settings with production guards | Shared with FastMCP; output schemas come from the models | — |
@@ -47,7 +47,7 @@ The single-request knowledge boundary now validates the decision before optional
 emergency/desk transfer survives malformed optional fields; those fields are dropped with a
 field-name-only event. Other malformed responses fail explicitly. Require JSON and bounded owner strings.
 Routing speech appears only in routing.speak, while answers and clarification use answer.text; the
-tool contract describes the result codes. Current schema is 2026-10-03.3; date validation is unchanged.
+tool contract describes the result codes. Schema at that review was 2026-10-03.3; date validation is unchanged.
 
 Scheduling-only configuration means both knowledge URL and bearer are empty; partial production
 configuration is rejected. Deployment supplies its expected knowledge state to smoke and removes an
@@ -70,3 +70,38 @@ including existing callback text fields. Date accepts today or YYYY-MM-DD; other
 unsupported. This text change does not decide future date interpretation. Clinical/application design,
 voice implementation and their acceptance remain outside this repository; no owner consent or deployed
 behaviour is asserted by publishing this contract.
+
+## S1 — One LLM-called summary of the whole call (4 October 2026)
+
+Context: the previous summary interface required a separate call-end credential and composed callback
+fields into text. The approved interface now makes all four tools available to the model through one
+gateway bearer; the separate summary principal, gate and token configuration are removed.
+
+Decision: summaryText is required, nonblank and at most 500 characters, sent exactly as written.
+It holds the whole conversation, including relevant names, callback details, symptoms, doctor,
+department and requested date/time. No separate callerName or requestedDate summary arguments remain.
+The other seven arguments mirror Manoj's fields; language maps en/kn/hi to EN/KN/HI. Trusted call ID and
+start time come only from headers. No duration is sent. CALLBACK_NOTED requires a valid callback
+mobile and excludes appointment/transfer fields; it creates no appointment or callback task.
+
+The result contains only outcome, plus fields for INVALID_REQUEST: SAVED (verified 201), ALREADY_SAVED
+(verified 200 for our call ID), INVALID_REQUEST, NOT_CONFIRMED, or NOT_SAVED. Both success responses
+must parse as CallSummary and belong to our call. An existing summary is final even when a repeat
+request differs. There is no Idempotency-Key on summaries; Manoj's call-ID deduplication is authoritative.
+Booking key semantics remain unchanged. One same-body retry after an unanswered send remains bounded
+by the summary deadline. All writes retain 401-only token refresh; definite 403 is not retried.
+
+The advertised maxLength is 500, set once after tool registration. The existing outer argument cap
+remains 2000 so 501–2000 characters reach service validation and return in-band INVALID_REQUEST.
+There is no custom validation boundary. Wrong-type log privacy is tested; framework protocol error
+redaction is not claimed by that test (see handover/mcp-only/implementation/CALL-SUMMARY-HAND-BACK.md).
+
+Rejected: a second bearer/access path, server text composition or trimming, a parallel retry engine,
+and 403-triggered token refresh. Summary work retains its own default 8-second deadline; its availability
+to the LLM does not make it a 300 ms operation. Voice timing/tool selection and a final whole-call
+payload belong to the consuming application. No database, queue or provider fallback is added.
+
+Consequences: breaking tool schema and access change, requiring coordinated MCP/gateway/voice refresh.
+Schema bumps: 2026-10-03.3 → 2026-10-04.1 for summary request/result, then → 2026-10-04.2 for gateway
+access metadata. Live verification still requires calls.write and an owner-designated synthetic tenant.
+The old deployment secret remains untouched until separately authorized retirement.
