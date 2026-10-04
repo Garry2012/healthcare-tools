@@ -1,0 +1,186 @@
+{
+  "gatewayId": "d939402fbd1a4fb5930db984906026e4",
+  "serverId": "19d78ceb97994906b0c7f1990c7e3b58",
+  "visibility": "team",
+  "teamId": "b428418d7bd54486b48f0e84b51a11af",
+  "virtualMcpUrl": "https://mcp-gateway.icytree-6543aaa9.centralindia.azurecontainerapps.io/servers/19d78ceb97994906b0c7f1990c7e3b58/mcp",
+  "verifiedUsing": "admin session; voice-client scoped access not tested",
+  "schemasMatch": true,
+  "tools": [
+    {
+      "id": "4903d7bec9634b36961864a3cdbb0782",
+      "name": "frontdesk-healthcare-canary-record-call-summary",
+      "originalName": "record_call_summary",
+      "inputSchemaSha256": "32536333b90837df9a380f0370b1508478b3f34a41091e4d8e4252b1c2c19e11",
+      "outputSchemaSha256": "eb4673fea321f735c476ce884a19faa0c12354da44d11de8b0431d889e6a7819"
+    },
+    {
+      "id": "2260b313bf0140038a7d9798aeae9716",
+      "name": "frontdesk-healthcare-canary-search-knowledge",
+      "originalName": "search_knowledge",
+      "inputSchemaSha256": "a8da45a82f0916d4d84d5aa6e4bf93647ff96e5bf0f63444a13b728778d62a45",
+      "outputSchemaSha256": "605e61126b9e281fa5797380da6bdc9a2a9c4a42f3c3b7d842d9a99cb84bc11f"
+    },
+    {
+      "id": "42c470c3a67f450782b2264e3bb324f4",
+      "name": "frontdesk-healthcare-canary-manage-booking",
+      "originalName": "manage_booking",
+      "inputSchemaSha256": "6ac7d30a790df2404326e1c4db213e916a6b0b1c6004d5bb5a21619ad8659f1b",
+      "outputSchemaSha256": "097c302f4a57c5dfa60f09632dfe41e04be3b54ed74ba421242baa831208d26c"
+    },
+    {
+      "id": "21145752d9294f26bf7f2bfb0d468769",
+      "name": "frontdesk-healthcare-canary-get-doctor-availability",
+      "originalName": "get_doctor_availability",
+      "inputSchemaSha256": "1fe77a0df0fe2837096c802e3a3bc51c2e6012ff329be10ff79c449a37a674f7",
+      "outputSchemaSha256": "0873093c675e1bd0eb16744fceaeee499a2857c5901a815ea0820747e4371a12"
+    }
+  ],
+  "summaryGatewayRow": {
+    "id": "4903d7bec9634b36961864a3cdbb0782",
+    "name": "frontdesk-healthcare-canary-record-call-summary",
+    "originalName": "record_call_summary",
+    "inputSchema": {
+      "properties": {
+        "intent": {
+          "enum": [
+            "AVAILABILITY",
+            "BOOKING",
+            "RESCHEDULE",
+            "CANCEL",
+            "GENERAL_INFO",
+            "LAB",
+            "INSURANCE",
+            "EMERGENCY",
+            "AMBULANCE",
+            "SYMPTOM_ROUTING",
+            "COMPLAINT",
+            "ADMIN",
+            "OTHER"
+          ],
+          "type": "string",
+          "description": "Required call-intent category."
+        },
+        "outcome": {
+          "enum": [
+            "RESOLVED_BY_AGENT",
+            "APPOINTMENT_NOTED",
+            "APPOINTMENT_CANCELLED",
+            "APPOINTMENT_RESCHEDULED",
+            "TRANSFERRED",
+            "EMERGENCY_TRANSFERRED",
+            "AMBULANCE_NUMBER_GIVEN",
+            "CALLBACK_NOTED",
+            "ABANDONED"
+          ],
+          "type": "string",
+          "description": "Required hospital-facing call outcome category."
+        },
+        "summaryText": {
+          "maxLength": 500,
+          "type": "string",
+          "description": "Required. Summary of the whole call in plain sentences, up to 500 characters: what the caller asked, what was explained or done, and any follow-up promised. Contains all relevant information mentioned in the call, including: the caller's name, the callback phone number, the symptoms or reason the caller described, the doctor's name, the department, and the requested date and time. Not a transcript."
+        },
+        "callerMobile": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID."
+        },
+        "language": {
+          "anyOf": [
+            {
+              "maxLength": 16,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional call language; en, kn and hi primary codes map to the operational contract. Other codes are omitted upstream."
+        },
+        "doctorId": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional identifier of the doctor associated with the call."
+        },
+        "appointmentId": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional identifier of the appointment request associated with the call."
+        },
+        "transferredTo": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional destination associated with a transfer outcome."
+        }
+      },
+      "required": [
+        "intent",
+        "outcome",
+        "summaryText"
+      ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "outcome": {
+          "enum": [
+            "SAVED",
+            "ALREADY_SAVED",
+            "INVALID_REQUEST",
+            "NOT_CONFIRMED",
+            "NOT_SAVED"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "title": "SummaryResult",
+      "type": "object"
+    },
+    "description": "Store one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials."
+  }
+}

@@ -1,6 +1,22 @@
 # IBM ContextForge integration
 
-## Verified state — 2 October 2026
+## Verified deployment — 4 October 2026
+
+The merged call-summary release is deployed to the existing canary. Registration
+`frontdesk-healthcare-canary` and virtual server `frontdesk-healthcare` now expose all four tools,
+including `record_call_summary`, under their existing team visibility. Five passthrough headers
+are configured. Actual input/output schemas and descriptions match the adapter (schema `2026-10-04.2`).
+
+Voice-facing URL:
+`https://mcp-gateway.icytree-6543aaa9.centralindia.azurecontainerapps.io/servers/19d78ceb97994906b0c7f1990c7e3b58/mcp`
+
+Admin-session discovery and a refused context-free summary call passed. Scoped voice-client
+access and successful owner writes still require acceptance. Initial discovery omitted the new
+summary output schema; an explicit gateway refresh populated it. Inspect output schemas too:
+the registration helper's automatic comparison covers inputs only. See
+[release evidence](mcp-only/implementation/CALL-SUMMARY-RELEASE.md).
+
+## Historical inspection — 2 October 2026
 
 An existing **ContextForge 1.0.11** instance is running in `healthcare-rg`. Authenticated inspection
 found no registered backends or virtual servers. This review read its version and OpenAPI; it did
@@ -11,7 +27,7 @@ not register anything or change Azure settings. Do not provision a second gatewa
 | Gateway base | `https://mcp-gateway.icytree-6543aaa9.centralindia.azurecontainerapps.io` |
 | Upstream MCP URL | `https://mcp-demo-hospital-canary.icytree-6543aaa9.centralindia.azurecontainerapps.io/mcp/` |
 | Transport | `STREAMABLEHTTP` |
-| Backend registration name | `frontdesk-demo-hospital` |
+| Existing backend registration name (verified 4 October) | `frontdesk-healthcare-canary` |
 | Upstream bearer | Current `mcp-token` in `kv-fd-demo-hospi-0574c1` |
 | Existing admin access | Email from gateway `PLATFORM_ADMIN_EMAIL`; password reference `mcpgw-platform-admin-password` in that vault |
 
@@ -53,8 +69,8 @@ For shared team access also supply the existing `CONTEXTFORGE_TEAM_ID`.
 
 ```bash
 eval "$(scripts/rollout-env.sh rollouts/demo-hospital)"
-uv run --project services/mcp python deploy/contextforge/register.py --visibility team --dry-run
-uv run --project services/mcp python deploy/contextforge/register.py --visibility team
+uv run --project services/mcp python deploy/contextforge/register.py --name frontdesk-healthcare-canary --visibility team --dry-run
+uv run --project services/mcp python deploy/contextforge/register.py --name frontdesk-healthcare-canary --visibility team
 ```
 
 The script POSTs `/v1/gateways` with the live schema's `authType`, `authToken`, `passthroughHeaders`
@@ -133,4 +149,4 @@ ALREADY_SAVED without overwriting. The application supplies a complete whole-cal
 partial snapshots. The summary budget defaults to 8 seconds, separate from the scheduling allocation.
 Rollback needs matching MCP image, gateway discovery and voice schema; the previous image expects
 separate summary authentication. Do not reactivate it with only the new single-token configuration.
-No registration, token rotation or cloud-secret deletion was performed by this documentation update.
+The 4 October deployment refreshed the existing registration; it did not rotate tokens or delete Key Vault secrets.

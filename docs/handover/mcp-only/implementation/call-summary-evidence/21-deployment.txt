@@ -1,0 +1,58 @@
+$ deploy/azure/deploy.sh rollouts/demo-hospital --profile live
+== verify: latest revision ready, dependencies, authentication, four tools
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+  from ._compat import httpx2
+knowledge: NOT_CONFIGURED; scheduling verified, knowledge integration remains pending
+Deployment smoke passed: readiness, dependency status, authentication, four tools, read-only availability and knowledge status checks.
+
+== done: demo-hospital
+MCP adapter:      https://mcp-demo-hospital-canary.<environment domain>/mcp/
+Gateway bearer:   Key Vault kv-fd-demo-hospi-0574c1 secret mcp-token            (ContextForge / voice agent, four tools)
+Next:             register with ContextForge (deploy/contextforge/register.py), then AZURE.md §tests.
+EXIT: 0
+
+$ az containerapp show (safe projection: revision, image, traffic, env/secret names)
+{
+  "envNames": [
+    "ENV",
+    "HOST",
+    "PORT",
+    "OPS_BASE_URL",
+    "OPS_CLIENT_ID",
+    "OPS_CLIENT_SECRET",
+    "KNOWLEDGE_BASE_URL",
+    "MCP_BEARER_TOKEN",
+    "PROVIDER_ID",
+    "DOMAIN_PACK",
+    "TENANT_TIMEZONE",
+    "TENANT_COUNTRY_CALLING_CODE",
+    "TENANT_SUPPORTED_LANGUAGES",
+    "KNOWLEDGE_BEARER_TOKEN"
+  ],
+  "image": "acrfd399536.azurecr.io/frontdesk-mcp:e96242f",
+  "latest": "mcp-demo-hospital-canary--0000002",
+  "ready": "mcp-demo-hospital-canary--0000002",
+  "secretNames": [
+    "mcp-lifecycle-token",
+    "mcp-token",
+    "ops-client-id",
+    "ops-client-secret"
+  ],
+  "traffic": [
+    {
+      "latestRevision": true,
+      "weight": 100
+    }
+  ]
+}
+
+$ ContextForge complete schema comparison and virtual-server probe
+already registered: frontdesk-healthcare-canary (d939402fbd1a4fb5930db984906026e4)
+verified: gateway tools match the adapter (get_doctor_availability, manage_booking, search_knowledge, record_call_summary)
+Real ContextForge complete input/output schemas and descriptions match all four adapter tools
+Virtual server discovers all four tools (admin verification, not voice-client scope proof)
+Virtual summary without trusted call context: {'outcome': 'NOT_SAVED'}
+EXIT: 0
