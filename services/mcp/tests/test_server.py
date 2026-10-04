@@ -143,8 +143,8 @@ async def test_the_whole_journey_over_http(served):
         stored = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_CANCELLED", "appointmentId": appointment_id,
             "summaryText": "Requested, moved and cancelled an appointment with Dr. Garima."})).structured_content
-        assert stored["outcome"] == "STORED"
-    assert h.ops_state.summaries["call-1"]["durationSeconds"] == 240
+        assert stored == {"outcome": "SAVED"}
+    assert "durationSeconds" not in h.ops_state.summaries["call-1"]
 
 
 async def test_the_model_cannot_supply_identity_or_lifecycle_fields(served):
@@ -398,10 +398,37 @@ def test_interface_describes_every_outcome_and_next_step():
               "search_knowledge": outcomes.KnowledgeResult, "record_call_summary": outcomes.SummaryResult}
     expected = set()
     for name, model in models.items():
-        for field in ("outcome", "nextStep"):
+        for field in ("outcome", "nextStep") if name != "record_call_summary" else ("outcome",):
             for value in get_args(model.model_fields[field].annotation):
                 key = f"{name}.{field}.{value}"
                 expected.add(key)
                 assert key in rows and len(rows[key]) == 1 and rows[key][0], f"undocumented meaning: {key}"
     actual = {key for key in rows if ".outcome." in key or ".nextStep." in key}
     assert actual == expected
+
+
+@pytest.mark.parametrize("length", [501, 2000])
+async def test_summary_length_is_an_in_band_invalid_request(served, length):
+    base, h = served
+    async with client(base, token="lifecycle-token", started_at="2026-10-01T09:58:00+05:30") as c:
+        result = await c.call_tool("record_call_summary", {
+            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "x" * length},
+            raise_on_error=False)
+        tool = next(t for t in await c.list_tools() if t.name == "record_call_summary")
+    assert not result.is_error
+    assert result.structured_content == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+    assert tool.inputSchema["properties"]["summaryText"]["maxLength"] == 500
+    assert not h.ops_state.summaries
+
+
+async def test_wrong_type_summary_does_not_log_private_input(served, caplog, capsys):
+    base, h = served
+    private = "NAME42 9000000123 SYMPTOM42"
+    async with client(base, token="lifecycle-token", started_at="2026-10-01T09:58:00+05:30") as c:
+        result = await c.call_tool("record_call_summary", {
+            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": {"private": private}},
+            raise_on_error=False)
+    captured = capsys.readouterr()
+    for marker in private.split():
+        assert marker not in caplog.text + captured.out + captured.err
+    assert result.is_error and not h.ops_state.summaries

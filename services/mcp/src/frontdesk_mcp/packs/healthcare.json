@@ -43,18 +43,16 @@
       }
     },
     "record_call_summary": {
-      "description": "Store the completed call's hospital-facing summary. Available only to the lifecycle bearer. Call identity and timing come from trusted headers. CALLBACK_NOTED records callback contact details after UNKNOWN availability; it does not create an appointment or a separate callback task. STORED is a new summary; REPLAYED is the existing result for the same call and payload; UNCERTAIN means persistence could not be verified.",
+      "description": "Store one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task.\nSAVED: a new summary was stored.\nALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs.\nINVALID_REQUEST: input validation failed; fields identifies rejected fields.\nNOT_CONFIRMED: persistence is unverified or temporarily unavailable.\nNOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.",
       "parameters": {
         "intent": "Required call-intent category.",
         "outcome": "Required hospital-facing call outcome category.",
-        "summaryText": "Required nonblank call summary, up to 2000 input characters. Stored text is limited to 500 characters including preserved callback metadata.",
-        "callerName": "Caller-provided name; required for CALLBACK_NOTED, optional otherwise.",
-        "callerMobile": "Optional caller-provided 10-digit callback number; required for CALLBACK_NOTED. Distinct from caller ID.",
+        "summaryText": "Required. Summary of the whole call in plain sentences, up to 500 characters: what the caller asked, what was explained or done, and any follow-up promised. Contains all relevant information mentioned in the call, including: the caller's name, the callback phone number, the symptoms or reason the caller described, the doctor's name, the department, and the requested date and time. Not a transcript.",
+        "callerMobile": "Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID.",
         "language": "Optional call language; en, kn and hi primary codes map to the operational contract. Other codes are omitted upstream.",
         "doctorId": "Optional identifier of the doctor associated with the call.",
         "appointmentId": "Optional identifier of the appointment request associated with the call.",
-        "transferredTo": "Optional destination associated with a transfer outcome.",
-        "requestedDate": "Optional requested date in YYYY-MM-DD format; preserved in CALLBACK_NOTED summary text when supplied."
+        "transferredTo": "Optional destination associated with a transfer outcome."
       }
     }
   }

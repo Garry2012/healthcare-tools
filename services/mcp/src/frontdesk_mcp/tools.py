@@ -184,18 +184,17 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         intent: contract.CallIntent,
         outcome: contract.CallOutcome,
         summaryText: Annotated[str, Field(max_length=2000)],
-        callerName: Name = None,
         callerMobile: Annotated[str | None, Field(max_length=20)] = None,
         language: Annotated[str | None, Field(max_length=16)] = None,
         doctorId: Ident = None,
         appointmentId: Ident = None,
         transferredTo: Annotated[str | None, Field(max_length=64)] = None,
-        requestedDate: IsoDate = None,
     ) -> ToolResult:
-        request = summary.SummaryRequest(intent=intent, outcome=outcome, summaryText=summaryText, callerName=callerName,
+        request = summary.SummaryRequest(intent=intent, outcome=outcome, summaryText=summaryText,
                                          callerMobile=callerMobile, language=language, doctorId=doctorId,
-                                         appointmentId=appointmentId, transferredTo=transferredTo,
-                                         requestedDate=requestedDate)
+                                         appointmentId=appointmentId, transferredTo=transferredTo)
         return observed("record_call_summary", await services.summary.record(ctx(), request))
 
     _apply_pack_text(record_call_summary, pack.tools["record_call_summary"])
+    # Advertise the accepted limit; the outer 2000 cap lets service validation return INVALID_REQUEST.
+    record_call_summary.parameters["properties"]["summaryText"]["maxLength"] = summary.SUMMARY_MAX
