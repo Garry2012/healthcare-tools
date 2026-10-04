@@ -1,8 +1,6 @@
 """Starlette + FastMCP assembly: /mcp/ (streamable HTTP, stateless), /health, /ready, /dependencies.
 
-Two bearers may reach /mcp/: the gateway's (conversational principal, three in-call tools) and the
-call-end finalizer's (lifecycle principal, record_call_summary only). The principal is decided here,
-on the server, and enforced by access.LifecycleGate; no header can claim it."""
+The gateway bearer authenticates all four tools; trusted call identity comes from headers."""
 
 from __future__ import annotations
 
@@ -25,7 +23,6 @@ from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import context, packs, prompt, tools
-from .access import LifecycleGate
 from .clock import Clock, Deadline
 from .config import Settings, get_settings
 from .ops_client import UpstreamError
@@ -74,39 +71,25 @@ def configure_logging(level: str, provider: str = "") -> None:
 
 
 class BearerAuth:
-    """Decides the principal for /mcp/ from the presented bearer. /health, /ready, /dependencies stay open."""
+    """Authenticates /mcp/; /health, /ready and /dependencies stay open."""
 
-    def __init__(self, app: ASGIApp, gateway_token: str, lifecycle_token: str, development: bool) -> None:
+    def __init__(self, app: ASGIApp, gateway_token: str, development: bool) -> None:
         self.app = app
         self.gateway = f"Bearer {gateway_token}".encode() if gateway_token else b""
-        self.lifecycle = f"Bearer {lifecycle_token}".encode() if lifecycle_token else b""
         self.development = development
-
-    def principal(self, supplied: bytes) -> context.Principal | None:
-        if self.lifecycle and hmac.compare_digest(supplied, self.lifecycle):
-            return "lifecycle"
-        if self.gateway and hmac.compare_digest(supplied, self.gateway):
-            return "conversation"
-        if not self.gateway and self.development:
-            return "conversation"  # development without a configured gateway token
-        return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or not scope["path"].startswith("/mcp"):
             await self.app(scope, receive, send)
             return
         supplied = dict(scope.get("headers", [])).get(b"authorization", b"")
-        principal = self.principal(supplied)
-        if principal is None:
+        authenticated = (hmac.compare_digest(supplied, self.gateway) if self.gateway else self.development)
+        if not authenticated:
             response = JSONResponse({"error": "unauthorized"}, status_code=401,
                                     headers={"WWW-Authenticate": "Bearer"})
             await response(scope, receive, send)
             return
-        token = context.principal_var.set(principal)
-        try:
-            await self.app(scope, receive, send)
-        finally:
-            context.principal_var.reset(token)
+        await self.app(scope, receive, send)
 
 
 def build_mcp(services: tools.Services) -> FastMCP:
@@ -116,7 +99,6 @@ def build_mcp(services: tools.Services) -> FastMCP:
         name=f"frontdesk-{pack.name}",
         instructions=prompt.instructions(pack, settings.languages, settings.tenant_display_name),
         version=prompt.SCHEMA_VERSION,
-        middleware=[LifecycleGate()],
     )
     tools.register(mcp, services, pack)
     return mcp
@@ -193,7 +175,6 @@ def create_app(settings: Settings | None = None, *, ops_transport: httpx.AsyncBa
         lifespan=lifespan,
     )
     app.add_middleware(BearerAuth, gateway_token=settings.mcp_bearer_token.get_secret_value(),
-                       lifecycle_token=settings.mcp_lifecycle_bearer_token.get_secret_value(),
                        development=settings.env == "development")
     app.state.mcp = mcp
     app.state.services = services

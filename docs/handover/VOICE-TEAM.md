@@ -1,6 +1,6 @@
 # MCP tool interface
 
-Schema version: `2026-10-04.1`
+Schema version: `2026-10-04.2`
 
 ## Endpoint and transport
 
@@ -12,12 +12,11 @@ separate gateway endpoint supplied by its owner. This document does not assert w
 
 | Scope | Direct MCP bearer | Accessible tools |
 |---|---|---|
-| Conversation / gateway | MCP_BEARER_TOKEN | get_doctor_availability, manage_booking, search_knowledge |
-| Call-end lifecycle | MCP_LIFECYCLE_BEARER_TOKEN | record_call_summary only |
+| Gateway | MCP_BEARER_TOKEN | get_doctor_availability, manage_booking, search_knowledge, record_call_summary |
 
-The HTTP header is `Authorization: Bearer <credential>`. The server enforces these scopes.
+The HTTP header is `Authorization: Bearer <credential>`. All four tools use gateway authentication.
 A ContextForge client authenticates with gateway-issued scoped access; its upstream MCP bearer is
-separate. Credentials, caller authority and lifecycle context are not tool arguments.
+separate. Credentials, caller authority and call start time are not tool arguments.
 
 ## Trusted request headers
 
@@ -29,8 +28,7 @@ separate. Credentials, caller authority and lifecycle context are not tool argum
 | X-Operation-Id | Confirmed-write identifier with the same 1–64 character syntax as call ID. Required for CREATE/CANCEL/RESCHEDULE. Same call/action/operation identifies the same payload; changed payload conflicts. |
 | X-Call-Started-At | ISO timestamp with timezone offset; required for record_call_summary. |
 
-Malformed identifiers/timing are treated as absent. Header names are case-insensitive. Tenant and
-principal derive from deployment configuration and authentication, not model arguments.
+Malformed identifiers/timing are treated as absent. Header names are case-insensitive. Tenant comes from deployment configuration; access is authenticated by the gateway bearer, not model arguments.
 
 The tables below describe the pinned wire schema, including nested `$defs` types. “Required” means
 schema-required; action-specific requirements appear in the meaning column. Optional fields can have

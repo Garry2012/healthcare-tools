@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .packs import Pack
 
-SCHEMA_VERSION = "2026-10-04.1"
+SCHEMA_VERSION = "2026-10-04.2"
 
 
 def instructions(pack: Pack, languages: tuple[str, ...], display_name: str = "") -> str:
@@ -14,6 +14,6 @@ def instructions(pack: Pack, languages: tuple[str, ...], display_name: str = "")
         "Availability date accepts only 'today' or YYYY-MM-DD; other relative dates are not accepted.",
         "NOTED is a recorded appointment request, not a confirmed or reserved time.",
         "CALLBACK_REQUIRED denotes UNKNOWN board availability; UNCERTAIN denotes an unverified write result.",
-        "Call summaries require lifecycle authentication; the other three tools require gateway authentication.",
+        "Gateway authentication covers all four tools.",
         f"Supported languages: {', '.join(languages)}. Tool schema {SCHEMA_VERSION}.",
     ))

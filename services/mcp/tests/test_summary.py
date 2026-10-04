@@ -7,9 +7,8 @@ import logging
 
 import httpx
 import pytest
-from fastmcp import Client, FastMCP
 
-from frontdesk_mcp import access, context, summary
+from frontdesk_mcp import summary
 from frontdesk_mcp.ops_client import OpsClient
 from frontdesk_mcp.server import JsonFormatter
 
@@ -226,59 +225,6 @@ async def test_summary_works_without_knowledge_and_with_a_slow_healthy_owner(h):
     h.ops_state.delay_for_prefix["/call-summaries"] = 0.4
     assert h.settings.request_timeout_seconds == pytest.approx(0.30)
     assert (await record(h, **CALLBACK)).outcome == "SAVED"
-
-
-# ------------------------------------------------------------------ lifecycle access boundary
-
-
-def gated_server() -> FastMCP:
-    mcp = FastMCP("gate-test", middleware=[access.LifecycleGate()])
-
-    @mcp.tool(name="get_doctor_availability")
-    def a() -> str:
-        return "a"
-
-    @mcp.tool(name="manage_booking")
-    def b() -> str:
-        return "b"
-
-    @mcp.tool(name="search_knowledge")
-    def c() -> str:
-        return "c"
-
-    @mcp.tool(name="record_call_summary", tags={access.LIFECYCLE_TAG})
-    def d() -> str:
-        return "d"
-
-    return mcp
-
-
-async def test_conversational_principal_cannot_see_or_call_the_summary_tool():
-    context.principal_var.set("conversation")
-    async with Client(gated_server()) as client:
-        names = sorted(t.name for t in await client.list_tools())
-        assert names == ["get_doctor_availability", "manage_booking", "search_knowledge"]
-        refused = await client.call_tool("record_call_summary", {}, raise_on_error=False)
-        assert refused.is_error and "lifecycle" in refused.content[0].text.lower()
-        ok = await client.call_tool("search_knowledge", {})
-        assert ok.data == "c"
-
-
-async def test_lifecycle_principal_sees_only_the_summary_tool():
-    context.principal_var.set("lifecycle")
-    async with Client(gated_server()) as client:
-        assert [t.name for t in await client.list_tools()] == ["record_call_summary"]
-        assert (await client.call_tool("record_call_summary", {})).data == "d"
-        refused = await client.call_tool("manage_booking", {}, raise_on_error=False)
-        assert refused.is_error
-
-
-async def test_no_principal_means_no_tools():
-    context.principal_var.set(None)
-    async with Client(gated_server()) as client:
-        assert await client.list_tools() == []
-        refused = await client.call_tool("search_knowledge", {}, raise_on_error=False)
-        assert refused.is_error
 
 
 @pytest.mark.parametrize("identifier,logged", [("Lakshmi Rao 9000000101 chest pain", False), ("9000000101", False),

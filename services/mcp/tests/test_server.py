@@ -1,5 +1,5 @@
-"""The assembled server over real streamable HTTP (uvicorn): exactly four tools split between the
-conversational and lifecycle principals, trusted identity from headers only, concurrent-call isolation,
+"""The assembled server over real streamable HTTP (uvicorn): exactly four tools under gateway authentication,
+trusted identity from headers only, concurrent-call isolation,
 local readiness distinct from dependency status, and a pinned tool-schema snapshot."""
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ FORBIDDEN = {"x-call-id", "xcallid", "callid", "x-caller-number", "xcallernumber
              "idempotency-key", "idempotencykey", "operationid", "x-operation-id",
              "turncontext", "x-turn-context", "utterance", "tenant", "tenantid", "principal",
              "startedat", "durationseconds"}
-CONVERSATIONAL = ["get_doctor_availability", "manage_booking", "search_knowledge"]
+TOOLS = ["get_doctor_availability", "manage_booking", "record_call_summary", "search_knowledge"]
 
 
 def _names(schema) -> set[str]:
@@ -56,12 +56,12 @@ def client(base: str, token: str = "mcp-token", **kwargs) -> Client:
                                                                     **harness.headers(**kwargs)}))
 
 
-async def test_conversational_principal_gets_exactly_three_tools_without_trusted_fields(served):
+async def test_gateway_gets_all_four_tools_without_trusted_fields(served):
     base, _ = served
     async with client(base) as c:
         tools = await c.list_tools()
         instructions = c.initialize_result.instructions
-    assert sorted(t.name for t in tools) == CONVERSATIONAL
+    assert sorted(t.name for t in tools) == TOOLS
     for tool in tools:
         leaked = (_names(tool.inputSchema) | _names(tool.outputSchema or {})) & FORBIDDEN
         assert leaked == set(), f"{tool.name} exposes {leaked}"
@@ -73,19 +73,25 @@ async def test_conversational_principal_gets_exactly_three_tools_without_trusted
     assert "NOTED" in instructions and prompt.SCHEMA_VERSION in instructions
 
 
-async def test_lifecycle_principal_gets_exactly_the_summary_tool(served):
-    base, _ = served
-    async with client(base, token="lifecycle-token") as c:
-        tools = await c.list_tools()
-    assert [t.name for t in tools] == ["record_call_summary"]
-    assert tools[0].annotations.readOnlyHint is False and tools[0].annotations.idempotentHint is True
+async def test_gateway_can_save_a_summary_with_trusted_call_identity(served):
+    base, h = served
+    async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+        result = await c.call_tool("record_call_summary", {
+            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Explained visiting hours."},
+            raise_on_error=False)
+        tool = next(t for t in await c.list_tools() if t.name == "record_call_summary")
+    assert result.structured_content == {"outcome": "SAVED"}
+    assert h.ops_state.summaries["call-1"]["summaryText"] == "Explained visiting hours."
+    assert tool.annotations.readOnlyHint is False and tool.annotations.idempotentHint is True
 
 
-async def test_gateway_and_lifecycle_must_authenticate_and_health_stays_open(served):
+async def test_gateway_must_authenticate_and_health_stays_open(served):
     base, _ = served
     async with httpx.AsyncClient() as http:
         assert (await http.post(f"{base}/mcp/", json={})).status_code == 401
         assert (await http.post(f"{base}/mcp/", json={}, headers={"Authorization": "Bearer nope"})).status_code == 401
+        assert (await http.post(f"{base}/mcp/", json={},
+                                headers={"Authorization": "Bearer lifecycle-token"})).status_code == 401
         assert (await http.get(f"{base}/health")).json() == {"status": "ok"}
         ready = await http.get(f"{base}/ready")
         assert ready.status_code == 200 and ready.json()["status"] == "ready"
@@ -96,7 +102,7 @@ def test_tool_schemas_match_the_pinned_snapshot(make_settings):
     document = cli.schema_document(make_settings())
     assert document == json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     assert document["schemaVersion"] == prompt.SCHEMA_VERSION
-    assert sorted(t["name"] for t in document["tools"]) == sorted([*CONVERSATIONAL, "record_call_summary"])
+    assert sorted(t["name"] for t in document["tools"]) == TOOLS
 
 
 async def test_the_whole_journey_over_http(served):
@@ -138,7 +144,7 @@ async def test_the_whole_journey_over_http(served):
         cancelled = (await c.call_tool("manage_booking", {"action": "CANCEL", "appointmentId": appointment_id,
                                                           "callerConfirmed": True})).structured_content
         assert cancelled["outcome"] == "CANCELLED"
-    async with client(base, token="lifecycle-token", started_at="2026-10-01T09:58:00+05:30") as c:
+    async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
         stored = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_CANCELLED", "appointmentId": appointment_id,
             "summaryText": "Requested, moved and cancelled an appointment with Dr. Garima."})).structured_content
@@ -146,7 +152,7 @@ async def test_the_whole_journey_over_http(served):
     assert "durationSeconds" not in h.ops_state.summaries["call-1"]
 
 
-async def test_the_model_cannot_supply_identity_or_lifecycle_fields(served):
+async def test_the_model_cannot_supply_booking_identity_fields(served):
     base, h = served
     async with client(base) as c:
         for extra in ({"callId": "other"}, {"callerNumber": "+919000000999"}, {"operationId": "x"},
@@ -158,16 +164,33 @@ async def test_the_model_cannot_supply_identity_or_lifecycle_fields(served):
     assert queries and all(r.url.params["mobile"] == "9000000101" for r in queries)
 
 
-async def test_conversational_bearer_cannot_finalize_and_lifecycle_cannot_book(served):
+async def test_summary_arguments_cannot_override_trusted_headers(served):
     base, h = served
     async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
-        refused = await c.call_tool("record_call_summary", {"intent": "OTHER", "outcome": "ABANDONED",
-                                                            "summaryText": "x"}, raise_on_error=False)
-        assert refused.is_error
-    async with client(base, token="lifecycle-token", operation_id="op-1") as c:
-        refused = await c.call_tool("manage_booking", {"action": "LIST"}, raise_on_error=False)
-        assert refused.is_error
-    assert h.ops_state.summaries == {} and not [r for r in h.requests if "/appointments" in r.url.path]
+        result = await c.call_tool("record_call_summary", {
+            "intent": "OTHER", "outcome": "ABANDONED", "summaryText": "Caller left.",
+            "callId": "forged-call", "startedAt": "2020-01-01T00:00:00Z"}, raise_on_error=False)
+        assert result.is_error or result.structured_content == {"outcome": "SAVED"}
+        await c.call_tool("record_call_summary", {
+            "intent": "OTHER", "outcome": "ABANDONED", "summaryText": "Caller left."})
+    assert set(h.ops_state.summaries) == {"call-1"}
+    assert h.ops_state.summaries["call-1"]["startedAt"] == "2026-10-01T09:58:00+05:30"
+
+
+async def test_concurrent_summaries_keep_their_own_call_and_start_time(served):
+    base, h = served
+
+    async def one(i):
+        async with client(base, call_id=f"call-{i}", started_at=f"2026-10-01T09:0{i}:00+05:30") as c:
+            return (await c.call_tool("record_call_summary", {
+                "intent": "OTHER", "outcome": "ABANDONED", "summaryText": f"Conversation {i}."},
+                raise_on_error=False)).structured_content
+
+    assert await asyncio.gather(*(one(i) for i in range(1, 6))) == [{"outcome": "SAVED"}] * 5
+    for i in range(1, 6):
+        stored = h.ops_state.summaries[f"call-{i}"]
+        assert stored["startedAt"] == f"2026-10-01T09:0{i}:00+05:30"
+        assert stored["summaryText"] == f"Conversation {i}."
 
 
 async def test_concurrent_calls_keep_their_own_identity(served):
@@ -230,7 +253,7 @@ async def test_log_lines_carry_the_call_id_not_the_caller(served):
 
 
 def test_pack_describes_exactly_the_four_tools():
-    assert set(packs.load("healthcare").tools) == {*CONVERSATIONAL, "record_call_summary"}
+    assert set(packs.load("healthcare").tools) == set(TOOLS)
 
 
 def test_published_tool_text_contains_facts_not_behaviour_scripts(make_settings):
@@ -319,8 +342,10 @@ async def test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failur
     app = create_app(settings, ops_transport=h.ops.http._transport, clock=h.clock)
     try:
         async with serving(app) as base:
-            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "lifecycle-token", "en", "General Medicine", "absent")
+            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "en", "General Medicine", "absent")
         assert "knowledge: NOT_CONFIGURED" in capsys.readouterr().out
+        assert h.ops_state.summaries == {} and h.ops_state.appointments == {}
+        assert not [r for r in h.requests if r.method == "POST" and r.url.path != "/api/v1/auth/token"]
     finally:
         await h.aclose()
 
@@ -409,7 +434,7 @@ def test_interface_describes_every_outcome_and_next_step():
 @pytest.mark.parametrize("length", [501, 2000])
 async def test_summary_length_is_an_in_band_invalid_request(served, length):
     base, h = served
-    async with client(base, token="lifecycle-token", started_at="2026-10-01T09:58:00+05:30") as c:
+    async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
         result = await c.call_tool("record_call_summary", {
             "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "x" * length},
             raise_on_error=False)
@@ -423,7 +448,7 @@ async def test_summary_length_is_an_in_band_invalid_request(served, length):
 async def test_wrong_type_summary_does_not_log_private_input(served, caplog, capsys):
     base, h = served
     private = "NAME42 9000000123 SYMPTOM42"
-    async with client(base, token="lifecycle-token", started_at="2026-10-01T09:58:00+05:30") as c:
+    async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
         result = await c.call_tool("record_call_summary", {
             "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": {"private": private}},
             raise_on_error=False)

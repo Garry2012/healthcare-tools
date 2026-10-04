@@ -1,5 +1,5 @@
 """Release tooling: the read-only smoke must fail on unavailable dependencies, missing auth, failure
-envelopes, a wrong tool set or a leaky lifecycle boundary, and must never write; gateway registration
+envelopes, a wrong tool set , and must never write; gateway registration
 names the four tools, forwards every trusted header and detects schema drift."""
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from frontdesk_mcp.context import PASSTHROUGH_HEADERS
-from frontdesk_mcp.tools import CONVERSATIONAL_TOOLS, LIFECYCLE_TOOLS, TOOL_NAMES
+from frontdesk_mcp.tools import TOOL_NAMES
 
 DEPLOY = Path(__file__).resolve().parents[3] / "deploy"
 SMOKE = runpy.run_path(str(DEPLOY / "azure/smoke.py"))
@@ -53,14 +53,17 @@ async def test_http_checks_require_readiness_dependency_health_and_auth(ready, d
                 await SMOKE["check_http"](http, "https://adapter.example", "required")
 
 
-async def test_conversational_tool_set_must_be_exactly_three_and_the_summary_tool_hidden():
-    client = AsyncMock()
-    client.list_tools.return_value = _tools(TOOL_NAMES)  # the summary tool leaked into the conversational view
-    with pytest.raises(RuntimeError, match="tool set"):
-        await SMOKE["check_tools"](client, "en", "General Medicine")
-    client.list_tools.return_value = _tools(CONVERSATIONAL_TOOLS[:2])
-    with pytest.raises(RuntimeError, match="tool set"):
-        await SMOKE["check_tools"](client, "en", "General Medicine")
+@pytest.mark.parametrize("missing", ["record_call_summary", "search_knowledge"])
+async def test_smoke_requires_all_four_tools(missing):
+    from fastmcp import Client, FastMCP
+
+    remote = FastMCP("incomplete-remote")
+    for name in TOOL_NAMES:
+        if name != missing:
+            remote.tool(name=name)(lambda: {"outcome": "NO_ANSWER"})
+    async with Client(remote) as client:
+        with pytest.raises(RuntimeError, match="tool set"):
+            await SMOKE["check_tools"](client, "en", "General Medicine")
 
 
 @pytest.mark.parametrize("body", [
@@ -69,36 +72,10 @@ async def test_conversational_tool_set_must_be_exactly_three_and_the_summary_too
 ])
 async def test_transport_success_does_not_hide_failures(body):
     client = AsyncMock()
-    client.list_tools.return_value = _tools(CONVERSATIONAL_TOOLS)
+    client.list_tools.return_value = _tools(TOOL_NAMES)
     client.call_tool.return_value = _result(body)
     with pytest.raises(RuntimeError, match="read-only smoke"):
         await SMOKE["check_tools"](client, "en", "General Medicine")
-
-
-async def test_smoke_reads_only_and_accepts_honest_empty_outcomes():
-    client = AsyncMock()
-    client.list_tools.return_value = _tools(CONVERSATIONAL_TOOLS)
-    client.call_tool.side_effect = [_result({"outcome": "CALLBACK_REQUIRED"}), _result({"outcome": "NO_ANSWER"})]
-    await SMOKE["check_tools"](client, "hi", "General Medicine")
-    called = [call.args[0] for call in client.call_tool.call_args_list]
-    assert called == ["get_doctor_availability", "search_knowledge"]
-    assert "manage_booking" not in called and "record_call_summary" not in called
-    assert client.call_tool.call_args_list[1].args[1]["language"] == "hi"
-
-
-async def test_lifecycle_boundary_check_requires_server_side_refusal():
-    conversational, lifecycle = AsyncMock(), AsyncMock()
-    conversational.call_tool.return_value = _result({"outcome": "STORED"})  # the server let a gateway bearer finalize
-    lifecycle.list_tools.return_value = _tools(LIFECYCLE_TOOLS)
-    with pytest.raises(RuntimeError, match="lifecycle"):
-        await SMOKE["check_lifecycle_boundary"](conversational, lifecycle)
-    conversational.call_tool.return_value = _result(None, is_error=True)
-    lifecycle.list_tools.return_value = _tools(TOOL_NAMES)  # lifecycle bearer sees in-call tools
-    with pytest.raises(RuntimeError, match="lifecycle"):
-        await SMOKE["check_lifecycle_boundary"](conversational, lifecycle)
-    lifecycle.list_tools.return_value = _tools(LIFECYCLE_TOOLS)
-    await SMOKE["check_lifecycle_boundary"](conversational, lifecycle)
-    assert not lifecycle.call_tool.called  # never writes a summary as a smoke test
 
 
 def test_main_requires_https_and_never_leaks(monkeypatch, capsys):
@@ -257,7 +234,7 @@ def test_the_committed_live_profile_names_manoj_base_and_the_canary_app():
 
 def test_gateway_refresh_uses_the_deployed_contextforge_api(monkeypatch):
     """The deployed 1.0.11 API refreshes at /tools/refresh, not /refresh."""
-    served = [{"name": name, "inputSchema": {}} for name in CONVERSATIONAL_TOOLS]
+    served = [{"name": name, "inputSchema": {}} for name in TOOL_NAMES[:3]]
 
     async def discover(*_):
         return served
@@ -328,6 +305,10 @@ async def test_unconfigured_smoke_refuses_mismatched_or_error_results(body, erro
         if error:
             raise ToolError("fixture failure")
         return body
+
+    @remote.tool()
+    def record_call_summary(summaryText: str) -> dict:  # noqa: N803
+        raise AssertionError("smoke must never write a summary")
 
     async with Client(remote) as client:
         with pytest.raises(RuntimeError, match="configuration and tool result disagree"):
