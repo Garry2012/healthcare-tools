@@ -1,0 +1,166 @@
+$ uv run --directory services/mcp pytest tests/test_deploy.py -q -k gateway_verifies
+..FF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_gateway_verifies_four_tools_and_refreshes_missing_discovery[maxLength] __
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...('POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c12c8a0>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bfac320>
+problem = 'maxLength'
+
+    @pytest.mark.parametrize("problem", ["none", "missing", "maxLength", "required"])
+    async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, problem):
+        import asyncio
+        import copy
+
+        from frontdesk_mcp.server import create_app
+
+        from .conftest import serving
+
+        app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                         knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+        served = []
+        requests = []
+
+        def gateway(request):
+            requests.append((request.method, request.url.path))
+            if request.url.path.endswith("/tools/refresh"):
+                return httpx.Response(200, json={})
+            discovered = served if len(requests) > 1 else [t for t in served if t["name"] != "record_call_summary"]
+            if problem == "missing":
+                discovered = [t for t in discovered if t["name"] != "record_call_summary"]
+            if problem in {"maxLength", "required"}:
+                discovered = copy.deepcopy(discovered)
+                for tool in discovered:
+                    if tool["name"] == "record_call_summary":
+                        if problem == "maxLength":
+                            tool["inputSchema"]["properties"]["summaryText"]["maxLength"] = 2000
+                        else:
+                            tool["inputSchema"]["required"].remove("summaryText")
+            return httpx.Response(200, json={"tools": [
+                {"name": f"frontdesk-demo-hospital-{t['name']}", "inputSchema": t["inputSchema"]} for t in discovered]})
+
+        async with serving(app) as base:
+            monkeypatch.setenv("MCP_PUBLIC_URL", f"{base}/mcp/")
+            monkeypatch.setenv("MCP_BEARER_TOKEN", "mcp-token")
+            served = await REGISTER["served_tools"](f"{base}/mcp/", "mcp-token")
+            with httpx.Client(base_url="https://gateway.example", transport=httpx.MockTransport(gateway)) as client:
+                if problem != "none":
+>                   with pytest.raises(SystemExit, match="record_call_summary:"):
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   Failed: DID NOT RAISE SystemExit
+
+tests/test_deploy.py:285: Failed
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T03:00:11.081798+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [72528]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.081872+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.081954+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T03:00:11.082895+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.083253+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:63638 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+verified: gateway tools match the adapter (get_doctor_availability, manage_booking, search_knowledge, record_call_summary)
+{"ts": "2026-10-04T03:00:11.185424+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.287687+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.289087+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.289194+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [72528]", "provider": "demo-hospital"}
+----------------------------- Captured stderr call -----------------------------
+tool drift detected; asking the gateway to rediscover
+__ test_gateway_verifies_four_tools_and_refreshes_missing_discovery[required] __
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...('POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c0ef020>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c11fe70>
+problem = 'required'
+
+    @pytest.mark.parametrize("problem", ["none", "missing", "maxLength", "required"])
+    async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, problem):
+        import asyncio
+        import copy
+
+        from frontdesk_mcp.server import create_app
+
+        from .conftest import serving
+
+        app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                         knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+        served = []
+        requests = []
+
+        def gateway(request):
+            requests.append((request.method, request.url.path))
+            if request.url.path.endswith("/tools/refresh"):
+                return httpx.Response(200, json={})
+            discovered = served if len(requests) > 1 else [t for t in served if t["name"] != "record_call_summary"]
+            if problem == "missing":
+                discovered = [t for t in discovered if t["name"] != "record_call_summary"]
+            if problem in {"maxLength", "required"}:
+                discovered = copy.deepcopy(discovered)
+                for tool in discovered:
+                    if tool["name"] == "record_call_summary":
+                        if problem == "maxLength":
+                            tool["inputSchema"]["properties"]["summaryText"]["maxLength"] = 2000
+                        else:
+                            tool["inputSchema"]["required"].remove("summaryText")
+            return httpx.Response(200, json={"tools": [
+                {"name": f"frontdesk-demo-hospital-{t['name']}", "inputSchema": t["inputSchema"]} for t in discovered]})
+
+        async with serving(app) as base:
+            monkeypatch.setenv("MCP_PUBLIC_URL", f"{base}/mcp/")
+            monkeypatch.setenv("MCP_BEARER_TOKEN", "mcp-token")
+            served = await REGISTER["served_tools"](f"{base}/mcp/", "mcp-token")
+            with httpx.Client(base_url="https://gateway.example", transport=httpx.MockTransport(gateway)) as client:
+                if problem != "none":
+>                   with pytest.raises(SystemExit, match="record_call_summary:"):
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   Failed: DID NOT RAISE SystemExit
+
+tests/test_deploy.py:285: Failed
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T03:00:11.389227+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [72528]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.389331+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.389419+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T03:00:11.390418+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.390801+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:63645 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+verified: gateway tools match the adapter (get_doctor_availability, manage_booking, search_knowledge, record_call_summary)
+{"ts": "2026-10-04T03:00:11.492959+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.595147+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.596043+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:00:11.596096+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [72528]", "provider": "demo-hospital"}
+----------------------------- Captured stderr call -----------------------------
+tool drift detected; asking the gateway to rediscover
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_gateway_verifies_four_tools_and_refreshes_missing_discovery[maxLength]
+FAILED tests/test_deploy.py::test_gateway_verifies_four_tools_and_refreshes_missing_discovery[required]
+2 failed, 2 passed, 34 deselected, 2 warnings in 1.92s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 16%]
+........................................................................ [ 32%]
+........................................................................ [ 48%]
+........................................................................ [ 64%]
+........................................................................ [ 80%]
+........................................................................ [ 96%]
+.................                                                        [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+449 passed, 11 deselected, 2 warnings in 24.72s
+EXIT: 0
