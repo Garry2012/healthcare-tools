@@ -13,7 +13,6 @@ not register anything or change Azure settings. Do not provision a second gatewa
 | Transport | `STREAMABLEHTTP` |
 | Backend registration name | `frontdesk-demo-hospital` |
 | Upstream bearer | Current `mcp-token` in `kv-fd-demo-hospi-0574c1` |
-| Separate call-end bearer | `mcp-lifecycle-token` in that vault; never attach it to the conversational registration |
 | Existing admin access | Email from gateway `PLATFORM_ADMIN_EMAIL`; password reference `mcpgw-platform-admin-password` in that vault |
 
 The 2 October inspection found no working knowledge host on the canary. In the revised adapter,
@@ -24,7 +23,6 @@ voice-facing URL is created in step 3 below, not the gateway base URL alone.
 ```text
 Voice backend -- scoped gateway token + trusted headers --> ContextForge virtual server
              -- stored mcp-token + forwarded headers --> MCP canary --> Manoj / knowledge API
-Call-end worker -- separate mcp-lifecycle-token --------> MCP canary --> Manoj call summaries
 ```
 
 ## 1. Platform owner: configure the existing instance
@@ -40,7 +38,6 @@ X-Caller-Number
 X-Caller-Verification
 X-Operation-Id
 X-Call-Started-At
-X-Call-Duration-Seconds
 ```
 
 Allow network access to the upstream MCP URL. Restrict the virtual server and its client credential
@@ -61,16 +58,16 @@ uv run --project services/mcp python deploy/contextforge/register.py --visibilit
 ```
 
 The script POSTs `/v1/gateways` with the live schema's `authType`, `authToken`, `passthroughHeaders`
-and `teamId` fields. It registers/updates the backend and compares discovered conversational tool
-names and input-property names with the adapter. On drift it POSTs
+and `teamId` fields. It registers/updates the backend and compares all four tool
+names and complete input schemas with the adapter. On drift it POSTs
 `/v1/gateways/{id}/tools/refresh`, with a deactivate/activate fallback. It does **not** create a
 virtual server or issue a voice-client token. Rerun after MCP schema changes; refresh the voice
 agent's tool cache as well. Review full discovered schemas during acceptance, not just property names.
 
 ## 3. Platform owner: create the voice-facing virtual server
 
-From `GET /v1/tools`, select the three tool IDs belonging to this registration:
-`get_doctor_availability`, `manage_booking`, `search_knowledge`. Names may carry the registration
+From `GET /v1/tools`, select all four tool IDs belonging to this registration:
+`get_doctor_availability`, `manage_booking`, `search_knowledge`, `record_call_summary`. Names may carry the registration
 prefix. Verify their gateway association; do not select similarly named tools from another service.
 Use the admin UI or this **1.0.11** REST request shape:
 
@@ -82,7 +79,7 @@ Content-Type: application/json
 {
   "server": {
     "name": "healthcare-voice",
-    "associated_tools": ["<availability-tool-id>", "<booking-tool-id>", "<knowledge-tool-id>"]
+    "associated_tools": ["<availability-tool-id>", "<booking-tool-id>", "<knowledge-tool-id>", "<summary-tool-id>"]
   },
   "team_id": "<existing-team-id>",
   "visibility": "team"
@@ -100,11 +97,11 @@ That is the URL the voice agent registers as its MCP server. Confirm the deploye
 MCP initialize + tools/list request with the voice-client token. The platform supplies the existing
 team choice, creates the virtual server and scopes its token; this repo supplies the upstream URL,
 tool schemas, registration helper and header contract. No backend/database access is needed by the
-gateway. Do not put `record_call_summary` in this conversational virtual server.
+gateway. The virtual server includes `record_call_summary` with the same upstream gateway bearer.
 
 ## 4. Joint acceptance before voice cutover
 
-- Discover exactly the three tools through the scoped voice-client token; confirm another team or
+- Discover exactly four tools through the scoped voice-client token; confirm another team or
   an unauthorized token cannot invoke them. Inspect complete input schemas and tool descriptions.
 - Prove headers reach the adapter and stay isolated between simultaneous calls. Missing identity
   must be refused; the valid-identity LIST must actually reach Manoj, not merely avoid refusal.
@@ -112,7 +109,7 @@ gateway. Do not put `record_call_summary` in this conversational virtual server.
   Scheduling requires no transcript header. Verify operation IDs are request-scoped through the local
   booking wrapper and the gateway; no shared-header mutation between concurrent requests.
 - Through the virtual server, complete direct availability, caller-confirmed booking requests and explicit knowledge
-  journeys once owner inputs exist. Invoke call-end summary separately with its lifecycle bearer;
+  journeys once owner inputs exist. Invoke the summary through the same virtual server;
   verify retries/replay and UNKNOWN -> callback summary only.
 - Measure gateway overhead and successful full voice responses from the deployed region under
   concurrency. The MCP in-call allocation is 0.30 s; the target is under one second to first caller
@@ -126,6 +123,14 @@ References: [IBM header passthrough](https://ibm.github.io/mcp-context-forge/1.0
 The request fields and version above were checked against this deployed instance's authenticated
 OpenAPI, not inferred from a different release's examples.
 
-After this change, refresh discovered descriptions/output schemas for schema `2026-10-03.3`.
-Remove the obsolete transcript-header forwarding entry. Keep all identity, operation and lifecycle headers.
+After this change, refresh discovered descriptions/output schemas for schema `2026-10-04.2`.
+The forwarding allowlist is exactly the five headers above; remove obsolete transcript and duration entries.
+Refresh both input and output schemas and verify the voice client discovers the new summary result.
 The published tool contract is [VOICE-TEAM.md](VOICE-TEAM.md); server metadata contains neutral tool facts. Voice prompts and behaviour belong to the consuming team.
+
+Summary contract cutover: first accepted summary is final; changing it on a later call returns
+ALREADY_SAVED without overwriting. The application supplies a complete whole-call text, not repeated
+partial snapshots. The summary budget defaults to 8 seconds, separate from the scheduling allocation.
+Rollback needs matching MCP image, gateway discovery and voice schema; the previous image expects
+separate summary authentication. Do not reactivate it with only the new single-token configuration.
+No registration, token rotation or cloud-secret deletion was performed by this documentation update.

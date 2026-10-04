@@ -8,9 +8,9 @@ the adapter; they are not evidence about Manoj's or Shobhit's services.
 | Command | What runs | Time | Needs |
 |---|---|---|---|
 | `make test-fast` | ruff; hermetic suites: contract snapshot/overlay/types, settings and production guards, trusted context and identity, operational and knowledge clients, stubs validated against the OpenAPI schemas, the four tools, the assembled server over HTTP (uvicorn) | ~10 s | uv |
-| `make test-e2e` | `python -m frontdesk_stubs` and `frontdesk-mcp serve` as real processes over TCP; the release smoke; a full journey with trusted headers and the lifecycle bearer | ~5 s | uv |
+| `make test-e2e` | `python -m frontdesk_stubs` and `frontdesk-mcp serve` as real processes over TCP; the release smoke; a full journey with trusted headers and one gateway bearer | ~5 s | uv |
 | `./scripts/test.sh` (= `make test`) | all of the above plus the source/wheel build and, with a Docker daemon, the production image (asserting it contains neither stubs nor dev dependencies) | ~1–2 min | uv (+ Docker) |
-| `scripts/run-profile.sh live -- ./scripts/test.sh` (or `mock`) | additionally the `external` gates: `tests/test_external.py` (owner API reads; the deterministic create→list→reschedule→cancel→summary journey and the negative UNKNOWN case only with `OPS_E2E_ALLOW_WRITES=1`, `OPS_E2E_WRITE_TENANT`, `OPS_E2E_DOCTOR_ID`, `OPS_E2E_UNKNOWN_DATE` on a designated synthetic live tenant; knowledge with `KNOWLEDGE_E2E_*`) and `tests/test_external_transport.py` (the deployed adapter over real MCP transport with `MCP_E2E_URL`, `MCP_E2E_BEARER`, `MCP_E2E_LIFECYCLE_BEARER`). A missing input fails the test with `BLOCKED: …`; nothing skips silently. Report which layer ran | — | owner test tenant and machine credentials; a deployed adapter |
+| `scripts/run-profile.sh live -- ./scripts/test.sh` (or `mock`) | additionally the `external` gates: `tests/test_external.py` (owner API reads; the deterministic create→list→reschedule→cancel→summary journey and the negative UNKNOWN case only with `OPS_E2E_ALLOW_WRITES=1`, `OPS_E2E_WRITE_TENANT`, `OPS_E2E_DOCTOR_ID`, `OPS_E2E_UNKNOWN_DATE` on a designated synthetic live tenant; knowledge with `KNOWLEDGE_E2E_*`) and `tests/test_external_transport.py` (the deployed adapter over real MCP transport with `MCP_E2E_URL`, `MCP_E2E_BEARER`). A missing input fails the test with `BLOCKED: …`; nothing skips silently. Report which layer ran | — | owner test tenant and machine credentials; a deployed adapter |
 
 The profile launcher reads current owner credentials from the selected Key Vault without printing
 values. Knowledge URL/token aliases are propagated to tests and benchmarks as well as runtime.
@@ -46,15 +46,17 @@ clock, so a result never depends on when you run it.
 - **Knowledge:** one explicit exchange; verbatim answers and clarification; department, desk and emergency
   decisions; routing speech only once; malformed optional fields cannot erase a valid transfer decision;
   non-JSON and malformed responses fail honestly; external cancellation propagates and failure logs omit caller words.
-- **Summaries:** trusted timing; frozen body; replay; CALLBACK_NOTED rules; 500 characters without
-  losing name/number; language mapping; transfer field rules; hang-up outcomes; failed persistence;
-  lost response; wrong scope; independence from the knowledge service; lifecycle access gate.
-- **Server:** three tools to the gateway bearer, one to the lifecycle bearer, none without; no trusted
+- **Summaries:** trusted call/start headers; exact whole-call text; nonblank/500 boundary and in-band
+  501–2000 refusal; CALLBACK_NOTED mobile/ID rules; language/transfer rules; five compact outcomes;
+  verified 201 and same-call 200 even with changed payload; wrong-call/malformed success uncertainty;
+  no header idempotency key, same-body retry and commit-then-drop deduplication; 401-only refresh,
+  definite 403 refusal and prior uncertainty precedence; no private input in logs; independent deadline.
+- **Server:** all four tools to the gateway bearer, none without; no trusted
   fields in schemas; snapshot of the tool surface; whole journey over HTTP; concurrent-call isolation;
   dependency status separate from local readiness; call id in logs and no caller data.
 - **Release tooling:** smoke fails on unavailable dependencies, missing auth, failure envelopes, a
-  wrong tool set or a leaky lifecycle boundary, and never writes; registration names four tools,
-  forwards every trusted header and detects schema drift.
+  wrong tool set, and never writes; registration names four tools,
+  forwards every trusted header and detects full input-schema drift (including required fields and the summary length cap).
 
 ## Try it by hand
 
@@ -62,3 +64,8 @@ clock, so a result never depends on when you run it.
 (`make up`), point an MCP client at `http://127.0.0.1:8100/mcp/` with `Authorization: Bearer
 $MCP_BEARER_TOKEN` and the headers described in `VOICE-TEAM.md`; `curl http://127.0.0.1:8100/dependencies`
 shows the owner-service status.
+
+Current call-summary evidence: [implementation hand-back](mcp-only/implementation/CALL-SUMMARY-HAND-BACK.md)
+links red/green output and the final full run. Wrong-type framework protocol errors can still echo
+input values; passing log-privacy tests does not establish protocol-error redaction. No custom
+validation boundary was introduced. Live service and voice acceptance are separate from local tests.

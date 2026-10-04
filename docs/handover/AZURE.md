@@ -9,7 +9,7 @@ whole procedure as one re-runnable command; this page explains what it does and 
 ```bash
 R=rollouts/demo-hospital
 # deploy/environments/live.env carries Manoj's base URL (…/api/v1) and targets the canary app; change endpoints there only
-export KNOWLEDGE_BASE_URL=https://...                   # Shobhit's host until it is in the profile (2 Oct 2026: placeholder in use)
+# Set KNOWLEDGE_BASE_URL in deploy/environments/live.env; blank means knowledge is not configured.
 export KNOWLEDGE_BEARER_TOKEN=...                       # first run only: stored in Key Vault (ops creds: see below)
 deploy/azure/deploy.sh $R --profile live --dry-run      # prints every az call; no login needed
 deploy/azure/deploy.sh $R --profile live                # creates/updates mcp-demo-hospital-canary in healthcare-rg, runs the smoke
@@ -22,7 +22,7 @@ creates or defaults a resource group. Production configuration refuses `http://`
 so `--profile mock` can only dry-run. The script validates the adapter configuration offline first
 (`frontdesk-mcp schema` under `ENV=production`).
 
-**Ops credentials:** `ops-client-id`/`ops-client-secret` hold the registered pair Manoj stored on 2 October 2026 (accepted by `/auth/token`; token scope `appointments.write` only, so `record_call_summary` returns COULD_NOT_RECORD until `calls.write` is granted). `deploy.sh` reads the current vault version and never overwrites an existing secret from the environment; rotate explicitly (`deploy/environments/README.md`). `knowledge-token` is a tagged placeholder until Shobhit's host exists.
+**Ops credentials:** `ops-client-id`/`ops-client-secret` hold the registered pair Manoj stored on 2 October 2026 (accepted by `/auth/token`; token scope `appointments.write` only, so `record_call_summary` returns NOT_SAVED on a definite 403 until `calls.write` is granted). `deploy.sh` reads the current vault version and never overwrites an existing secret from the environment; rotate explicitly (`deploy/environments/README.md`). The 2 October inspection found a placeholder knowledge credential; configure an owner-issued credential when its host is agreed.
 
 ## What it creates or reuses
 
@@ -30,7 +30,7 @@ so `--profile mock` can only dry-run. The script validates the adapter configura
 |---|---|---|
 | Resource group, Log Analytics, Container Apps environment, registry | named by the profile: `healthcare-rg`, `law-frontdesk-demo-hospital`, `cae-frontdesk-demo-hospital`, `acrfd399536` | Shared; must exist; never created by this script |
 | Image | `frontdesk-mcp:<git sha>` | Built from `services/mcp` only: no stubs, no fixtures, no dev dependencies |
-| Key Vault | named by the profile (`kv-fd-demo-hospi-0574c1`) | `mcp-token` and `mcp-lifecycle-token` generated once; `ops-client-id`, `ops-client-secret`, `knowledge-token` supplied by the owners (replace explicitly; see above) |
+| Key Vault | named by the profile (`kv-fd-demo-hospi-0574c1`) | `mcp-token` generated once; `ops-client-id`, `ops-client-secret`, `knowledge-token` supplied by the owners (replace explicitly; see above) |
 | Managed identity | `id-frontdesk-<p>` | Key Vault Secrets User + AcrPull |
 | Container App | named by the profile (`mcp-demo-hospital-canary` until the voice platform cuts over) | External ingress on 8100, 1–3 replicas, readiness `/ready` (local), liveness `/health` |
 
@@ -39,19 +39,19 @@ references. `--replace-env-vars` on update, so a removed setting falls back to i
 
 ## Gateway and voice agent
 
-Run ContextForge from its official image with `ENABLE_HEADER_PASSTHROUGH=true` and register the
-adapter (`CONTEXTFORGE.md`). Give the voice platform the gateway bearer for the three in-call tools
-and the lifecycle bearer for `record_call_summary` only (`VOICE-TEAM.md`).
+Configure the existing ContextForge instance with `ENABLE_HEADER_PASSTHROUGH=true` and register the
+adapter (`CONTEXTFORGE.md`). All four tools share the upstream gateway bearer. The voice platform
+receives a scoped ContextForge client token and virtual-server URL (`VOICE-TEAM.md`).
 
 ## Test in Azure
 
 The deploy script already runs `deploy/azure/smoke.py`: readiness, dependency status, refused
-unauthenticated request, exactly three conversational tools, the lifecycle boundary, and two
+unauthenticated request, exactly four tools, and two
 read-only calls (`get_doctor_availability` for a department today, `search_knowledge`). It never
 creates an appointment or a summary. Run it again any time:
 
 ```bash
-MCP_URL=https://mcp-$P.$DOMAIN/mcp/ MCP_BEARER_TOKEN=... MCP_LIFECYCLE_BEARER_TOKEN=... SMOKE_LANGUAGE=en \
+MCP_URL=https://mcp-$P.$DOMAIN/mcp/ MCP_BEARER_TOKEN=... SMOKE_LANGUAGE=en SMOKE_EXPECT_KNOWLEDGE=absent \
   uv run --project services/mcp python deploy/azure/smoke.py
 ```
 
@@ -63,8 +63,9 @@ Never against a hospital's production tenant.
 operational service (an authenticated `listDepartments` with a 1 s deadline, cached 15 s) and whether
 the knowledge service is configured. `/ready` stays local: it does not probe upstreams.
 
-**Logs.** Every line is JSON with `provider`, `callId`, `tool`, `outcome`, `nextStep`; never caller
-numbers, names or upstream prose.
+**Logs.** JSON tool-result events carry `provider`, `callId`, `tool`, `outcome` and nextStep where
+applicable (null for summaries). Summary diagnostics record reason/retry delay under the call ID;
+SAVED may log a bounded opaque summary ID. Summary text, caller numbers/names and upstream prose are excluded.
 
 ```bash
 az containerapp logs show -g $RG -n mcp-$P --follow
@@ -84,9 +85,17 @@ flow; do not reactivate the retired backend.
 
 - Owner URLs are the owners' production hosts; credentials registered by them with exactly
   `appointments.write` and `calls.write`; `ACCEPTED_CALLER_VERIFICATION` agreed with Manoj and the platform.
-- Gateway and lifecycle bearers differ and are held by different components.
+- The voice client token is scoped to its ContextForge team/server; the upstream MCP bearer stays in gateway configuration.
 - ContextForge passthrough covers every trusted header; voice platform forwards them and invokes the
-  summary at call end with the lifecycle bearer.
+  LLM-called summary through the same gateway authentication.
 - Smoke passes; latency measured on the real path (`mcp-only/implementation/LATENCY-RESULTS.md`).
 - The retired backend's app, jobs, images, database and credentials are gone
   (`mcp-only/AZURE-RETIREMENT.md`, `mcp-only/implementation/AZURE-RETIREMENT-RESULTS.md`).
+
+## Removed summary credential
+
+`mcp-lifecycle-token` becomes unused by the new revision. The script no longer creates, reads or
+attaches it; `--replace-env-vars` removes its runtime setting. Existing Key Vault versions and app
+secret references remain untouched by this task, for separately approved ownership/rollback review.
+No Azure secret deletion is authorized by the source change. Coordinate image, gateway/voice schema
+and auth configuration for rollback; an older image expects the removed second credential.
