@@ -15,7 +15,7 @@
 # from Key Vault, the container gets the new image and exactly the rollout's current settings.
 #   --dry-run    print every az call instead of running it (no Azure login needed)
 #
-# Secrets in Key Vault (names): mcp-token (gateway bearer), mcp-lifecycle-token (call-end bearer),
+# Secrets in Key Vault (names): mcp-token (gateway bearer),
 # ops-client-id / ops-client-secret (Manoj machine client, supplied by the owner: set OPS_CLIENT_ID /
 # OPS_CLIENT_SECRET in the environment on first run), knowledge-token (Shobhit, same).
 set -euo pipefail
@@ -82,7 +82,7 @@ step "validate the adapter configuration offline (settings, pack, tool schema)"
 (cd "$ROOT/services/mcp" && env -i PATH="$PATH" HOME="$HOME" ENV=production "${ROLLOUT_ENV[@]}" \
   OPS_BASE_URL="$OPS_BASE_URL" OPS_CLIENT_ID=validate OPS_CLIENT_SECRET=validate \
   KNOWLEDGE_BASE_URL="$KNOWLEDGE_BASE_URL" KNOWLEDGE_BEARER_TOKEN="${KNOWLEDGE_BASE_URL:+validate}" \
-  MCP_BEARER_TOKEN=validate-a MCP_LIFECYCLE_BEARER_TOKEN=validate-b \
+  MCP_BEARER_TOKEN=validate-a \
   uv run -q frontdesk-mcp schema >/dev/null)
 
 # --- the Azure target comes from the profile; the signed-in subscription must match -------------
@@ -153,7 +153,6 @@ supplied() {  # supplied VAR: the owner-provided credential from the environment
   printf '%s' "${!1}"
 }
 MCP_TOKEN="$(secret mcp-token token)"
-LIFECYCLE_TOKEN="$(secret mcp-lifecycle-token token)"
 OPS_ID_SECRET="${OPS_CLIENT_ID_SECRET_NAME:-ops-client-id}"
 OPS_PASSWORD_SECRET="${OPS_CLIENT_SECRET_SECRET_NAME:-ops-client-secret}"
 KNOWLEDGE_SECRET="${KNOWLEDGE_BEARER_TOKEN_SECRET_NAME:-knowledge-token}"
@@ -162,7 +161,6 @@ secret "$OPS_PASSWORD_SECRET" supplied OPS_CLIENT_SECRET >/dev/null
 if [[ -n "$KNOWLEDGE_BASE_URL" ]]; then
   secret "$KNOWLEDGE_SECRET" supplied KNOWLEDGE_BEARER_TOKEN >/dev/null
 fi
-[[ "$MCP_TOKEN" != "$LIFECYCLE_TOKEN" ]] || { echo "gateway and lifecycle bearers must differ" >&2; exit 1; }
 
 require "managed identity $ID_NAME" az identity show -g "$RG" -n "$ID_NAME"
 ID="$(out az identity show -g "$RG" -n "$ID_NAME" --query id -o tsv)"
@@ -173,13 +171,13 @@ run az role assignment create --assignee-object-id "$PRINCIPAL" --assignee-princ
   --role AcrPull --scope "$(out az acr show -n "$ACR" --query id -o tsv)" -o none
 kv() { echo "$1=keyvaultref:https://$KV.vault.azure.net/secrets/$1,identityref:$ID"; }
 
-# --- 4. the adapter (reached by the gateway and the call-end lifecycle) --------------------------
+# --- 4. the adapter (reached by the gateway) --------------------------
 step "container: $APP"
-SECRETS="$(kv mcp-token) $(kv mcp-lifecycle-token) $(kv "$OPS_ID_SECRET") $(kv "$OPS_PASSWORD_SECRET")"
+SECRETS="$(kv mcp-token) $(kv "$OPS_ID_SECRET") $(kv "$OPS_PASSWORD_SECRET")"
 ENV_VARS=(ENV=production HOST=0.0.0.0 PORT=8100
   "OPS_BASE_URL=$OPS_BASE_URL" "OPS_CLIENT_ID=secretref:$OPS_ID_SECRET" "OPS_CLIENT_SECRET=secretref:$OPS_PASSWORD_SECRET"
   "KNOWLEDGE_BASE_URL=$KNOWLEDGE_BASE_URL"
-  MCP_BEARER_TOKEN=secretref:mcp-token MCP_LIFECYCLE_BEARER_TOKEN=secretref:mcp-lifecycle-token
+  MCP_BEARER_TOKEN=secretref:mcp-token
   "${ROLLOUT_ENV[@]}")
 if [[ -n "$KNOWLEDGE_BASE_URL" ]]; then
   SECRETS="$SECRETS $(kv "$KNOWLEDGE_SECRET")"
@@ -244,7 +242,7 @@ wait_ready() {
   echo "$APP revision $revision did not become ready; inspect its Container Apps logs" >&2
   return 1
 }
-step "verify: latest revision ready, dependencies, authentication, three conversational tools, lifecycle boundary"
+step "verify: latest revision ready, dependencies, authentication, four tools"
 wait_ready
 MCP_HOST="$(out az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv)"
 LANG1="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^TENANT_SUPPORTED_LANGUAGES=//p' | cut -d, -f1)"
@@ -253,14 +251,13 @@ SMOKE_EXPECT_KNOWLEDGE=absent
 if [[ -n "$DRY" ]]; then
   show env "SMOKE_EXPECT_KNOWLEDGE=$SMOKE_EXPECT_KNOWLEDGE" uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 else
-  MCP_URL="https://$MCP_HOST/mcp/" MCP_BEARER_TOKEN="$MCP_TOKEN" MCP_LIFECYCLE_BEARER_TOKEN="$LIFECYCLE_TOKEN" \
+  MCP_URL="https://$MCP_HOST/mcp/" MCP_BEARER_TOKEN="$MCP_TOKEN" \
     SMOKE_LANGUAGE="$LANG1" SMOKE_EXPECT_KNOWLEDGE="$SMOKE_EXPECT_KNOWLEDGE" uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 fi
 
 step "done: $P"
 cat >&2 <<EOF2
 MCP adapter:      https://$APP.<environment domain>/mcp/
-Gateway bearer:   Key Vault $KV secret mcp-token            (ContextForge / voice agent, three tools)
-Lifecycle bearer: Key Vault $KV secret mcp-lifecycle-token  (call-end finalizer, record_call_summary)
+Gateway bearer:   Key Vault $KV secret mcp-token            (ContextForge / voice agent, four tools)
 Next:             register with ContextForge (deploy/contextforge/register.py), then AZURE.md §tests.
 EOF2

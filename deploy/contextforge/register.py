@@ -10,7 +10,7 @@ the environment.
     CONTEXTFORGE_TOKEN           an admin JWT, or instead:
     CONTEXTFORGE_ADMIN_EMAIL / CONTEXTFORGE_ADMIN_PASSWORD   (POST /v1/auth/login)
     MCP_PUBLIC_URL               URL ContextForge uses to reach the adapter, ending /mcp/
-    MCP_BEARER_TOKEN             the GATEWAY bearer the adapter expects (never the lifecycle bearer)
+    MCP_BEARER_TOKEN             the GATEWAY bearer the adapter expects
     CONTEXTFORGE_TEAM_ID         required with --visibility team
     PROVIDER_ID, DOMAIN_PACK     from rollouts/<provider>/rollout.env: one gateway per rollout,
                                  named frontdesk-<provider> (the voice agent's tool prefix)
@@ -19,8 +19,7 @@ the environment.
     python deploy/contextforge/register.py
 
 ContextForge must run with ENABLE_HEADER_PASSTHROUGH=true so the trusted call headers reach the
-adapter. The gateway entry carries the conversational bearer only: through this gateway the voice
-agent sees three tools; record_call_summary is invoked by the call-end lifecycle with its own bearer.
+adapter. The gateway entry carries the gateway bearer: all four tools are available through it.
 """
 
 from __future__ import annotations
@@ -36,7 +35,6 @@ from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
 TOOLS = ("get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary")
-CONVERSATIONAL = TOOLS[:3]
 # Trusted call context travels from the voice platform through the gateway to the adapter.
 PASSTHROUGH = ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification", "X-Operation-Id",
                "X-Call-Started-At"]
@@ -53,7 +51,7 @@ def payload(args: argparse.Namespace) -> dict:
     return {
         "name": args.name,
         "url": env("MCP_PUBLIC_URL"),
-        "description": f"Hospital front-desk tools: {', '.join(CONVERSATIONAL)} (call-end: {TOOLS[3]})",
+        "description": f"Hospital front-desk tools: {', '.join(TOOLS)}",
         "transport": "STREAMABLEHTTP",
         "authType": "bearer",
         "authToken": env("MCP_BEARER_TOKEN"),
@@ -83,12 +81,8 @@ def admin_token(client: httpx.Client) -> str:
     return response.json()["access_token"]
 
 
-def _properties(schema: dict | None) -> set[str]:
-    return set(((schema or {}).get("properties") or {}).keys())
-
-
 def drift(served: list[dict], gateway_tools: list[dict], prefix: str) -> list[str]:
-    """Differences between the adapter's conversational tools and what the gateway discovered."""
+    """Differences between the adapter's tools and what the gateway discovered."""
     problems: list[str] = []
     expected = {t["name"]: t for t in served}
     discovered: dict[str, dict] = {}
@@ -103,7 +97,7 @@ def drift(served: list[dict], gateway_tools: list[dict], prefix: str) -> list[st
             problems.append(f"{name}: not discovered by the gateway")
             continue
         schema = discovered[name].get("input_schema") or discovered[name].get("inputSchema") or {}
-        if _properties(schema) != _properties(tool.get("inputSchema")):
+        if schema != (tool.get("inputSchema") or {}):
             problems.append(f"{name}: gateway input schema differs from the adapter's (stale discovery)")
     for name in sorted(set(discovered) - set(expected)):
         problems.append(f"{name.replace('_', '-')}: gateway lists a tool the adapter no longer serves")
@@ -117,14 +111,14 @@ async def served_tools(url: str, token: str) -> list[dict]:
 
 def verify(client: httpx.Client, gateway_id: str, name: str) -> None:
     served = asyncio.run(served_tools(env("MCP_PUBLIC_URL"), env("MCP_BEARER_TOKEN")))
-    if sorted(t["name"] for t in served) != sorted(CONVERSATIONAL):
-        raise SystemExit("the adapter does not serve exactly the three conversational tools to the gateway bearer")
+    if sorted(t["name"] for t in served) != sorted(TOOLS):
+        raise SystemExit("the adapter does not serve exactly the four tools to the gateway bearer")
     for attempt in (1, 2):
         tools = client.get("/v1/tools", params={"include_inactive": "true"})
         tools.raise_for_status()
         problems = drift(served, rows(tools.json(), "tools"), name)
         if not problems:
-            print(f"verified: gateway tools match the adapter ({', '.join(CONVERSATIONAL)})")
+            print(f"verified: gateway tools match the adapter ({', '.join(TOOLS)})")
             return
         if attempt == 1:
             print("tool drift detected; asking the gateway to rediscover", file=sys.stderr)
@@ -187,7 +181,7 @@ def main() -> None:
             created.raise_for_status()
             result = created.json()
             gateway_id = str(result.get("id"))
-            print(f"registered: {result.get('name')} ({gateway_id}), conversational tools: {', '.join(CONVERSATIONAL)}")
+            print(f"registered: {result.get('name')} ({gateway_id}), conversational tools: {', '.join(TOOLS)}")
         if not args.skip_verify:
             verify(client, gateway_id, args.name)
 

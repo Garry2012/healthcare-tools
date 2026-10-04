@@ -49,7 +49,7 @@ def processes():
                "TENANT_COUNTRY_CALLING_CODE": "91", "OPS_BASE_URL": f"http://127.0.0.1:{ops_port}/api/v1",
                "OPS_CLIENT_ID": "mcp-e2e", "OPS_CLIENT_SECRET": "e2e-secret",
                "KNOWLEDGE_BASE_URL": f"http://127.0.0.1:{kb_port}", "KNOWLEDGE_BEARER_TOKEN": "kb-e2e",
-               "MCP_BEARER_TOKEN": "gateway-e2e", "MCP_LIFECYCLE_BEARER_TOKEN": "lifecycle-e2e",
+               "MCP_BEARER_TOKEN": "gateway-e2e",
                "HOST": "127.0.0.1", "PORT": str(mcp_port), "LOG_LEVEL": "WARNING"}
     mcp = subprocess.Popen([sys.executable, "-m", "frontdesk_mcp.cli", "serve"], env=mcp_env,
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -65,11 +65,11 @@ def processes():
 
 async def test_release_smoke_passes_against_real_processes(processes):
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "lifecycle-e2e", "en",
+    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "en",
                          "General Medicine", "required")
 
 
-async def test_journey_and_lifecycle_through_real_transport(processes):
+async def test_journey_and_summary_through_real_transport(processes):
     base = processes["mcp"]
     headers = {"Authorization": "Bearer gateway-e2e", **harness.headers(call_id="e2e-1", operation_id="op-e2e-1")}
     # The stub's board for a far future date is UNKNOWN unless scripted: script a confirmed session first.
@@ -87,13 +87,11 @@ async def test_journey_and_lifecycle_through_real_transport(processes):
             "action": "CREATE", "patientName": "E2E Patient", "patientMobile": "9000000101", "doctorId": "doc_garima",
             "visitDate": "2099-01-05", "callerConfirmed": True})).structured_content
         assert replay["appointment"]["appointmentId"] == noted["appointment"]["appointmentId"]
-        refused = await c.call_tool("record_call_summary", {"intent": "BOOKING", "outcome": "APPOINTMENT_NOTED",
-                                                            "summaryText": "x"}, raise_on_error=False)
-        assert refused.is_error
-    lifecycle = {"Authorization": "Bearer lifecycle-e2e", **harness.headers(
+    summary_headers = {"Authorization": "Bearer gateway-e2e", **harness.headers(
         call_id="e2e-1", started_at="2026-10-01T10:00:00+05:30")}
-    async with Client(StreamableHttpTransport(f"{base}/mcp/", headers=lifecycle)) as c:
-        assert [t.name for t in await c.list_tools()] == ["record_call_summary"]
+    async with Client(StreamableHttpTransport(f"{base}/mcp/", headers=summary_headers)) as c:
+        assert {t.name for t in await c.list_tools()} == {
+            "get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary"}
         stored = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_NOTED", "appointmentId": noted["appointment"]["appointmentId"],
             "summaryText": "E2E journey."})).structured_content

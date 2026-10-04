@@ -183,7 +183,7 @@ async def test_appointment_validation_and_scope(ops):
 async def test_call_summary_is_stored_once_per_call_id(ops):
     state, http = ops
     auth = await token(http)
-    body = {"callId": "call-9", "startedAt": "2026-10-01T09:58:00+05:30", "durationSeconds": 184, "language": "KN",
+    body = {"callId": "call-9", "startedAt": "2026-10-01T09:58:00+05:30", "language": "KN",
             "callerMobile": "9000000101", "intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED",
             "doctorId": "doc_garima",
             "summaryText": "Lakshmi Rao asked for Dr. Garima tomorrow; board UNKNOWN; callback requested."}

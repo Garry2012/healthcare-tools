@@ -172,8 +172,9 @@ def test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env
     update = log.index("az containerapp update -g")
     assert secret_set < update and identity < update and registry < update, "attach secrets/identity before env"
     secrets_line = [line for line in log.splitlines() if "az containerapp secret set" in line][0]
-    for name in ("mcp-token", "mcp-lifecycle-token", "ops-client-id", "ops-client-secret", "knowledge-token"):
+    for name in ("mcp-token", "ops-client-id", "ops-client-secret", "knowledge-token"):
         assert f"{name}=keyvaultref:" in secrets_line, name
+    assert "mcp-lifecycle-token" not in log and "MCP_LIFECYCLE" not in log
     assert "SMOKE_EXPECT_KNOWLEDGE=required" in log
     assert "az containerapp secret remove" not in log
     assert "az containerapp create" not in log  # the existing app is upgraded, not recreated
@@ -232,30 +233,62 @@ def test_the_committed_live_profile_names_manoj_base_and_the_canary_app():
     assert "AZ_RESOURCE_GROUP=healthcare-rg" in live.stdout
 
 
-def test_gateway_refresh_uses_the_deployed_contextforge_api(monkeypatch):
-    """The deployed 1.0.11 API refreshes at /tools/refresh, not /refresh."""
-    served = [{"name": name, "inputSchema": {}} for name in TOOL_NAMES[:3]]
+@pytest.fixture
+async def h(make_settings):
+    from . import harness
 
-    async def discover(*_):
-        return served
+    instance = harness.build(make_settings())
+    try:
+        yield instance
+    finally:
+        await instance.aclose()
 
-    monkeypatch.setenv("MCP_PUBLIC_URL", "https://adapter.example/mcp/")
-    monkeypatch.setenv("MCP_BEARER_TOKEN", "gateway-secret")
-    monkeypatch.setitem(REGISTER["verify"].__globals__, "served_tools", discover)
+
+@pytest.mark.parametrize("problem", ["none", "missing", "maxLength", "required"])
+async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, problem):
+    import asyncio
+    import copy
+
+    from frontdesk_mcp.server import create_app
+
+    from .conftest import serving
+
+    app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                     knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+    served = []
     requests = []
 
     def gateway(request):
         requests.append((request.method, request.url.path))
         if request.url.path.endswith("/tools/refresh"):
             return httpx.Response(200, json={})
-        tools = [] if len(requests) == 1 else [
-            {"name": f"frontdesk-demo-hospital-{t['name']}", "inputSchema": {}} for t in served]
-        return httpx.Response(200, json={"tools": tools})
+        discovered = served if len(requests) > 1 else [t for t in served if t["name"] != "record_call_summary"]
+        if problem == "missing":
+            discovered = [t for t in discovered if t["name"] != "record_call_summary"]
+        if problem in {"maxLength", "required"}:
+            discovered = copy.deepcopy(discovered)
+            for tool in discovered:
+                if tool["name"] == "record_call_summary":
+                    if problem == "maxLength":
+                        tool["inputSchema"]["properties"]["summaryText"]["maxLength"] = 2000
+                    else:
+                        tool["inputSchema"]["required"].remove("summaryText")
+        return httpx.Response(200, json={"tools": [
+            {"name": f"frontdesk-demo-hospital-{t['name']}", "inputSchema": t["inputSchema"]} for t in discovered]})
 
-    with httpx.Client(base_url="https://gateway.example", transport=httpx.MockTransport(gateway)) as client:
-        REGISTER["verify"](client, "gateway-id", "frontdesk-demo-hospital")
+    async with serving(app) as base:
+        monkeypatch.setenv("MCP_PUBLIC_URL", f"{base}/mcp/")
+        monkeypatch.setenv("MCP_BEARER_TOKEN", "mcp-token")
+        served = await REGISTER["served_tools"](f"{base}/mcp/", "mcp-token")
+        with httpx.Client(base_url="https://gateway.example", transport=httpx.MockTransport(gateway)) as client:
+            if problem != "none":
+                with pytest.raises(SystemExit, match="record_call_summary:"):
+                    await asyncio.to_thread(REGISTER["verify"], client, "gateway-id", "frontdesk-demo-hospital")
+            else:
+                await asyncio.to_thread(REGISTER["verify"], client, "gateway-id", "frontdesk-demo-hospital")
     assert requests == [("GET", "/v1/tools"), ("POST", "/v1/gateways/gateway-id/tools/refresh"),
                         ("GET", "/v1/tools")]
+    assert h.ops_state.summaries == {} and h.ops_state.appointments == {}
 
 
 def test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret(tmp_path):

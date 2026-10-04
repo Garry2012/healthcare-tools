@@ -1,11 +1,10 @@
 """Deployed-transport release gate (marker `external`): the MCP adapter as the voice platform reaches it,
-over real streamable HTTP with the real bearers. Verifies the layer the direct-client tests cannot:
-authentication, the conversational/lifecycle split, header forwarding and read-only tool calls on the
+over real streamable HTTP with the gateway bearer. Verifies the layer the direct-client tests cannot:
+authentication, four-tool discovery, header forwarding and read-only tool calls on the
 deployment. It never writes an appointment or a summary.
 
   MCP_E2E_URL                 https://<adapter host>/mcp/
   MCP_E2E_BEARER              the gateway bearer
-  MCP_E2E_LIFECYCLE_BEARER    the lifecycle bearer (optional: when absent the lifecycle view is reported BLOCKED)
   MCP_E2E_DEPARTMENT          department name present in the tenant (default General Medicine)
 """
 
@@ -36,12 +35,9 @@ def required(name: str) -> str:
 async def test_release_smoke_against_the_deployed_adapter():
     required("SMOKE_EXPECT_KNOWLEDGE")  # supplied by scripts/env.sh from the selected profile
     url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
-    lifecycle = os.environ.get("MCP_E2E_LIFECYCLE_BEARER") or None
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](url, bearer, lifecycle, "en", os.environ.get("MCP_E2E_DEPARTMENT", "General Medicine"),
+    await smoke["smoke"](url, bearer, "en", os.environ.get("MCP_E2E_DEPARTMENT", "General Medicine"),
                          os.environ["SMOKE_EXPECT_KNOWLEDGE"])
-    if lifecycle is None:
-        pytest.fail("BLOCKED: MCP_E2E_LIFECYCLE_BEARER not set; conversational checks passed, lifecycle unverified")
 
 
 async def test_trusted_headers_are_forwarded_by_the_deployed_transport():
