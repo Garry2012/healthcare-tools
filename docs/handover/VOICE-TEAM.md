@@ -28,7 +28,6 @@ separate. Credentials, caller authority and lifecycle context are not tool argum
 | X-Caller-Verification | Verification label in ACCEPTED_CALLER_VERIFICATION; default SIP_CALLER_ID. A number alone does not establish authority. |
 | X-Operation-Id | Confirmed-write identifier with the same 1–64 character syntax as call ID. Required for CREATE/CANCEL/RESCHEDULE. Same call/action/operation identifies the same payload; changed payload conflicts. |
 | X-Call-Started-At | ISO timestamp with timezone offset; required for record_call_summary. |
-| X-Call-Duration-Seconds | Optional non-negative integer call duration in seconds. |
 
 Malformed identifiers/timing are treated as absent. Header names are case-insensitive. Tenant and
 principal derive from deployment configuration and authentication, not model arguments.

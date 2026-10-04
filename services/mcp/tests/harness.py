@@ -22,7 +22,7 @@ CALLER = "+919000000101"
 
 def headers(*, call_id: str | None = "call-1", caller: str | None = CALLER,
             operation_id: str | None = None, verification: str | None = "SIP_CALLER_ID",
-            started_at: str | None = None, duration: str | None = None) -> dict[str, str]:
+            started_at: str | None = None) -> dict[str, str]:
     out: dict[str, str] = {}
     if call_id:
         out["X-Call-Id"] = call_id
@@ -34,8 +34,6 @@ def headers(*, call_id: str | None = "call-1", caller: str | None = CALLER,
         out["X-Operation-Id"] = operation_id
     if started_at:
         out["X-Call-Started-At"] = started_at
-    if duration:
-        out["X-Call-Duration-Seconds"] = duration
     return out
 
 

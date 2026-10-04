@@ -123,6 +123,8 @@ def test_registration_names_four_tools_and_forwards_every_trusted_header(monkeyp
     monkeypatch.setenv("MCP_BEARER_TOKEN", "gateway-secret")
     monkeypatch.setenv("DOMAIN_PACK", "healthcare")
     body = REGISTER["payload"](SimpleNamespace(name="frontdesk-demo-hospital", visibility="private"))
+    assert body["passthroughHeaders"] == ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification",
+                                          "X-Operation-Id", "X-Call-Started-At"]
     assert tuple(REGISTER["TOOLS"]) == TOOL_NAMES
     assert sorted(body["passthroughHeaders"]) == sorted(PASSTHROUGH_HEADERS)
     assert body["transport"] == "STREAMABLEHTTP" and body["authType"] == "bearer"

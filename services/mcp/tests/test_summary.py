@@ -16,7 +16,7 @@ from frontdesk_mcp.server import JsonFormatter
 from . import harness
 from .test_ops_client import Upstream
 
-CALL_CONTEXT = {"operation_id": None, "started_at": "2026-10-01T09:58:00+05:30", "duration": "184"}
+CALL_CONTEXT = {"operation_id": None, "started_at": "2026-10-01T09:58:00+05:30"}
 CALLBACK = {"intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED", "callerMobile": "9000000101",
             "doctorId": "doc_garima", "language": "kn-IN",
             "summaryText": "Lakshmi Rao, 9000000101, asked for Dr. Garima tomorrow morning; callback promised."}

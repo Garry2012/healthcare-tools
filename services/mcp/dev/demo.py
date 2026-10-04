@@ -80,12 +80,13 @@ async def main() -> None:
                        "search_knowledge", {"question": "Dr Garima, I have chest pain", "language": "en"})
         async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={
                 "Authorization": "Bearer lifecycle", "X-Call-Id": "demo-call-1",
-                "X-Call-Started-At": "2026-10-01T09:58:00+05:30", "X-Call-Duration-Seconds": "184"})) as c:
+                "X-Call-Started-At": "2026-10-01T09:58:00+05:30"})) as c:
             show("tools visible to the call-end lifecycle", {"tools": [t.name for t in await c.list_tools()]})
             await call(c, "record_call_summary (CALLBACK_NOTED)", "record_call_summary", {
-                "intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED", "callerName": "Lakshmi Rao",
+                "intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED",
                 "callerMobile": "9000000101", "doctorId": "doc_kiran_hegde", "language": "kn",
-                "summaryText": "Asked for Dr. Kiran Hegde this evening; board status UNKNOWN."})
+                "summaryText": "Lakshmi Rao, 9000000101, asked for Dr. Kiran Hegde this evening; "
+                               "board UNKNOWN; callback promised."})
 
 
 if __name__ == "__main__":

@@ -138,8 +138,7 @@ async def test_the_whole_journey_over_http(served):
         cancelled = (await c.call_tool("manage_booking", {"action": "CANCEL", "appointmentId": appointment_id,
                                                           "callerConfirmed": True})).structured_content
         assert cancelled["outcome"] == "CANCELLED"
-    async with client(base, token="lifecycle-token", started_at="2026-10-01T09:58:00+05:30",
-                      duration="240") as c:
+    async with client(base, token="lifecycle-token", started_at="2026-10-01T09:58:00+05:30") as c:
         stored = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_CANCELLED", "appointmentId": appointment_id,
             "summaryText": "Requested, moved and cancelled an appointment with Dr. Garima."})).structured_content

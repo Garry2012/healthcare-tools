@@ -29,11 +29,10 @@ FIELD_OF_HEADER = {
     "x-caller-verification": "caller_verification",
     "x-operation-id": "operation_id",
     "x-call-started-at": "call_started_at",
-    "x-call-duration-seconds": "call_duration_seconds",
 }
 # Headers the gateway must pass through from the platform (deploy/contextforge/register.py).
 PASSTHROUGH_HEADERS = ("X-Call-Id", "X-Caller-Number", "X-Caller-Verification",
-                       "X-Operation-Id", "X-Call-Started-At", "X-Call-Duration-Seconds")
+                       "X-Operation-Id", "X-Call-Started-At")
 
 
 @dataclass(frozen=True)
@@ -43,7 +42,6 @@ class CallContext:
     caller_verification: str | None = None
     operation_id: str | None = None
     call_started_at: datetime | None = None
-    call_duration_seconds: int | None = None
 
 
 def _ident(value: str | None, header: str) -> str | None:
@@ -69,15 +67,6 @@ def _started_at(value: str | None) -> datetime | None:
     return parsed
 
 
-def _duration(value: str | None) -> int | None:
-    if value is None:
-        return None
-    if not value.isdigit():
-        logger.warning("trusted_header_malformed", extra={"fields": {"header": "x-call-duration-seconds"}})
-        return None
-    return int(value)
-
-
 def from_headers(headers: Mapping[str, str], settings: Settings) -> CallContext:
     lower = {k.lower(): v for k, v in headers.items()}
     call_id = _ident(lower.get("x-call-id"), "x-call-id")
@@ -93,5 +82,4 @@ def from_headers(headers: Mapping[str, str], settings: Settings) -> CallContext:
         caller_verification=verification if caller else None,
         operation_id=_ident(lower.get("x-operation-id"), "x-operation-id"),
         call_started_at=_started_at(lower.get("x-call-started-at")),
-        call_duration_seconds=_duration(lower.get("x-call-duration-seconds")),
     )

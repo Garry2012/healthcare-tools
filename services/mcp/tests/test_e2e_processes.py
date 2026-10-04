@@ -91,16 +91,16 @@ async def test_journey_and_lifecycle_through_real_transport(processes):
                                                             "summaryText": "x"}, raise_on_error=False)
         assert refused.is_error
     lifecycle = {"Authorization": "Bearer lifecycle-e2e", **harness.headers(
-        call_id="e2e-1", started_at="2026-10-01T10:00:00+05:30", duration="120")}
+        call_id="e2e-1", started_at="2026-10-01T10:00:00+05:30")}
     async with Client(StreamableHttpTransport(f"{base}/mcp/", headers=lifecycle)) as c:
         assert [t.name for t in await c.list_tools()] == ["record_call_summary"]
         stored = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_NOTED", "appointmentId": noted["appointment"]["appointmentId"],
             "summaryText": "E2E journey."})).structured_content
-        assert stored["outcome"] == "STORED"
+        assert stored == {"outcome": "SAVED"}
         again = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_NOTED", "appointmentId": noted["appointment"]["appointmentId"],
             "summaryText": "E2E journey."})).structured_content
-        assert again["outcome"] == "REPLAYED" and again["summaryId"] == stored["summaryId"]
+        assert again == {"outcome": "ALREADY_SAVED"}
     state = httpx.get(f"{processes['ops']}/__stub/state").json()
     assert len(state["appointments"]) == 1 and len(state["summaries"]) == 1

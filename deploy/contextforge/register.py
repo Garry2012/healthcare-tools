@@ -39,7 +39,7 @@ TOOLS = ("get_doctor_availability", "manage_booking", "search_knowledge", "recor
 CONVERSATIONAL = TOOLS[:3]
 # Trusted call context travels from the voice platform through the gateway to the adapter.
 PASSTHROUGH = ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification", "X-Operation-Id",
-               "X-Call-Started-At", "X-Call-Duration-Seconds"]
+               "X-Call-Started-At"]
 
 
 def env(name: str, *, required: bool = True) -> str:

@@ -28,19 +28,18 @@ def test_fixed_clock_reports_facility_local_date(make_settings):
 def test_headers_become_a_call_context(make_settings):
     headers = {
         "x-call-id": "call-77", "x-caller-number": "+919000000101", "x-caller-verification": "SIP_CALLER_ID",
-        "x-operation-id": "op-1", "x-call-started-at": "2026-10-01T10:00:00+05:30", "x-call-duration-seconds": "184",
+        "x-operation-id": "op-1", "x-call-started-at": "2026-10-01T10:00:00+05:30",
     }
     ctx = context.from_headers(headers, make_settings())
     assert ctx.call_id == "call-77" and ctx.caller_number == "+919000000101"
     assert ctx.caller_verification == "SIP_CALLER_ID" and ctx.operation_id == "op-1"
     assert ctx.call_started_at == datetime.fromisoformat("2026-10-01T10:00:00+05:30")
-    assert ctx.call_duration_seconds == 184
 
 
 def test_absent_headers_are_absent_not_defaulted(make_settings):
     ctx = context.from_headers({}, make_settings())
     assert ctx.call_id is None and ctx.caller_number is None
-    assert ctx.operation_id is None and ctx.call_started_at is None and ctx.call_duration_seconds is None
+    assert ctx.operation_id is None and ctx.call_started_at is None
     assert ctx.caller_verification is None
 
 
@@ -53,8 +52,7 @@ def test_a_forwarded_number_without_a_verification_header_is_unverified(make_set
 
 @pytest.mark.parametrize("header,value", [
     ("x-call-id", "x" * 65), ("x-call-id", "bad id/with?chars"), ("x-operation-id", "../op"),
-    ("x-call-started-at", "yesterday"), ("x-call-duration-seconds", "-1"),
-    ("x-call-duration-seconds", "ten"),
+    ("x-call-started-at", "yesterday"),
 ])
 def test_malformed_trusted_headers_are_treated_as_absent(make_settings, header, value):
     ctx = context.from_headers({header: value}, make_settings())
@@ -103,3 +101,13 @@ def test_mobile_fields_match_the_contract_pattern():
 
 
 # ------------------------------------------------------------------ architect review AR-01
+
+
+@pytest.mark.parametrize("duration", ["184", "-1", "not-a-duration"])
+def test_obsolete_duration_header_is_ignored_without_logging(make_settings, duration, caplog):
+    from dataclasses import asdict
+
+    ctx = context.from_headers({"X-Call-Duration-Seconds": duration}, make_settings())
+    assert asdict(ctx) == {"call_id": None, "caller_number": None, "caller_verification": None,
+                           "operation_id": None, "call_started_at": None}
+    assert caplog.records == []
