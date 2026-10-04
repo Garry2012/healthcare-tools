@@ -16,8 +16,8 @@ its owner-service endpoints. Onboarding changes no code.
 4. **Deploy and register.** `deploy/azure/deploy.sh rollouts/<id> --profile live` then `deploy/contextforge/register.py`
    (`AZURE.md`, `CONTEXTFORGE.md`). The smoke must pass against the owners' designated test tenant
    before the hospital's own.
-5. **Voice platform.** The platform must forward the trusted headers and invoke `record_call_summary`
-   with the lifecycle bearer at call end (`VOICE-TEAM.md`).
+5. **Voice platform.** The platform forwards trusted identity/operation/start-time headers. All four tools, including
+   LLM-called `record_call_summary`, share gateway authentication (`VOICE-TEAM.md`).
 
 Directory data, schedules, approved answers and routing rules are the owners': the adapter reads
 them through their contracts and holds none of them.

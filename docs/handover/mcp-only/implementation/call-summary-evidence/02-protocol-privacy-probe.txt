@@ -1,0 +1,42 @@
+$ uv run --directory services/mcp pytest tests/test_server.py -k wrong_type_summary -q --tb=short
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_wrong_type_summary_does_not_log_private_input ______________
+tests/test_server.py:436: in test_wrong_type_summary_does_not_log_private_input
+    assert marker not in str(result.content)
+E   assert 'NAME42' not in '[TextConten... meta=None)]'
+E
+E     'NAME42' is contained here:
+E       rivate': 'NAME42 9000000123 SYMPTOM42'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type", annotations=None, meta=None)]
+E     ?           ++++++
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T02:43:01.373993+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [53269]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:43:01.374384+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:43:01.374527+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.1"}
+{"ts": "2026-10-04T02:43:01.389981+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:43:01.391027+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:60707 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T02:43:01.593692+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:43:01.695970+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:43:01.696925+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:43:01.696977+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [53269]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [53269]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_wrong_type_summary_does_not_log_private_input
+1 failed, 24 deselected, 2 warnings in 1.15s
+EXIT: 1

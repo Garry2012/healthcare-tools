@@ -1,0 +1,668 @@
+$ uv run --directory services/mcp pytest tests/test_server.py -q -k 'gateway_gets or gateway_can_save or gateway_must_authenticate or summary_arguments or concurrent_summaries'
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+___________ test_gateway_gets_all_four_tools_without_trusted_fields ____________
+
+served = ('http://127.0.0.1:61494', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bad38c0>))
+
+    async def test_gateway_gets_all_four_tools_without_trusted_fields(served):
+        base, _ = served
+        async with client(base) as c:
+            tools = await c.list_tools()
+            instructions = c.initialize_result.instructions
+>       assert sorted(t.name for t in tools) == TOOLS
+E       AssertionError: assert ['get_doctor_...ch_knowledge'] == ['get_doctor_...ch_knowledge']
+E
+E         At index 2 diff: 'search_knowledge' != 'record_call_summary'
+E         Right contains one more item: 'search_knowledge'
+E         Use -v to get more diff
+
+tests/test_server.py:63: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T02:51:49.499960+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [60908]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:49.500586+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:49.500737+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.1"}
+{"ts": "2026-10-04T02:51:49.555123+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:49.555541+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:61494 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T02:51:49.702826+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:49.805095+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:49.806266+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:49.806320+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [60908]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [60908]
+__________ test_gateway_can_save_a_summary_with_trusted_call_identity __________
+
+served = ('http://127.0.0.1:61499', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bd45a90>))
+
+    async def test_gateway_can_save_a_summary_with_trusted_call_identity(served):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Explained visiting hours."},
+                raise_on_error=False)
+>           tool = next(t for t in await c.list_tools() if t.name == "record_call_summary")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           StopIteration
+
+tests/test_server.py:81: StopIteration
+
+The above exception was the direct cause of the following exception:
+
+self = <Coroutine test_gateway_can_save_a_summary_with_trusted_call_identity>
+
+    def runtest(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        runner = self._request.getfixturevalue(runner_fixture_id)
+        context = contextvars.copy_context()
+        synchronized_obj = _synchronize_coroutine(
+            getattr(*self._synchronization_target_attr), runner, context
+        )
+        with MonkeyPatch.context() as c:
+            c.setattr(*self._synchronization_target_attr, synchronized_obj)
+>           super().runtest()
+
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:569:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:905: in inner
+    runner.run(coro, context=context)
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <_UnixSelectorEventLoop running=False closed=False debug=False>
+future = <Task finished name='Task-51' coro=<test_gateway_can_save_a_summary_with_trusted_call_identity() done, defined at /Use...thcare-tools/des-moines/services/mcp/tests/test_server.py:75> exception=RuntimeError('coroutine raised StopIteration')>
+
+    def run_until_complete(self, future):
+        """Run until the Future is done.
+
+        If the argument is a coroutine, it is wrapped in a Task.
+
+        WARNING: It would be disastrous to call run_until_complete()
+        with the same coroutine twice -- it would wrap it in two
+        different Tasks and that can't be good.
+
+        Return the Future's result, or raise its exception.
+        """
+        self._check_closed()
+        self._check_running()
+
+        new_task = not futures.isfuture(future)
+        future = tasks.ensure_future(future, loop=self)
+        if new_task:
+            # An exception is raised if the future didn't complete, so there
+            # is no need to log the "destroy pending task" message
+            future._log_destroy_pending = False
+
+        future.add_done_callback(_run_until_complete_cb)
+        try:
+            self.run_forever()
+        except:
+            if new_task and future.done() and not future.cancelled():
+                # The coroutine raised a BaseException. Consume the exception
+                # to not log a warning, the caller doesn't have access to the
+                # local task.
+                future.exception()
+            raise
+        finally:
+            future.remove_done_callback(_run_until_complete_cb)
+        if not future.done():
+            raise RuntimeError('Event loop stopped before Future completed.')
+
+>       return future.result()
+               ^^^^^^^^^^^^^^^
+E       RuntimeError: coroutine raised StopIteration
+
+/opt/homebrew/Cellar/python@3.13/3.13.13_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/base_events.py:725: RuntimeError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T02:51:49.824165+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [60908]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:49.824227+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:49.824307+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.1"}
+{"ts": "2026-10-04T02:51:49.825341+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:49.825693+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:61499 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T02:51:49.860660+00:00", "level": "WARNING", "logger": "mcp.server.lowlevel.server", "msg": "Tool 'record_call_summary' not listed, no validation will be performed", "provider": "demo-hospital"}
+------------------------------ Captured log call -------------------------------
+WARNING  mcp.server.lowlevel.server:server.py:494 Tool 'record_call_summary' not listed, no validation will be performed
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T02:51:49.927855+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.029456+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.030383+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.030454+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [60908]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [60908]
+_____________ test_gateway_must_authenticate_and_health_stays_open _____________
+
+served = ('http://127.0.0.1:61504', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bdbd5b0>))
+
+    async def test_gateway_must_authenticate_and_health_stays_open(served):
+        base, _ = served
+        async with httpx.AsyncClient() as http:
+            assert (await http.post(f"{base}/mcp/", json={})).status_code == 401
+            assert (await http.post(f"{base}/mcp/", json={}, headers={"Authorization": "Bearer nope"})).status_code == 401
+>           assert (await http.post(f"{base}/mcp/", json={},
+                                    headers={"Authorization": "Bearer lifecycle-token"})).status_code == 401
+E           assert 406 == 401
+E            +  where 406 = <Response [406 Not Acceptable]>.status_code
+
+tests/test_server.py:92: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T02:51:50.047246+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [60908]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.047335+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.047423+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.1"}
+{"ts": "2026-10-04T02:51:50.048392+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.048760+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:61504 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T02:51:50.150912+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.253352+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.255737+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.255886+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [60908]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [60908]
+____________ test_summary_arguments_cannot_override_trusted_headers ____________
+
+served = ('http://127.0.0.1:61506', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bf08af0>))
+
+    async def test_summary_arguments_cannot_override_trusted_headers(served):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "OTHER", "outcome": "ABANDONED", "summaryText": "Caller left.",
+                "callId": "forged-call", "startedAt": "2020-01-01T00:00:00Z"}, raise_on_error=False)
+            assert result.is_error or result.structured_content == {"outcome": "SAVED"}
+>           await c.call_tool("record_call_summary", {
+                "intent": "OTHER", "outcome": "ABANDONED", "summaryText": "Caller left."})
+
+tests/test_server.py:173:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv/lib/python3.13/site-packages/fastmcp/client/client.py:1430: in call_tool
+    return await self._parse_call_tool_result(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <fastmcp.client.client.Client object at 0x10bf2bc50>
+name = 'record_call_summary'
+result = CallToolResult(meta=None, content=[TextContent(type='text', text='record_call_summary is not available to the conversation principal (lifecycle access boundary)', annotations=None, meta=None)], structuredContent=None, isError=True)
+raise_on_error = True
+
+    async def _parse_call_tool_result(
+        self, name: str, result: mcp.types.CallToolResult, raise_on_error: bool = False
+    ) -> CallToolResult:
+        """Parse an mcp.types.CallToolResult into our CallToolResult dataclass.
+
+        Args:
+            name: Tool name (for schema lookup)
+            result: Raw MCP protocol result
+            raise_on_error: Whether to raise ToolError on errors
+
+        Returns:
+            CallToolResult: Parsed result with structured data
+        """
+        data = None
+        if result.isError and raise_on_error:
+            msg = cast(mcp.types.TextContent, result.content[0]).text
+>           raise ToolError(msg)
+E           fastmcp.exceptions.ToolError: record_call_summary is not available to the conversation principal (lifecycle access boundary)
+
+.venv/lib/python3.13/site-packages/fastmcp/client/client.py:1317: ToolError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T02:51:50.279690+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [60908]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.279764+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.279849+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.1"}
+{"ts": "2026-10-04T02:51:50.280813+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.281246+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:61506 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T02:51:50.316515+00:00", "level": "WARNING", "logger": "mcp.server.lowlevel.server", "msg": "Tool 'record_call_summary' not listed, no validation will be performed", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.319730+00:00", "level": "WARNING", "logger": "mcp.server.lowlevel.server", "msg": "Tool 'record_call_summary' not listed, no validation will be performed", "provider": "demo-hospital"}
+------------------------------ Captured log call -------------------------------
+WARNING  mcp.server.lowlevel.server:server.py:494 Tool 'record_call_summary' not listed, no validation will be performed
+WARNING  mcp.server.lowlevel.server:server.py:494 Tool 'record_call_summary' not listed, no validation will be performed
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T02:51:50.383387+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.485654+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.486704+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.486758+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [60908]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [60908]
+_________ test_concurrent_summaries_keep_their_own_call_and_start_time _________
+
+served = ('http://127.0.0.1:61511', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10be15e50>))
+
+    async def test_concurrent_summaries_keep_their_own_call_and_start_time(served):
+        base, h = served
+
+        async def one(i):
+            async with client(base, call_id=f"call-{i}", started_at=f"2026-10-01T09:0{i}:00+05:30") as c:
+                return (await c.call_tool("record_call_summary", {
+                    "intent": "OTHER", "outcome": "ABANDONED", "summaryText": f"Conversation {i}."},
+                    raise_on_error=False)).structured_content
+
+>       assert await asyncio.gather(*(one(i) for i in range(1, 6))) == [{"outcome": "SAVED"}] * 5
+E       AssertionError: assert [None, None, None, None, None] == [{'outcome': ...me': 'SAVED'}]
+E
+E         At index 0 diff: None != {'outcome': 'SAVED'}
+E         Use -v to get more diff
+
+tests/test_server.py:188: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T02:51:50.504161+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [60908]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.504236+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.504319+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.1"}
+{"ts": "2026-10-04T02:51:50.505412+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.505784+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:61511 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T02:51:50.578167+00:00", "level": "WARNING", "logger": "mcp.server.lowlevel.server", "msg": "Tool 'record_call_summary' not listed, no validation will be performed", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.579169+00:00", "level": "WARNING", "logger": "mcp.server.lowlevel.server", "msg": "Tool 'record_call_summary' not listed, no validation will be performed", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.579502+00:00", "level": "WARNING", "logger": "mcp.server.lowlevel.server", "msg": "Tool 'record_call_summary' not listed, no validation will be performed", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.579656+00:00", "level": "WARNING", "logger": "mcp.server.lowlevel.server", "msg": "Tool 'record_call_summary' not listed, no validation will be performed", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.579776+00:00", "level": "WARNING", "logger": "mcp.server.lowlevel.server", "msg": "Tool 'record_call_summary' not listed, no validation will be performed", "provider": "demo-hospital"}
+------------------------------ Captured log call -------------------------------
+WARNING  mcp.server.lowlevel.server:server.py:494 Tool 'record_call_summary' not listed, no validation will be performed
+WARNING  mcp.server.lowlevel.server:server.py:494 Tool 'record_call_summary' not listed, no validation will be performed
+WARNING  mcp.server.lowlevel.server:server.py:494 Tool 'record_call_summary' not listed, no validation will be performed
+WARNING  mcp.server.lowlevel.server:server.py:494 Tool 'record_call_summary' not listed, no validation will be performed
+WARNING  mcp.server.lowlevel.server:server.py:494 Tool 'record_call_summary' not listed, no validation will be performed
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T02:51:50.607902+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.710061+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.710798+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:51:50.710863+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [60908]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [60908]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_gateway_gets_all_four_tools_without_trusted_fields
+FAILED tests/test_server.py::test_gateway_can_save_a_summary_with_trusted_call_identity
+FAILED tests/test_server.py::test_gateway_must_authenticate_and_health_stays_open
+FAILED tests/test_server.py::test_summary_arguments_cannot_override_trusted_headers
+FAILED tests/test_server.py::test_concurrent_summaries_keep_their_own_call_and_start_time
+5 failed, 21 deselected, 2 warnings in 2.10s
+EXIT: 1
+$ uv run --directory services/mcp pytest tests/test_deploy.py -q -k 'smoke_requires_all_four or transport_success or unconfigured_smoke'
+F.FFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+___________ test_smoke_requires_all_four_tools[record_call_summary] ____________
+
+missing = 'record_call_summary'
+
+    @pytest.mark.parametrize("missing", ["record_call_summary", "search_knowledge"])
+    async def test_smoke_requires_all_four_tools(missing):
+        from fastmcp import Client, FastMCP
+
+        remote = FastMCP("incomplete-remote")
+        for name in TOOL_NAMES:
+            if name != missing:
+                remote.tool(name=name)(lambda: {"outcome": "NO_ANSWER"})
+        async with Client(remote) as client:
+>           with pytest.raises(RuntimeError, match="tool set"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: Regex pattern did not match.
+E             Expected regex: 'tool set'
+E             Actual message: 'get_doctor_availability failed its read-only smoke check'
+
+tests/test_deploy.py:65: AssertionError
+_____________ test_transport_success_does_not_hide_failures[body0] _____________
+
+body = {'outcome': 'COULD_NOT_CHECK'}
+
+    @pytest.mark.parametrize("body", [
+        {"outcome": "COULD_NOT_CHECK"}, {"outcome": "UNKNOWN_OUTCOME"}, {"outcome": "INVALID_REQUEST"},
+        {"error": {"code": "UNAUTHORIZED"}}, None,
+    ])
+    async def test_transport_success_does_not_hide_failures(body):
+        client = AsyncMock()
+        client.list_tools.return_value = _tools(TOOL_NAMES)
+        client.call_tool.return_value = _result(body)
+>       with pytest.raises(RuntimeError, match="read-only smoke"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'read-only smoke'
+E         Actual message: 'unexpected conversational MCP tool set'
+
+tests/test_deploy.py:77: AssertionError
+_____________ test_transport_success_does_not_hide_failures[body1] _____________
+
+body = {'outcome': 'UNKNOWN_OUTCOME'}
+
+    @pytest.mark.parametrize("body", [
+        {"outcome": "COULD_NOT_CHECK"}, {"outcome": "UNKNOWN_OUTCOME"}, {"outcome": "INVALID_REQUEST"},
+        {"error": {"code": "UNAUTHORIZED"}}, None,
+    ])
+    async def test_transport_success_does_not_hide_failures(body):
+        client = AsyncMock()
+        client.list_tools.return_value = _tools(TOOL_NAMES)
+        client.call_tool.return_value = _result(body)
+>       with pytest.raises(RuntimeError, match="read-only smoke"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'read-only smoke'
+E         Actual message: 'unexpected conversational MCP tool set'
+
+tests/test_deploy.py:77: AssertionError
+_____________ test_transport_success_does_not_hide_failures[body2] _____________
+
+body = {'outcome': 'INVALID_REQUEST'}
+
+    @pytest.mark.parametrize("body", [
+        {"outcome": "COULD_NOT_CHECK"}, {"outcome": "UNKNOWN_OUTCOME"}, {"outcome": "INVALID_REQUEST"},
+        {"error": {"code": "UNAUTHORIZED"}}, None,
+    ])
+    async def test_transport_success_does_not_hide_failures(body):
+        client = AsyncMock()
+        client.list_tools.return_value = _tools(TOOL_NAMES)
+        client.call_tool.return_value = _result(body)
+>       with pytest.raises(RuntimeError, match="read-only smoke"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'read-only smoke'
+E         Actual message: 'unexpected conversational MCP tool set'
+
+tests/test_deploy.py:77: AssertionError
+_____________ test_transport_success_does_not_hide_failures[body3] _____________
+
+body = {'error': {'code': 'UNAUTHORIZED'}}
+
+    @pytest.mark.parametrize("body", [
+        {"outcome": "COULD_NOT_CHECK"}, {"outcome": "UNKNOWN_OUTCOME"}, {"outcome": "INVALID_REQUEST"},
+        {"error": {"code": "UNAUTHORIZED"}}, None,
+    ])
+    async def test_transport_success_does_not_hide_failures(body):
+        client = AsyncMock()
+        client.list_tools.return_value = _tools(TOOL_NAMES)
+        client.call_tool.return_value = _result(body)
+>       with pytest.raises(RuntimeError, match="read-only smoke"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'read-only smoke'
+E         Actual message: 'unexpected conversational MCP tool set'
+
+tests/test_deploy.py:77: AssertionError
+_____________ test_transport_success_does_not_hide_failures[None] ______________
+
+body = None
+
+    @pytest.mark.parametrize("body", [
+        {"outcome": "COULD_NOT_CHECK"}, {"outcome": "UNKNOWN_OUTCOME"}, {"outcome": "INVALID_REQUEST"},
+        {"error": {"code": "UNAUTHORIZED"}}, None,
+    ])
+    async def test_transport_success_does_not_hide_failures(body):
+        client = AsyncMock()
+        client.list_tools.return_value = _tools(TOOL_NAMES)
+        client.call_tool.return_value = _result(body)
+>       with pytest.raises(RuntimeError, match="read-only smoke"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'read-only smoke'
+E         Actual message: 'unexpected conversational MCP tool set'
+
+tests/test_deploy.py:77: AssertionError
+___ test_unconfigured_smoke_refuses_mismatched_or_error_results[body0-False] ___
+
+body = {'outcome': 'ANSWERED'}, error = False
+
+    @pytest.mark.parametrize("body,error", [
+        ({"outcome": "ANSWERED"}, False),
+        ({"outcome": "COULD_NOT_CHECK", "detail": "UNAVAILABLE"}, False),
+        ({"outcome": "COULD_NOT_CHECK", "detail": "NOT_CONFIGURED"}, True),
+    ])
+    async def test_unconfigured_smoke_refuses_mismatched_or_error_results(body, error):
+        from fastmcp import Client, FastMCP
+        from fastmcp.exceptions import ToolError
+
+        # An external MCP boundary fixture, not a mock of our adapter classes.
+        remote = FastMCP("inconsistent-remote")
+
+        @remote.tool()
+        def get_doctor_availability(date: str, departmentName: str) -> dict:  # noqa: N803
+            return {"outcome": "CALLBACK_REQUIRED"}
+
+        @remote.tool()
+        def manage_booking(action: str) -> dict:
+            raise AssertionError("smoke must never write")
+
+        @remote.tool()
+        def search_knowledge(question: str, language: str) -> dict:
+            if error:
+                raise ToolError("fixture failure")
+            return body
+
+        @remote.tool()
+        def record_call_summary(summaryText: str) -> dict:  # noqa: N803
+            raise AssertionError("smoke must never write a summary")
+
+        async with Client(remote) as client:
+>           with pytest.raises(RuntimeError, match="configuration and tool result disagree"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: Regex pattern did not match.
+E             Expected regex: 'configuration and tool result disagree'
+E             Actual message: 'unexpected conversational MCP tool set'
+
+tests/test_deploy.py:314: AssertionError
+___ test_unconfigured_smoke_refuses_mismatched_or_error_results[body1-False] ___
+
+body = {'outcome': 'COULD_NOT_CHECK', 'detail': 'UNAVAILABLE'}, error = False
+
+    @pytest.mark.parametrize("body,error", [
+        ({"outcome": "ANSWERED"}, False),
+        ({"outcome": "COULD_NOT_CHECK", "detail": "UNAVAILABLE"}, False),
+        ({"outcome": "COULD_NOT_CHECK", "detail": "NOT_CONFIGURED"}, True),
+    ])
+    async def test_unconfigured_smoke_refuses_mismatched_or_error_results(body, error):
+        from fastmcp import Client, FastMCP
+        from fastmcp.exceptions import ToolError
+
+        # An external MCP boundary fixture, not a mock of our adapter classes.
+        remote = FastMCP("inconsistent-remote")
+
+        @remote.tool()
+        def get_doctor_availability(date: str, departmentName: str) -> dict:  # noqa: N803
+            return {"outcome": "CALLBACK_REQUIRED"}
+
+        @remote.tool()
+        def manage_booking(action: str) -> dict:
+            raise AssertionError("smoke must never write")
+
+        @remote.tool()
+        def search_knowledge(question: str, language: str) -> dict:
+            if error:
+                raise ToolError("fixture failure")
+            return body
+
+        @remote.tool()
+        def record_call_summary(summaryText: str) -> dict:  # noqa: N803
+            raise AssertionError("smoke must never write a summary")
+
+        async with Client(remote) as client:
+>           with pytest.raises(RuntimeError, match="configuration and tool result disagree"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: Regex pattern did not match.
+E             Expected regex: 'configuration and tool result disagree'
+E             Actual message: 'unexpected conversational MCP tool set'
+
+tests/test_deploy.py:314: AssertionError
+___ test_unconfigured_smoke_refuses_mismatched_or_error_results[body2-True] ____
+
+body = {'outcome': 'COULD_NOT_CHECK', 'detail': 'NOT_CONFIGURED'}, error = True
+
+    @pytest.mark.parametrize("body,error", [
+        ({"outcome": "ANSWERED"}, False),
+        ({"outcome": "COULD_NOT_CHECK", "detail": "UNAVAILABLE"}, False),
+        ({"outcome": "COULD_NOT_CHECK", "detail": "NOT_CONFIGURED"}, True),
+    ])
+    async def test_unconfigured_smoke_refuses_mismatched_or_error_results(body, error):
+        from fastmcp import Client, FastMCP
+        from fastmcp.exceptions import ToolError
+
+        # An external MCP boundary fixture, not a mock of our adapter classes.
+        remote = FastMCP("inconsistent-remote")
+
+        @remote.tool()
+        def get_doctor_availability(date: str, departmentName: str) -> dict:  # noqa: N803
+            return {"outcome": "CALLBACK_REQUIRED"}
+
+        @remote.tool()
+        def manage_booking(action: str) -> dict:
+            raise AssertionError("smoke must never write")
+
+        @remote.tool()
+        def search_knowledge(question: str, language: str) -> dict:
+            if error:
+                raise ToolError("fixture failure")
+            return body
+
+        @remote.tool()
+        def record_call_summary(summaryText: str) -> dict:  # noqa: N803
+            raise AssertionError("smoke must never write a summary")
+
+        async with Client(remote) as client:
+>           with pytest.raises(RuntimeError, match="configuration and tool result disagree"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: Regex pattern did not match.
+E             Expected regex: 'configuration and tool result disagree'
+E             Actual message: 'unexpected conversational MCP tool set'
+
+tests/test_deploy.py:314: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_smoke_requires_all_four_tools[record_call_summary]
+FAILED tests/test_deploy.py::test_transport_success_does_not_hide_failures[body0]
+FAILED tests/test_deploy.py::test_transport_success_does_not_hide_failures[body1]
+FAILED tests/test_deploy.py::test_transport_success_does_not_hide_failures[body2]
+FAILED tests/test_deploy.py::test_transport_success_does_not_hide_failures[body3]
+FAILED tests/test_deploy.py::test_transport_success_does_not_hide_failures[None]
+FAILED tests/test_deploy.py::test_unconfigured_smoke_refuses_mismatched_or_error_results[body0-False]
+FAILED tests/test_deploy.py::test_unconfigured_smoke_refuses_mismatched_or_error_results[body1-False]
+FAILED tests/test_deploy.py::test_unconfigured_smoke_refuses_mismatched_or_error_results[body2-True]
+9 failed, 1 passed, 25 deselected, 2 warnings in 0.96s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+E501 Line too long (172 > 120)
+ --> tests/test_server.py:1:121
+  |
+1 | … under gateway authentication, trusted identity from headers only, concurrent-call isolation,
+  |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2 | …hot."""
+  |
+
+Found 1 error.
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 16%]
+........................................................................ [ 32%]
+........................................................................ [ 48%]
+........................................................................ [ 64%]
+..................................F..................................... [ 80%]
+........................................................................ [ 96%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+________ test_published_tool_text_contains_facts_not_behaviour_scripts _________
+
+make_settings = <function make_settings.<locals>.factory at 0x10e7e3100>
+
+    def test_published_tool_text_contains_facts_not_behaviour_scripts(make_settings):
+        from frontdesk_mcp.cli import schema_document
+
+        document = schema_document(make_settings())
+        text = [document["instructions"]]
+
+        def descriptions(value):
+            if isinstance(value, dict):
+                text.extend(v for k, v in value.items() if k == "description")
+                for child in value.values():
+                    descriptions(child)
+            elif isinstance(value, list):
+                for child in value:
+                    descriptions(child)
+
+        descriptions(document["tools"])
+        forbidden = ("say ", "never say", "ask ", "transfer immediately", "speak ", "pass ",
+                     "read back", "read-back", "do not", "never ", "collect ", "use ")
+        for entry in text:
+            for phrase in forbidden:
+>               assert phrase not in entry.casefold(), (phrase, entry)
+E               AssertionError: ('use ', 'MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from ...d write result. All four tools use gateway authentication. Supported languages: en, kn, hi. Tool schema 2026-10-04.2.')
+E               assert 'use ' not in 'mcp tools f...026-10-04.2.'
+E
+E                 'use ' is contained here:
+E                   our tools use gateway authentication. supported languages: en, kn, hi. tool schema 2026-10-04.2.
+E                 ?          ++++
+
+tests/test_server.py:279: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_published_tool_text_contains_facts_not_behaviour_scripts
+1 failed, 447 passed, 11 deselected, 2 warnings in 23.84s
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 16%]
+........................................................................ [ 32%]
+........................................................................ [ 48%]
+........................................................................ [ 64%]
+........................................................................ [ 80%]
+........................................................................ [ 96%]
+................                                                         [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+448 passed, 11 deselected, 2 warnings in 23.51s
+EXIT: 0

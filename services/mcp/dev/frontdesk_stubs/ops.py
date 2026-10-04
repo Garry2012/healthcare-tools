@@ -274,7 +274,7 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
     def body_hash(body: Any) -> str:
         return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
-    async def write(request: Request, scope: str, handler) -> Response:
+    async def write(request: Request, scope: str, handler, *, keyed: bool = True) -> Response:
         """Common POST discipline: auth, scope, scenario, JSON body, Idempotency-Key replay, commit-then-fail."""
         client, denied = authenticated(request)
         if denied:
@@ -287,12 +287,7 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
             body = await request.json()
         except ValueError:
             return error(400, "VALIDATION_FAILED", "body must be JSON")
-        key = request.headers.get("idempotency-key")
-        # Contract: an existing callId returns the stored summary with 200. The stub lets that natural key
-        # take precedence over Idempotency-Key replay; the real precedence is an open question for Manoj.
-        if relative_path(request) == "/call-summaries" and isinstance(body, dict):
-            if body.get("callId") in state.summaries:
-                return JSONResponse(state.summaries[body["callId"]], status_code=200)
+        key = request.headers.get("idempotency-key") if keyed else None
         if key and key in state.idempotency:
             stored_hash, status, stored = state.idempotency[key]
             if stored_hash != body_hash(body):
@@ -423,6 +418,8 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         return JSONResponse({"items": rows})
 
     def create_summary(body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        if body.get("callId") in state.summaries:
+            return 200, state.summaries[body["callId"]]  # first accepted summary is final
         required = ("callId", "startedAt", "intent", "outcome")
         issues = [{"field": f, "issue": "required"} for f in required if not body.get(f)]
         if body.get("intent") not in INTENTS:
@@ -437,14 +434,12 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
             issues.append({"field": "language", "issue": "enum"})
         if issues:
             return 400, {"error": {"code": "VALIDATION_FAILED", "message": "invalid summary", "details": issues}}
-        if body["callId"] in state.summaries:
-            return 200, state.summaries[body["callId"]]  # exists: returned unchanged
         stored = {**body, "id": state.next_id("cs"), "createdAt": state.clock.now().isoformat(timespec="seconds")}
         state.summaries[body["callId"]] = stored
         return 201, stored
 
     async def post_summary(request: Request) -> Response:
-        return await write(request, "calls.write", create_summary)
+        return await write(request, "calls.write", create_summary, keyed=False)
 
     # --- scenario control over HTTP (for processes started by e2e tests and local demos) ---------
     async def stub_reset(_: Request) -> Response:

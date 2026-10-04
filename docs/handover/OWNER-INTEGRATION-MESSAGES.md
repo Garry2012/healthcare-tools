@@ -1,4 +1,6 @@
-# Owner integration messages — 2 October 2026
+# Owner integration messages — contract updated 4 October 2026
+
+Live-service observations below are from 2 October; they were not rechecked in this source-only task.
 
 Copyable messages for the user to send. These have not been sent to any team. Credentials already
 work; no new client ID or secret is requested. Never share secret values in chat.
@@ -12,8 +14,7 @@ work; no new client ID or secret is requested. Never share secret values in chat
 
 This is a backend client/scope permission change, not creating another vault secret. We can read
 credentials and rerun verification ourselves after the grant; we cannot grant an owner-service
-permission using this runtime client's existing scope. Confirm summary replay/idempotency semantics
-in the contract when enabling the route.
+permission using this runtime client's existing scope. The pinned contract already defines call-ID deduplication; summary writes send no Idempotency-Key.
 
 ## Manoj — synthetic booking test data
 
@@ -39,17 +40,17 @@ The provisional `/v1/answer` is a consumer proposal, not an imposed API. The voi
 > Connect the voice backend to the healthcare virtual-server MCP URL issued by the existing IBM
 > ContextForge gateway, using a scoped voice-client token. Forward trusted per-call/per-operation headers
 > (`X-Call-Id`, caller number + verification, stable operation ID); the platform
-> must set them, not the LLM. At call end, invoke `record_call_summary` directly on the MCP canary with
-> the separate `mcp-lifecycle-token`, timing headers and a durable retry queue. UNKNOWN availability
-> means collect name/number and save a callback summary only. Follow the linked integration contracts
-> and validate a full call before removing the voice services' old REST binding.
+> must set them, not the LLM. Expose all four tools, including LLM-called `record_call_summary`,
+> through that virtual server; summaries also require `X-Call-Started-At`. The first accepted summary
+> is final. UNKNOWN availability permits a callback summary only, not an appointment.
+> Validate the full call before removing the voice services' old REST binding.
 
 - [MCP interface and trusted headers](VOICE-TEAM.md)
 - [Gateway URLs, setup and credential separation](CONTEXTFORGE.md)
-- Conversation tools: `get_doctor_availability`, `manage_booking`, `search_knowledge`.
-- Call-end URL: `https://mcp-demo-hospital-canary.icytree-6543aaa9.centralindia.azurecontainerapps.io/mcp/`.
+- Tools: `get_doctor_availability`, `manage_booking`, `search_knowledge`, `record_call_summary`.
+- Upstream MCP URL: `https://mcp-demo-hospital-canary.icytree-6543aaa9.centralindia.azurecontainerapps.io/mcp/`.
 - The platform handles confirmations, immutable retry payloads and stable IDs. A lost write response
-  is UNCERTAIN, not a confirmed failure; do not issue a fresh booking with a new operation ID.
+  is UNCERTAIN for bookings or NOT_CONFIRMED for summaries; do not issue a fresh booking with a new operation ID.
 - Test simultaneous calls and per-write operation headers through the local booking wrapper. Pass EN/KN/HI
   caller words in the explicit knowledge question body, never a transcript header; never truncate them.
 
@@ -76,9 +77,9 @@ that explicit adapter change. Merely adding a second URL does not implement prov
 
 > Use the existing ContextForge 1.0.11 instance in `healthcare-rg`; do not create another gateway.
 > Register the canary MCP URL over Streamable HTTP with vault `mcp-token`, enable the listed trusted
-> headers, and create a team-scoped virtual server exposing only the three conversational tools.
+> headers, and create a team-scoped virtual server exposing all four tools.
 > Give Rajiv its `/servers/<server-id>/mcp` URL and a secure reference to a scoped voice-client token.
-> Keep the lifecycle token out of that registration. Follow the exact commands, REST payload and
+> Refresh the new summary schema (`2026-10-04.2`). Follow the exact commands, REST payload and
 > acceptance checks in [CONTEXTFORGE.md](CONTEXTFORGE.md).
 
 We already have access to inspect the gateway and can perform its configuration/registration when

@@ -1,0 +1,3 @@
+$ uvx vulture services/mcp/src --min-confidence 80
+
+EXIT: 0

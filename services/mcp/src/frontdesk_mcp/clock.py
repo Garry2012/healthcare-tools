@@ -39,7 +39,7 @@ class DeadlineExceeded(Exception):
 
 class Deadline:
     """One wall-clock budget for an invocation. `cap` is the ceiling for any single exchange; when None the
-    caller's default (the in-call per-exchange cap) applies. After-call work (summaries) and background work
+    caller's default (the in-call per-exchange cap) applies. Summaries and background work
     (token refresh) pass their own cap so the in-call share never throttles them."""
 
     def __init__(self, seconds: float, monotonic: Callable[[], float] = time.monotonic,

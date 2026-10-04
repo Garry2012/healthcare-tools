@@ -1,5 +1,5 @@
 """Release tooling: the read-only smoke must fail on unavailable dependencies, missing auth, failure
-envelopes, a wrong tool set or a leaky lifecycle boundary, and must never write; gateway registration
+envelopes, a wrong tool set , and must never write; gateway registration
 names the four tools, forwards every trusted header and detects schema drift."""
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from frontdesk_mcp.context import PASSTHROUGH_HEADERS
-from frontdesk_mcp.tools import CONVERSATIONAL_TOOLS, LIFECYCLE_TOOLS, TOOL_NAMES
+from frontdesk_mcp.tools import TOOL_NAMES
 
 DEPLOY = Path(__file__).resolve().parents[3] / "deploy"
 SMOKE = runpy.run_path(str(DEPLOY / "azure/smoke.py"))
@@ -53,14 +53,17 @@ async def test_http_checks_require_readiness_dependency_health_and_auth(ready, d
                 await SMOKE["check_http"](http, "https://adapter.example", "required")
 
 
-async def test_conversational_tool_set_must_be_exactly_three_and_the_summary_tool_hidden():
-    client = AsyncMock()
-    client.list_tools.return_value = _tools(TOOL_NAMES)  # the summary tool leaked into the conversational view
-    with pytest.raises(RuntimeError, match="tool set"):
-        await SMOKE["check_tools"](client, "en", "General Medicine")
-    client.list_tools.return_value = _tools(CONVERSATIONAL_TOOLS[:2])
-    with pytest.raises(RuntimeError, match="tool set"):
-        await SMOKE["check_tools"](client, "en", "General Medicine")
+@pytest.mark.parametrize("missing", ["record_call_summary", "search_knowledge"])
+async def test_smoke_requires_all_four_tools(missing):
+    from fastmcp import Client, FastMCP
+
+    remote = FastMCP("incomplete-remote")
+    for name in TOOL_NAMES:
+        if name != missing:
+            remote.tool(name=name)(lambda: {"outcome": "NO_ANSWER"})
+    async with Client(remote) as client:
+        with pytest.raises(RuntimeError, match="tool set"):
+            await SMOKE["check_tools"](client, "en", "General Medicine")
 
 
 @pytest.mark.parametrize("body", [
@@ -69,36 +72,10 @@ async def test_conversational_tool_set_must_be_exactly_three_and_the_summary_too
 ])
 async def test_transport_success_does_not_hide_failures(body):
     client = AsyncMock()
-    client.list_tools.return_value = _tools(CONVERSATIONAL_TOOLS)
+    client.list_tools.return_value = _tools(TOOL_NAMES)
     client.call_tool.return_value = _result(body)
     with pytest.raises(RuntimeError, match="read-only smoke"):
         await SMOKE["check_tools"](client, "en", "General Medicine")
-
-
-async def test_smoke_reads_only_and_accepts_honest_empty_outcomes():
-    client = AsyncMock()
-    client.list_tools.return_value = _tools(CONVERSATIONAL_TOOLS)
-    client.call_tool.side_effect = [_result({"outcome": "CALLBACK_REQUIRED"}), _result({"outcome": "NO_ANSWER"})]
-    await SMOKE["check_tools"](client, "hi", "General Medicine")
-    called = [call.args[0] for call in client.call_tool.call_args_list]
-    assert called == ["get_doctor_availability", "search_knowledge"]
-    assert "manage_booking" not in called and "record_call_summary" not in called
-    assert client.call_tool.call_args_list[1].args[1]["language"] == "hi"
-
-
-async def test_lifecycle_boundary_check_requires_server_side_refusal():
-    conversational, lifecycle = AsyncMock(), AsyncMock()
-    conversational.call_tool.return_value = _result({"outcome": "STORED"})  # the server let a gateway bearer finalize
-    lifecycle.list_tools.return_value = _tools(LIFECYCLE_TOOLS)
-    with pytest.raises(RuntimeError, match="lifecycle"):
-        await SMOKE["check_lifecycle_boundary"](conversational, lifecycle)
-    conversational.call_tool.return_value = _result(None, is_error=True)
-    lifecycle.list_tools.return_value = _tools(TOOL_NAMES)  # lifecycle bearer sees in-call tools
-    with pytest.raises(RuntimeError, match="lifecycle"):
-        await SMOKE["check_lifecycle_boundary"](conversational, lifecycle)
-    lifecycle.list_tools.return_value = _tools(LIFECYCLE_TOOLS)
-    await SMOKE["check_lifecycle_boundary"](conversational, lifecycle)
-    assert not lifecycle.call_tool.called  # never writes a summary as a smoke test
 
 
 def test_main_requires_https_and_never_leaks(monkeypatch, capsys):
@@ -123,6 +100,8 @@ def test_registration_names_four_tools_and_forwards_every_trusted_header(monkeyp
     monkeypatch.setenv("MCP_BEARER_TOKEN", "gateway-secret")
     monkeypatch.setenv("DOMAIN_PACK", "healthcare")
     body = REGISTER["payload"](SimpleNamespace(name="frontdesk-demo-hospital", visibility="private"))
+    assert body["passthroughHeaders"] == ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification",
+                                          "X-Operation-Id", "X-Call-Started-At"]
     assert tuple(REGISTER["TOOLS"]) == TOOL_NAMES
     assert sorted(body["passthroughHeaders"]) == sorted(PASSTHROUGH_HEADERS)
     assert body["transport"] == "STREAMABLEHTTP" and body["authType"] == "bearer"
@@ -193,8 +172,9 @@ def test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env
     update = log.index("az containerapp update -g")
     assert secret_set < update and identity < update and registry < update, "attach secrets/identity before env"
     secrets_line = [line for line in log.splitlines() if "az containerapp secret set" in line][0]
-    for name in ("mcp-token", "mcp-lifecycle-token", "ops-client-id", "ops-client-secret", "knowledge-token"):
+    for name in ("mcp-token", "ops-client-id", "ops-client-secret", "knowledge-token"):
         assert f"{name}=keyvaultref:" in secrets_line, name
+    assert "mcp-lifecycle-token" not in log and "MCP_LIFECYCLE" not in log
     assert "SMOKE_EXPECT_KNOWLEDGE=required" in log
     assert "az containerapp secret remove" not in log
     assert "az containerapp create" not in log  # the existing app is upgraded, not recreated
@@ -253,30 +233,62 @@ def test_the_committed_live_profile_names_manoj_base_and_the_canary_app():
     assert "AZ_RESOURCE_GROUP=healthcare-rg" in live.stdout
 
 
-def test_gateway_refresh_uses_the_deployed_contextforge_api(monkeypatch):
-    """The deployed 1.0.11 API refreshes at /tools/refresh, not /refresh."""
-    served = [{"name": name, "inputSchema": {}} for name in CONVERSATIONAL_TOOLS]
+@pytest.fixture
+async def h(make_settings):
+    from . import harness
 
-    async def discover(*_):
-        return served
+    instance = harness.build(make_settings())
+    try:
+        yield instance
+    finally:
+        await instance.aclose()
 
-    monkeypatch.setenv("MCP_PUBLIC_URL", "https://adapter.example/mcp/")
-    monkeypatch.setenv("MCP_BEARER_TOKEN", "gateway-secret")
-    monkeypatch.setitem(REGISTER["verify"].__globals__, "served_tools", discover)
+
+@pytest.mark.parametrize("problem", ["none", "missing", "maxLength", "required"])
+async def test_gateway_verifies_four_tools_and_refreshes_missing_discovery(h, monkeypatch, problem):
+    import asyncio
+    import copy
+
+    from frontdesk_mcp.server import create_app
+
+    from .conftest import serving
+
+    app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                     knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+    served = []
     requests = []
 
     def gateway(request):
         requests.append((request.method, request.url.path))
         if request.url.path.endswith("/tools/refresh"):
             return httpx.Response(200, json={})
-        tools = [] if len(requests) == 1 else [
-            {"name": f"frontdesk-demo-hospital-{t['name']}", "inputSchema": {}} for t in served]
-        return httpx.Response(200, json={"tools": tools})
+        discovered = served if len(requests) > 1 else [t for t in served if t["name"] != "record_call_summary"]
+        if problem == "missing":
+            discovered = [t for t in discovered if t["name"] != "record_call_summary"]
+        if problem in {"maxLength", "required"}:
+            discovered = copy.deepcopy(discovered)
+            for tool in discovered:
+                if tool["name"] == "record_call_summary":
+                    if problem == "maxLength":
+                        tool["inputSchema"]["properties"]["summaryText"]["maxLength"] = 2000
+                    else:
+                        tool["inputSchema"]["required"].remove("summaryText")
+        return httpx.Response(200, json={"tools": [
+            {"name": f"frontdesk-demo-hospital-{t['name']}", "inputSchema": t["inputSchema"]} for t in discovered]})
 
-    with httpx.Client(base_url="https://gateway.example", transport=httpx.MockTransport(gateway)) as client:
-        REGISTER["verify"](client, "gateway-id", "frontdesk-demo-hospital")
+    async with serving(app) as base:
+        monkeypatch.setenv("MCP_PUBLIC_URL", f"{base}/mcp/")
+        monkeypatch.setenv("MCP_BEARER_TOKEN", "mcp-token")
+        served = await REGISTER["served_tools"](f"{base}/mcp/", "mcp-token")
+        with httpx.Client(base_url="https://gateway.example", transport=httpx.MockTransport(gateway)) as client:
+            if problem != "none":
+                with pytest.raises(SystemExit, match="record_call_summary:"):
+                    await asyncio.to_thread(REGISTER["verify"], client, "gateway-id", "frontdesk-demo-hospital")
+            else:
+                await asyncio.to_thread(REGISTER["verify"], client, "gateway-id", "frontdesk-demo-hospital")
     assert requests == [("GET", "/v1/tools"), ("POST", "/v1/gateways/gateway-id/tools/refresh"),
                         ("GET", "/v1/tools")]
+    assert h.ops_state.summaries == {} and h.ops_state.appointments == {}
 
 
 def test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret(tmp_path):
@@ -326,6 +338,10 @@ async def test_unconfigured_smoke_refuses_mismatched_or_error_results(body, erro
         if error:
             raise ToolError("fixture failure")
         return body
+
+    @remote.tool()
+    def record_call_summary(summaryText: str) -> dict:  # noqa: N803
+        raise AssertionError("smoke must never write a summary")
 
     async with Client(remote) as client:
         with pytest.raises(RuntimeError, match="configuration and tool result disagree"):

@@ -1,0 +1,152 @@
+$ uv run --directory services/mcp pytest tests/test_context.py tests/test_deploy.py -k 'obsolete_duration or registration_names' -q --tb=short
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+________ test_obsolete_duration_header_is_ignored_without_logging[184] _________
+tests/test_context.py:113: in test_obsolete_duration_header_is_ignored_without_logging
+    assert asdict(ctx) == {"call_id": None, "caller_number": None, "caller_verification": None,
+E   AssertionError: assert {'call_id': N...d': None, ...} == {'call_id': N...d': None, ...}
+E
+E     Omitting 5 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'call_duration_seconds': 184}
+E     Use -v to get more diff
+_________ test_obsolete_duration_header_is_ignored_without_logging[-1] _________
+tests/test_context.py:113: in test_obsolete_duration_header_is_ignored_without_logging
+    assert asdict(ctx) == {"call_id": None, "caller_number": None, "caller_verification": None,
+E   AssertionError: assert {'call_id': N...d': None, ...} == {'call_id': N...d': None, ...}
+E
+E     Omitting 5 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'call_duration_seconds': None}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.context:context.py:76 trusted_header_malformed
+___ test_obsolete_duration_header_is_ignored_without_logging[not-a-duration] ___
+tests/test_context.py:113: in test_obsolete_duration_header_is_ignored_without_logging
+    assert asdict(ctx) == {"call_id": None, "caller_number": None, "caller_verification": None,
+E   AssertionError: assert {'call_id': N...d': None, ...} == {'call_id': N...d': None, ...}
+E
+E     Omitting 5 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'call_duration_seconds': None}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.context:context.py:76 trusted_header_malformed
+_____ test_registration_names_four_tools_and_forwards_every_trusted_header _____
+tests/test_deploy.py:126: in test_registration_names_four_tools_and_forwards_every_trusted_header
+    assert body["passthrough_headers"] == ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification",
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'passthrough_headers'
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_context.py::test_obsolete_duration_header_is_ignored_without_logging[184]
+FAILED tests/test_context.py::test_obsolete_duration_header_is_ignored_without_logging[-1]
+FAILED tests/test_context.py::test_obsolete_duration_header_is_ignored_without_logging[not-a-duration]
+FAILED tests/test_deploy.py::test_registration_names_four_tools_and_forwards_every_trusted_header
+4 failed, 50 deselected, 2 warnings in 0.95s
+EXIT: 1
+$ uv run --directory services/mcp pytest tests/test_context.py tests/test_deploy.py -k 'obsolete_duration or registration_names' -q --tb=short
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+________ test_obsolete_duration_header_is_ignored_without_logging[184] _________
+tests/test_context.py:113: in test_obsolete_duration_header_is_ignored_without_logging
+    assert asdict(ctx) == {"call_id": None, "caller_number": None, "caller_verification": None,
+E   AssertionError: assert {'call_id': N...d': None, ...} == {'call_id': N...d': None, ...}
+E
+E     Omitting 5 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'call_duration_seconds': 184}
+E     Use -v to get more diff
+_________ test_obsolete_duration_header_is_ignored_without_logging[-1] _________
+tests/test_context.py:113: in test_obsolete_duration_header_is_ignored_without_logging
+    assert asdict(ctx) == {"call_id": None, "caller_number": None, "caller_verification": None,
+E   AssertionError: assert {'call_id': N...d': None, ...} == {'call_id': N...d': None, ...}
+E
+E     Omitting 5 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'call_duration_seconds': None}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.context:context.py:76 trusted_header_malformed
+___ test_obsolete_duration_header_is_ignored_without_logging[not-a-duration] ___
+tests/test_context.py:113: in test_obsolete_duration_header_is_ignored_without_logging
+    assert asdict(ctx) == {"call_id": None, "caller_number": None, "caller_verification": None,
+E   AssertionError: assert {'call_id': N...d': None, ...} == {'call_id': N...d': None, ...}
+E
+E     Omitting 5 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'call_duration_seconds': None}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.context:context.py:76 trusted_header_malformed
+_____ test_registration_names_four_tools_and_forwards_every_trusted_header _____
+tests/test_deploy.py:126: in test_registration_names_four_tools_and_forwards_every_trusted_header
+    assert body["passthroughHeaders"] == ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification",
+E   AssertionError: assert ['X-Call-Id',...tion-Seconds'] == ['X-Call-Id',...l-Started-At']
+E
+E     Left contains one more item: 'X-Call-Duration-Seconds'
+E     Use -v to get more diff
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_context.py::test_obsolete_duration_header_is_ignored_without_logging[184]
+FAILED tests/test_context.py::test_obsolete_duration_header_is_ignored_without_logging[-1]
+FAILED tests/test_context.py::test_obsolete_duration_header_is_ignored_without_logging[not-a-duration]
+FAILED tests/test_deploy.py::test_registration_names_four_tools_and_forwards_every_trusted_header
+4 failed, 50 deselected, 2 warnings in 0.83s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+E501 Line too long (133 > 120)
+  --> dev/demo.py:88:121
+   |
+86 |                 "intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED",
+87 |                 "callerMobile": "9000000101", "doctorId": "doc_kiran_hegde", "language": "kn",
+88 |                 "summaryText": "Lakshmi Rao, 9000000101, asked for Dr. Kiran Hegde this evening; board UNKNOWN; callback promised."})
+   |                                                                                                                         ^^^^^^^^^^^^^
+
+Found 1 error.
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 15%]
+........................................................................ [ 31%]
+........................................................................ [ 47%]
+........................................................................ [ 63%]
+........................................................................ [ 79%]
+........................................................................ [ 95%]
+...................                                                      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+451 passed, 11 deselected, 2 warnings in 23.63s
+EXIT: 0

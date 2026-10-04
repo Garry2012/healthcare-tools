@@ -1,6 +1,6 @@
 # MCP tool interface
 
-Schema version: `2026-10-03.3`
+Schema version: `2026-10-04.2`
 
 ## Endpoint and transport
 
@@ -12,12 +12,11 @@ separate gateway endpoint supplied by its owner. This document does not assert w
 
 | Scope | Direct MCP bearer | Accessible tools |
 |---|---|---|
-| Conversation / gateway | MCP_BEARER_TOKEN | get_doctor_availability, manage_booking, search_knowledge |
-| Call-end lifecycle | MCP_LIFECYCLE_BEARER_TOKEN | record_call_summary only |
+| Gateway | MCP_BEARER_TOKEN | get_doctor_availability, manage_booking, search_knowledge, record_call_summary |
 
-The HTTP header is `Authorization: Bearer <credential>`. The server enforces these scopes.
+The HTTP header is `Authorization: Bearer <credential>`. All four tools use gateway authentication.
 A ContextForge client authenticates with gateway-issued scoped access; its upstream MCP bearer is
-separate. Credentials, caller authority and lifecycle context are not tool arguments.
+separate. Credentials, caller authority and call start time are not tool arguments.
 
 ## Trusted request headers
 
@@ -28,10 +27,8 @@ separate. Credentials, caller authority and lifecycle context are not tool argum
 | X-Caller-Verification | Verification label in ACCEPTED_CALLER_VERIFICATION; default SIP_CALLER_ID. A number alone does not establish authority. |
 | X-Operation-Id | Confirmed-write identifier with the same 1–64 character syntax as call ID. Required for CREATE/CANCEL/RESCHEDULE. Same call/action/operation identifies the same payload; changed payload conflicts. |
 | X-Call-Started-At | ISO timestamp with timezone offset; required for record_call_summary. |
-| X-Call-Duration-Seconds | Optional non-negative integer call duration in seconds. |
 
-Malformed identifiers/timing are treated as absent. Header names are case-insensitive. Tenant and
-principal derive from deployment configuration and authentication, not model arguments.
+Malformed identifiers/timing are treated as absent. Header names are case-insensitive. Tenant comes from deployment configuration; access is authenticated by the gateway bearer, not model arguments.
 
 The tables below describe the pinned wire schema, including nested `$defs` types. “Required” means
 schema-required; action-specific requirements appear in the meaning column. Optional fields can have
@@ -255,51 +252,56 @@ One knowledge-service request for hospital information or symptom-to-department 
 
 ## record_call_summary
 
-CALLBACK_NOTED rejects appointmentId and transferredTo; callerName and callerMobile are required.
-transferredTo is otherwise valid only for TRANSFERRED or EMERGENCY_TRANSFERRED. requestedDate is
-optional and currently checked for YYYY-MM-DD shape.
+CALLBACK_NOTED requires a caller-provided 10-digit callerMobile and rejects appointmentId and
+transferredTo. transferredTo is valid only for TRANSFERRED or EMERGENCY_TRANSFERRED. Caller names,
+requested dates/times and symptoms are part of summaryText, not separate parameters. Accepted text
+is sent unchanged; blank or 501–2,000 characters returns INVALID_REQUEST. The outer 2,000-character
+argument cap retains framework validation above that limit. No truncation or prefix is applied.
 
-Store the completed call's hospital-facing summary. Available only to the lifecycle bearer. Call identity and timing come from trusted headers. CALLBACK_NOTED records callback contact details after UNKNOWN availability; it does not create an appointment or a separate callback task. STORED is a new summary; REPLAYED is the existing result for the same call and payload; UNCERTAIN means persistence could not be verified.
+Trusted summary context consists of X-Call-Id and X-Call-Started-At. No duration is sent upstream.
+The invocation and per-exchange limit is SUMMARY_DEADLINE_SECONDS (default 8 s, configurable above
+0 through 60 s), covering OAuth and any same-request retry. This is separate from the 0.30 s budget
+of the other three tools; it is not a sub-second response guarantee.
+
+Store one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.
 
 ### Parameters
 
 | Field path | Type / constraints (JSON Schema) | Presence | Meaning |
 |---|---|---|---|
 | `record_call_summary.input.appointmentId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Optional identifier of the appointment request associated with the call. |
-| `record_call_summary.input.callerMobile` | `{"anyOf":[{"maxLength":20,"type":"string"},{"type":"null"}]}` | optional | Optional caller-provided 10-digit callback number; required for CALLBACK_NOTED. Distinct from caller ID. |
-| `record_call_summary.input.callerName` | `{"anyOf":[{"maxLength":100,"type":"string"},{"type":"null"}]}` | optional | Caller-provided name; required for CALLBACK_NOTED, optional otherwise. |
+| `record_call_summary.input.callerMobile` | `{"anyOf":[{"maxLength":20,"type":"string"},{"type":"null"}]}` | optional | Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID. |
 | `record_call_summary.input.doctorId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Optional identifier of the doctor associated with the call. |
 | `record_call_summary.input.intent` | `{"enum":["AVAILABILITY","BOOKING","RESCHEDULE","CANCEL","GENERAL_INFO","LAB","INSURANCE","EMERGENCY","AMBULANCE","SYMPTOM_ROUTING","COMPLAINT","ADMIN","OTHER"],"type":"string"}` | required | Required call-intent category. |
 | `record_call_summary.input.language` | `{"anyOf":[{"maxLength":16,"type":"string"},{"type":"null"}]}` | optional | Optional call language; en, kn and hi primary codes map to the operational contract. Other codes are omitted upstream. |
 | `record_call_summary.input.outcome` | `{"enum":["RESOLVED_BY_AGENT","APPOINTMENT_NOTED","APPOINTMENT_CANCELLED","APPOINTMENT_RESCHEDULED","TRANSFERRED","EMERGENCY_TRANSFERRED","AMBULANCE_NUMBER_GIVEN","CALLBACK_NOTED","ABANDONED"],"type":"string"}` | required | Required hospital-facing call outcome category. |
-| `record_call_summary.input.requestedDate` | `{"anyOf":[{"maxLength":10,"pattern":"^\\d{4}-\\d{2}-\\d{2}$","type":"string"},{"type":"null"}]}` | optional | Optional requested date in YYYY-MM-DD format; preserved in CALLBACK_NOTED summary text when supplied. |
-| `record_call_summary.input.summaryText` | `{"maxLength":2000,"type":"string"}` | required | Required nonblank call summary, up to 2000 input characters. Stored text is limited to 500 characters including preserved callback metadata. |
+| `record_call_summary.input.summaryText` | `{"maxLength":500,"type":"string"}` | required | Required. Summary of the whole call in plain sentences, up to 500 characters: what the caller asked, what was explained or done, and any follow-up promised. Contains all relevant information mentioned in the call, including: the caller's name, the callback phone number, the symptoms or reason the caller described, the doctor's name, the department, and the requested date and time. Not a transcript. |
 | `record_call_summary.input.transferredTo` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Optional destination associated with a transfer outcome. |
 
 ### Output fields
 
 | Field path | Type / constraints (JSON Schema) | Presence | Meaning |
 |---|---|---|---|
-| `record_call_summary.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for a non-success result; optional. |
-| `record_call_summary.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Names of request fields rejected or requiring correction. |
-| `record_call_summary.output.nextStep` | `{"enum":["DONE","RETRY_SAME_PAYLOAD","FIX_PLATFORM_INPUT","RECORD_FAILED"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
-| `record_call_summary.output.outcome` | `{"enum":["STORED","REPLAYED","REJECTED","CONFLICT","UNCERTAIN","COULD_NOT_RECORD","INVALID_REQUEST","LIFECYCLE_CONTEXT_MISSING"],"type":"string"}` | required | Result category, defined below. |
-| `record_call_summary.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Upstream retry delay in seconds when supplied; optional. |
-| `record_call_summary.output.summaryId` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Operational call-summary identifier. |
+| `record_call_summary.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Names of rejected fields; present only on INVALID_REQUEST, possibly empty when no safe field names are available. |
+| `record_call_summary.output.outcome` | `{"enum":["SAVED","ALREADY_SAVED","INVALID_REQUEST","NOT_CONFIRMED","NOT_SAVED"],"type":"string"}` | required | Result category, defined below. |
 
-### Outcomes and nextStep meanings
+The service result contains only outcome, plus fields for INVALID_REQUEST. No summary text, callback
+number, stored-summary contents or diagnostics are returned. ALREADY_SAVED does not mean the newly
+submitted wording was stored. Summaries use callId deduplication without an Idempotency-Key header;
+bookings retain their separate operation keys.
+
+Framework validation errors (missing/wrong-type arguments or text beyond the outer cap) are protocol
+errors rather than the service result above. Summary validation errors contain only a fixed message:
+"Invalid call summary arguments. Check required fields, types and limits." Submitted values and
+untrusted argument names are omitted. Framework validation and the outer cap remain unchanged;
+there is no custom argument validator.
+
+### Outcome meanings
 
 | Code | Meaning |
 |---|---|
-| `record_call_summary.outcome.STORED` | A new call summary was stored. |
-| `record_call_summary.outcome.REPLAYED` | The same call-summary payload returned its existing stored result. |
-| `record_call_summary.outcome.REJECTED` | The owner rejected the request. |
-| `record_call_summary.outcome.CONFLICT` | The owner reported an operation or idempotency conflict. |
-| `record_call_summary.outcome.UNCERTAIN` | A write may have committed, but its result could not be verified. |
-| `record_call_summary.outcome.COULD_NOT_RECORD` | The write could not be recorded; detail identifies the failure when available. |
-| `record_call_summary.outcome.INVALID_REQUEST` | Request validation failed; fields or detail identify the issue when available. |
-| `record_call_summary.outcome.LIFECYCLE_CONTEXT_MISSING` | Trusted call identity or timezone-aware call start is missing. |
-| `record_call_summary.nextStep.DONE` | Summary persistence is verified (new or replayed). |
-| `record_call_summary.nextStep.RETRY_SAME_PAYLOAD` | Summary persistence is unverified or temporarily unavailable; retry identity is the same call and unchanged payload. |
-| `record_call_summary.nextStep.FIX_PLATFORM_INPUT` | Lifecycle context, summary fields or a conflicting payload require correction. |
-| `record_call_summary.nextStep.RECORD_FAILED` | Summary recording failed with an authentication/configuration problem. |
+| `record_call_summary.outcome.SAVED` | A new summary was stored, verified by a valid 201 response for this call. |
+| `record_call_summary.outcome.ALREADY_SAVED` | A valid 200 returned this call's existing summary; nothing changed, even if the new input differs. |
+| `record_call_summary.outcome.INVALID_REQUEST` | Local validation or the owner's definite 400 rejected the request; fields contains safe field names. |
+| `record_call_summary.outcome.NOT_CONFIRMED` | Persistence is unverified or temporarily unavailable, including unanswered writes, malformed success, call-ID mismatch, transport failures, rate limits and server failures. |
+| `record_call_summary.outcome.NOT_SAVED` | Trusted call ID/start is missing or malformed, or credentials were definitely refused. A previous possibly committed send takes precedence and remains NOT_CONFIRMED. |

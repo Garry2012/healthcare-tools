@@ -1,0 +1,33 @@
+$ make schema
+MATCH: pinned schema unchanged at2026-10-04.2.
+EXIT: 0
+$ uvx vulture services/mcp/src --min-confidence 80
+EXIT: 0
+$ git diff --check
+EXIT: 0
+$ git diff --stat a0a2aee
+ docs/DECISIONS.md                                  |  8 ++-
+ docs/handover/TESTING.md                           |  7 +--
+ docs/handover/VOICE-TEAM.md                        |  6 ++-
+ .../implementation/CALL-SUMMARY-HAND-BACK.md       | 58 ++++++++++++++++------
+ services/mcp/src/frontdesk_mcp/server.py           | 17 +++++++
+ services/mcp/tests/test_server.py                  | 25 +++++++---
+ 6 files changed, 93 insertions(+), 28 deletions(-)
+EXIT: 0
+$ git diff a0a2aee -- .claude/agents
+EXIT: 0
+$ git diff --stat 8c2b60a -- services/mcp/src
+ services/mcp/src/frontdesk_mcp/access.py           |  42 -------
+ services/mcp/src/frontdesk_mcp/cli.py              |   2 -
+ services/mcp/src/frontdesk_mcp/clock.py            |   2 +-
+ services/mcp/src/frontdesk_mcp/config.py           |  20 +--
+ services/mcp/src/frontdesk_mcp/context.py          |  20 +--
+ services/mcp/src/frontdesk_mcp/ops_client.py       |  16 +--
+ services/mcp/src/frontdesk_mcp/outcomes.py         |  18 +--
+ .../mcp/src/frontdesk_mcp/packs/healthcare.json    |  10 +-
+ services/mcp/src/frontdesk_mcp/prompt.py           |   4 +-
+ services/mcp/src/frontdesk_mcp/server.py           |  46 ++++---
+ services/mcp/src/frontdesk_mcp/summary.py          | 135 +++++++--------------
+ services/mcp/src/frontdesk_mcp/tools.py            |  15 +--
+ 12 files changed, 106 insertions(+), 224 deletions(-)
+EXIT: 0

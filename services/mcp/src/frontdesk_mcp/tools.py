@@ -1,5 +1,5 @@
 """The four tools. Each maps model-facing arguments to one service call; trusted context (call id,
-caller number, operation id, lifecycle timing) is read from the request headers only and is never
+caller number, operation id, call start time) is read from the request headers only and is never
 a parameter. Business rules live with the owners; the services here compose contracted facts."""
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from . import availability, booking, context, contract, knowledge, outcomes, prompt, summary
-from .access import LIFECYCLE_TAG
 from .cache import DirectoryCache
 from .clock import Clock, SystemClock
 from .config import Settings
@@ -29,8 +28,6 @@ from .packs import Pack
 logger = logging.getLogger(__name__)
 
 TOOL_NAMES = ("get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary")
-CONVERSATIONAL_TOOLS = TOOL_NAMES[:3]
-LIFECYCLE_TOOLS = TOOL_NAMES[3:]
 
 
 @dataclass
@@ -175,7 +172,6 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
     @mcp.tool(
         name="record_call_summary",
         description=pack.tools["record_call_summary"].description,
-        tags={LIFECYCLE_TAG},
         output_schema=outcomes.SummaryResult.model_json_schema(),
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
                                     openWorldHint=False),
@@ -184,18 +180,17 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         intent: contract.CallIntent,
         outcome: contract.CallOutcome,
         summaryText: Annotated[str, Field(max_length=2000)],
-        callerName: Name = None,
         callerMobile: Annotated[str | None, Field(max_length=20)] = None,
         language: Annotated[str | None, Field(max_length=16)] = None,
         doctorId: Ident = None,
         appointmentId: Ident = None,
         transferredTo: Annotated[str | None, Field(max_length=64)] = None,
-        requestedDate: IsoDate = None,
     ) -> ToolResult:
-        request = summary.SummaryRequest(intent=intent, outcome=outcome, summaryText=summaryText, callerName=callerName,
+        request = summary.SummaryRequest(intent=intent, outcome=outcome, summaryText=summaryText,
                                          callerMobile=callerMobile, language=language, doctorId=doctorId,
-                                         appointmentId=appointmentId, transferredTo=transferredTo,
-                                         requestedDate=requestedDate)
+                                         appointmentId=appointmentId, transferredTo=transferredTo)
         return observed("record_call_summary", await services.summary.record(ctx(), request))
 
     _apply_pack_text(record_call_summary, pack.tools["record_call_summary"])
+    # Advertise the accepted limit; the outer 2000 cap lets service validation return INVALID_REQUEST.
+    record_call_summary.parameters["properties"]["summaryText"]["maxLength"] = summary.SUMMARY_MAX

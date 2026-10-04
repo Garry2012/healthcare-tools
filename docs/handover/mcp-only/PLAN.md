@@ -1,6 +1,6 @@
 # MCP integration plan with confirmed service ownership
 
-Status: reviewed planning handover; migration implementation has not started. Published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
+Status: source migration implemented; current contract updated 4 October 2026. Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
 
 Updated 30 September 2026 from the user's decisions, the [published Manoj contract](https://healthcare-contract-docs.icytree-6543aaa9.centralindia.azurecontainerapps.io/openapi.yaml), and the [Opus review](OPUS-REVIEW.md). This is the current plan, including the actionable review recommendations and the user's callback-only UNKNOWN policy. It supersedes earlier ownership proposals, slot requirements and the direct platform-to-REST summary path. Retirement, rollback and acceptance requirements are included here; the historical investigation is source evidence, not an additional implementation checklist. This is an implementation plan, not a claim of verified production readiness.
 
@@ -8,11 +8,10 @@ Keep the repository and extract in place. Our deliverable is the MCP server and 
 
 ```mermaid
 flowchart LR
-  V[Voice agent and call lifecycle] --> G[ContextForge]
+  V[Voice agent] --> G[ContextForge]
   G --> M[Our MCP tools]
   M --> O[Manoj: departments, doctor search, working hours and appointments]
   M --> K[Shobhit: symptom routing, red flags, hospital information]
-  V -. call completed .-> G
   M -. record_call_summary .-> O
 ```
 
@@ -44,7 +43,7 @@ The server list now distinguishes:
 
 The supplied documentation is reachable. No operational or mutation endpoint, credentials, backend readiness or production latency was tested. The mock's existence is useful for development, but is not evidence of stateful backend behavior.
 
-For MCP machine authentication, use `POST /auth/token` relative to the configured API server, form-encoded `grant_type=client_credentials`, authenticating with HTTP Basic or body client credentials as documented. Scope is granted at client registration; the request's `scope` field is ignored. Cache the returned token using `expires_in`, refresh by obtaining another machine token, and keep credentials separate for Manoj and Shobhit. Staff login/refresh/logout must not become caller tools or be used to bypass missing machine permissions. Register only the required operational and call-summary permissions; use a separate tool credential for `calls.write` if desired to isolate access.
+For MCP machine authentication, use `POST /auth/token` relative to the configured API server, form-encoded `grant_type=client_credentials`, authenticating with HTTP Basic or body client credentials as documented. Scope is granted at client registration; the request's `scope` field is ignored. Cache the returned token using `expires_in`, refresh by obtaining another machine token, and keep credentials separate for Manoj and Shobhit. Staff login/refresh/logout must not become caller tools or be used to bypass missing machine permissions. Register only the required operational and call-summary permissions; the existing MCP client needs both appointments.write and calls.write.
 
 Use the full configured base URL without legacy `/api/v1` stripping. Test construction of token and operation URLs for both backend and no-prefix mock. Maintain a persistent client and independent pool/timeouts for each service. Cache tokens per tenant/client/service, refresh before expiry with a safety margin, and allow only one concurrent refresh. On a genuine authentication rejection, invalidate and refresh once only if the remaining operation deadline permits; retries of mutations retain the same operation key and payload. Never request staff scopes to bypass a failure.
 
@@ -70,7 +69,7 @@ requirements; conversation design and tool selection belong to the calling appli
 Working hours spanning multiple sessions or two hours remain complete windows. A caller's preferred time is an expectation, not proof of capacity. Validation of appointment dates, allowable times, doctor changes and any future slot allocation belongs to Manoj. Do not build these operational rules into the stub or MCP.
 
 The callback-only outcome changes no owner scheduling rule. MCP creates no appointment or separate
-callback task for UNKNOWN; the lifecycle summary can record CALLBACK_NOTED. A transport failure is
+callback task for UNKNOWN; the call summary can record CALLBACK_NOTED. A transport failure is
 not a valid UNKNOWN board response.
 
 The live board acts as a status/timing overlay, not merely a filter that removes rows. Keep cancelled and unknown sessions visible in the structured result so the agent can explain them. Prefer supplied expectedTime/expectedEndTime for the specific board session without adding delayMinutes again to a possibly already revised time. Do not infer a missing end time or join ambiguous session labels arbitrarily. On board failure, report that current status could not be checked; do not turn standard hours into a successful current-availability answer. Tests should distinguish normal, late, cancelled, unconfirmed, unknown/stale, expired, multiple-session and on-call cases. The slot API remains a separate future capability.
@@ -89,7 +88,7 @@ One `get_doctor_availability` invocation composes directory search, profile and 
 | `get_doctor_availability` | Manoj department list, free-text doctor search, doctor profile and live board | User-selected name, replacing the proposed `get_doctor_working_hours`. Replace the legacy `find_availability` tool during implementation. Return working hours qualified by date/session-specific live-board status. Slot availability is not yet supported. |
 | `manage_booking` | Manoj create/list/cancel/reschedule operations | Replace slot/newSlot inputs with target/date/preferred time as supported by each operation. Keep identity protections and honest lifecycle status. No need to settle a new action name before contract design. |
 | `search_knowledge` | Shobhit interface, pending | One planned tool covers symptom routing, emergency/desk escalation and hospital answers. Its downstream endpoint and payload remain pending Shobhit's contract. |
-| `record_call_summary` | `createCallSummary`, `POST /call-summaries` | New required MCP tool. Expose to the authenticated agent lifecycle; no summary listing or staff tools implied. |
+| `record_call_summary` | `createCallSummary`, `POST /call-summaries` | New required MCP tool. Expose to the LLM through gateway authentication; no summary listing or staff tools implied. |
 
 The initial plan has four MCP tools. Update tool discovery assertions, registration's hard-coded tool list, release smoke expectations and LiveKit's cached schemas/instructions during implementation. These are planning decisions; the production code has not yet been renamed or adapted.
 
@@ -103,7 +102,7 @@ For the initial release, absent verification, unsupported numbers and requests t
 
 **Mutation identity, retries and response validation**
 
-The platform supplies a trusted logical operation ID for each confirmed create/cancel/reschedule intent. MCP derives an opaque key of at most 64 characters bound to tenant, call, action, target and that operation ID. Freeze the exact outgoing body for that intent; backend replay compares it against the same key. Repeated model/network attempts for one pending intent must reuse both. A body hash may detect changes, but must not silently mint a new operation after a lost response.
+The platform supplies a trusted logical operation ID for each confirmed create/cancel/reschedule intent. MCP derives an opaque key of at most 64 characters bound to tenant, call, action and that operation ID (not target). Freeze the exact outgoing body for that intent; backend replay compares it against the same key. Repeated model/network attempts for one pending intent must reuse both. A body hash may detect changes, but must not silently mint a new operation after a lost response.
 
 Corrections before dispatch can replace the pending payload. After a definite rejection, a corrected request is a new explicit intent. After possible commit/UNCERTAIN, reconcile the original operation before deciding whether a correction requires rescheduling, cancellation or a new request. Rephrasing a name/reason is not sufficient evidence that the caller intended another appointment. Keep operation context in the platform's call lifecycle, not a new MCP database. Missing trusted call/operation context refuses the mutation locally; do not rely on Manoj rejecting an optional idempotency key.
 
@@ -132,23 +131,28 @@ Paths below are relative to the configured service base URL. Manoj's documented 
 
 Shared transport calls `POST /auth/token` (`issueMachineToken`) for Manoj machine credentials when a cached token needs obtaining/renewing; it is not another MCP tool and need not run on every tool call. Shobhit authentication remains separately configured according to his contract. `GET /availability` is included in the initial tool as the live-board overlay. It does not enumerate reservable slots; the pending slot endpoint will be integrated separately when available. The plan still has four MCP tools.
 
-**Call-summary tool contract proposal**
+**Call-summary tool contract (approved 4 October 2026)**
 
-The REST endpoint already exists in the published contract. Required fields are `callId`, `startedAt`, `intent` and `outcome`; optional fields are `durationSeconds`, `language` (EN/KN/HI), `callerMobile`, `transferredTo`, `doctorId`, `appointmentId` and `summaryText` (maximum 500 characters).
+All four tools share gateway authentication; record_call_summary is LLM-called. Its eight arguments are
+intent, outcome, summaryText, callerMobile, language, doctorId, appointmentId and transferredTo.
+Whole-call summaryText is required, nonblank and at most 500 characters, sent unchanged. The advertised
+schema cap is 500; the existing outer 2000 cap allows service-level INVALID_REQUEST for 501–2000.
+There is no separate caller-name/date argument, text prefix, composition or truncation. Names, callback
+details, symptoms and requested timing can be recorded in summaryText, which is never logged.
+CALLBACK_NOTED requires a valid 10-digit callback mobile and forbids appointment/transfer fields.
 
-The MCP summary input adds callerName and requestedDate to the operational contract fields. For
-CALLBACK_NOTED, callerName/callerMobile are required; appointmentId/transferredTo are rejected.
-requestedDate is optional and preserved when provided. The input summary can be up to 2000 characters;
-composition preserves callback metadata within the owner's 500-character stored-text limit.
+Trusted X-Call-Id and timezone-aware X-Call-Started-At supply identity/timing; no duration is sent.
+The owner deduplicates by call ID: verified 201 → SAVED; verified 200 for our call ID → ALREADY_SAVED,
+regardless of differing payload. The first accepted summary is final. Both responses must parse.
+Summaries send no Idempotency-Key. Other outcomes are INVALID_REQUEST (with field names), NOT_CONFIRMED
+(uncertain/transient/malformed response), and NOT_SAVED (missing context or definite auth refusal).
+Responses contain only outcome, plus fields for INVALID_REQUEST; diagnostics stay in safe logs.
 
-Trusted call identity and timezone-aware start time are required headers; duration is optional.
-The lifecycle bearer exposes only this tool. The conversational bearer cannot finalize summaries.
-STORED and REPLAYED distinguish new and replayed verified persistence; UNCERTAIN and failure codes
-remain explicit. Same-call retries identify the same frozen payload. Durable lifecycle/retry
-infrastructure belongs to the calling platform; MCP has no database or queue. The interface document
-defines these fields and result meanings without specifying agent behaviour or implementation.
-
-Validate the success body before acknowledging storage. Derive returned status such as stored/replayed from verified HTTP/result data; errors/timeouts must not be reported as success. Do not send transcripts/audio, and do not expose staff-only summary read endpoints. Test normal storage, same-call replay, dropped response after commit, malformed data, wrong scope and failure without delaying patient speech.
+One same-body retry after an unanswered send and 401-only auth refresh share the existing write
+transport. A definite 403 is NOT_SAVED; uncertainty from a previous send takes precedence. Bookings
+retain their header keys. Summary's own default 8-second deadline is not a 300 ms voice promise.
+MCP has no persistence or queue; the application owns timing and eventual retry. Live validation needs
+calls.write and a designated synthetic tenant. No staff summary reads are exposed.
 
 **Shobhit integration requirements**
 
@@ -200,16 +204,16 @@ These allocations are engineering hypotheses, not measurements or a proof obtain
 
 Cache tenant-bound department/profile data with bounded TTL and agreed invalidation; cache neither live-board truth across turns nor knowledge results across changed caller questions. Preserve persistent connections and warm OAuth tokens. Bound directory pagination and profile fan-out; show incomplete results explicitly rather than claim no match. Keep one model-facing availability invocation for the internal composition. Add an early latency spike as soon as the real service hosts exist, from the intended MCP region; if the downstream critical path cannot fit, discuss service placement or owner-provided aggregation then, not speculative aggregation endpoints now.
 
-Measure p50/p95/p99 with cold/warm token, DNS/TLS, process/model state, English/Kannada/Hindi inputs and realistic concurrency. Trace call/turn/operation IDs through speech end, gateway/MCP spans, downstreams, model response and first audible result without logging patient data. Inject latency/errors in stubs to verify deadline behavior, then measure real Manoj/Shobhit/gateway/voice paths. Contract-mock timing is not production evidence. Call summaries and their retries run after the call, outside this budget.
+Measure p50/p95/p99 with cold/warm token, DNS/TLS, process/model state, English/Kannada/Hindi inputs and realistic concurrency. Trace call/turn/operation IDs through speech end, gateway/MCP spans, downstreams, model response and first audible result without logging patient data. Inject latency/errors in stubs to verify deadline behavior, then measure real Manoj/Shobhit/gateway/voice paths. Contract-mock timing is not production evidence. LLM-called summaries and their retries have a separate default 8-second deadline; their timing belongs to the voice application and is not part of the 300 ms scheduling promise.
 
 **Updated development and retirement phases**
 
 | Phase | Concrete implementation work | Exit gate |
 |---|---|---|
-| 1. Consumer contracts and boundaries | Pin the operational spec and quoting-only correction process; define the four MCP input/output envelopes, trusted call metadata, timezone, mutation identity and summary lifecycle. Record Shobhit's pending interface separately. Carry forward the UNKNOWN callback decision. | Enough consumer contract detail for implementation tasks; no slot or advanced interpretation prerequisite. External assumptions labelled. |
+| 1. Consumer contracts and boundaries | Pin the operational spec and quoting-only correction process; define the four MCP input/output envelopes, trusted call metadata, timezone, mutation identity and summary contract. Record Shobhit's pending interface separately. Carry forward the UNKNOWN callback decision. | Enough consumer contract detail for implementation tasks; no slot or advanced interpretation prerequisite. External assumptions labelled. |
 | 2. Independent test foundation | Separate dev/test operational and knowledge stubs; MCP contract snapshots; backend-free runner/CI job. Operational fixtures cover directory, profiles, session board, appointment lifecycle, auth and summaries. Knowledge fixtures cover routing/answers/failure. Controlled clocks and commit-then-drop-response cases; no engines or PostgreSQL. Start real-host latency spike when hosts arrive. | Mandatory integration tests run without API source/virtualenv/database. Missing specs or accidentally skipped required suites fail. Provisional knowledge fixtures are not represented as an agreed production contract. |
-| 3. MCP and platform integration | Adapt tools/config/server/prompts; independent clients/auth; identity guards and explicit knowledge selection; deadlines/replay; programmatic call-end summary. Update gateway discovery, tool access and context forwarding. Coordinate changing default CI/tests with repointing the adapter. | Four tool contracts verified through MCP HTTP and stub journeys; ordinary model tool selection cannot finalize a call early. |
-| 4. External verification | Run the same consumer suite against designated owner test services; verify actual gateway schema refresh/header isolation, lifecycle persistence, synthetic lifecycle writes and real voice latency. | Agreed contracts/auth/caller verification and callback-summary workflow exercised; one-second metric measured under stated conditions. Safe degradation and no false success demonstrated. |
+| 3. MCP and platform integration | Adapt tools/config/server/prompts; independent clients/auth; identity guards and explicit knowledge selection; deadlines/replay; LLM-called whole-call summary. Update gateway discovery, tool access and context forwarding. Coordinate changing default CI/tests with repointing the adapter. | Four tool contracts verified through MCP HTTP and stub journeys; all four tools are accessible with gateway authentication; first accepted summary is final. |
+| 4. External verification | Run the same consumer suite against designated owner test services; verify actual gateway schema refresh/header isolation, summary persistence, synthetic summary writes and real voice latency. | Agreed contracts/auth/caller verification and callback-summary workflow exercised; one-second metric measured under stated conditions. Safe degradation and no false success demonstrated. |
 | 5. Cutover and complete source retirement | Canary compatible MCP/gateway/prompt versions, keep one appointment authority, verify required data handoff, remove all legacy source/tooling and update documentation. | Clean checkout installs/builds/tests/deploys MCP without the legacy API, its environment, PostgreSQL, migrations or seed/apply jobs. Rollback path verified. |
 | 6. Azure retirement and closure | Refresh the [resource inventory](AZURE-RETIREMENT.md), resolve shared ownership/data retention, retire obsolete API apps/jobs/images/database assets/secrets/grants after cutover, and remove exclusively obsolete resource groups. Preserve or relocate required shared consumers before removing parent resources. | No unexplained old backend resources or active references remain; retained shared resources have an owner/purpose, retained data has an agreed disposition, MCP/voice smoke passes and residual cost is reviewed. Code removal alone is not completion. |
 
@@ -219,7 +223,7 @@ Keep any temporary legacy test profile explicitly named during migration. The ne
 
 Rewrite `prompt.py` and the healthcare pack around board-qualified working hours, clarification, CALLBACK_NOTED and truthful appointment states. Remove slotId/newSlotId, capacity/confirmation-code promises and obsolete timingCertainty/outcome branches. CONFIRMED_BY_DESK can be described as desk acknowledgement; it still does not mean a guaranteed time under Manoj's contract. Include explicit instructions for missing identity, routing failures and uncertain mutations.
 
-Replace the old three-tool discovery expectations with the four planned names, versioned schemas and instructions. `register.py` currently treats matching registration metadata as a no-op; change the workflow to verify/refresh actual tool schemas and instructions, not merely registration name/URL. Verify the supported ContextForge refresh and lifecycle-access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic mutation/lifecycle tests run only against designated test tenants.
+Replace the old three-tool discovery expectations with the four planned names, versioned schemas and instructions. `register.py` currently treats matching registration metadata as a no-op; change the workflow to verify/refresh actual tool schemas and instructions, not merely registration name/URL. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
 
 **Active repository retirement inventory**
 
@@ -271,7 +275,7 @@ Execute source removal and infrastructure decommission as distinct steps within 
 | OPUS-02 | Trusted authorization separated from patient contact; model phone override removed; normalization/verification and initial family limitation explicit. |
 | OPUS-03 | Superseded by the user-approved 2 October decision: explicit knowledge tool, emergency guardrail in the voice platform, no scheduling gate. |
 | OPUS-04 | Stable logical operation identity/frozen payload, distinct uncertain outcomes, validated responses and total-deadline retries. Body-hash-only deduplication is not adopted. |
-| OPUS-05 | Programmatic call-end summary with controlled access, immutable retry body, trusted metadata and outcome-aware disconnection handling. |
+| OPUS-05 | Superseded by user decision S1 (4 October): LLM-called whole-call summary, one gateway bearer, exact text and owner call-ID deduplication; disconnect handling remains outside this change. |
 | OPUS-06 | One composed availability tool, provisional full response budget, early real-host spike and measured end-to-end distribution. |
 | OPUS-07 | Independent OAuth clients, bounded refresh, full base URLs and local readiness with separate downstream status. |
 | OPUS-08 | Facility timezone/clock, date-aware expiry, profile approval handling and no patientsPerHour allocation. |
@@ -279,6 +283,6 @@ Execute source removal and infrastructure decommission as distinct steps within 
 | OPUS-10 | Original spec preserved; any quoting-only test overlay labelled/hashed; stub assumptions separated from owner guarantees. |
 | OPUS-11 | Retirement inventory, rollout/rollback, coordinated CI migration and corrected acceptance checks included in this current plan. |
 
-External items still required before production claims: Shobhit's actual routing/answer/auth contract and outage handling; real Manoj host and caller-verification trust agreement; replay/missing-board semantics; approved treatment of profile data; verified gateway lifecycle controls; any necessary data handoff; and measured response target/percentile/load. These do not require a new slot or advanced interpretation endpoint to start MCP development with explicit fixtures. Questions are handled one at a time as the relevant dependency is reached.
+External items still required before production claims: Shobhit's actual routing/answer/auth contract and outage handling; real Manoj host and caller-verification trust agreement; replay/missing-board semantics; approved treatment of profile data; verified gateway access controls; any necessary data handoff; and measured response target/percentile/load. These do not require a new slot or advanced interpretation endpoint to start MCP development with explicit fixtures. Questions are handled one at a time as the relevant dependency is reached.
 
 No source implementation, deletion, deployment, database writes, operational API calls or communications to either team were performed. This revision updates planning documents only. Incorporating review recommendations is not a claim that the resulting implementation has already passed these checks, or that Opus has re-reviewed the revised plan.

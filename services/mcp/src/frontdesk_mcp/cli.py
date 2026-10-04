@@ -10,7 +10,6 @@ import sys
 from typing import Any
 
 from . import prompt, tools
-from .access import LIFECYCLE_TAG
 from .config import Settings, get_settings
 
 
@@ -27,7 +26,6 @@ def schema_document(settings: Settings) -> dict[str, Any]:
             tool = listed[name]
             items.append({
                 "name": name,
-                "lifecycle": LIFECYCLE_TAG in (tool.tags or set()),
                 "description": tool.description,
                 "annotations": tool.annotations.model_dump(exclude_none=True) if tool.annotations else {},
                 "inputSchema": tool.parameters,

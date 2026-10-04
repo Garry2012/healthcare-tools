@@ -1,0 +1,946 @@
+$ uv run --directory services/mcp pytest tests/test_summary.py tests/test_server.py -k 'not lifecycle and not conversational and not no_principal' -q --tb=short
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF............. [ 91%]
+....FF.                                                                  [100%]
+=================================== FAILURES ===================================
+___ test_callback_summary_sends_exact_text_trusted_context_and_no_header_key ___
+tests/test_summary.py:46: in test_callback_summary_sends_exact_text_trusted_context_and_no_header_key
+    assert result.model_dump(mode="json") == {"outcome": "SAVED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'SAVED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_valid_summary_text_is_not_normalized_prefixed_or_trimmed[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx] _
+tests/test_summary.py:59: in test_valid_summary_text_is_not_normalized_prefixed_or_trimmed
+    assert result.outcome == "SAVED" and json.loads(posted(h)[0].content)["summaryText"] == text
+E   AssertionError: assert ('INVALID_REQUEST' == 'SAVED'
+E
+E     - SAVED
+E     + INVALID_REQUEST)
+_ test_valid_summary_text_is_not_normalized_prefixed_or_trimmed[  \u0c9c\u0ccd\u0cb5\u0cb0 \u0cae\u0cc2\u0cb0\u0cc1 \u0ca6\u0cbf\u0ca8\u0ca6\u0cbf\u0c82\u0ca6.\nCaller requested help.  ] _
+tests/test_summary.py:59: in test_valid_summary_text_is_not_normalized_prefixed_or_trimmed
+    assert result.outcome == "SAVED" and json.loads(posted(h)[0].content)["summaryText"] == text
+E   AssertionError: assert ('INVALID_REQUEST' == 'SAVED'
+E
+E     - SAVED
+E     + INVALID_REQUEST)
+____________ test_invalid_summary_text_is_refused_without_a_write[] ____________
+tests/test_summary.py:65: in test_invalid_summary_text_is_refused_without_a_write
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+E   AssertionError: assert {'outcome': '...ryText'], ...} == {'outcome': '...summaryText']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerName', 'summaryText']} != {'fields': ['summaryText']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_________ test_invalid_summary_text_is_refused_without_a_write[ \n\t] __________
+tests/test_summary.py:65: in test_invalid_summary_text_is_refused_without_a_write
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+E   AssertionError: assert {'outcome': '...ryText'], ...} == {'outcome': '...summaryText']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerName', 'summaryText']} != {'fields': ['summaryText']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_invalid_summary_text_is_refused_without_a_write[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx] _
+tests/test_summary.py:65: in test_invalid_summary_text_is_refused_without_a_write
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': '...summaryText']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerName']} != {'fields': ['summaryText']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_invalid_summary_text_is_refused_without_a_write[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx] _
+tests/test_summary.py:65: in test_invalid_summary_text_is_refused_without_a_write
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': '...summaryText']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerName']} != {'fields': ['summaryText']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_same_call_returns_existing_summary_even_if_the_new_payload_differs[False] _
+tests/test_summary.py:72: in test_same_call_returns_existing_summary_even_if_the_new_payload_differs
+    original = dict(h.ops_state.summaries["call-1"])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'call-1'
+_ test_same_call_returns_existing_summary_even_if_the_new_payload_differs[True] _
+tests/test_summary.py:72: in test_same_call_returns_existing_summary_even_if_the_new_payload_differs
+    original = dict(h.ops_state.summaries["call-1"])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'call-1'
+_____ test_missing_or_malformed_trusted_context_is_not_saved[call_id-None] _____
+tests/test_summary.py:88: in test_missing_or_malformed_trusted_context_is_not_saved
+    assert result.model_dump(mode="json") == {"outcome": "NOT_SAVED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'LIFECYCLE_CONTEXT_MISSING'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'CALL_ID_MISSING',
+E      'fields': [],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.summary:summary.py:127 summary_without_lifecycle_context
+____ test_missing_or_malformed_trusted_context_is_not_saved[call_id-bad/id] ____
+tests/test_summary.py:88: in test_missing_or_malformed_trusted_context_is_not_saved
+    assert result.model_dump(mode="json") == {"outcome": "NOT_SAVED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'LIFECYCLE_CONTEXT_MISSING'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'CALL_ID_MISSING',
+E      'fields': [],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.context:context.py:53 trusted_header_malformed
+WARNING  frontdesk_mcp.summary:summary.py:127 summary_without_lifecycle_context
+___ test_missing_or_malformed_trusted_context_is_not_saved[started_at-None] ____
+tests/test_summary.py:88: in test_missing_or_malformed_trusted_context_is_not_saved
+    assert result.model_dump(mode="json") == {"outcome": "NOT_SAVED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'LIFECYCLE_CONTEXT_MISSING'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'STARTED_AT_MISSING',
+E      'fields': [],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.summary:summary.py:127 summary_without_lifecycle_context
+_ test_missing_or_malformed_trusted_context_is_not_saved[started_at-2026-10-01T10:00:00] _
+tests/test_summary.py:88: in test_missing_or_malformed_trusted_context_is_not_saved
+    assert result.model_dump(mode="json") == {"outcome": "NOT_SAVED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'LIFECYCLE_CONTEXT_MISSING'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'STARTED_AT_MISSING',
+E      'fields': [],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.context:context.py:67 trusted_header_malformed
+WARNING  frontdesk_mcp.summary:summary.py:127 summary_without_lifecycle_context
+_ test_missing_or_malformed_trusted_context_is_not_saved[started_at-not-a-time] _
+tests/test_summary.py:88: in test_missing_or_malformed_trusted_context_is_not_saved
+    assert result.model_dump(mode="json") == {"outcome": "NOT_SAVED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'LIFECYCLE_CONTEXT_MISSING'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'STARTED_AT_MISSING',
+E      'fields': [],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.context:context.py:64 trusted_header_malformed
+WARNING  frontdesk_mcp.summary:summary.py:127 summary_without_lifecycle_context
+______________ test_caller_mobile_is_never_copied_from_caller_id _______________
+tests/test_summary.py:95: in test_caller_mobile_is_never_copied_from_caller_id
+    assert (await record(h, **args)).outcome == "SAVED"
+E   AssertionError: assert 'STORED' == 'SAVED'
+E
+E     - SAVED
+E     + STORED
+___ test_callback_contact_and_identifier_constraints[override0-callerMobile] ___
+tests/test_summary.py:106: in test_callback_contact_and_identifier_constraints
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": [field]}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': '...allerMobile']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerMobile', 'callerName']} != {'fields': ['callerMobile']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+___ test_callback_contact_and_identifier_constraints[override1-callerMobile] ___
+tests/test_summary.py:106: in test_callback_contact_and_identifier_constraints
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": [field]}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': '...allerMobile']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerMobile', 'callerName']} != {'fields': ['callerMobile']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+___ test_callback_contact_and_identifier_constraints[override2-callerMobile] ___
+tests/test_summary.py:106: in test_callback_contact_and_identifier_constraints
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": [field]}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': '...allerMobile']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerMobile', 'callerName']} != {'fields': ['callerMobile']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+__ test_callback_contact_and_identifier_constraints[override3-appointmentId] ___
+tests/test_summary.py:106: in test_callback_contact_and_identifier_constraints
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": [field]}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': '...pointmentId']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['appointmentId', 'callerName']} != {'fields': ['appointmentId']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+__ test_callback_contact_and_identifier_constraints[override4-transferredTo] ___
+tests/test_summary.py:106: in test_callback_contact_and_identifier_constraints
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": [field]}
+E   AssertionError: assert {'outcome': '...rredTo'], ...} == {'outcome': '...ansferredTo']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerName', 'transferredTo']} != {'fields': ['transferredTo']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_____ test_callback_contact_and_identifier_constraints[override5-doctorId] _____
+tests/test_summary.py:106: in test_callback_contact_and_identifier_constraints
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": [field]}
+E   AssertionError: assert {'outcome': '...ctorId'], ...} == {'outcome': '... ['doctorId']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerName', 'doctorId']} != {'fields': ['doctorId']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_________ test_language_tags_map_to_the_contract_or_are_omitted[en-EN] _________
+tests/test_summary.py:114: in test_language_tags_map_to_the_contract_or_are_omitted
+    assert json.loads(posted(h)[0].content).get("language") == expected
+                      ^^^^^^^^^^^^
+E   IndexError: list index out of range
+_______ test_language_tags_map_to_the_contract_or_are_omitted[en-IN-EN] ________
+tests/test_summary.py:114: in test_language_tags_map_to_the_contract_or_are_omitted
+    assert json.loads(posted(h)[0].content).get("language") == expected
+                      ^^^^^^^^^^^^
+E   IndexError: list index out of range
+_________ test_language_tags_map_to_the_contract_or_are_omitted[kn-KN] _________
+tests/test_summary.py:114: in test_language_tags_map_to_the_contract_or_are_omitted
+    assert json.loads(posted(h)[0].content).get("language") == expected
+                      ^^^^^^^^^^^^
+E   IndexError: list index out of range
+_______ test_language_tags_map_to_the_contract_or_are_omitted[hi-IN-HI] ________
+tests/test_summary.py:114: in test_language_tags_map_to_the_contract_or_are_omitted
+    assert json.loads(posted(h)[0].content).get("language") == expected
+                      ^^^^^^^^^^^^
+E   IndexError: list index out of range
+________ test_language_tags_map_to_the_contract_or_are_omitted[ta-None] ________
+tests/test_summary.py:114: in test_language_tags_map_to_the_contract_or_are_omitted
+    assert json.loads(posted(h)[0].content).get("language") == expected
+                      ^^^^^^^^^^^^
+E   IndexError: list index out of range
+_________ test_language_tags_map_to_the_contract_or_are_omitted[-None] _________
+tests/test_summary.py:114: in test_language_tags_map_to_the_contract_or_are_omitted
+    assert json.loads(posted(h)[0].content).get("language") == expected
+                      ^^^^^^^^^^^^
+E   IndexError: list index out of range
+_______ test_language_tags_map_to_the_contract_or_are_omitted[None-None] _______
+tests/test_summary.py:114: in test_language_tags_map_to_the_contract_or_are_omitted
+    assert json.loads(posted(h)[0].content).get("language") == expected
+                      ^^^^^^^^^^^^
+E   IndexError: list index out of range
+_ test_transfer_destination_is_forwarded_for_both_transfer_outcomes[TRANSFERRED] _
+tests/test_summary.py:121: in test_transfer_destination_is_forwarded_for_both_transfer_outcomes
+    assert result.outcome == "SAVED"
+E   AssertionError: assert 'STORED' == 'SAVED'
+E
+E     - SAVED
+E     + STORED
+_ test_transfer_destination_is_forwarded_for_both_transfer_outcomes[EMERGENCY_TRANSFERRED] _
+tests/test_summary.py:121: in test_transfer_destination_is_forwarded_for_both_transfer_outcomes
+    assert result.outcome == "SAVED"
+E   AssertionError: assert 'STORED' == 'SAVED'
+E
+E     - SAVED
+E     + STORED
+_________ test_invalid_destination_is_refused[RESOLVED_BY_AGENT-desk] __________
+tests/test_summary.py:128: in test_invalid_destination_is_refused
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["transferredTo"]}
+E   AssertionError: assert {'outcome': '...rredTo'], ...} == {'outcome': '...ansferredTo']}
+E
+E     Omitting 2 identical items, use -vv to show
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',
+E      'retryAfterSeconds': None,
+E      'summaryId': None}
+E     Use -v to get more diff
+_____________ test_invalid_destination_is_refused[TRANSFERRED-   ] _____________
+tests/test_summary.py:128: in test_invalid_destination_is_refused
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["transferredTo"]}
+E   AssertionError: assert {'outcome': '...rredTo'], ...} == {'outcome': '...ansferredTo']}
+E
+E     Omitting 2 identical items, use -vv to show
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',
+E      'retryAfterSeconds': None,
+E      'summaryId': None}
+E     Use -v to get more diff
+___ test_owner_statuses_are_mapped_without_returning_diagnostics[201-SAVED] ____
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'SAVED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[200-ALREADY_SAVED] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'ALREADY_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'ALREADY_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[202-NOT_CONFIRMED] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[400-INVALID_REQUEST] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': '...summaryText']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerName']} != {'fields': ['summaryText']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[401-NOT_SAVED] __
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[403-NOT_SAVED] __
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[404-NOT_CONFIRMED] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[409-NOT_CONFIRMED] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[429-NOT_CONFIRMED] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[500-NOT_CONFIRMED] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[502-NOT_CONFIRMED] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[503-NOT_CONFIRMED] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_ test_owner_statuses_are_mapped_without_returning_diagnostics[504-NOT_CONFIRMED] _
+tests/test_summary.py:148: in test_owner_statuses_are_mapped_without_returning_diagnostics
+    assert result.model_dump(mode="json") == expected
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+___ test_success_for_another_call_is_not_confirmed_and_logs_named_event[200] ___
+tests/test_summary.py:167: in test_success_for_another_call_is_not_confirmed_and_logs_named_event
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+___ test_success_for_another_call_is_not_confirmed_and_logs_named_event[201] ___
+tests/test_summary.py:167: in test_success_for_another_call_is_not_confirmed_and_logs_named_event
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_______ test_unreadable_or_incomplete_success_is_not_confirmed[None-200] _______
+tests/test_summary.py:178: in test_unreadable_or_incomplete_success_is_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+_______ test_unreadable_or_incomplete_success_is_not_confirmed[None-201] _______
+tests/test_summary.py:178: in test_unreadable_or_incomplete_success_is_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+______ test_unreadable_or_incomplete_success_is_not_confirmed[body1-200] _______
+tests/test_summary.py:178: in test_unreadable_or_incomplete_success_is_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+______ test_unreadable_or_incomplete_success_is_not_confirmed[body1-201] _______
+tests/test_summary.py:178: in test_unreadable_or_incomplete_success_is_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[400] ________
+tests/test_summary.py:187: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[401] ________
+tests/test_summary.py:187: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[403] ________
+tests/test_summary.py:187: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[429] ________
+tests/test_summary.py:187: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+________ test_refusal_after_an_unanswered_send_stays_not_confirmed[503] ________
+tests/test_summary.py:187: in test_refusal_after_an_unanswered_send_stays_not_confirmed
+    assert result.model_dump(mode="json") == {"outcome": "NOT_CONFIRMED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'NOT_CONFIRMED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'NOT_CONFIRMED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+________ test_lost_write_response_then_verified_replay_is_already_saved ________
+tests/test_summary.py:207: in test_lost_write_response_then_verified_replay_is_already_saved
+    assert result.model_dump(mode="json") == {"outcome": "ALREADY_SAVED"}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': 'ALREADY_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'INVALID_REQUEST'} != {'outcome': 'ALREADY_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': None,
+E      'fields': ['callerName'],
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+______________ test_untrusted_owner_field_names_are_not_reflected ______________
+tests/test_summary.py:219: in test_untrusted_owner_field_names_are_not_reflected
+    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["callerMobile"]}
+E   AssertionError: assert {'outcome': '...erName'], ...} == {'outcome': '...allerMobile']}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'fields': ['callerName']} != {'fields': ['callerMobile']}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'FIX_PLATFORM_INPUT',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+______ test_summary_works_without_knowledge_and_with_a_slow_healthy_owner ______
+tests/test_summary.py:226: in test_summary_works_without_knowledge_and_with_a_slow_healthy_owner
+    assert (await record(h, **CALLBACK)).outcome == "SAVED"
+E   AssertionError: assert 'INVALID_REQUEST' == 'SAVED'
+E
+E     - SAVED
+E     + INVALID_REQUEST
+____________ test_summary_length_is_an_in_band_invalid_request[501] ____________
+tests/test_server.py:419: in test_summary_length_is_an_in_band_invalid_request
+    assert result.structured_content == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': '...summaryText']}
+E
+E     Differing items:
+E     {'fields': []} != {'fields': ['summaryText']}
+E     {'outcome': 'STORED'} != {'outcome': 'INVALID_REQUEST'}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'DONE',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T02:33:51.210125+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [45882]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.210276+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.210408+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-03.3"}
+{"ts": "2026-10-04T02:33:51.211962+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.212505+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:59395 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T02:33:51.247807+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "call-1", "tool": "record_call_summary", "outcome": "STORED", "nextStep": "DONE"}
+------------------------------ Captured log call -------------------------------
+INFO     frontdesk_mcp.tools:tools.py:97 tool_result
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T02:33:51.313411+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.415776+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.416866+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.416927+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [45882]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [45882]
+___________ test_summary_length_is_an_in_band_invalid_request[2000] ____________
+tests/test_server.py:419: in test_summary_length_is_an_in_band_invalid_request
+    assert result.structured_content == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': '...summaryText']}
+E
+E     Differing items:
+E     {'fields': []} != {'fields': ['summaryText']}
+E     {'outcome': 'STORED'} != {'outcome': 'INVALID_REQUEST'}
+E     Left contains 4 more items:
+E     {'detail': None,
+E      'nextStep': 'DONE',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T02:33:51.435527+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [45882]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.435629+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.435724+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-03.3"}
+{"ts": "2026-10-04T02:33:51.436888+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.437287+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:59401 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T02:33:51.473125+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "call-1", "tool": "record_call_summary", "outcome": "STORED", "nextStep": "DONE"}
+------------------------------ Captured log call -------------------------------
+INFO     frontdesk_mcp.tools:tools.py:97 tool_result
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T02:33:51.539421+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.641758+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.642856+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T02:33:51.642921+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [45882]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [45882]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_summary.py::test_callback_summary_sends_exact_text_trusted_context_and_no_header_key
+FAILED tests/test_summary.py::test_valid_summary_text_is_not_normalized_prefixed_or_trimmed[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]
+FAILED tests/test_summary.py::test_valid_summary_text_is_not_normalized_prefixed_or_trimmed[  \u0c9c\u0ccd\u0cb5\u0cb0 \u0cae\u0cc2\u0cb0\u0cc1 \u0ca6\u0cbf\u0ca8\u0ca6\u0cbf\u0c82\u0ca6.\nCaller requested help.  ]
+FAILED tests/test_summary.py::test_invalid_summary_text_is_refused_without_a_write[]
+FAILED tests/test_summary.py::test_invalid_summary_text_is_refused_without_a_write[ \n\t]
+FAILED tests/test_summary.py::test_invalid_summary_text_is_refused_without_a_write[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]
+FAILED tests/test_summary.py::test_invalid_summary_text_is_refused_without_a_write[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]
+FAILED tests/test_summary.py::test_same_call_returns_existing_summary_even_if_the_new_payload_differs[False]
+FAILED tests/test_summary.py::test_same_call_returns_existing_summary_even_if_the_new_payload_differs[True]
+FAILED tests/test_summary.py::test_missing_or_malformed_trusted_context_is_not_saved[call_id-None]
+FAILED tests/test_summary.py::test_missing_or_malformed_trusted_context_is_not_saved[call_id-bad/id]
+FAILED tests/test_summary.py::test_missing_or_malformed_trusted_context_is_not_saved[started_at-None]
+FAILED tests/test_summary.py::test_missing_or_malformed_trusted_context_is_not_saved[started_at-2026-10-01T10:00:00]
+FAILED tests/test_summary.py::test_missing_or_malformed_trusted_context_is_not_saved[started_at-not-a-time]
+FAILED tests/test_summary.py::test_caller_mobile_is_never_copied_from_caller_id
+FAILED tests/test_summary.py::test_callback_contact_and_identifier_constraints[override0-callerMobile]
+FAILED tests/test_summary.py::test_callback_contact_and_identifier_constraints[override1-callerMobile]
+FAILED tests/test_summary.py::test_callback_contact_and_identifier_constraints[override2-callerMobile]
+FAILED tests/test_summary.py::test_callback_contact_and_identifier_constraints[override3-appointmentId]
+FAILED tests/test_summary.py::test_callback_contact_and_identifier_constraints[override4-transferredTo]
+FAILED tests/test_summary.py::test_callback_contact_and_identifier_constraints[override5-doctorId]
+FAILED tests/test_summary.py::test_language_tags_map_to_the_contract_or_are_omitted[en-EN]
+FAILED tests/test_summary.py::test_language_tags_map_to_the_contract_or_are_omitted[en-IN-EN]
+FAILED tests/test_summary.py::test_language_tags_map_to_the_contract_or_are_omitted[kn-KN]
+FAILED tests/test_summary.py::test_language_tags_map_to_the_contract_or_are_omitted[hi-IN-HI]
+FAILED tests/test_summary.py::test_language_tags_map_to_the_contract_or_are_omitted[ta-None]
+FAILED tests/test_summary.py::test_language_tags_map_to_the_contract_or_are_omitted[-None]
+FAILED tests/test_summary.py::test_language_tags_map_to_the_contract_or_are_omitted[None-None]
+FAILED tests/test_summary.py::test_transfer_destination_is_forwarded_for_both_transfer_outcomes[TRANSFERRED]
+FAILED tests/test_summary.py::test_transfer_destination_is_forwarded_for_both_transfer_outcomes[EMERGENCY_TRANSFERRED]
+FAILED tests/test_summary.py::test_invalid_destination_is_refused[RESOLVED_BY_AGENT-desk]
+FAILED tests/test_summary.py::test_invalid_destination_is_refused[TRANSFERRED-   ]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[201-SAVED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[200-ALREADY_SAVED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[202-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[400-INVALID_REQUEST]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[401-NOT_SAVED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[403-NOT_SAVED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[404-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[409-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[429-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[500-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[502-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[503-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_owner_statuses_are_mapped_without_returning_diagnostics[504-NOT_CONFIRMED]
+FAILED tests/test_summary.py::test_success_for_another_call_is_not_confirmed_and_logs_named_event[200]
+FAILED tests/test_summary.py::test_success_for_another_call_is_not_confirmed_and_logs_named_event[201]
+FAILED tests/test_summary.py::test_unreadable_or_incomplete_success_is_not_confirmed[None-200]
+FAILED tests/test_summary.py::test_unreadable_or_incomplete_success_is_not_confirmed[None-201]
+FAILED tests/test_summary.py::test_unreadable_or_incomplete_success_is_not_confirmed[body1-200]
+FAILED tests/test_summary.py::test_unreadable_or_incomplete_success_is_not_confirmed[body1-201]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[400]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[401]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[403]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[429]
+FAILED tests/test_summary.py::test_refusal_after_an_unanswered_send_stays_not_confirmed[503]
+FAILED tests/test_summary.py::test_lost_write_response_then_verified_replay_is_already_saved
+FAILED tests/test_summary.py::test_untrusted_owner_field_names_are_not_reflected
+FAILED tests/test_summary.py::test_summary_works_without_knowledge_and_with_a_slow_healthy_owner
+FAILED tests/test_server.py::test_summary_length_is_an_in_band_invalid_request[501]
+FAILED tests/test_server.py::test_summary_length_is_an_in_band_invalid_request[2000]
+61 failed, 18 passed, 8 deselected, 2 warnings in 6.25s
+EXIT: 1
+$ uv run --directory services/mcp pytest tests/test_summary.py tests/test_server.py -k 'not schema and not interface' -q --tb=short
+........................................................................ [ 87%]
+..........                                                               [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+82 passed, 5 deselected, 2 warnings in 6.38s
+EXIT: 0
+$ uv run --directory services/mcp pytest tests/test_server.py -k 'schema or interface' -q --tb=short
+F...F                                                                    [100%]
+=================================== FAILURES ===================================
+_________________ test_tool_schemas_match_the_pinned_snapshot __________________
+tests/test_server.py:97: in test_tool_schemas_match_the_pinned_snapshot
+    assert document == json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+E   AssertionError: assert {'schemaVersi...ject'}, ...}]} == {'instruction...: True, ...}]}
+E
+E     Differing items:
+E     {'schemaVersion': '2026-10-04.1'} != {'schemaVersion': '2026-10-03.3'}
+E     {'tools': [{'name': 'get_doctor_availability', 'description': 'Doctor or department working hours qualified by the liv...CK_NOTED; distinct from caller ID.'}, ...}, 'required': ['intent', 'outcome', 'summaryText'], 'type': 'object'}, ...}]} != {'tools': [{'annotations': {'idempotentHint': True, 'openWorldHint': False, 'readOnlyHint': True}, 'description': 'Doc... with the call.'}, ...}, 'required': ['intent', 'outcome', 'summaryText'], 'type': 'object'}, 'lifecycle': True, ...}]}
+E     {'inst...
+E
+E     ...Full output truncated (2 lines hidden), use '-vv' to show
+_____________ test_interface_describes_every_outcome_and_next_step _____________
+tests/test_server.py:405: in test_interface_describes_every_outcome_and_next_step
+    assert key in rows and len(rows[key]) == 1 and rows[key][0], f"undocumented meaning: {key}"
+E   AssertionError: undocumented meaning: record_call_summary.outcome.SAVED
+E   assert ('record_call_summary.outcome.SAVED' in {'get_doctor_availability.input.date': ['{"maxLength":10,"type":"string"}', 'required', "Required date: 'today' or YYY..."type":"null"}]}', 'optional', 'Directory identifier for a selected doctor; optional alternative to doctorName.'], ...})
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_tool_schemas_match_the_pinned_snapshot - As...
+FAILED tests/test_server.py::test_interface_describes_every_outcome_and_next_step
+2 failed, 3 passed, 20 deselected, 2 warnings in 1.78s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+F401 [*] `.test_ops_client.TOKEN` imported but unused
+  --> tests/test_summary.py:17:30
+   |
+16 | from . import harness
+17 | from .test_ops_client import TOKEN, Upstream
+   |                              ^^^^^
+18 |
+19 | CALL_CONTEXT = {"operation_id": None, "started_at": "2026-10-01T09:58:00+05:30", "duration": "184"}
+   |
+help: Remove unused import: `.test_ops_client.TOKEN`
+   |
+16 | from . import harness
+   - from .test_ops_client import TOKEN, Upstream
+17 + from .test_ops_client import Upstream
+18 |
+   |
+
+E501 Line too long (122 > 120)
+   --> tests/test_summary.py:141:121
+    |
+139 |     caplog.set_level(logging.INFO)
+140 |     body = STORED if status < 300 else {"error": {"code": "VALIDATION_FAILED", "message": CALLBACK["summaryText"],
+141 |                                                 "details": [{"field": "summaryText", "issue": CALLBACK["callerMobile"]}]}}
+    |                                                                                                                         ^^
+142 |     up = Upstream(responses=[httpx.Response(status, json=body, headers={"Retry-After": "12"}) for _ in range(2)])
+143 |     async with OpsClient(h.settings, transport=httpx.MockTransport(up.handler)) as ops:
+    |
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 16%]
+........................................................................ [ 32%]
+........................................................................ [ 48%]
+........................................................................ [ 64%]
+........................................................................ [ 81%]
+........................................................................ [ 97%]
+............                                                             [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+444 passed, 11 deselected, 2 warnings in 23.58s
+EXIT: 0
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 16%]
+........................................................................ [ 32%]
+........................................................................ [ 48%]
+........................................................................ [ 64%]
+........................................................................ [ 80%]
+........................................................................ [ 96%]
+..................                                                       [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+450 passed, 11 deselected, 2 warnings in 23.48s
+EXIT: 0

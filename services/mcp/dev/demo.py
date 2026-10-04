@@ -33,7 +33,7 @@ SETTINGS = Settings(
     tenant_supported_languages="en,kn,hi", tenant_timezone="Asia/Kolkata", tenant_country_calling_code="91",
     ops_base_url="http://ops-stub.local/api/v1", ops_client_id="mcp-dev", ops_client_secret="dev-secret",
     knowledge_base_url="http://knowledge-stub.local", knowledge_bearer_token="dev-knowledge-secret",
-    mcp_bearer_token="gateway", mcp_lifecycle_bearer_token="lifecycle")
+    mcp_bearer_token="gateway")
 NOW = datetime(2026, 10, 1, 4, 30, tzinfo=UTC)  # Thursday 10:00 IST
 
 
@@ -79,13 +79,14 @@ async def main() -> None:
             await call(c, "search_knowledge with the caller's danger sign",
                        "search_knowledge", {"question": "Dr Garima, I have chest pain", "language": "en"})
         async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={
-                "Authorization": "Bearer lifecycle", "X-Call-Id": "demo-call-1",
-                "X-Call-Started-At": "2026-10-01T09:58:00+05:30", "X-Call-Duration-Seconds": "184"})) as c:
-            show("tools visible to the call-end lifecycle", {"tools": [t.name for t in await c.list_tools()]})
+                **gateway,
+                "X-Call-Started-At": "2026-10-01T09:58:00+05:30"})) as c:
+            show("all four tools visible to the gateway", {"tools": [t.name for t in await c.list_tools()]})
             await call(c, "record_call_summary (CALLBACK_NOTED)", "record_call_summary", {
-                "intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED", "callerName": "Lakshmi Rao",
+                "intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED",
                 "callerMobile": "9000000101", "doctorId": "doc_kiran_hegde", "language": "kn",
-                "summaryText": "Asked for Dr. Kiran Hegde this evening; board status UNKNOWN."})
+                "summaryText": "Lakshmi Rao, 9000000101, asked for Dr. Kiran Hegde this evening; "
+                               "board UNKNOWN; callback promised."})
 
 
 if __name__ == "__main__":

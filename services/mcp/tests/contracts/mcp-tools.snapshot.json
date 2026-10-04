@@ -1,6 +1,6 @@
 {
-  "instructions": "MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service. Availability date accepts only 'today' or YYYY-MM-DD; other relative dates are not accepted. NOTED is a recorded appointment request, not a confirmed or reserved time. CALLBACK_REQUIRED denotes UNKNOWN board availability; UNCERTAIN denotes an unverified write result. Call summaries require lifecycle authentication; the other three tools require gateway authentication. Supported languages: en, kn, hi. Tool schema 2026-10-03.3.",
-  "schemaVersion": "2026-10-03.3",
+  "instructions": "MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service. Availability date accepts only 'today' or YYYY-MM-DD; other relative dates are not accepted. NOTED is a recorded appointment request, not a confirmed or reserved time. CALLBACK_REQUIRED denotes UNKNOWN board availability; UNCERTAIN denotes an unverified write result. Gateway authentication covers all four tools. Supported languages: en, kn, hi. Tool schema 2026-10-04.2.",
+  "schemaVersion": "2026-10-04.2",
   "tools": [
     {
       "annotations": {
@@ -103,7 +103,6 @@
         ],
         "type": "object"
       },
-      "lifecycle": false,
       "name": "get_doctor_availability",
       "outputSchema": {
         "$defs": {
@@ -812,7 +811,6 @@
         ],
         "type": "object"
       },
-      "lifecycle": false,
       "name": "manage_booking",
       "outputSchema": {
         "$defs": {
@@ -1049,7 +1047,6 @@
         ],
         "type": "object"
       },
-      "lifecycle": false,
       "name": "search_knowledge",
       "outputSchema": {
         "$defs": {
@@ -1216,7 +1213,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Store the completed call's hospital-facing summary. Available only to the lifecycle bearer. Call identity and timing come from trusted headers. CALLBACK_NOTED records callback contact details after UNKNOWN availability; it does not create an appointment or a separate callback task. STORED is a new summary; REPLAYED is the existing result for the same call and payload; UNCERTAIN means persistence could not be verified.",
+      "description": "Store one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.",
       "inputSchema": {
         "properties": {
           "appointmentId": {
@@ -1243,20 +1240,7 @@
               }
             ],
             "default": null,
-            "description": "Optional caller-provided 10-digit callback number; required for CALLBACK_NOTED. Distinct from caller ID."
-          },
-          "callerName": {
-            "anyOf": [
-              {
-                "maxLength": 100,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Caller-provided name; required for CALLBACK_NOTED, optional otherwise."
+            "description": "Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID."
           },
           "doctorId": {
             "anyOf": [
@@ -1318,23 +1302,9 @@
             ],
             "type": "string"
           },
-          "requestedDate": {
-            "anyOf": [
-              {
-                "maxLength": 10,
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Optional requested date in YYYY-MM-DD format; preserved in CALLBACK_NOTED summary text when supplied."
-          },
           "summaryText": {
-            "description": "Required nonblank call summary, up to 2000 input characters. Stored text is limited to 500 characters including preserved callback metadata.",
-            "maxLength": 2000,
+            "description": "Required. Summary of the whole call in plain sentences, up to 500 characters: what the caller asked, what was explained or done, and any follow-up promised. Contains all relevant information mentioned in the call, including: the caller's name, the callback phone number, the symptoms or reason the caller described, the doctor's name, the department, and the requested date and time. Not a transcript.",
+            "maxLength": 500,
             "type": "string"
           },
           "transferredTo": {
@@ -1358,82 +1328,30 @@
         ],
         "type": "object"
       },
-      "lifecycle": true,
       "name": "record_call_summary",
       "outputSchema": {
         "properties": {
-          "detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Detail"
-          },
           "fields": {
-            "default": [],
             "items": {
               "type": "string"
             },
             "title": "Fields",
             "type": "array"
           },
-          "nextStep": {
-            "enum": [
-              "DONE",
-              "RETRY_SAME_PAYLOAD",
-              "FIX_PLATFORM_INPUT",
-              "RECORD_FAILED"
-            ],
-            "title": "Nextstep",
-            "type": "string"
-          },
           "outcome": {
             "enum": [
-              "STORED",
-              "REPLAYED",
-              "REJECTED",
-              "CONFLICT",
-              "UNCERTAIN",
-              "COULD_NOT_RECORD",
+              "SAVED",
+              "ALREADY_SAVED",
               "INVALID_REQUEST",
-              "LIFECYCLE_CONTEXT_MISSING"
+              "NOT_CONFIRMED",
+              "NOT_SAVED"
             ],
             "title": "Outcome",
             "type": "string"
-          },
-          "retryAfterSeconds": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Retryafterseconds"
-          },
-          "summaryId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Summaryid"
           }
         },
         "required": [
-          "outcome",
-          "nextStep"
+          "outcome"
         ],
         "title": "SummaryResult",
         "type": "object"

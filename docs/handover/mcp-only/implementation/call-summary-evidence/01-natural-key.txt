@@ -1,0 +1,133 @@
+$ uv run --directory services/mcp pytest tests/test_summary.py tests/test_stubs.py tests/test_ops_client.py -k 'callback_summary_is_stored or summary_ignores or summary_retries_same_body' -q --tb=short
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+____ test_callback_summary_is_stored_with_trusted_timing_and_a_frozen_body _____
+tests/test_summary.py:51: in test_callback_summary_is_stored_with_trusted_timing_and_a_frozen_body
+    assert "idempotency-key" not in request.headers
+E   AssertionError: assert 'idempotency-key' not in Headers({'host': 'ops-stub.test', 'accept': '*/*', 'accept-encoding': 'gzip, deflate', 'connection': 'keep-alive', 'us...2d423d69feb12e87772c9e3700', 'authorization': '[secure]', 'content-length': '341', 'content-type': 'application/json'})
+E    +  where Headers({'host': 'ops-stub.test', 'accept': '*/*', 'accept-encoding': 'gzip, deflate', 'connection': 'keep-alive', 'us...2d423d69feb12e87772c9e3700', 'authorization': '[secure]', 'content-length': '341', 'content-type': 'application/json'}) = <Request('POST', 'http://ops-stub.test/api/v1/call-summaries')>.headers
+___ test_summary_ignores_supplied_idempotency_keys_and_keeps_first_call_body ___
+tests/test_stubs.py:316: in test_summary_ignores_supplied_idempotency_keys_and_keeps_first_call_body
+    assert first.status_code == second.status_code == 201
+E   assert 201 == 409
+E    +  where 201 = <Response [201 Created]>.status_code
+E    +  and   409 = <Response [409 Conflict]>.status_code
+_____________ test_summary_retries_same_body_without_a_header_key ______________
+tests/test_ops_client.py:525: in test_summary_retries_same_body_without_a_header_key
+    assert all(json.loads(r.content) == body and "idempotency-key" not in r.headers for r in up.api_requests())
+E   assert False
+E    +  where False = all(<generator object test_summary_retries_same_body_without_a_header_key.<locals>.<genexpr> at 0x10dfe7920>)
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.ops_client:ops_client.py:301 ops_write_unanswered
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_summary.py::test_callback_summary_is_stored_with_trusted_timing_and_a_frozen_body
+FAILED tests/test_stubs.py::test_summary_ignores_supplied_idempotency_keys_and_keeps_first_call_body
+FAILED tests/test_ops_client.py::test_summary_retries_same_body_without_a_header_key
+3 failed, 96 deselected, 2 warnings in 1.20s
+EXIT: 1
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+E501 Line too long (122 > 120)
+   --> src/frontdesk_mcp/ops_client.py:271:121
+    |
+270 |     async def _write(self, path: str, body: dict[str, Any], key: str | None, deadline: Deadline) -> tuple[int, Any]:
+271 |         """POST with a frozen body and an optional Idempotency-Key (summaries use callId). One retry: a request that never
+    |                                                                                                                         ^^
+272 |         left (connect failure) may be resent; a request that may have been committed is resent only because
+273 |         the contract replays the same key, and if that also fails the result is uncertain, not a failure."""
+    |
+
+Found 1 error.
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+E501 Line too long (128 > 120)
+   --> src/frontdesk_mcp/ops_client.py:272:121
+    |
+270 |     async def _write(self, path: str, body: dict[str, Any], key: str | None, deadline: Deadline) -> tuple[int, Any]:
+271 |         """POST with a frozen body; bookings use Idempotency-Key, summaries use callId. One retry:
+272 |         a request that never left (connect failure) may be resent; a request that may have been committed is resent only because
+    |                                                                                                                         ^^^^^^^^
+273 |         the contract replays the same key, and if that also fails the result is uncertain, not a failure."""
+274 |         headers = {"Idempotency-Key": key} if key is not None else {}
+    |
+
+Found 1 error.
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 17%]
+........................................................................ [ 34%]
+........................................................................ [ 52%]
+....................................................................F... [ 69%]
+........................................................................ [ 87%]
+.....................................................                    [100%]
+=================================== FAILURES ===================================
+_____________ test_call_summary_distinguishes_stored_from_replayed _____________
+
+make_settings = <function make_settings.<locals>.factory at 0x10bc74f40>
+
+    async def test_call_summary_distinguishes_stored_from_replayed(make_settings):
+        stored = {"id": "cs_1", "callId": "call-1", "startedAt": "2026-10-01T10:00:00+05:30", "intent": "AVAILABILITY",
+                  "outcome": "CALLBACK_NOTED", "createdAt": "2026-10-01T10:03:00+05:30"}
+        up = Upstream(responses=[httpx.Response(201, json=stored), httpx.Response(200, json=stored)])
+        body = {"callId": "call-1", "startedAt": "2026-10-01T10:00:00+05:30", "intent": "AVAILABILITY",
+                "outcome": "CALLBACK_NOTED"}
+        async with client_for(make_settings(), up) as client:
+>           first = await client.create_call_summary(body, "k", dl(8.0))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: OpsClient.create_call_summary() takes 3 positional arguments but 4 were given
+
+tests/test_ops_client.py:289: TypeError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_ops_client.py::test_call_summary_distinguishes_stored_from_replayed
+1 failed, 412 passed, 11 deselected, 2 warnings in 23.67s
+make: *** [test-fast] Error 1
+EXIT: 2
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 17%]
+........................................................................ [ 34%]
+........................................................................ [ 52%]
+........................................................................ [ 69%]
+........................................................................ [ 87%]
+.....................................................                    [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+413 passed, 11 deselected, 2 warnings in 23.14s
+EXIT: 0

@@ -1,0 +1,13 @@
+$ make schema
+Generated schema equals pinned snapshot; version 2026-10-04.2.
+EXIT: 0
+$ bash -n deploy/azure/deploy.sh
+EXIT: 0
+$ docker compose -f deploy/docker-compose.yml --env-file .env.example --profile stubs config --quiet
+EXIT: 0
+$ git diff --check
+EXIT: 0
+$ git diff 8c2b60a -- .claude/agents
+EXIT: 0
+$ git ls-files docs/superpowers
+EXIT: 0

@@ -55,7 +55,7 @@ def settings() -> Settings:
                     ops_client_id=required("OPS_E2E_CLIENT_ID"), ops_client_secret=required("OPS_E2E_CLIENT_SECRET"),
                     knowledge_base_url=os.environ.get("KNOWLEDGE_E2E_BASE_URL") or "https://knowledge.pending.invalid",
                     knowledge_bearer_token=os.environ.get("KNOWLEDGE_E2E_BEARER_TOKEN") or "pending",
-                    mcp_bearer_token="external-gateway", mcp_lifecycle_bearer_token="external-lifecycle",
+                    mcp_bearer_token="external-gateway",
                     # diagnostic overrides: the laptop → Azure path is far slower than the in-region budget; these are
                     # explicitly allowed here and never become production defaults
                     allow_budget_overrides=True, read_deadline_seconds=6.0, write_deadline_seconds=8.0,
@@ -162,15 +162,15 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
             action="CANCEL", appointmentId=appointment_id, callerConfirmed=True))
         assert cancelled.outcome == "CANCELLED", cancelled
         stored = await summary.SummaryService(ops, settings).record(context.from_headers(harness.headers(
-            call_id=call_id, started_at=datetime.now(UTC).isoformat(), duration="60"), settings),
+            call_id=call_id, started_at=datetime.now(UTC).isoformat()), settings),
             summary.SummaryRequest(intent="BOOKING", outcome="APPOINTMENT_CANCELLED", appointmentId=appointment_id,
                                    summaryText="External synthetic journey: created, moved, cancelled."))
-        assert stored.outcome == "STORED", stored
+        assert stored.outcome == "SAVED", stored
         replay = await summary.SummaryService(ops, settings).record(context.from_headers(harness.headers(
-            call_id=call_id, started_at=datetime.now(UTC).isoformat(), duration="60"), settings),
+            call_id=call_id, started_at=datetime.now(UTC).isoformat()), settings),
             summary.SummaryRequest(intent="BOOKING", outcome="APPOINTMENT_CANCELLED", appointmentId=appointment_id,
                                    summaryText="External synthetic journey: created, moved, cancelled."))
-        assert replay.outcome == "REPLAYED" and replay.summaryId == stored.summaryId
+        assert replay.model_dump(mode="json") == {"outcome": "ALREADY_SAVED"}
     finally:
         await ops.aclose()
         await kb.aclose()

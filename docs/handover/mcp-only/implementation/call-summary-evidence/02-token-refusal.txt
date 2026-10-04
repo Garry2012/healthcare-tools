@@ -1,0 +1,49 @@
+$ uv run --directory services/mcp pytest tests/test_summary.py -k token_endpoint_refusal -q --tb=short
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_token_endpoint_refusal_is_not_saved_and_never_posts_a_summary[400] ____
+tests/test_summary.py:304: in test_token_endpoint_refusal_is_not_saved_and_never_posts_a_summary
+    assert result.model_dump(mode="json") == {"outcome": "NOT_SAVED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'COULD_NOT_RECORD'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'AUTH',
+E      'fields': [],
+E      'nextStep': 'RECORD_FAILED',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.ops_client:ops_client.py:174 ops_rejected_adapter_credentials
+___ test_token_endpoint_refusal_is_not_saved_and_never_posts_a_summary[401] ____
+tests/test_summary.py:304: in test_token_endpoint_refusal_is_not_saved_and_never_posts_a_summary
+    assert result.model_dump(mode="json") == {"outcome": "NOT_SAVED"}
+E   AssertionError: assert {'outcome': '...lds': [], ...} == {'outcome': 'NOT_SAVED'}
+E
+E     Differing items:
+E     {'outcome': 'COULD_NOT_RECORD'} != {'outcome': 'NOT_SAVED'}
+E     Left contains 5 more items:
+E     {'detail': 'AUTH',
+E      'fields': [],
+E      'nextStep': 'RECORD_FAILED',...
+E
+E     ...Full output truncated (3 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+ERROR    frontdesk_mcp.ops_client:ops_client.py:174 ops_rejected_adapter_credentials
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_summary.py::test_token_endpoint_refusal_is_not_saved_and_never_posts_a_summary[400]
+FAILED tests/test_summary.py::test_token_endpoint_refusal_is_not_saved_and_never_posts_a_summary[401]
+2 failed, 66 deselected, 2 warnings in 0.83s
+EXIT: 1

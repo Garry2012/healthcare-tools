@@ -1,0 +1,155 @@
+Tracked source/config/development/deployment files only; deleted files omitted.
+$ grep -rn -F 'lifecycle' <production/dev/deploy tracked files>
+ZERO MATCHES
+EXIT: 1 (1 means no matches)
+$ grep -rn -F 'LIFECYCLE' <production/dev/deploy tracked files>
+ZERO MATCHES
+EXIT: 1 (1 means no matches)
+$ grep -rn -F 'X-Call-Duration-Seconds' <production/dev/deploy tracked files>
+ZERO MATCHES
+EXIT: 1 (1 means no matches)
+$ grep -rn -F 'durationSeconds' <production/dev/deploy tracked files>
+ZERO MATCHES
+EXIT: 1 (1 means no matches)
+$ grep -rn -F 'callerName' <production/dev/deploy tracked files>
+ZERO MATCHES
+EXIT: 1 (1 means no matches)
+$ grep -rn -F 'compose_text' <production/dev/deploy tracked files>
+ZERO MATCHES
+EXIT: 1 (1 means no matches)
+$ grep -rn -F 'summary_key' <production/dev/deploy tracked files>
+ZERO MATCHES
+EXIT: 1 (1 means no matches)
+$ grep -rn -F 'requestedDate' <summary surface>
+ZERO MATCHES
+EXIT: 1 (1 means no matches)
+
+Full tracked-repository audit (matches classified, not hidden):
+lifecycle: 28 files
+  .claude/agents/voice-safety-reviewer.md
+  docs/handover/AZURE.md
+  docs/handover/mcp-only/FABLE-MASTER-PROMPT.md
+  docs/handover/mcp-only/OPUS-REVIEW.md
+  docs/handover/mcp-only/PLAN.md
+  docs/handover/mcp-only/implementation/ARCHITECT-AZURE-CLEANUP.md
+  docs/handover/mcp-only/implementation/ARCHITECT-REVIEW.md
+  docs/handover/mcp-only/implementation/AZURE-RETIREMENT-RESULTS.md
+  docs/handover/mcp-only/implementation/CALL-SUMMARY-PLAN.md
+  docs/handover/mcp-only/implementation/NEXT-AGENT-HANDOFF-20261002.md
+  docs/handover/mcp-only/implementation/OPUS-FIX-REPORT.md
+  docs/handover/mcp-only/implementation/OPUS-ROUTING-REMOVAL-REVIEW.md
+  docs/handover/mcp-only/implementation/REVIEW-REPORT.md
+  docs/handover/mcp-only/implementation/ROUTING-REMOVAL-REVIEW.md
+  docs/handover/mcp-only/implementation/TOOL-CONTRACT-REPORT.md
+  docs/handover/mcp-only/implementation/evidence/tool-walk-live-ops-20261002.json
+  docs/handover/mcp-only/implementation/opus-fix-evidence/README.md
+  docs/handover/mcp-only/implementation/routing-removal-evidence/06-smoke-red.txt
+  docs/handover/mcp-only/implementation/routing-removal-evidence/07-instructions-red.txt
+  docs/handover/mcp-only/implementation/tool-contract-evidence/01-missing-env.patch
+  docs/handover/mcp-only/implementation/tool-contract-evidence/01-missing-env.txt
+  docs/handover/mcp-only/implementation/tool-contract-evidence/01-smoke.txt
+  docs/handover/mcp-only/implementation/tool-contract-evidence/10-final-audit.py
+  docs/handover/mcp-only/implementation/tool-contract-evidence/10-final-audit.txt
+  services/mcp/tests/test_booking.py
+  services/mcp/tests/test_deploy.py
+  services/mcp/tests/test_server.py
+  services/mcp/tests/test_stubs.py
+LIFECYCLE: 3 files
+  docs/handover/mcp-only/implementation/CALL-SUMMARY-PLAN.md
+  docs/handover/mcp-only/implementation/tool-contract-evidence/01-missing-env.patch
+  services/mcp/tests/test_deploy.py
+X-Call-Duration-Seconds: 1 files
+  services/mcp/tests/test_context.py
+durationSeconds: 6 files
+  docs/handover/mcp-only/OPUS-REVIEW.md
+  docs/handover/mcp-only/contracts/manoj-openapi-20260930.test-overlay.yaml
+  docs/handover/mcp-only/contracts/manoj-openapi-20260930.yaml
+  docs/handover/mcp-only/implementation/CALL-SUMMARY-PLAN.md
+  docs/handover/mcp-only/implementation/evidence/manoj-openapi-live-20261001-servers-only-diff.yaml
+  services/mcp/tests/test_server.py
+callerName: 3 files
+  docs/DECISIONS.md
+  docs/handover/mcp-only/implementation/CALL-SUMMARY-PLAN.md
+  docs/handover/mcp-only/implementation/evidence/tool-walk-live-ops-20261002.json
+compose_text: 1 files
+  docs/handover/mcp-only/implementation/CALL-SUMMARY-PLAN.md
+summary_key: 1 files
+  docs/handover/mcp-only/implementation/CALL-SUMMARY-PLAN.md
+requestedDate: 9 files
+  docs/DECISIONS.md
+  docs/handover/VOICE-TEAM.md
+  docs/handover/mcp-only/implementation/CALL-SUMMARY-PLAN.md
+  docs/handover/mcp-only/implementation/OPUS-ROUTING-REMOVAL-REVIEW.md
+  docs/handover/mcp-only/implementation/REVIEW-REPORT.md
+  services/mcp/src/frontdesk_mcp/availability.py
+  services/mcp/src/frontdesk_mcp/outcomes.py
+  services/mcp/tests/contracts/mcp-tools.snapshot.json
+  services/mcp/tests/test_availability.py
+
+$ git diff --numstat 8c2b60a -- services/mcp/src
+0	42	services/mcp/src/frontdesk_mcp/access.py
+0	2	services/mcp/src/frontdesk_mcp/cli.py
+1	1	services/mcp/src/frontdesk_mcp/clock.py
+5	15	services/mcp/src/frontdesk_mcp/config.py
+2	18	services/mcp/src/frontdesk_mcp/context.py
+8	8	services/mcp/src/frontdesk_mcp/ops_client.py
+10	8	services/mcp/src/frontdesk_mcp/outcomes.py
+4	6	services/mcp/src/frontdesk_mcp/packs/healthcare.json
+2	2	services/mcp/src/frontdesk_mcp/prompt.py
+6	25	services/mcp/src/frontdesk_mcp/server.py
+47	88	services/mcp/src/frontdesk_mcp/summary.py
+5	10	services/mcp/src/frontdesk_mcp/tools.py
+Source: +90 -225; net -135 lines.
+
+$ git diff --stat 8c2b60a
+ .env.example                                       |   4 +-
+ CLAUDE.md                                          |   8 +-
+ README.md                                          |   4 +-
+ deploy/azure/deploy.sh                             |  19 +-
+ deploy/azure/smoke.py                              |  38 +-
+ deploy/contextforge/register.py                    |  26 +-
+ deploy/docker-compose.yml                          |   1 -
+ docs/DECISIONS.md                                  |  39 +-
+ docs/architecture/TARGET.md                        |   5 +-
+ docs/handover/AZURE.md                             |  33 +-
+ docs/handover/CONTEXTFORGE.md                      |  31 +-
+ docs/handover/ONBOARDING.md                        |   4 +-
+ docs/handover/OWNER-INTEGRATION-MESSAGES.md        |  25 +-
+ docs/handover/TESTING.md                           |  23 +-
+ docs/handover/VOICE-TEAM.md                        |  70 ++--
+ docs/handover/mcp-only/PLAN.md                     |  66 ++--
+ docs/handover/mcp-only/README.md                   |   5 +-
+ docs/handover/mcp-only/TARGET-STATE.md             |   8 +-
+ .../mcp-only/implementation/CALL-SUMMARY-PLAN.md   | 206 ++++++++++
+ .../mcp-only/implementation/OPEN-DEPENDENCIES.md   |  10 +-
+ .../call-summary-evidence/01-natural-key.txt       | 133 +++++++
+ services/mcp/README.md                             |  15 +-
+ services/mcp/dev/bench.py                          |   2 +-
+ services/mcp/dev/demo.py                           |  13 +-
+ services/mcp/dev/frontdesk_stubs/ops.py            |  15 +-
+ services/mcp/src/frontdesk_mcp/access.py           |  42 --
+ services/mcp/src/frontdesk_mcp/cli.py              |   2 -
+ services/mcp/src/frontdesk_mcp/clock.py            |   2 +-
+ services/mcp/src/frontdesk_mcp/config.py           |  20 +-
+ services/mcp/src/frontdesk_mcp/context.py          |  20 +-
+ services/mcp/src/frontdesk_mcp/ops_client.py       |  16 +-
+ services/mcp/src/frontdesk_mcp/outcomes.py         |  18 +-
+ .../mcp/src/frontdesk_mcp/packs/healthcare.json    |  10 +-
+ services/mcp/src/frontdesk_mcp/prompt.py           |   4 +-
+ services/mcp/src/frontdesk_mcp/server.py           |  31 +-
+ services/mcp/src/frontdesk_mcp/summary.py          | 135 +++----
+ services/mcp/src/frontdesk_mcp/tools.py            |  15 +-
+ services/mcp/tests/conftest.py                     |   2 +-
+ .../mcp/tests/contracts/mcp-tools.snapshot.json    | 104 +----
+ services/mcp/tests/harness.py                      |   4 +-
+ services/mcp/tests/test_context.py                 |  18 +-
+ services/mcp/tests/test_deploy.py                  | 120 +++---
+ services/mcp/tests/test_e2e_processes.py           |  22 +-
+ services/mcp/tests/test_external.py                |  10 +-
+ services/mcp/tests/test_external_transport.py      |  10 +-
+ services/mcp/tests/test_ops_client.py              |  18 +-
+ services/mcp/tests/test_server.py                  | 142 +++++--
+ services/mcp/tests/test_settings.py                |  16 +-
+ services/mcp/tests/test_stubs.py                   |  16 +-
+ services/mcp/tests/test_summary.py                 | 430 ++++++++++-----------
+ 50 files changed, 1123 insertions(+), 907 deletions(-)

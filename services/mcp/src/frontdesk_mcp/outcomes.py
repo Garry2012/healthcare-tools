@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from . import contract
 from . import knowledge_contract as kc
@@ -172,14 +172,16 @@ class KnowledgeResult(_Out):
 # ----------------------------------------------------------------------------- record_call_summary
 
 
-SummaryOutcome = Literal["STORED", "REPLAYED", "REJECTED", "CONFLICT", "UNCERTAIN", "COULD_NOT_RECORD",
-                         "INVALID_REQUEST", "LIFECYCLE_CONTEXT_MISSING"]
+SummaryOutcome = Literal["SAVED", "ALREADY_SAVED", "INVALID_REQUEST", "NOT_CONFIRMED", "NOT_SAVED"]
 
 
 class SummaryResult(_Out):
     outcome: SummaryOutcome
-    nextStep: Literal["DONE", "RETRY_SAME_PAYLOAD", "FIX_PLATFORM_INPUT", "RECORD_FAILED"]  # noqa: N815
-    summaryId: str | None = None  # noqa: N815
-    fields: list[str] = []
-    detail: str | None = None
-    retryAfterSeconds: int | None = None  # noqa: N815
+    fields: list[str] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _wire(self, handler):
+        result = handler(self)
+        if self.outcome != "INVALID_REQUEST":
+            result.pop("fields", None)
+        return result
