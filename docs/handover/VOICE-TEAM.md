@@ -285,10 +285,14 @@ Store one summary per call, covering the whole conversation. The first accepted 
 | `record_call_summary.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Names of rejected fields; present only on INVALID_REQUEST, possibly empty when no safe field names are available. |
 | `record_call_summary.output.outcome` | `{"enum":["SAVED","ALREADY_SAVED","INVALID_REQUEST","NOT_CONFIRMED","NOT_SAVED"],"type":"string"}` | required | Result category, defined below. |
 
-The wire result contains only outcome, plus fields for INVALID_REQUEST. No summary text, callback
+The service result contains only outcome, plus fields for INVALID_REQUEST. No summary text, callback
 number, stored-summary contents or diagnostics are returned. ALREADY_SAVED does not mean the newly
 submitted wording was stored. Summaries use callId deduplication without an Idempotency-Key header;
 bookings retain their separate operation keys.
+
+Framework validation errors (missing/wrong-type arguments or text beyond the outer cap) are protocol
+errors rather than the service result above. Current framework error text can echo rejected input;
+log-privacy tests do not establish error-response redaction. No custom validation boundary is installed.
 
 ### Outcome meanings
 

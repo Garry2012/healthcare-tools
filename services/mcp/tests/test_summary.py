@@ -241,7 +241,7 @@ async def test_saved_id_diagnostics_omit_unsafe_owner_identifiers(h, identifier,
     assert any(r.message == "summary_saved" and r.fields["callId"] == "call-1" for r in caplog.records)
 
 
-@pytest.mark.parametrize("status", [400, 401])
+@pytest.mark.parametrize("status", [400, 401, 403])
 async def test_token_endpoint_refusal_is_not_saved_and_never_posts_a_summary(h, status):
     up = Upstream(token_responses=[httpx.Response(status)])
     async with OpsClient(h.settings, transport=httpx.MockTransport(up.handler)) as ops:

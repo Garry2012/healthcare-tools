@@ -170,7 +170,7 @@ class TokenCache:
         except httpx.RequestError as exc:
             logger.warning("ops_token_unreachable", extra={"fields": {"error": type(exc).__name__}})
             raise Unavailable("TRANSPORT") from exc
-        if response.status_code in (400, 401):
+        if response.status_code in (400, 401, 403):
             logger.error("ops_rejected_adapter_credentials", extra={"fields": {"status": response.status_code}})
             raise Unavailable("AUTH")
         if response.status_code != 200:

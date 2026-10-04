@@ -1,0 +1,359 @@
+$ uv run --directory services/mcp pytest tests/test_server.py -q -k summary_http_boundaries
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_____ test_summary_http_boundaries_preserve_text_and_log_privacy[missing] ______
+
+served = ('http://127.0.0.1:65318', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...T', 'http://ops-stub.test/api/v1/call-summaries')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10d747b60>))
+arguments = {}, expected = 'protocol'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10d8ce270>
+capsys = <_pytest.capture.CaptureFixture object at 0x10d99e510>
+
+    @pytest.mark.parametrize("arguments,expected", [
+        ({}, "protocol"), ({"summaryText": None}, "protocol"),
+        ({"summaryText": "  \n  "}, "invalid"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 473}, "saved"),
+        ({"summaryText": "  Lakshmi 9000000123 — ಜ್ವರ; बुखार.\nCallback promised.  "}, "saved"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974}, "protocol"),
+    ], ids=["missing", "null", "blank", "500", "multilingual-exact", "2001"])
+    async def test_summary_http_boundaries_preserve_text_and_log_privacy(served, arguments, expected, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", **arguments}, raise_on_error=False)
+        captured = capsys.readouterr()
+        logs = caplog.text + captured.out + captured.err
+        assert all(marker not in logs for marker in ("NAME42", "9000000123", "SYMPTOM42", "Lakshmi", "ಜ್ವರ", "बुखार"))
+        writes = [r for r in h.requests if r.url.path.endswith("/call-summaries")]
+        if expected == "protocol":
+>           assert result.is_error and writes == []
+E           assert (False)
+E            +  where False = CallToolResult(content=[TextContent(type='text', text='{"outcome":"SAVED"}', annotations=None, meta=None)], structured...e': 'SAVED'}, meta={'schemaVersion': '2026-10-04.2'}, data=SummaryResult(outcome='SAVED', fields=None), is_error=False).is_error
+
+tests/test_server.py:473: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T03:08:16.965913+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [82379]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:16.966487+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:16.966626+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T03:08:17.024519+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.024866+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:65318 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T03:08:17.100093+00:00", "level": "INFO", "logger": "frontdesk_mcp.summary", "msg": "summary_saved", "provider": "demo-hospital", "callId": "call-1", "summaryId": "cs_0001"}
+{"ts": "2026-10-04T03:08:17.100237+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "call-1", "tool": "record_call_summary", "outcome": "SAVED", "nextStep": null}
+------------------------------ Captured log call -------------------------------
+INFO     frontdesk_mcp.summary:summary.py:128 summary_saved
+INFO     frontdesk_mcp.tools:tools.py:94 tool_result
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T03:08:17.184636+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.285766+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.288998+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.289070+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [82379]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [82379]
+_______ test_summary_http_boundaries_preserve_text_and_log_privacy[null] _______
+
+served = ('http://127.0.0.1:65323', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...T', 'http://ops-stub.test/api/v1/call-summaries')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10d9be350>))
+arguments = {'summaryText': None}, expected = 'protocol'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10dac3ed0>
+capsys = <_pytest.capture.CaptureFixture object at 0x10dac1310>
+
+    @pytest.mark.parametrize("arguments,expected", [
+        ({}, "protocol"), ({"summaryText": None}, "protocol"),
+        ({"summaryText": "  \n  "}, "invalid"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 473}, "saved"),
+        ({"summaryText": "  Lakshmi 9000000123 — ಜ್ವರ; बुखार.\nCallback promised.  "}, "saved"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974}, "protocol"),
+    ], ids=["missing", "null", "blank", "500", "multilingual-exact", "2001"])
+    async def test_summary_http_boundaries_preserve_text_and_log_privacy(served, arguments, expected, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", **arguments}, raise_on_error=False)
+        captured = capsys.readouterr()
+        logs = caplog.text + captured.out + captured.err
+        assert all(marker not in logs for marker in ("NAME42", "9000000123", "SYMPTOM42", "Lakshmi", "ಜ್ವರ", "बुखार"))
+        writes = [r for r in h.requests if r.url.path.endswith("/call-summaries")]
+        if expected == "protocol":
+>           assert result.is_error and writes == []
+E           assert (False)
+E            +  where False = CallToolResult(content=[TextContent(type='text', text='{"outcome":"SAVED"}', annotations=None, meta=None)], structured...e': 'SAVED'}, meta={'schemaVersion': '2026-10-04.2'}, data=SummaryResult(outcome='SAVED', fields=None), is_error=False).is_error
+
+tests/test_server.py:473: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T03:08:17.306389+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [82379]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.306462+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.306552+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T03:08:17.307633+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.308040+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:65323 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T03:08:17.343162+00:00", "level": "INFO", "logger": "frontdesk_mcp.summary", "msg": "summary_saved", "provider": "demo-hospital", "callId": "call-1", "summaryId": "cs_0001"}
+{"ts": "2026-10-04T03:08:17.343259+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "call-1", "tool": "record_call_summary", "outcome": "SAVED", "nextStep": null}
+------------------------------ Captured log call -------------------------------
+INFO     frontdesk_mcp.summary:summary.py:128 summary_saved
+INFO     frontdesk_mcp.tools:tools.py:94 tool_result
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T03:08:17.410240+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.512729+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.514364+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.514507+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [82379]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [82379]
+______ test_summary_http_boundaries_preserve_text_and_log_privacy[blank] _______
+
+served = ('http://127.0.0.1:65328', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...T', 'http://ops-stub.test/api/v1/call-summaries')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10da4f5c0>))
+arguments = {'summaryText': '  \n  '}, expected = 'invalid'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10dbb20d0>
+capsys = <_pytest.capture.CaptureFixture object at 0x10dbb3890>
+
+    @pytest.mark.parametrize("arguments,expected", [
+        ({}, "protocol"), ({"summaryText": None}, "protocol"),
+        ({"summaryText": "  \n  "}, "invalid"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 473}, "saved"),
+        ({"summaryText": "  Lakshmi 9000000123 — ಜ್ವರ; बुखार.\nCallback promised.  "}, "saved"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974}, "protocol"),
+    ], ids=["missing", "null", "blank", "500", "multilingual-exact", "2001"])
+    async def test_summary_http_boundaries_preserve_text_and_log_privacy(served, arguments, expected, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", **arguments}, raise_on_error=False)
+        captured = capsys.readouterr()
+        logs = caplog.text + captured.out + captured.err
+        assert all(marker not in logs for marker in ("NAME42", "9000000123", "SYMPTOM42", "Lakshmi", "ಜ್ವರ", "बुखार"))
+        writes = [r for r in h.requests if r.url.path.endswith("/call-summaries")]
+        if expected == "protocol":
+            assert result.is_error and writes == []
+        elif expected == "invalid":
+>           assert result.structured_content == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+E           AssertionError: assert {'outcome': 'SAVED'} == {'outcome': '...summaryText']}
+E
+E             Differing items:
+E             {'outcome': 'SAVED'} != {'outcome': 'INVALID_REQUEST'}
+E             Right contains 1 more item:
+E             {'fields': ['summaryText']}
+E             Use -v to get more diff
+
+tests/test_server.py:475: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T03:08:17.534020+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [82379]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.534105+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.534188+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T03:08:17.535270+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.535696+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:65328 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T03:08:17.571056+00:00", "level": "INFO", "logger": "frontdesk_mcp.summary", "msg": "summary_saved", "provider": "demo-hospital", "callId": "call-1", "summaryId": "cs_0001"}
+{"ts": "2026-10-04T03:08:17.571151+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "call-1", "tool": "record_call_summary", "outcome": "SAVED", "nextStep": null}
+------------------------------ Captured log call -------------------------------
+INFO     frontdesk_mcp.summary:summary.py:128 summary_saved
+INFO     frontdesk_mcp.tools:tools.py:94 tool_result
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T03:08:17.637835+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.740203+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.741681+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.741784+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [82379]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [82379]
+_______ test_summary_http_boundaries_preserve_text_and_log_privacy[500] ________
+
+served = ('http://127.0.0.1:65334', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...T', 'http://ops-stub.test/api/v1/call-summaries')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10daa3130>))
+arguments = {'summaryText': 'NAME42 9000000123 SYMPTOM42xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+expected = 'saved'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10d8a49d0>
+capsys = <_pytest.capture.CaptureFixture object at 0x10d8a4180>
+
+    @pytest.mark.parametrize("arguments,expected", [
+        ({}, "protocol"), ({"summaryText": None}, "protocol"),
+        ({"summaryText": "  \n  "}, "invalid"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 473}, "saved"),
+        ({"summaryText": "  Lakshmi 9000000123 — ಜ್ವರ; बुखार.\nCallback promised.  "}, "saved"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974}, "protocol"),
+    ], ids=["missing", "null", "blank", "500", "multilingual-exact", "2001"])
+    async def test_summary_http_boundaries_preserve_text_and_log_privacy(served, arguments, expected, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", **arguments}, raise_on_error=False)
+        captured = capsys.readouterr()
+        logs = caplog.text + captured.out + captured.err
+        assert all(marker not in logs for marker in ("NAME42", "9000000123", "SYMPTOM42", "Lakshmi", "ಜ್ವರ", "बुखार"))
+        writes = [r for r in h.requests if r.url.path.endswith("/call-summaries")]
+        if expected == "protocol":
+            assert result.is_error and writes == []
+        elif expected == "invalid":
+            assert result.structured_content == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+            assert writes == []
+        else:
+>           assert result.structured_content == {"outcome": "SAVED"}
+E           AssertionError: assert {'outcome': '...summaryText']} == {'outcome': 'SAVED'}
+E
+E             Differing items:
+E             {'outcome': 'INVALID_REQUEST'} != {'outcome': 'SAVED'}
+E             Left contains 1 more item:
+E             {'fields': ['summaryText']}
+E             Use -v to get more diff
+
+tests/test_server.py:478: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T03:08:17.764504+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [82379]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.764582+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.764668+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T03:08:17.765702+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.766063+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:65334 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T03:08:17.803038+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "call-1", "tool": "record_call_summary", "outcome": "INVALID_REQUEST", "nextStep": null}
+------------------------------ Captured log call -------------------------------
+INFO     frontdesk_mcp.tools:tools.py:94 tool_result
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T03:08:17.868178+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.970662+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.973006+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.973150+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [82379]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [82379]
+_ test_summary_http_boundaries_preserve_text_and_log_privacy[multilingual-exact] _
+
+served = ('http://127.0.0.1:65339', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...T', 'http://ops-stub.test/api/v1/call-summaries')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10da89150>))
+arguments = {'summaryText': '  Lakshmi 9000000123 — ಜ್ವರ; बुखार.\nCallback promised.  '}
+expected = 'saved'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10e83e190>
+capsys = <_pytest.capture.CaptureFixture object at 0x10e83e2c0>
+
+    @pytest.mark.parametrize("arguments,expected", [
+        ({}, "protocol"), ({"summaryText": None}, "protocol"),
+        ({"summaryText": "  \n  "}, "invalid"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 473}, "saved"),
+        ({"summaryText": "  Lakshmi 9000000123 — ಜ್ವರ; बुखार.\nCallback promised.  "}, "saved"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974}, "protocol"),
+    ], ids=["missing", "null", "blank", "500", "multilingual-exact", "2001"])
+    async def test_summary_http_boundaries_preserve_text_and_log_privacy(served, arguments, expected, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", **arguments}, raise_on_error=False)
+        captured = capsys.readouterr()
+        logs = caplog.text + captured.out + captured.err
+        assert all(marker not in logs for marker in ("NAME42", "9000000123", "SYMPTOM42", "Lakshmi", "ಜ್ವರ", "बुखार"))
+        writes = [r for r in h.requests if r.url.path.endswith("/call-summaries")]
+        if expected == "protocol":
+            assert result.is_error and writes == []
+        elif expected == "invalid":
+            assert result.structured_content == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+            assert writes == []
+        else:
+            assert result.structured_content == {"outcome": "SAVED"}
+>           assert len(writes) == 1 and json.loads(writes[0].content)["summaryText"] == arguments["summaryText"]
+E           AssertionError: assert (1 == 1 and 'MUTATION Lak...ack promised.' == '  Lakshmi 90...k promised.  '
+E            +  where 1 = len([<Request('POST', 'http://ops-stub.test/api/v1/call-summaries')>])
+E
+E             -   Lakshmi 9000000123 — ಜ್ವರ; बुखार.
+E             ? ^
+E             + MUTATION Lakshmi 9000000123 — ಜ್ವರ; बुखार.
+E             ? ^^^^^^^^
+E             - Callback promised.
+E             ?                   --
+E             + Callback promised.)
+
+tests/test_server.py:479: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T03:08:17.996518+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [82379]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.996584+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.996668+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T03:08:17.997634+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:17.998007+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:65339 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T03:08:18.033622+00:00", "level": "INFO", "logger": "frontdesk_mcp.summary", "msg": "summary_saved", "provider": "demo-hospital", "callId": "call-1", "summaryId": "cs_0001"}
+{"ts": "2026-10-04T03:08:18.033708+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "call-1", "tool": "record_call_summary", "outcome": "SAVED", "nextStep": null}
+------------------------------ Captured log call -------------------------------
+INFO     frontdesk_mcp.summary:summary.py:128 summary_saved
+INFO     frontdesk_mcp.tools:tools.py:94 tool_result
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T03:08:18.100125+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:18.202522+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:18.204752+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:18.204898+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [82379]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [82379]
+_______ test_summary_http_boundaries_preserve_text_and_log_privacy[2001] _______
+
+served = ('http://127.0.0.1:65344', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10dbaff20>))
+arguments = {'summaryText': 'NAME42 9000000123 SYMPTOM42xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+expected = 'protocol'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10db9b770>
+capsys = <_pytest.capture.CaptureFixture object at 0x10db9b890>
+
+    @pytest.mark.parametrize("arguments,expected", [
+        ({}, "protocol"), ({"summaryText": None}, "protocol"),
+        ({"summaryText": "  \n  "}, "invalid"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 473}, "saved"),
+        ({"summaryText": "  Lakshmi 9000000123 — ಜ್ವರ; बुखार.\nCallback promised.  "}, "saved"),
+        ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974}, "protocol"),
+    ], ids=["missing", "null", "blank", "500", "multilingual-exact", "2001"])
+    async def test_summary_http_boundaries_preserve_text_and_log_privacy(served, arguments, expected, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", **arguments}, raise_on_error=False)
+        captured = capsys.readouterr()
+        logs = caplog.text + captured.out + captured.err
+        assert all(marker not in logs for marker in ("NAME42", "9000000123", "SYMPTOM42", "Lakshmi", "ಜ್ವರ", "बुखार"))
+        writes = [r for r in h.requests if r.url.path.endswith("/call-summaries")]
+        if expected == "protocol":
+>           assert result.is_error and writes == []
+E           assert (False)
+E            +  where False = CallToolResult(content=[TextContent(type='text', text='{"outcome":"INVALID_REQUEST","fields":["summaryText"]}', annota...schemaVersion': '2026-10-04.2'}, data=SummaryResult(outcome='INVALID_REQUEST', fields=['summaryText']), is_error=False).is_error
+
+tests/test_server.py:473: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T03:08:18.228306+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [82379]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:18.228380+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:18.228468+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T03:08:18.229447+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:18.229820+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:65344 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+----------------------------- Captured stdout call -----------------------------
+{"ts": "2026-10-04T03:08:18.264996+00:00", "level": "INFO", "logger": "frontdesk_mcp.tools", "msg": "tool_result", "provider": "demo-hospital", "callId": "call-1", "tool": "record_call_summary", "outcome": "INVALID_REQUEST", "nextStep": null}
+------------------------------ Captured log call -------------------------------
+INFO     frontdesk_mcp.tools:tools.py:94 tool_result
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T03:08:18.331943+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:18.434357+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:18.436490+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T03:08:18.436620+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [82379]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [82379]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_summary_http_boundaries_preserve_text_and_log_privacy[missing]
+FAILED tests/test_server.py::test_summary_http_boundaries_preserve_text_and_log_privacy[null]
+FAILED tests/test_server.py::test_summary_http_boundaries_preserve_text_and_log_privacy[blank]
+FAILED tests/test_server.py::test_summary_http_boundaries_preserve_text_and_log_privacy[500]
+FAILED tests/test_server.py::test_summary_http_boundaries_preserve_text_and_log_privacy[multilingual-exact]
+FAILED tests/test_server.py::test_summary_http_boundaries_preserve_text_and_log_privacy[2001]
+6 failed, 25 deselected, 2 warnings in 2.30s
+EXIT: 1

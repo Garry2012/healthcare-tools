@@ -451,3 +451,29 @@ async def test_wrong_type_summary_does_not_log_private_input(served, caplog, cap
     for marker in private.split():
         assert marker not in caplog.text + captured.out + captured.err
     assert result.is_error and not h.ops_state.summaries
+
+
+@pytest.mark.parametrize("arguments,expected", [
+    ({}, "protocol"), ({"summaryText": None}, "protocol"),
+    ({"summaryText": "  \n  "}, "invalid"),
+    ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 473}, "saved"),
+    ({"summaryText": "  Lakshmi 9000000123 — ಜ್ವರ; बुखार.\nCallback promised.  "}, "saved"),
+    ({"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974}, "protocol"),
+], ids=["missing", "null", "blank", "500", "multilingual-exact", "2001"])
+async def test_summary_http_boundaries_preserve_text_and_log_privacy(served, arguments, expected, caplog, capsys):
+    base, h = served
+    async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+        result = await c.call_tool("record_call_summary", {
+            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", **arguments}, raise_on_error=False)
+    captured = capsys.readouterr()
+    logs = caplog.text + captured.out + captured.err
+    assert all(marker not in logs for marker in ("NAME42", "9000000123", "SYMPTOM42", "Lakshmi", "ಜ್ವರ", "बुखार"))
+    writes = [r for r in h.requests if r.url.path.endswith("/call-summaries")]
+    if expected == "protocol":
+        assert result.is_error and writes == []
+    elif expected == "invalid":
+        assert result.structured_content == {"outcome": "INVALID_REQUEST", "fields": ["summaryText"]}
+        assert writes == []
+    else:
+        assert result.structured_content == {"outcome": "SAVED"}
+        assert len(writes) == 1 and json.loads(writes[0].content)["summaryText"] == arguments["summaryText"]
