@@ -291,8 +291,10 @@ submitted wording was stored. Summaries use callId deduplication without an Idem
 bookings retain their separate operation keys.
 
 Framework validation errors (missing/wrong-type arguments or text beyond the outer cap) are protocol
-errors rather than the service result above. Current framework error text can echo rejected input;
-log-privacy tests do not establish error-response redaction. No custom validation boundary is installed.
+errors rather than the service result above. Summary validation errors contain only a fixed message:
+"Invalid call summary arguments. Check required fields, types and limits." Submitted values and
+untrusted argument names are omitted. Framework validation and the outer cap remain unchanged;
+there is no custom argument validator.
 
 ### Outcome meanings
 

@@ -93,8 +93,12 @@ by the summary deadline. All writes retain 401-only token refresh; definite 403 
 
 The advertised maxLength is 500, set once after tool registration. The existing outer argument cap
 remains 2000 so 501–2000 characters reach service validation and return in-band INVALID_REQUEST.
-There is no custom validation boundary. Wrong-type log privacy is tested; framework protocol error
-redaction is not claimed by that test (see handover/mcp-only/implementation/CALL-SUMMARY-HAND-BACK.md).
+There is no custom validation boundary. After explicit user approval, summary framework validation
+errors receive a fixed, input-free protocol message. This is error presentation only: the framework
+still validates the same arguments with the same limits. No error values, locations (which may be
+untrusted argument names), context or raw exception are copied or logged. Other tools are unchanged.
+HTTP tests cover wrong types, oversize text, enums and unexpected argument names; no upstream write
+occurs for these invalid requests. The schema stays 2026-10-04.2 because inputs/outputs are unchanged.
 
 Rejected: a second bearer/access path, server text composition or trimming, a parallel retry engine,
 and 403-triggered token refresh. Summary work retains its own default 8-second deadline; its availability

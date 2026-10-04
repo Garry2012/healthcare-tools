@@ -440,17 +440,30 @@ async def test_summary_length_is_an_in_band_invalid_request(served, length):
     assert not h.ops_state.summaries
 
 
-async def test_wrong_type_summary_does_not_log_private_input(served, caplog, capsys):
+@pytest.mark.parametrize("invalid", [
+    {"summaryText": {"private": "NAME42 9000000123 SYMPTOM42"}},
+    {"summaryText": ["NAME42", "9000000123", "SYMPTOM42"]},
+    {"summaryText": 9000000123},
+    {"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974},
+    {"intent": "NAME42 9000000123 SYMPTOM42"},
+    {"callerMobile": {"private": "NAME42 9000000123 SYMPTOM42"}},
+    {"NAME42 9000000123 SYMPTOM42": "unexpected argument"},
+], ids=["object", "list", "number", "outer-cap", "enum", "contact-type", "unexpected-key"])
+async def test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs(served, invalid, caplog, capsys):
     base, h = served
-    private = "NAME42 9000000123 SYMPTOM42"
     async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
         result = await c.call_tool("record_call_summary", {
-            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": {"private": private}},
+            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Whole call.", **invalid},
             raise_on_error=False)
     captured = capsys.readouterr()
-    for marker in private.split():
-        assert marker not in caplog.text + captured.out + captured.err
-    assert result.is_error and not h.ops_state.summaries
+    response = json.dumps({"content": [block.model_dump(mode="json") for block in result.content],
+                           "structuredContent": result.structured_content, "meta": result.meta})
+    for marker in ("NAME42", "9000000123", "SYMPTOM42"):
+        assert marker not in response + caplog.text + captured.out + captured.err
+    assert result.is_error and result.structured_content is None
+    assert "argument" in response.lower()  # still an explicit argument error, not a success envelope
+    assert not [r for r in h.requests if r.url.path.endswith("/call-summaries")]
+    assert not h.ops_state.summaries
 
 
 @pytest.mark.parametrize("arguments,expected", [

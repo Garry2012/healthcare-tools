@@ -11,14 +11,65 @@ authentication; summaries forward exact nonblank text up to 500 characters, use 
 deduplication, and return only five outcomes plus field names for INVALID_REQUEST. All old runtime
 summary-access, composition, duration and idempotency-header paths are removed.
 
-**Ready for code review; not yet approved for merge or deployment.** One privacy limitation needs an
-explicit decision before claiming the original brief's full error-text privacy requirement:
-framework validation errors for malformed arguments can echo input to the authenticated caller.
-A reproducible failing probe is retained in [02-protocol-privacy-probe.txt](call-summary-evidence/02-protocol-privacy-probe.txt).
-No private input reached logs in the tests. Per the approved change, there is no custom validation
-boundary or extra wrong-type handling; the outer 2000 cap remains. The optional question about error
-response redaction was not answered, so no expanded implementation is assumed authorized. All other
-review findings were fixed and rechecked. This is not a claim of production acceptance.
+**Ready for code review; not approved for deployment.** The previously disclosed summary protocol-error
+privacy issue is now fixed following explicit user approval. FastMCP/Pydantic still validates inputs;
+a small error-presentation middleware replaces summary ValidationError text with a fixed, safe message.
+It neither adds argument validation nor changes tool schemas, caps, auth, deadlines, retries or writes.
+The original failing probe remains historical evidence; the new permanent HTTP regression suite is green.
+
+### Approved privacy follow-up
+
+Baseline for this follow-up: `a0a2aee`. Changes are limited to server error formatting, HTTP regression
+tests, current privacy documentation and evidence. `SummaryErrorRedaction` catches only framework
+ValidationError for record_call_summary and raises a fixed ToolError from None. It does not inspect or
+copy the rejected values, error locations, messages or context. This matters because an unexpected
+argument's *name* can itself contain patient information. No new dependency or configuration is needed.
+
+[15-error-privacy.txt](call-summary-evidence/15-error-privacy.txt) contains the actual red and green runs:
+
+```text
+$ uv run --directory services/mcp pytest tests/test_server.py -q -k invalid_summary_does_not_echo
+7 failed, 30 deselected, 2 warnings
+EXIT: 1
+$ uv run --directory services/mcp pytest tests/test_server.py -q -k 'invalid_summary_does_not_echo or summary_http_boundaries or summary_length'
+15 passed, 22 deselected, 2 warnings
+EXIT: 0
+```
+
+The seven cases are object/list/number summary values, >2000 text, an invalid intent, wrong-type contact,
+and an unexpected argument name containing private text. Each asserts no echo in the full protocol
+result or logs, explicit error status, and zero summary POSTs. Existing tests preserve valid exact text,
+500 accepted, 501/2000 in-band INVALID_REQUEST, and >2000 framework rejection. No custom validation
+boundary, monkeypatch, duplicate validator or service call was added. Schema remains 2026-10-04.2;
+the two prior schema bumps below remain the complete schema history for this change.
+
+Voice-safety review: 17 focused HTTP tests passed; latency review found no added I/O or deadline change.
+Full verification for this follow-up is in [16-privacy-full.txt](call-summary-evidence/16-privacy-full.txt);
+static/schema checks are in [17-privacy-static.txt](call-summary-evidence/17-privacy-static.txt).
+No live service, Azure, gateway registration or voice deployment was exercised.
+
+```text
+$ ./scripts/test.sh
+All checks passed!
+462 passed, 11 deselected, 2 warnings in 27.47s
+2 passed, 471 deselected, 2 warnings in 2.43s
+== package build
+Successfully built frontdesk_mcp-0.1.0.tar.gz and frontdesk_mcp-0.1.0-py3-none-any.whl
+== production image build (no stubs, no fixtures, no dev dependencies)
+== development stubs image build (compose profile stubs)
+== external gates not run: no profile loaded
+== all suites passed
+EXIT: 0
+```
+
+The two existing Authlib deprecation warnings remain. `make test-fast` independently passed 462 tests.
+`make schema` still matches the pinned snapshot and `uvx vulture` reported no findings. Runtime change
+is 17 added lines; the complete summary migration is now 118 source lines smaller than 8c2b60a.
+
+Root cause: FastMCP 2.14.7 ToolManager deliberately rethrows Pydantic ValidationError unchanged,
+including when its general error-masking setting is enabled; MCP turns the exception into error text.
+The fix uses FastMCP's middleware extension point solely for exception presentation in server.py.
+No schema/TypeAdapter monkeypatch, framework upgrade, alternate parser or regular-expression scrubbing.
 
 ## Approved details and effects
 
@@ -76,11 +127,11 @@ characterization passed before changes; no false red is claimed for that already
 The HTTP mutation temporarily made text optional/any, converted null to empty, raised the request cap,
 removed blank validation and prefixed/trimmed the outgoing body. Every corresponding test failed.
 None of those mutations remains in source. Input/log fixtures contain synthetic names and numbers only.
-The protocol-privacy probe is a disclosed unresolved behavior probe, not a permanently skipped test.
+The original protocol-privacy probe records the pre-fix behavior; the approved follow-up now has permanent passing regression tests.
 
-## Final verification
+## Original implementation verification (before privacy follow-up)
 
-Actual final full-run output: [13-final-full.txt](call-summary-evidence/13-final-full.txt).
+Original full-run output: [13-final-full.txt](call-summary-evidence/13-final-full.txt).
 
 ```text
 $ ./scripts/test.sh
@@ -130,7 +181,7 @@ Local process smoke passed; deployed/Azure/ContextForge/voice smoke was not run.
   platform operation-context wording; availability.requestedDate in code/schema/docs; ADR/report removal
   descriptions; pinned owner contracts/overlay; dated historical reports/evidence; unchanged reviewer prompts.
   This is zero obsolete active behavior, not a claim that historical text and proof assertions contain no names.
-- [x] Production source: +90/−225, **net −135 lines** against 8c2b60a. Diff statistics and per-file list below.
+- [x] Production source including the privacy fix: +106/−224, **net −118 lines** against 8c2b60a. Diff statistics and per-file list below.
 - [x] TDD behavior evidence pasted above and linked; final full run, schema check, lint/build checks green.
 - [x] CLAUDE, PLAN, TARGET-STATE, DECISIONS and current operational docs updated. No docs/superpowers files.
 - [x] VOICE-TEAM is the current contract. The old addendum's voice-code deliverable is superseded by
@@ -139,7 +190,7 @@ Local process smoke passed; deployed/Azure/ContextForge/voice smoke was not run.
   Findings fixed: unsafe ID logs, missing token-refusal proof, gateway schema comparison, token 403 mapping,
   HTTP boundary proof and stale after-call prose. Final safety recheck 27 passed; final latency review no
   concrete regression. No measured benchmark claim. Reviewer files remain unchanged as explicitly required.
-- [ ] Framework error-response privacy is not closed; see readiness above. Log privacy is verified.
+- [x] Summary framework error-response privacy and log privacy verified after explicit follow-up approval.
 
 ## External actions and rollout
 
@@ -197,7 +248,7 @@ Paths below are repository-relative. Verification references use the suites name
 | `services/mcp/src/frontdesk_mcp/outcomes.py` | Five compact summary outcomes; omit fields unless invalid; wire tests. |
 | `services/mcp/src/frontdesk_mcp/packs/healthcare.json` | Whole-call factual descriptions and eight arguments; snapshot/interface tests. |
 | `services/mcp/src/frontdesk_mcp/prompt.py` | Two version bumps and one gateway authentication fact. |
-| `services/mcp/src/frontdesk_mcp/server.py` | One constant-time bearer check; no gate; HTTP auth/isolation. |
+| `services/mcp/src/frontdesk_mcp/server.py` | One constant-time bearer check; no gate; summary-only validation error redaction; HTTP auth/isolation/privacy. |
 | `services/mcp/src/frontdesk_mcp/summary.py` | Exact text, validation, safe diagnostics, owner mapping/deduplication; test_summary. |
 | `services/mcp/src/frontdesk_mcp/tools.py` | Eight arguments, one-time advertised500 cap, no access tag; HTTP/schema tests. |
 | `services/mcp/tests/conftest.py` | Single gateway credential fixture. |
@@ -284,4 +335,4 @@ Paths below are repository-relative. Verification references use the suites name
  63 files changed, 4660 insertions(+), 907 deletions(-)
 ```
 
-Evidence/report-only commits add documentation lines; the runtime reduction above is unchanged.
+The statistics above predate the approved privacy follow-up (+17 runtime lines); the current source reduction is 118 lines.

@@ -1,0 +1,413 @@
+$ uv run --directory services/mcp pytest tests/test_server.py -q -k invalid_summary_does_not_echo
+FFFFFFF                                                                  [100%]
+=================================== FAILURES ===================================
+_ test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[object] _
+
+served = ('http://127.0.0.1:51647', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10dadba10>))
+invalid = {'summaryText': {'private': 'NAME42 9000000123 SYMPTOM42'}}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10dc66120>
+capsys = <_pytest.capture.CaptureFixture object at 0x10dd2e3c0>
+
+    @pytest.mark.parametrize("invalid", [
+        {"summaryText": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"summaryText": ["NAME42", "9000000123", "SYMPTOM42"]},
+        {"summaryText": 9000000123},
+        {"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974},
+        {"intent": "NAME42 9000000123 SYMPTOM42"},
+        {"callerMobile": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"NAME42 9000000123 SYMPTOM42": "unexpected argument"},
+    ], ids=["object", "list", "number", "outer-cap", "enum", "contact-type", "unexpected-key"])
+    async def test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs(served, invalid, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Whole call.", **invalid},
+                raise_on_error=False)
+        captured = capsys.readouterr()
+        response = json.dumps({"content": [block.model_dump(mode="json") for block in result.content],
+                               "structuredContent": result.structured_content, "meta": result.meta})
+        for marker in ("NAME42", "9000000123", "SYMPTOM42"):
+>           assert marker not in response + caplog.text + captured.out + captured.err
+E           assert 'NAME42' not in '{"content":...meta": null}'
+E
+E             'NAME42' is contained here:
+E               rivate': 'NAME42 9000000123 SYMPTOM42'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type", "annotations": null, "meta": null}], "structuredContent": null, "meta": null}
+E             ?           ++++++
+
+tests/test_server.py:462: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T05:29:48.740274+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [98305]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:48.740706+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:48.740848+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T05:29:48.791899+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:48.792248+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:51647 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T05:29:48.932433+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.033743+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.037030+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.037111+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [98305]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [98305]
+__ test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[list] __
+
+served = ('http://127.0.0.1:51653', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10dd4a5d0>))
+invalid = {'summaryText': ['NAME42', '9000000123', 'SYMPTOM42']}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10de40b90>
+capsys = <_pytest.capture.CaptureFixture object at 0x10de70190>
+
+    @pytest.mark.parametrize("invalid", [
+        {"summaryText": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"summaryText": ["NAME42", "9000000123", "SYMPTOM42"]},
+        {"summaryText": 9000000123},
+        {"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974},
+        {"intent": "NAME42 9000000123 SYMPTOM42"},
+        {"callerMobile": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"NAME42 9000000123 SYMPTOM42": "unexpected argument"},
+    ], ids=["object", "list", "number", "outer-cap", "enum", "contact-type", "unexpected-key"])
+    async def test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs(served, invalid, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Whole call.", **invalid},
+                raise_on_error=False)
+        captured = capsys.readouterr()
+        response = json.dumps({"content": [block.model_dump(mode="json") for block in result.content],
+                               "structuredContent": result.structured_content, "meta": result.meta})
+        for marker in ("NAME42", "9000000123", "SYMPTOM42"):
+>           assert marker not in response + caplog.text + captured.out + captured.err
+E           assert 'NAME42' not in '{"content":...meta": null}'
+E
+E             'NAME42' is contained here:
+E             ?           ^^
+E               t_value=['NAME42', '9000000123', 'SYMPTOM42'], input_type=list]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type", "annotations": null, "meta": null}], "structuredContent": null, "meta": null}
+E             ?           ^^^^^^^^
+
+tests/test_server.py:462: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T05:29:49.054443+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [98305]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.054557+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.054643+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T05:29:49.055709+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.056118+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:51653 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T05:29:49.157269+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.258571+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.259913+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.260002+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [98305]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [98305]
+_ test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[number] _
+
+served = ('http://127.0.0.1:51657', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10ddd8640>))
+invalid = {'summaryText': 9000000123}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10de72e90>
+capsys = <_pytest.capture.CaptureFixture object at 0x10eb187d0>
+
+    @pytest.mark.parametrize("invalid", [
+        {"summaryText": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"summaryText": ["NAME42", "9000000123", "SYMPTOM42"]},
+        {"summaryText": 9000000123},
+        {"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974},
+        {"intent": "NAME42 9000000123 SYMPTOM42"},
+        {"callerMobile": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"NAME42 9000000123 SYMPTOM42": "unexpected argument"},
+    ], ids=["object", "list", "number", "outer-cap", "enum", "contact-type", "unexpected-key"])
+    async def test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs(served, invalid, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Whole call.", **invalid},
+                raise_on_error=False)
+        captured = capsys.readouterr()
+        response = json.dumps({"content": [block.model_dump(mode="json") for block in result.content],
+                               "structuredContent": result.structured_content, "meta": result.meta})
+        for marker in ("NAME42", "9000000123", "SYMPTOM42"):
+>           assert marker not in response + caplog.text + captured.out + captured.err
+E           assert '9000000123' not in '{"content":...meta": null}'
+E
+E             '9000000123' is contained here:
+E               put_value=9000000123, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type", "annotations": null, "meta": null}], "structuredContent": null, "meta": null}
+E             ?           ++++++++++
+
+tests/test_server.py:462: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T05:29:49.278949+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [98305]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.279045+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.279126+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T05:29:49.280099+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.280479+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:51657 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T05:29:49.381625+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.482154+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.484336+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.484535+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [98305]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [98305]
+_ test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[outer-cap] _
+
+served = ('http://127.0.0.1:51661', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10df16be0>))
+invalid = {'summaryText': 'NAME42 9000000123 SYMPTOM42xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10df3b230>
+capsys = <_pytest.capture.CaptureFixture object at 0x10df3b360>
+
+    @pytest.mark.parametrize("invalid", [
+        {"summaryText": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"summaryText": ["NAME42", "9000000123", "SYMPTOM42"]},
+        {"summaryText": 9000000123},
+        {"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974},
+        {"intent": "NAME42 9000000123 SYMPTOM42"},
+        {"callerMobile": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"NAME42 9000000123 SYMPTOM42": "unexpected argument"},
+    ], ids=["object", "list", "number", "outer-cap", "enum", "contact-type", "unexpected-key"])
+    async def test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs(served, invalid, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Whole call.", **invalid},
+                raise_on_error=False)
+        captured = capsys.readouterr()
+        response = json.dumps({"content": [block.model_dump(mode="json") for block in result.content],
+                               "structuredContent": result.structured_content, "meta": result.meta})
+        for marker in ("NAME42", "9000000123", "SYMPTOM42"):
+>           assert marker not in response + caplog.text + captured.out + captured.err
+E           assert 'NAME42' not in '{"content":...meta": null}'
+E
+E             'NAME42' is contained here:
+E               ut_value='NAME42 9000000123 SYMPTO...xxxxxxxxxxxxxxxxxxxxxxx', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_too_long", "annotations": null, "meta": null}], "structuredContent": null, "meta": null}
+E             ?           ++++++
+
+tests/test_server.py:462: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T05:29:49.509432+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [98305]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.509516+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.509610+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T05:29:49.510705+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.511084+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:51661 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T05:29:49.612212+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.713594+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.715099+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.715194+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [98305]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [98305]
+__ test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[enum] __
+
+served = ('http://127.0.0.1:51665', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10de1f550>))
+invalid = {'intent': 'NAME42 9000000123 SYMPTOM42'}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10eb5d5b0>
+capsys = <_pytest.capture.CaptureFixture object at 0x10eb5d6e0>
+
+    @pytest.mark.parametrize("invalid", [
+        {"summaryText": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"summaryText": ["NAME42", "9000000123", "SYMPTOM42"]},
+        {"summaryText": 9000000123},
+        {"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974},
+        {"intent": "NAME42 9000000123 SYMPTOM42"},
+        {"callerMobile": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"NAME42 9000000123 SYMPTOM42": "unexpected argument"},
+    ], ids=["object", "list", "number", "outer-cap", "enum", "contact-type", "unexpected-key"])
+    async def test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs(served, invalid, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Whole call.", **invalid},
+                raise_on_error=False)
+        captured = capsys.readouterr()
+        response = json.dumps({"content": [block.model_dump(mode="json") for block in result.content],
+                               "structuredContent": result.structured_content, "meta": result.meta})
+        for marker in ("NAME42", "9000000123", "SYMPTOM42"):
+>           assert marker not in response + caplog.text + captured.out + captured.err
+E           assert 'NAME42' not in '{"content":...meta": null}'
+E
+E             'NAME42' is contained here:
+E               ut_value='NAME42 9000000123 SYMPTOM42', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error", "annotations": null, "meta": null}], "structuredContent": null, "meta": null}
+E             ?           ++++++
+
+tests/test_server.py:462: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T05:29:49.738011+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [98305]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.738109+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.738200+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T05:29:49.739198+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.739578+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:51665 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T05:29:49.840709+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.942136+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.944314+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.944469+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [98305]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [98305]
+_ test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[contact-type] _
+
+served = ('http://127.0.0.1:51669', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10df35a90>))
+invalid = {'callerMobile': {'private': 'NAME42 9000000123 SYMPTOM42'}}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10df3c4d0>
+capsys = <_pytest.capture.CaptureFixture object at 0x10df3ee70>
+
+    @pytest.mark.parametrize("invalid", [
+        {"summaryText": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"summaryText": ["NAME42", "9000000123", "SYMPTOM42"]},
+        {"summaryText": 9000000123},
+        {"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974},
+        {"intent": "NAME42 9000000123 SYMPTOM42"},
+        {"callerMobile": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"NAME42 9000000123 SYMPTOM42": "unexpected argument"},
+    ], ids=["object", "list", "number", "outer-cap", "enum", "contact-type", "unexpected-key"])
+    async def test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs(served, invalid, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Whole call.", **invalid},
+                raise_on_error=False)
+        captured = capsys.readouterr()
+        response = json.dumps({"content": [block.model_dump(mode="json") for block in result.content],
+                               "structuredContent": result.structured_content, "meta": result.meta})
+        for marker in ("NAME42", "9000000123", "SYMPTOM42"):
+>           assert marker not in response + caplog.text + captured.out + captured.err
+E           assert 'NAME42' not in '{"content":...meta": null}'
+E
+E             'NAME42' is contained here:
+E               rivate': 'NAME42 9000000123 SYMPTOM42'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type", "annotations": null, "meta": null}], "structuredContent": null, "meta": null}
+E             ?           ++++++
+
+tests/test_server.py:462: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T05:29:49.967980+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [98305]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.968078+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.968171+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T05:29:49.969263+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:49.969686+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:51669 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T05:29:50.070826+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:50.172226+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:50.173695+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:50.173804+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [98305]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [98305]
+_ test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[unexpected-key] _
+
+served = ('http://127.0.0.1:51673', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10ebd2f90>))
+invalid = {'NAME42 9000000123 SYMPTOM42': 'unexpected argument'}
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10eb83350>
+capsys = <_pytest.capture.CaptureFixture object at 0x10eb83790>
+
+    @pytest.mark.parametrize("invalid", [
+        {"summaryText": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"summaryText": ["NAME42", "9000000123", "SYMPTOM42"]},
+        {"summaryText": 9000000123},
+        {"summaryText": "NAME42 9000000123 SYMPTOM42" + "x" * 1974},
+        {"intent": "NAME42 9000000123 SYMPTOM42"},
+        {"callerMobile": {"private": "NAME42 9000000123 SYMPTOM42"}},
+        {"NAME42 9000000123 SYMPTOM42": "unexpected argument"},
+    ], ids=["object", "list", "number", "outer-cap", "enum", "contact-type", "unexpected-key"])
+    async def test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs(served, invalid, caplog, capsys):
+        base, h = served
+        async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
+            result = await c.call_tool("record_call_summary", {
+                "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Whole call.", **invalid},
+                raise_on_error=False)
+        captured = capsys.readouterr()
+        response = json.dumps({"content": [block.model_dump(mode="json") for block in result.content],
+                               "structuredContent": result.structured_content, "meta": result.meta})
+        for marker in ("NAME42", "9000000123", "SYMPTOM42"):
+>           assert marker not in response + caplog.text + captured.out + captured.err
+E           assert 'NAME42' not in '{"content":...meta": null}'
+E
+E             'NAME42' is contained here:
+E               summary]\nNAME42 9000000123 SYMPTOM42\n  Unexpected keyword argument [type=unexpected_keyword_argument, input_value='unexpected argument', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/unexpected_keyword_argument", "annotations": null, "meta": null}], "structuredContent": null, "meta": null}
+E             ?           ++++++
+
+tests/test_server.py:462: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-04T05:29:50.196835+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [98305]", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:50.196944+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:50.197032+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-04.2"}
+{"ts": "2026-10-04T05:29:50.198063+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:50.198499+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:51673 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-04T05:29:50.299638+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:50.400893+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:50.401842+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-04T05:29:50.401899+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [98305]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [98305]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[object]
+FAILED tests/test_server.py::test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[list]
+FAILED tests/test_server.py::test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[number]
+FAILED tests/test_server.py::test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[outer-cap]
+FAILED tests/test_server.py::test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[enum]
+FAILED tests/test_server.py::test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[contact-type]
+FAILED tests/test_server.py::test_invalid_summary_does_not_echo_private_input_in_protocol_or_logs[unexpected-key]
+7 failed, 30 deselected, 2 warnings in 2.56s
+EXIT: 1
+$ uv run --directory services/mcp pytest tests/test_server.py -q -k 'invalid_summary_does_not_echo or summary_http_boundaries or summary_length'
+...............                                                          [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+15 passed, 22 deselected, 2 warnings in 4.27s
+EXIT: 0
+$ make test-fast
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+All checks passed!
+........................................................................ [ 15%]
+........................................................................ [ 31%]
+........................................................................ [ 46%]
+........................................................................ [ 62%]
+........................................................................ [ 77%]
+........................................................................ [ 93%]
+..............................                                           [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+462 passed, 11 deselected, 2 warnings in 28.24s
+EXIT: 0

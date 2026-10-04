@@ -66,6 +66,7 @@ $MCP_BEARER_TOKEN` and the headers described in `VOICE-TEAM.md`; `curl http://12
 shows the owner-service status.
 
 Current call-summary evidence: [implementation hand-back](mcp-only/implementation/CALL-SUMMARY-HAND-BACK.md)
-links red/green output and the final full run. Wrong-type framework protocol errors can still echo
-input values; passing log-privacy tests does not establish protocol-error redaction. No custom
-validation boundary was introduced. Live service and voice acceptance are separate from local tests.
+links red/green output and the final full run. HTTP privacy tests verify malformed summary arguments
+never echo submitted values or unexpected field names in protocol errors or logs, and send no owner
+write. Framework validation is unchanged; only summary error presentation is redacted. The 2000
+outer cap and 500 in-band limit remain tested. Live service and voice acceptance are separate.

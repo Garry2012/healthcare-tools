@@ -16,6 +16,9 @@ from datetime import UTC, datetime
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from pydantic import ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -92,6 +95,19 @@ class BearerAuth:
         await self.app(scope, receive, send)
 
 
+class SummaryErrorRedaction(Middleware):
+    """Format framework validation failures without echoing private arguments; no validation of our own."""
+
+    async def on_call_tool(self, context: MiddlewareContext, call_next: CallNext):
+        try:
+            return await call_next(context)
+        except ValidationError:
+            if context.message.name != "record_call_summary":
+                raise
+            # Error values, locations (unexpected argument names) and context can all contain caller data.
+            raise ToolError("Invalid call summary arguments. Check required fields, types and limits.") from None
+
+
 def build_mcp(services: tools.Services) -> FastMCP:
     settings = services.settings
     pack = packs.load(settings.domain_pack)
@@ -99,6 +115,7 @@ def build_mcp(services: tools.Services) -> FastMCP:
         name=f"frontdesk-{pack.name}",
         instructions=prompt.instructions(pack, settings.languages, settings.tenant_display_name),
         version=prompt.SCHEMA_VERSION,
+        middleware=[SummaryErrorRedaction()],
     )
     tools.register(mcp, services, pack)
     return mcp
