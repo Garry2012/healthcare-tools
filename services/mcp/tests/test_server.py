@@ -14,7 +14,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-from frontdesk_mcp import cli, context, packs, prompt
+from frontdesk_mcp import cli, packs, prompt
 from frontdesk_mcp.server import JsonFormatter, create_app
 
 from . import harness
@@ -285,11 +285,6 @@ def test_server_instructions_are_short_contract_facts():
     for fact in ("Demo Hospital", "en, kn, hi", "YYYY-MM-DD", "relative dates are not accepted",
                  "NOTED", "CALLBACK_REQUIRED", "UNCERTAIN", prompt.SCHEMA_VERSION):
         assert fact in text
-
-
-def test_principal_contextvar_is_not_set_by_headers(make_settings):
-    ctx = context.from_headers({"x-principal": "lifecycle", "principal": "lifecycle"}, make_settings())
-    assert context.principal_var.get() is None and not hasattr(ctx, "principal")
 
 
 # ------------------------------------------------------------------ review fixes (1 Oct 2026)

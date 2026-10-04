@@ -1,6 +1,6 @@
 """Adapter settings, from the environment: the rollout's identity (rollouts/<id>/rollout.env), the
-two owner services (Manoj's operational API, Shobhit's knowledge service) and the gateway/lifecycle
-bearers. Nothing provider-specific is written in code, and production refuses development stubs."""
+two owner services (Manoj's operational API, Shobhit's knowledge service) and the gateway
+bearer. Nothing provider-specific is written in code, and production refuses development stubs."""
 
 from __future__ import annotations
 
@@ -43,10 +43,8 @@ class Settings(BaseSettings):
     knowledge_bearer_token: SecretStr = SecretStr("")
 
     # --- who may call us ------------------------------------------------------------------------
-    # Conversational path: the bearer the gateway presents for the three in-call tools.
+    # The bearer the gateway presents for all four tools.
     mcp_bearer_token: SecretStr = SecretStr("")
-    # Call-end lifecycle: a different bearer that alone may invoke record_call_summary.
-    mcp_lifecycle_bearer_token: SecretStr = SecretStr("")
     # Dev only: used when the gateway forwards no X-Caller-Number.
     mcp_dev_caller_number: str = ""
     # Which X-Caller-Verification assertions authorise appointment lookups/changes (agreed with Manoj).
@@ -61,12 +59,12 @@ class Settings(BaseSettings):
     voice_response_budget_seconds: float = Field(default=1.0, gt=0, le=10)
     reserved_stage_seconds: float = Field(default=0.65, ge=0, le=10)
     gateway_overhead_seconds: float = Field(default=0.05, ge=0, le=5)  # ContextForge hop, outside the adapter
-    # Every tool called during the conversation (reads AND confirmed writes) gets the same share:
+    # Scheduling and knowledge tools (reads AND confirmed booking writes) get the same share:
     # budget − reserved − gateway. Explicit values are diagnostic overrides; one that exceeds the share is refused
     # unless ALLOW_BUDGET_OVERRIDES=true is set deliberately (bench/external runs from a distant laptop).
     read_deadline_seconds: float | None = Field(default=None, gt=0, le=30)
     write_deadline_seconds: float | None = Field(default=None, gt=0, le=30)
-    summary_deadline_seconds: float = Field(default=8.0, gt=0, le=60)  # after the call: outside the budget
+    summary_deadline_seconds: float = Field(default=8.0, gt=0, le=60)  # summaries have their own budget
     request_timeout_seconds: float | None = Field(default=None, gt=0, le=30)  # cap per exchange; default: read
     allow_budget_overrides: bool = False
     token_refresh_margin_seconds: int = Field(default=60, ge=0, le=3600)
@@ -184,11 +182,6 @@ class Settings(BaseSettings):
                 raise ValueError("KNOWLEDGE_BASE_URL and KNOWLEDGE_BEARER_TOKEN must both be set or both empty")
             if self.mcp_dev_caller_number:
                 raise ValueError("MCP_DEV_CALLER_NUMBER is allowed only when ENV=development")
-            gateway = self.mcp_bearer_token.get_secret_value()
-            lifecycle = self.mcp_lifecycle_bearer_token.get_secret_value()
-            if lifecycle and lifecycle == gateway:
-                raise ValueError("MCP_LIFECYCLE_BEARER_TOKEN must differ from MCP_BEARER_TOKEN (the lifecycle split is "
-                                 "decided by the bearer)")
             if not (self.ops_client_id and self.ops_client_secret.get_secret_value()):
                 raise ValueError("OPS_CLIENT_ID and OPS_CLIENT_SECRET are required outside development")
         if self.env == "production":
@@ -201,11 +194,8 @@ class Settings(BaseSettings):
                 if any(marker in url.lower() for marker in STUB_MARKERS):
                     raise ValueError(f"{name} points at a stub/mock endpoint; production needs the owner's service")
             gateway = self.mcp_bearer_token.get_secret_value()
-            lifecycle = self.mcp_lifecycle_bearer_token.get_secret_value()
             if not gateway:
                 raise ValueError("MCP_BEARER_TOKEN is required when ENV=production")
-            if not lifecycle or lifecycle == gateway:
-                raise ValueError("MCP_LIFECYCLE_BEARER_TOKEN is required and must differ from MCP_BEARER_TOKEN")
         return self
 
 

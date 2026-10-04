@@ -160,7 +160,7 @@ async def main() -> None:
                            or os.environ.get("OPS_E2E_CLIENT_SECRET", "dev-secret")),
         knowledge_base_url=os.environ.get("BENCH_KNOWLEDGE_BASE_URL") or "http://knowledge-stub.local",
         knowledge_bearer_token=os.environ.get("BENCH_KNOWLEDGE_BEARER_TOKEN") or "dev-knowledge-secret",
-        mcp_bearer_token="gateway", mcp_lifecycle_bearer_token="lifecycle",
+        mcp_bearer_token="gateway",
         allow_budget_overrides=True,  # diagnostic: the bench runs from wherever it is started, not from the MCP region
         read_deadline_seconds=float(os.environ.get("BENCH_READ_DEADLINE", "2.0")),
         write_deadline_seconds=max(4.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))),

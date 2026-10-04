@@ -1,6 +1,6 @@
 """Trusted call context: what the voice platform forwards (through the gateway) as HTTP headers on
 each MCP request. The model never sees or supplies these; a malformed value is treated as absent,
-never guessed. `principal` is set by the server's bearer check, not by any header."""
+never guessed. Authentication is checked by the server before tools run."""
 
 from __future__ import annotations
 
@@ -10,15 +10,11 @@ from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
 
 from .config import Settings
 
 logger = logging.getLogger(__name__)
 
-Principal = Literal["conversation", "lifecycle"]
-# Set by the server for the current request: which bearer authenticated it.
-principal_var: ContextVar[Principal | None] = ContextVar("mcp_principal", default=None)
 # The current request's call id, for log correlation.
 call_id_var: ContextVar[str | None] = ContextVar("mcp_call_id", default=None)
 

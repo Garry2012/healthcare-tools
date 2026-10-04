@@ -62,15 +62,11 @@ def test_production_refuses_known_stub_and_mock_endpoints(make_settings, url):
         make_settings(**{**PROD, "knowledge_base_url": url})
 
 
-def test_production_requires_credentials_and_distinct_lifecycle_token(make_settings):
+def test_production_requires_owner_credentials_and_gateway_bearer(make_settings):
     with pytest.raises(ValueError, match="OPS_CLIENT"):
         make_settings(**PROD, ops_client_secret="")
     with pytest.raises(ValueError, match="MCP_BEARER_TOKEN"):
         make_settings(**PROD, mcp_bearer_token="")
-    with pytest.raises(ValueError, match="MCP_LIFECYCLE_BEARER_TOKEN"):
-        make_settings(**PROD, mcp_lifecycle_bearer_token="")
-    with pytest.raises(ValueError, match="MCP_LIFECYCLE_BEARER_TOKEN"):
-        make_settings(**PROD, mcp_bearer_token="same", mcp_lifecycle_bearer_token="same")
     with pytest.raises(ValueError, match="MCP_DEV_CALLER_NUMBER"):
         make_settings(**PROD, mcp_dev_caller_number="+919000000101")
     assert make_settings(**PROD).env == "production"
@@ -142,7 +138,7 @@ def test_every_in_call_tool_deadline_fits_the_voice_budget_including_the_gateway
     longest_tool = max(s.read_deadline_seconds, s.write_deadline_seconds)
     total = s.reserved_stage_seconds + s.gateway_overhead_seconds + longest_tool
     assert total <= s.voice_response_budget_seconds + 1e-9
-    assert s.summary_deadline_seconds > s.voice_response_budget_seconds  # after the call, outside the budget
+    assert s.summary_deadline_seconds > s.voice_response_budget_seconds  # summaries retain their own budget
     with pytest.raises(ValueError, match="budget"):
         make_settings(write_deadline_seconds=0.9)  # an in-call override cannot exceed the tool's share
     assert make_settings(write_deadline_seconds=0.9, allow_budget_overrides=True).write_deadline_seconds == 0.9
@@ -164,14 +160,6 @@ def test_budget_override_flag_is_parsed_as_a_boolean_from_the_environment(monkey
             Settings(**ROLLOUT, **ENDPOINTS, env="test")
     monkeypatch.setenv("ALLOW_BUDGET_OVERRIDES", "true")
     assert Settings(**ROLLOUT, **ENDPOINTS, env="test").read_deadline_seconds == 2.0
-
-
-def test_lifecycle_and_gateway_bearers_must_differ_outside_development(make_settings):
-    with pytest.raises(ValueError, match="MCP_LIFECYCLE_BEARER_TOKEN"):
-        make_settings(env="staging", mcp_bearer_token="same", mcp_lifecycle_bearer_token="same")
-    with pytest.raises(ValueError, match="MCP_LIFECYCLE_BEARER_TOKEN"):
-        make_settings(env="test", mcp_bearer_token="same", mcp_lifecycle_bearer_token="same")
-    assert make_settings(env="development", mcp_bearer_token="", mcp_lifecycle_bearer_token="").env == "development"
 
 
 async def test_production_without_knowledge_still_serves_scheduling(make_settings):
