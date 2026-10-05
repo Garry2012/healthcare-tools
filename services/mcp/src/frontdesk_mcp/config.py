@@ -72,9 +72,18 @@ class Settings(BaseSettings):
     token_refresh_timeout_seconds: float = Field(default=5.0, gt=0, le=60)  # background/start-up refresh: not in-call
     directory_cache_seconds: int = Field(default=300, ge=0, le=86400)
     directory_page_size: int = Field(default=25, ge=1, le=100)  # bounded search/department fan-out
+    doctor_choice_limit: int = Field(default=3, ge=1, le=100)
+    profile_batch_size: int = Field(default=3, ge=1, le=100)
+    min_batch_headroom_seconds: float = Field(default=0.05, ge=0, le=30)
     directory_cache_max_entries: int = Field(default=512, ge=1, le=100_000)
     ops_pool_max_connections: int = Field(default=20, ge=1, le=1000)
     knowledge_pool_max_connections: int = Field(default=10, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def _profile_pool(self) -> Settings:
+        if self.profile_batch_size > self.ops_pool_max_connections:
+            raise ValueError("PROFILE_BATCH_SIZE must not exceed OPS_POOL_MAX_CONNECTIONS")
+        return self
 
     @field_validator("tenant_supported_languages")
     @classmethod
