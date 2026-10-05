@@ -73,6 +73,28 @@ async def test_gateway_gets_all_four_tools_without_trusted_fields(served):
     assert "NOTED" in instructions and prompt.SCHEMA_VERSION in instructions
 
 
+async def test_working_hours_and_missing_date_are_exposed_through_mcp(served):
+    base, h = served
+    async with client(base) as c:
+        tool = next(t for t in await c.list_tools() if t.name == "get_doctor_availability")
+        hours = await c.call_tool("get_doctor_availability", {
+            "doctorId": "doc_garima", "purpose": "WORKING_HOURS"}, raise_on_error=False)
+        missing = await c.call_tool("get_doctor_availability", {"doctorId": "doc_garima"}, raise_on_error=False)
+    assert not hours.is_error and hours.structured_content["outcome"] == "WORKING_HOURS"
+    assert not missing.is_error and missing.structured_content["detail"] == "DATE_REQUIRED"
+    assert "date" not in tool.inputSchema.get("required", []) and "/availability" not in h.ops_paths()
+    assert tool.outputSchema["$defs"]["BoardSessionOut"]["properties"]["status"]["enum"] == [
+        "IN", "LATE", "CANCELLED", "NOT_CONFIRMED", "UNKNOWN"]
+
+
+def test_availability_description_distinguishes_counts_and_sources(make_settings):
+    doc = cli.schema_document(make_settings())
+    text = next(t["description"] for t in doc["tools"] if t["name"] == "get_doctor_availability")
+    for fact in ("totalMatches", "bookableFound", "complete", "WORKING_HOURS", "decision", "status",
+                 "NOT_AVAILABLE", "HANDOFF_REQUIRED", "SESSION_ENDED", "attendance not confirmed"):
+        assert fact in text
+
+
 async def test_gateway_can_save_a_summary_with_trusted_call_identity(served):
     base, h = served
     async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:

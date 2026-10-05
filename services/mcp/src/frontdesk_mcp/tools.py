@@ -24,6 +24,7 @@ from .config import Settings
 from .knowledge_client import KnowledgeClient
 from .ops_client import OpsClient
 from .packs import Pack
+from .schedule_reader import ScheduleReader
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,9 @@ class Services:
         ops = OpsClient(settings, transport=ops_transport, monotonic=monotonic)
         kb = KnowledgeClient(settings, transport=knowledge_transport)
         cache = DirectoryCache(settings, monotonic)
+        reader = ScheduleReader(ops, cache, settings)
         return cls(settings, clock, ops, kb, cache,
-                   availability.AvailabilityService(ops, cache, settings, clock),
+                   availability.AvailabilityService(ops, cache, settings, clock, reader),
                    booking.BookingService(ops, settings, clock, cache),
                    knowledge.KnowledgeService(kb, settings),
                    summary.SummaryService(ops, settings))
@@ -103,7 +105,8 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
     )
     async def get_doctor_availability(  # noqa: N803 - parameter names are the wire names the model sees
-        date: Annotated[str, Field(max_length=10, description="'today' or YYYY-MM-DD.")],
+        date: Annotated[str | None, Field(max_length=10, description="'today' or YYYY-MM-DD.")] = None,
+        purpose: availability.policy.Purpose = availability.policy.Purpose.AVAILABILITY,
         doctorName: Name = None,
         doctorId: Ident = None,
         departmentName: Name = None,
@@ -111,7 +114,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         session: Annotated[str | None, Field(max_length=40)] = None,
         gender: Literal["FEMALE", "MALE"] | None = None,
     ) -> ToolResult:
-        request = availability.AvailabilityRequest(date=date, doctorName=doctorName, doctorId=doctorId,
+        request = availability.AvailabilityRequest(date=date, purpose=purpose, doctorName=doctorName, doctorId=doctorId,
                                                    departmentName=departmentName, departmentId=departmentId,
                                                    session=session, gender=gender)
         return observed("get_doctor_availability", await services.availability.get(ctx(), request))
