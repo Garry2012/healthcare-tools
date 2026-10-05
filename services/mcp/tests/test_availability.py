@@ -257,6 +257,12 @@ async def test_availability_missing_date_is_an_in_band_request_error(h):
     assert h.ops_paths() == []
 
 
+async def test_working_hours_on_call_does_not_offer_a_booking(h):
+    result = await ask(h, purpose="WORKING_HOURS", date=None, doctorId="doc_vikram_desai")
+    assert result.outcome == "WORKING_HOURS" and result.nextStep == "ASK_CALLBACK_DETAILS"
+    assert result.doctors[0].reason == "NO_REGULAR_HOURS"
+
+
 async def test_directory_and_profile_are_cached_but_the_board_is_not(h):
     await ask(h, departmentName="cardiology")
     await ask(h, departmentName="cardiology")

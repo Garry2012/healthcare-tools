@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import StrEnum
 
 from . import contract
@@ -96,6 +96,7 @@ class DoctorDecision:
     basis: Basis
     sessions: tuple[SessionDecision, ...] = ()
     session_choice_required: bool = False
+    alternatives: tuple[SessionDecision, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -176,7 +177,7 @@ def normalised(text: str) -> str:
 def _window(end: str | None, now: datetime | None = None) -> str:
     if end is None:
         return "UNKNOWN_END"
-    if now is not None and now.strftime("%H:%M") > end:
+    if now is not None and now.time() > time.fromisoformat(end):
         return "ENDED"
     return "OPEN"
 
@@ -200,13 +201,8 @@ def _on_call(facts: DoctorFacts, basis: Basis) -> DoctorDecision:
 
 
 def _today(facts: DoctorFacts, session: str | None, now: datetime) -> DoctorDecision:
-    rows = [e for e in facts.entries if not session or not e.session
-            or normalised(e.session) == normalised(session)]
-    if not rows:
-        reason = Reason.SESSION_NOT_ON_BOARD if facts.entries and session else Reason.BOARD_ENTRY_MISSING
-        return DoctorDecision(facts, Decision.CALLBACK_REQUIRED, reason, Basis.LIVE_BOARD)
     sessions = []
-    for row in rows:
+    for row in facts.entries:
         decision, reason = TODAY_STATUS[row.status]
         if row.status == "UNKNOWN" and row.isStale:
             reason = Reason.BOARD_STALE
@@ -215,9 +211,15 @@ def _today(facts: DoctorFacts, session: str | None, now: datetime) -> DoctorDeci
         sessions.append(SessionDecision(row.session, Basis.LIVE_BOARD, row.status, decision, reason,
                                         row.expectedTime, row.expectedEndTime, delay_minutes=row.delayMinutes,
                                         note=row.note, is_stale=row.isStale))
-    scoped = tuple(sessions)
+    alternatives = tuple(s for s in sessions if s.decision == Decision.APPOINTMENT_REQUEST)
+    scoped = tuple(s for s in sessions if not session or not normalised(s.label or "")
+                   or normalised(s.label) == normalised(session))
+    if not scoped:
+        reason = Reason.SESSION_NOT_ON_BOARD if facts.entries and session else Reason.BOARD_ENTRY_MISSING
+        return DoctorDecision(facts, Decision.CALLBACK_REQUIRED, reason, Basis.LIVE_BOARD,
+                              alternatives=alternatives)
     decision, reason, choice = _combine(scoped, bool(session))
-    return DoctorDecision(facts, decision, reason, Basis.LIVE_BOARD, scoped, choice)
+    return DoctorDecision(facts, decision, reason, Basis.LIVE_BOARD, scoped, choice, alternatives)
 
 
 def _usual(row: contract.UsualSession, decision: Decision = Decision.APPOINTMENT_REQUEST,
@@ -233,13 +235,15 @@ def _future(facts: DoctorFacts, requested: RequestedDate, session: str | None) -
     if not usual:
         return DoctorDecision(facts, Decision.CALLBACK_REQUIRED, Reason.NO_USUAL_SCHEDULE, Basis.USUAL_SCHEDULE)
     day = [s for s in usual if requested.weekday in s.daysOfWeek]
+    alternatives = tuple(_usual(s) for s in day)
     selected = [s for s in day if not session or normalised(s.label or "") == normalised(session)]
     if not selected:
         reason = Reason.SESSION_NOT_USUAL if day and session else Reason.NOT_USUAL_DAY
         return DoctorDecision(facts, Decision.NOT_AVAILABLE, reason, Basis.USUAL_SCHEDULE,
-                              tuple(_usual(s, Decision.NOT_AVAILABLE, reason) for s in usual))
+                              tuple(_usual(s, Decision.NOT_AVAILABLE, reason) for s in usual),
+                              alternatives=alternatives)
     return DoctorDecision(facts, Decision.APPOINTMENT_REQUEST, None, Basis.USUAL_SCHEDULE,
-                          tuple(_usual(s) for s in selected))
+                          tuple(_usual(s) for s in selected), alternatives=alternatives)
 
 
 def decide_doctor(facts: DoctorFacts, requested: RequestedDate, *, session: str | None,
@@ -270,11 +274,11 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
     if decision.decision == Decision.COULD_NOT_CHECK:
         return Handoff(Reason.PROFILE_UNAVAILABLE)
     sessions = decision.sessions
-    alternatives = tuple(s for s in sessions if s.decision == Decision.APPOINTMENT_REQUEST)
+    alternatives = decision.alternatives
     if preferred_time and sessions and not session:
         matched = tuple(s for s in sessions if s.start and s.end and s.start <= preferred_time <= s.end)
         if matched:
-            sessions = matched + tuple(s for s in sessions if s.label is None and s not in matched)
+            sessions = matched + tuple(s for s in sessions if not normalised(s.label or "") and s not in matched)
         else:
             unbounded = tuple(s for s in sessions if s.start is None or s.end is None)
             sessions = unbounded or sessions

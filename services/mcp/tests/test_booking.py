@@ -106,6 +106,31 @@ async def test_create_date_errors_use_the_shared_resolver(h, value, reason):
     assert result.outcome == "INVALID_REQUEST" and result.detail == reason and not h.ops_paths()
 
 
+@pytest.mark.parametrize("label", ["", "   "])
+@pytest.mark.parametrize("session", [None, "Morning"])
+async def test_blank_unknown_labels_stay_in_scope_and_prevent_writes(h, label, session):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
+         "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": label, "status": "UNKNOWN", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "session": session})
+    assert result.outcome == "CALLBACK_REQUIRED" and not sent(h, "/appointments")
+
+
+async def test_selected_cancelled_session_offers_other_bookable_sessions(h):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "CANCELLED", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": "Evening", "status": "IN", "expectedTime": "17:00",
+         "expectedEndTime": "19:00", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "session": "Morning", "preferredTime": None})
+    assert result.outcome == "NOT_AVAILABLE" and result.nextStep == "OFFER_OTHER_SESSION_OR_TIME"
+    assert [(s.session, s.decision) for s in result.sessions] == [("Evening", "APPOINTMENT_REQUEST")]
+    future = await run(h, **{**CREATE, "visitDate": "2026-10-05", "session": "Night", "preferredTime": None})
+    assert future.detail == "SESSION_NOT_USUAL" and future.nextStep == "OFFER_OTHER_SESSION_OR_TIME"
+    assert {s.label for s in future.sessions} == {"Morning", "Afternoon"}
+    assert not sent(h, "/appointments")
+
+
 @pytest.mark.parametrize("missing", ["call_id", "operation_id"])
 async def test_writes_refuse_without_trusted_call_and_operation_context(h, missing):
     ctx = h.ctx(call_id=None, operation_id="op-1") if missing == "call_id" else h.ctx(operation_id=None)

@@ -140,7 +140,9 @@ class AvailabilityService:
     def _single(d: policy.DoctorDecision, requested: policy.RequestedDate | None,
                 request: AvailabilityRequest, base: dict) -> outcomes.AvailabilityResult:
         if request.purpose == policy.Purpose.WORKING_HOURS:
-            outcome, step = "WORKING_HOURS", "OFFER_APPOINTMENT_REQUEST"
+            outcome = "WORKING_HOURS"
+            step = ("ASK_CALLBACK_DETAILS" if d.decision == policy.Decision.CALLBACK_REQUIRED
+                    else "OFFER_APPOINTMENT_REQUEST")
         else:
             outcome, step = {
                 policy.Decision.APPOINTMENT_REQUEST: ("AVAILABILITY", "ASK_WHICH_SESSION" if d.session_choice_required

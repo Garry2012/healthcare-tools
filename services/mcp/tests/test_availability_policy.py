@@ -160,3 +160,10 @@ def test_failed_profile_cannot_be_a_write_decision():
     decision = decide(replace(facts(), profile=None), date="2026-10-05")
     result = p.decide_booking(decision, session=None, preferred_time=None)
     assert isinstance(result, p.Handoff) and result.reason == "PROFILE_UNAVAILABLE"
+
+
+def test_end_time_precision_includes_seconds():
+    p = policy()
+    result = decide(facts(end="10:00"), now=NOW.replace(second=30))
+    assert result.decision == "NOT_AVAILABLE" and result.reason == "SESSION_ENDED"
+    assert isinstance(p.decide_booking(result, session="Morning", preferred_time=None), p.NotAvailable)
