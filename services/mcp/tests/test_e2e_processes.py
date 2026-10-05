@@ -72,13 +72,9 @@ async def test_release_smoke_passes_against_real_processes(processes):
 async def test_journey_and_summary_through_real_transport(processes):
     base = processes["mcp"]
     headers = {"Authorization": "Bearer gateway-e2e", **harness.headers(call_id="e2e-1", operation_id="op-e2e-1")}
-    # The stub's board for a far future date is UNKNOWN unless scripted: script a confirmed session first.
-    httpx.post(f"{processes['ops']}/__stub/scenario", json={"boards": {"2099-01-05": [
-        {"doctorId": "doc_garima", "session": "Morning", "status": "NOT_CONFIRMED", "expectedTime": "09:00",
-         "updatedMinutesAgo": 1}]}}, timeout=5).raise_for_status()
     async with Client(StreamableHttpTransport(f"{base}/mcp/", headers=headers)) as c:
         today = await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "today"})
-        assert today.structured_content["outcome"] in ("AVAILABILITY", "CALLBACK_REQUIRED")  # real weekday/board
+        assert today.structured_content["outcome"] in ("AVAILABILITY", "CALLBACK_REQUIRED", "NOT_AVAILABLE")
         noted = (await c.call_tool("manage_booking", {
             "action": "CREATE", "patientName": "E2E Patient", "patientMobile": "9000000101", "doctorId": "doc_garima",
             "visitDate": "2099-01-05", "callerConfirmed": True})).structured_content
@@ -101,4 +97,5 @@ async def test_journey_and_summary_through_real_transport(processes):
             "summaryText": "E2E journey."})).structured_content
         assert again == {"outcome": "ALREADY_SAVED"}
     state = httpx.get(f"{processes['ops']}/__stub/state").json()
+    assert not any(r["path"] == "/availability" and r["method"] == "POST" for r in state["requests"])
     assert len(state["appointments"]) == 1 and len(state["summaries"]) == 1

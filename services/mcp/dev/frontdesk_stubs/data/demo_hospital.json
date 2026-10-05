@@ -9,7 +9,8 @@
     {"id": "dept_neuro", "name": "Neurology", "hasConsultant": true, "active": true},
     {"id": "dept_cardio", "name": "Cardiology", "hasConsultant": true, "active": true},
     {"id": "dept_uro", "name": "Urology", "hasConsultant": true, "active": true},
-    {"id": "dept_dental", "name": "Dental", "hasConsultant": false, "active": true}
+    {"id": "dept_dental", "name": "Dental", "hasConsultant": false, "active": true},
+    {"id": "dept_policy", "name": "Policy Clinic", "hasConsultant": true, "active": true}
   ],
   "doctors": [
     {"id": "doc_garima", "name": "Dr. Garima", "departments": [{"id": "dept_genmed", "name": "General Medicine"}],
@@ -66,7 +67,19 @@
      "attendanceType": "REGULAR", "gender": "MALE", "qualification": "MBBS, MCh (Urology)",
      "consultationFee": {"amount": 700, "currency": "INR"}, "languages": ["en", "kn", "hi"], "active": true,
      "usualSchedule": [{"label": "Evening", "daysOfWeek": ["MON", "WED", "SAT"], "start": "17:00", "end": "19:00"}],
-     "patientsPerHour": 5, "dataConfirmed": false}
+     "patientsPerHour": 5, "dataConfirmed": false},
+    {"id": "doc_fixture_00", "name": "Dr. Fixture 00", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "ON_CALL", "active": true, "usualSchedule": []},
+    {"id": "doc_fixture_01", "name": "Dr. Fixture 01", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "VISITING", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"}]},
+    {"id": "doc_fixture_02", "name": "Dr. Fixture 02", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": []},
+    {"id": "doc_fixture_03", "name": "Dr. Fixture 03", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["TUE"], "start": "09:00", "end": "12:00"}]},
+    {"id": "doc_fixture_04", "name": "Dr. Fixture 04", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["TUE"], "start": "09:00", "end": "12:00"}]},
+    {"id": "doc_fixture_05", "name": "Dr. Fixture 05", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["TUE"], "start": "09:00", "end": "12:00"}]},
+    {"id": "doc_fixture_06", "name": "Dr. Fixture 06", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"}]},
+    {"id": "doc_fixture_07", "name": "Dr. Fixture 07", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"}]},
+    {"id": "doc_fixture_08", "name": "Dr. Fixture 08", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"}]},
+    {"id": "doc_fixture_09", "name": "Dr. Fixture 09", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"}]},
+    {"id": "doc_fixture_10", "name": "Dr. Fixture 10", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"}]},
+    {"id": "doc_fixture_11", "name": "Dr. Fixture 11", "departments": [{"id": "dept_policy", "name": "Policy Clinic"}], "attendanceType": "REGULAR", "active": true, "usualSchedule": [{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"}]}
   ],
   "board_today": [
     {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:10", "expectedEndTime": "12:00", "updatedMinutesAgo": 60, "updatedBy": "frontdesk1", "source": "DESK"},

@@ -18,7 +18,7 @@ from __future__ import annotations
 import contextlib
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 
@@ -136,8 +136,8 @@ async def _write_gate(ops: OpsClient) -> None:
 async def test_positive_write_journey_create_list_reschedule_cancel_summary(settings):
     """Deterministic positive journey on the designated synthetic tenant; every step must succeed."""
     doctor_id = required("OPS_E2E_DOCTOR_ID")
-    visit = os.environ.get("OPS_E2E_VISIT_DATE") or (datetime.now(UTC).astimezone(settings.zone).date()
-                                                   + timedelta(days=1)).isoformat()
+    visit = required("OPS_E2E_VISIT_DATE")  # owner-designated usual working day
+    move_date = required("OPS_E2E_RESCHEDULE_DATE")  # another usual working day
     ops, kb = OpsClient(settings), KnowledgeClient(settings)
     try:
         await _write_gate(ops)
@@ -149,15 +149,15 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
 
         created = await svc.manage(ctx("create"), booking.BookingRequest(
             action="CREATE", patientName="Synthetic Test Patient", patientMobile=harness.CALLER[3:], doctorId=doctor_id,
-            visitDate=visit, preferredTime="10:00", callerConfirmed=True))
+            visitDate=visit, callerConfirmed=True))
         assert created.outcome == "NOTED", created  # the designated doctor/date must not be UNKNOWN
         appointment_id = created.appointment.appointmentId
         listed = gates.assert_list_succeeded(await svc.manage(ctx("list"), booking.BookingRequest(action="LIST")))
         assert appointment_id in [a.appointmentId for a in listed]
         moved = await svc.manage(ctx("move"), booking.BookingRequest(
             action="RESCHEDULE", appointmentId=appointment_id,
-            newVisitDate=(datetime.fromisoformat(visit).date() + timedelta(days=1)).isoformat(), callerConfirmed=True))
-        assert moved.outcome == "CHANGED", moved
+            newVisitDate=move_date, callerConfirmed=True))
+        assert moved.outcome == "NOTED" and moved.appointment.status == "CHANGED", moved
         cancelled = await svc.manage(ctx("cancel"), booking.BookingRequest(
             action="CANCEL", appointmentId=appointment_id, callerConfirmed=True))
         assert cancelled.outcome == "CANCELLED", cancelled
@@ -179,7 +179,8 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
 async def test_negative_unknown_date_is_callback_only_and_writes_nothing(settings):
     """Negative case: a date the board reports UNKNOWN must not produce an appointment on the tenant."""
     doctor_id = required("OPS_E2E_DOCTOR_ID")
-    unknown_date = required("OPS_E2E_UNKNOWN_DATE")  # a date the tenant's board reports UNKNOWN for that doctor
+    unknown_date = datetime.now(UTC).astimezone(settings.zone).date().isoformat()
+    # Owner-designated doctor must have UNKNOWN/NOT_CONFIRMED today; future boards are irrelevant.
     ops, kb = OpsClient(settings), KnowledgeClient(settings)
     try:
         await _write_gate(ops)

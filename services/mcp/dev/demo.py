@@ -55,7 +55,7 @@ async def main() -> None:
                      knowledge_transport=httpx.ASGITransport(app=knowledge_stub.create_app(kb_state)))
     async with serving(app) as base:
         gateway = {"Authorization": "Bearer gateway", "X-Call-Id": "demo-call-1",
-                   "X-Caller-Number": "+919000000101"}
+                   "X-Caller-Number": "+919000000101", "X-Caller-Verification": "SIP_CALLER_ID"}
         async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={
                 **gateway,
                 "X-Operation-Id": "demo-op-1"})) as c:
@@ -66,6 +66,10 @@ async def main() -> None:
                        "get_doctor_availability", {"doctorName": "kiran", "date": "today"})
             await call(c, "get_doctor_availability: Dr Sharma (two matches → clarification)",
                        "get_doctor_availability", {"doctorName": "Dr Sharma", "date": "today"})
+            await call(c, "usual hours without a date", "get_doctor_availability",
+                       {"doctorName": "garima", "purpose": "WORKING_HOURS"})
+            await call(c, "future department from usual schedules", "get_doctor_availability",
+                       {"departmentId": "dept_policy", "date": "2026-10-05"})
             await call(c, "manage_booking CREATE (NOTED, not a reserved time)", "manage_booking", {
                      "action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101",
                      "doctorId": "doc_garima", "visitDate": "2026-10-02", "preferredTime": "09:30",

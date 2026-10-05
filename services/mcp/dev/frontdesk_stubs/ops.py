@@ -60,6 +60,7 @@ class OpsStubState:
     delay_for_prefix: dict[str, float] = field(default_factory=dict)  # per-path latency injection
     reject_next_create: list[dict[str, str]] | None = None  # one 400 VALIDATION_FAILED with these details
     omit_missing_entries: bool = False  # scenario: an owner that returns no row instead of UNKNOWN
+    requests: list[dict[str, str]] = field(default_factory=list)
     counter: int = 0
 
     def today(self) -> date:
@@ -89,6 +90,8 @@ class OpsStubState:
         self.appointments.clear(), self.summaries.clear(), self.idempotency.clear(), self.boards.clear()
         self.fail_next.clear(), self.malformed_next.clear(), self.commit_then.clear()
         self.delay_seconds = 0.0
+        self.delay_for_prefix.clear()
+        self.requests.clear()
 
 
 def error(status: int, code: str, message: str, details: list[dict[str, str]] | None = None,
@@ -131,6 +134,7 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         return None
 
     async def scenario(request: Request) -> Response | None:
+        state.requests.append({"method": request.method, "path": relative_path(request)})
         if state.delay_seconds:
             await asyncio.sleep(state.delay_seconds)
         for prefix, seconds in state.delay_for_prefix.items():
@@ -454,13 +458,15 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         state.commit_then.update({k: int(v) for k, v in body.get("commitThen", {}).items()})
         if "delaySeconds" in body:
             state.delay_seconds = float(body["delaySeconds"])
+        state.delay_for_prefix.update({k: float(v) for k, v in body.get("delayForPrefix", {}).items()})
         for iso, entries in body.get("boards", {}).items():
             state.set_board(iso, entries)
         return JSONResponse({"ok": True})
 
     async def stub_state(_: Request) -> Response:
         return JSONResponse({"appointments": list(state.appointments.values()),
-                             "summaries": list(state.summaries.values()), "today": state.today().isoformat()})
+                             "summaries": list(state.summaries.values()), "today": state.today().isoformat(),
+                             "requests": state.requests})
 
     routes = [
         Route("/auth/token", issue_token, methods=["POST"]),
