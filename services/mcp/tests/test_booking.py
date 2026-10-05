@@ -490,9 +490,8 @@ async def test_a_preferred_time_outside_the_chosen_session_window_is_rejected(h)
     assert sent(h, "/appointments") == []
 
 
-async def test_a_missing_row_for_a_usual_session_today_is_unknown_for_create_too(h):
-    """Garima's profile lists Morning on Thursday; the board shows only Afternoon IN. The contract promises a row per
-    session, so the missing Morning row is UNKNOWN (callback), not 'no such session'."""
+async def test_a_named_session_absent_from_today_board_requires_callback(h):
+    """Today the board alone supplies sessions; an absent named session requires callback."""
     from frontdesk_mcp import availability
 
     h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "session": "Afternoon", "status": "IN",
@@ -507,9 +506,8 @@ async def test_a_missing_row_for_a_usual_session_today_is_unknown_for_create_too
     assert afternoon.outcome == "NOTED"
 
 
-async def test_unresolved_scope_with_any_unknown_is_callback_for_create_as_for_availability(h):
-    """Consistency: a whole-day availability query with mixed statuses is callback-only; a create without session or
-    time on that day must not get a friendlier answer."""
+async def test_mixed_scope_without_selection_requires_a_session_before_create(h):
+    """Mixed decisions expose a choice; creating without that choice must not write."""
     from frontdesk_mcp import availability
 
     h.ops_state.set_board("2026-10-01", MIXED_BOARD)

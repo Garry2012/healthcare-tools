@@ -1,0 +1,23 @@
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+E501 Line too long (132 > 120)
+  --> tests/test_schedule_reader.py:26:121
+   |
+26 | async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False, order_seed=None):
+   |                                                                                                                         ^^^^^^^^^^^^
+27 |     from frontdesk_mcp.schedule_reader import ScheduleReader
+28 |     p = policy()
+   |
+
+S311 Standard pseudo-random generators are not suitable for cryptographic purposes
+  --> tests/test_schedule_reader.py:43:17
+   |
+41 |             items = list(reversed(doctors)) if reverse else list(doctors)
+42 |             if order_seed is not None:
+43 |                 random.Random(order_seed).shuffle(items)
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+44 |             return httpx.Response(200, json={"items": items,
+45 |                                              "total": len(doctors) if total is None else total})
+   |
+
+Found 2 errors.
+make: *** [test-fast] Error 1

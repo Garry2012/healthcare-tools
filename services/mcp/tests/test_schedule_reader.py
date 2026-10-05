@@ -1,5 +1,6 @@
 """Shared retrieval tests at the real HTTP transport: ordering, limits, failure and cancellation."""
 import asyncio
+import random
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -22,7 +23,8 @@ def test_invalid_search_bounds_are_refused(make_settings, values):
         make_settings(**values)
 
 
-async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False):
+async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None,
+                     reverse=False, order_seed=None):
     from frontdesk_mcp.schedule_reader import ScheduleReader
     p = policy()
     settings = make_settings(doctor_choice_limit=3, profile_batch_size=3)
@@ -37,7 +39,10 @@ async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat
             return httpx.Response(200, json={"access_token": "t", "token_type": "Bearer", "expires_in": 3600})
         if path.endswith("/doctors"):
             assert request.url.params["limit"] == "100"
-            return httpx.Response(200, json={"items": list(reversed(doctors)) if reverse else doctors,
+            items = list(reversed(doctors)) if reverse else list(doctors)
+            if order_seed is not None:
+                random.Random(order_seed).shuffle(items)  # noqa: S311 — reproducible test permutations
+            return httpx.Response(200, json={"items": items,
                                              "total": len(doctors) if total is None else total})
         assert "/availability" not in path, "future/working hours must not read today's board"
         i = int(path.rsplit("/", 1)[1])
@@ -127,3 +132,21 @@ def test_facility_today_is_not_utc_today():
     p = policy()
     local = datetime(2026, 10, 2, 0, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
     assert p.resolve_date("2026-10-02", local, p.Purpose.AVAILABILITY).kind == "TODAY"
+
+
+async def test_twenty_owner_orders_produce_identical_sorted_candidates(make_settings):
+    for seed in range(20):
+        found, first, _, peak, _ = await run_search(make_settings, statuses=["match"] * 12, order_seed=seed)
+        assert first == [0, 1, 2], seed
+        assert [f.doctor.id for f in found.facts] == ["0", "1", "2"], seed
+        assert found.search.bookable_found == 3 and found.total == 12 and not found.search.complete
+        assert peak <= 3
+
+
+async def test_warm_cache_reaches_the_remaining_batch_after_cold_headroom_stop(make_settings):
+    found, cold, all_reads, peak, elapsed = await run_search(
+        make_settings, statuses=["miss"] * 6, delays={i: .04 for i in range(6)}, budget=.08, repeat=True)
+    assert cold == [0, 1, 2]
+    assert all_reads == [0, 1, 2, 3, 4, 5]
+    assert found.search.complete and found.search.checked == 6 and found.search.bookable_found == 0
+    assert peak <= 3 and elapsed < .15

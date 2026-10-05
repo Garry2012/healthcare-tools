@@ -412,7 +412,7 @@ def test_interface_parameter_and_output_tables_match_pinned_schema():
     expected = {}
 
     def wire_shape(value):
-        # Descriptions are separate prose; output defaults include existing callback text,
+        # Descriptions are separate prose; output defaults include callback metadata,
         # which is intentionally not reproduced as a spoken script in the interface document.
         if isinstance(value, dict):
             return {k: wire_shape(v) for k, v in value.items() if k not in ("title", "description", "default")}

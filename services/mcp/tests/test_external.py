@@ -9,7 +9,8 @@ Layers and their variables (set what you are testing; the report must name the l
                              any bearer accepted, no state; live = a real backend with registered credentials),
                              OPS_E2E_DEPARTMENT (name present in the tenant; default General Medicine)
   Synthetic write journey:   OPS_E2E_ALLOW_WRITES=1 and OPS_E2E_WRITE_TENANT=<designated synthetic tenant id>
-                             plus OPS_E2E_DOCTOR_ID (a doctor whose board for OPS_E2E_VISIT_DATE is not UNKNOWN)
+                             plus OPS_E2E_DOCTOR_ID, OPS_E2E_VISIT_DATE and OPS_E2E_RESCHEDULE_DATE
+                             (two future usual working days; negative gate requires UNKNOWN/NOT_CONFIRMED today)
   Knowledge (Shobhit):       KNOWLEDGE_E2E_BASE_URL, KNOWLEDGE_E2E_BEARER_TOKEN
 """
 
