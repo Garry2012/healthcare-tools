@@ -54,7 +54,7 @@ class Services:
         reader = ScheduleReader(ops, cache, settings)
         return cls(settings, clock, ops, kb, cache,
                    availability.AvailabilityService(ops, cache, settings, clock, reader),
-                   booking.BookingService(ops, settings, clock, cache),
+                   booking.BookingService(ops, settings, clock, cache, reader),
                    knowledge.KnowledgeService(kb, settings),
                    summary.SummaryService(ops, settings))
 
@@ -134,13 +134,12 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         patientName: Name = None,
         patientMobile: Annotated[str | None, Field(max_length=20)] = None,
         doctorId: Ident = None,
-        departmentId: Ident = None,
-        visitDate: IsoDate = None,
+        visitDate: Annotated[str | None, Field(max_length=10)] = None,
         preferredTime: ApproxTime = None,
         session: Annotated[str | None, Field(max_length=40)] = None,
         reasonVerbatim: Annotated[str | None, Field(max_length=500)] = None,
         appointmentId: Ident = None,
-        newVisitDate: IsoDate = None,
+        newVisitDate: Annotated[str | None, Field(max_length=10)] = None,
         newPreferredTime: ApproxTime = None,
         fromDate: IsoDate = None,
         toDate: IsoDate = None,
@@ -149,7 +148,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
     ) -> ToolResult:
         request = booking.BookingRequest(
             action=action, patientName=patientName, patientMobile=patientMobile, doctorId=doctorId,
-            departmentId=departmentId, visitDate=visitDate, preferredTime=preferredTime, session=session,
+            visitDate=visitDate, preferredTime=preferredTime, session=session,
             reasonVerbatim=reasonVerbatim,
             appointmentId=appointmentId, newVisitDate=newVisitDate, newPreferredTime=newPreferredTime,
             fromDate=fromDate, toDate=toDate, status=status, callerConfirmed=callerConfirmed)

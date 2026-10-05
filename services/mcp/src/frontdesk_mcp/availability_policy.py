@@ -271,14 +271,13 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
         return Handoff(Reason.PROFILE_UNAVAILABLE)
     sessions = decision.sessions
     alternatives = tuple(s for s in sessions if s.decision == Decision.APPOINTMENT_REQUEST)
-    if preferred_time and sessions:
-        # A missing boundary cannot establish whether the preferred time is inside this session.
-        if any(_window(s.end) == "UNKNOWN_END" or s.start is None for s in sessions):
-            return Handoff(Reason.TIME_NOT_VERIFIABLE)
-        selected = tuple(s for s in sessions if s.start <= preferred_time <= s.end)
-        if not selected:
-            return NotAvailable(Reason.TIME_OUTSIDE_SESSION, alternatives)
-        sessions = selected
+    if preferred_time and sessions and not session:
+        matched = tuple(s for s in sessions if s.start and s.end and s.start <= preferred_time <= s.end)
+        if matched:
+            sessions = matched + tuple(s for s in sessions if s.label is None and s not in matched)
+        else:
+            unbounded = tuple(s for s in sessions if s.start is None or s.end is None)
+            sessions = unbounded or sessions
     if sessions:
         kinds = {s.decision for s in sessions}
         if len(kinds) > 1 and not session and not preferred_time:
@@ -290,6 +289,11 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
         return Callback(reason)
     if value == Decision.NOT_AVAILABLE:
         return NotAvailable(reason, alternatives)
+    if preferred_time and sessions:
+        if any(_window(s.end) == "UNKNOWN_END" or s.start is None for s in sessions):
+            return Handoff(Reason.TIME_NOT_VERIFIABLE)
+        if not any(s.start <= preferred_time <= s.end for s in sessions):
+            return NotAvailable(Reason.TIME_OUTSIDE_SESSION, alternatives)
     return Write()
 
 

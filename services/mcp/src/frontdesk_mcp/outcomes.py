@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from . import contract
 from . import knowledge_contract as kc
-from .availability_policy import Basis, Decision, Reason
+from .availability_policy import Basis, Decision, Reason, RequestedDate, SessionDecision
 
 
 class _Out(BaseModel):
@@ -31,8 +31,7 @@ class Routing(_Out):
 class Callback(_Out):
     """Callback metadata for UNKNOWN availability; summary outcome is CALLBACK_NOTED."""
 
-    ask: str = "May I have your name and a callback number?"
-    say: str = "Someone from the hospital will call you back."
+    reason: Reason
     summaryOutcome: Literal["CALLBACK_NOTED"] = "CALLBACK_NOTED"  # noqa: N815 - wire names
 
 
@@ -56,6 +55,17 @@ class BoardSessionOut(_Out):
     isStale: bool  # noqa: N815
     decision: Decision
     reason: Reason | None = None
+
+
+def session_out(s: SessionDecision, requested: RequestedDate | None):
+    if s.basis == Basis.LIVE_BOARD:
+        return BoardSessionOut(session=s.label, status=s.owner_status, decision=s.decision, reason=s.reason,
+                                        expectedTime=s.start, expectedEndTime=s.end, delayMinutes=s.delay_minutes,
+                                        note=s.note, isStale=s.is_stale)
+    return UsualSessionOut(label=s.label, daysOfWeek=list(s.days), start=s.start, end=s.end,
+                                    onRequestedDate=requested.weekday in s.days if requested else None,
+                                    decision=s.decision, reason=s.reason)
+
 
 
 class DoctorAvailability(_Out):
@@ -137,17 +147,19 @@ class AppointmentOut(_Out):
 
 BookingOutcome = Literal[
     "NOTED", "CHANGED", "CANCELLED", "FOUND", "NOT_FOUND", "REJECTED", "CONFLICT", "UNCERTAIN",
-    "IDENTITY_UNAVAILABLE", "CALLBACK_REQUIRED",
+    "IDENTITY_UNAVAILABLE", "CALLBACK_REQUIRED", "NOT_AVAILABLE", "HANDOFF_REQUIRED",
     "CONFIRMATION_REQUIRED", "OPERATION_CONTEXT_MISSING", "COULD_NOT_RECORD", "COULD_NOT_CHECK", "INVALID_REQUEST",
 ]
 BookingNextStep = Literal[
     "SAY_REQUEST_NOTED", "SAY_CHANGED", "SAY_CANCELLED", "OFFER_CHOICES", "SAY_NOT_FOUND", "ASK_TO_CORRECT",
     "SAY_UNCERTAIN_AND_TRANSFER", "TRANSFER_DESK",
     "ASK_CALLBACK_DETAILS", "ASK_CONFIRMATION", "SAY_COULD_NOT_RECORD", "SAY_COULD_NOT_CHECK",
+    "ASK_WHICH_SESSION", "OFFER_OTHER_SESSION_OR_TIME", "OFFER_OTHER_SESSION_OR_DATE",
 ]
 
 
 class BookingResult(_Out):
+    sessions: list[BoardSessionOut | UsualSessionOut] = []
     outcome: BookingOutcome
     nextStep: BookingNextStep  # noqa: N815
     appointment: AppointmentOut | None = None

@@ -83,8 +83,7 @@ Doctor or department availability for today or an explicit future date; WORKING_
 | `get_doctor_availability.output.$defs.BoardSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.session` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Board session label when present. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Board attendance status or appointment request status, according to its containing type and enum. |
-| `get_doctor_availability.output.$defs.Callback.ask` | `{"type":"string"}` | optional | Existing server-provided callback-name/number text field; retained response compatibility. |
-| `get_doctor_availability.output.$defs.Callback.say` | `{"type":"string"}` | optional | Existing server-provided callback acknowledgement text field; retained response compatibility. |
+| `get_doctor_availability.output.$defs.Callback.reason` | `{"$ref":"#/$defs/Reason"}` | required | Machine-readable reason for this decision; null when no qualification applies. |
 | `get_doctor_availability.output.$defs.Callback.summaryOutcome` | `{"const":"CALLBACK_NOTED","type":"string"}` | optional | CALLBACK_NOTED identifies the callback call-summary category. |
 | `get_doctor_availability.output.$defs.DepartmentChoice.id` | `{"type":"string"}` | required | Department directory identifier. |
 | `get_doctor_availability.output.$defs.DepartmentChoice.name` | `{"type":"string"}` | required | Doctor or department display name, according to its containing type. |
@@ -137,7 +136,7 @@ Doctor or department availability for today or an explicit future date; WORKING_
 
 ## manage_booking
 
-CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require callerConfirmed=true and trusted call/operation headers. CREATE requires patientName, patientMobile, doctorId or departmentId, and visitDate. LIST/CANCEL/RESCHEDULE require verified caller identity. NOTED means a request is recorded, not a confirmed or reserved time. UNCERTAIN means the write may have committed without a verified result. CALLBACK_REQUIRED means the live board is UNKNOWN and the write was not submitted.
+CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require callerConfirmed=true and trusted call/operation headers. CREATE requires patientName, patientMobile, doctorId and visitDate. Department-level appointments are unsupported. LIST/CANCEL/RESCHEDULE require verified caller identity. Today is validated against the live board; future dates against usual hours, attendance not confirmed. ON_CALL requires callback. NOTED means a create or reschedule request is recorded, not a confirmed or reserved time; appointment.status preserves the owner status. UNCERTAIN means the write may have committed without a verified result. CALLBACK_REQUIRED means no write was submitted and callback facts belong in a call summary. NOT_AVAILABLE means the selected session or time is unavailable; TIME_OUTSIDE_SESSION identifies a time outside known bounds. Differing decisions without a session or time selection produce SESSION_REQUIRED and alternatives. A bookable session without an end time supports a session-only request; a specific time produces HANDOFF_REQUIRED/TIME_NOT_VERIFIABLE without a write or callback.
 
 ### Parameters
 
@@ -146,19 +145,18 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.input.action` | `{"enum":["CREATE","LIST","CANCEL","RESCHEDULE"],"type":"string"}` | required | Required action: CREATE, LIST, CANCEL or RESCHEDULE. |
 | `manage_booking.input.appointmentId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Required for CANCEL/RESCHEDULE: identifier of the appointment request. |
 | `manage_booking.input.callerConfirmed` | `{"type":"boolean"}` | optional | Boolean declaring the caller's approval of this write; true is required for CREATE/CANCEL/RESCHEDULE. |
-| `manage_booking.input.departmentId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | CREATE department identifier when no individual doctor is selected. |
-| `manage_booking.input.doctorId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | CREATE doctor identifier; doctorId or departmentId is required, but not both. |
+| `manage_booking.input.doctorId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Required for CREATE: identifier of the selected doctor. Department-level appointments are unsupported. |
 | `manage_booking.input.fromDate` | `{"anyOf":[{"maxLength":10,"pattern":"^\\d{4}-\\d{2}-\\d{2}$","type":"string"},{"type":"null"}]}` | optional | Optional LIST lower date filter in YYYY-MM-DD format; past dates are accepted. |
 | `manage_booking.input.newPreferredTime` | `{"anyOf":[{"maxLength":5,"pattern":"^\\d{2}:\\d{2}$","type":"string"},{"type":"null"}]}` | optional | Optional RESCHEDULE preferred time in HH:MM 24-hour format. |
-| `manage_booking.input.newVisitDate` | `{"anyOf":[{"maxLength":10,"pattern":"^\\d{4}-\\d{2}-\\d{2}$","type":"string"},{"type":"null"}]}` | optional | Required for RESCHEDULE: new date in YYYY-MM-DD format, today or later in facility time. |
+| `manage_booking.input.newVisitDate` | `{"anyOf":[{"maxLength":10,"type":"string"},{"type":"null"}]}` | optional | Required for RESCHEDULE: 'today' or YYYY-MM-DD, on or after the facility date. |
 | `manage_booking.input.patientMobile` | `{"anyOf":[{"maxLength":20,"type":"string"},{"type":"null"}]}` | optional | Required for CREATE: 10-digit contact mobile. This is contact data, not caller authority. |
 | `manage_booking.input.patientName` | `{"anyOf":[{"maxLength":100,"type":"string"},{"type":"null"}]}` | optional | Required for CREATE: patient name; nonblank, at most 100 characters. |
 | `manage_booking.input.preferredTime` | `{"anyOf":[{"maxLength":5,"pattern":"^\\d{2}:\\d{2}$","type":"string"},{"type":"null"}]}` | optional | Optional CREATE preferred time in HH:MM 24-hour format; a request, not a reserved time. |
 | `manage_booking.input.reasonVerbatim` | `{"anyOf":[{"maxLength":500,"type":"string"},{"type":"null"}]}` | optional | Optional CREATE/CANCEL reason in the caller's original words; forwarded without interpretation. |
-| `manage_booking.input.session` | `{"anyOf":[{"maxLength":40,"type":"string"},{"type":"null"}]}` | optional | Optional CREATE board session label restricting the selected doctor's availability scope. |
+| `manage_booking.input.session` | `{"anyOf":[{"maxLength":40,"type":"string"},{"type":"null"}]}` | optional | Optional CREATE or RESCHEDULE session label; required when differing session decisions remain unresolved. |
 | `manage_booking.input.status` | `{"anyOf":[{"enum":["NOTED","CONFIRMED_BY_DESK","CHANGED","CANCELLED"],"type":"string"},{"type":"null"}]}` | optional | Optional LIST appointment-status filter. |
 | `manage_booking.input.toDate` | `{"anyOf":[{"maxLength":10,"pattern":"^\\d{4}-\\d{2}-\\d{2}$","type":"string"},{"type":"null"}]}` | optional | Optional LIST upper date filter in YYYY-MM-DD format; past dates are accepted. |
-| `manage_booking.input.visitDate` | `{"anyOf":[{"maxLength":10,"pattern":"^\\d{4}-\\d{2}-\\d{2}$","type":"string"},{"type":"null"}]}` | optional | Required for CREATE: visit date in YYYY-MM-DD format, today or later in facility time. |
+| `manage_booking.input.visitDate` | `{"anyOf":[{"maxLength":10,"type":"string"},{"type":"null"}]}` | optional | Required for CREATE: 'today' or YYYY-MM-DD, on or after the facility date. |
 
 ### Output fields
 
@@ -169,9 +167,10 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Existing callback metadata associated with UNKNOWN availability. |
 | `manage_booking.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for a non-success result; optional. |
 | `manage_booking.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Request fields that were invalid or rejected. |
-| `manage_booking.output.nextStep` | `{"enum":["SAY_REQUEST_NOTED","SAY_CHANGED","SAY_CANCELLED","OFFER_CHOICES","SAY_NOT_FOUND","ASK_TO_CORRECT","SAY_UNCERTAIN_AND_TRANSFER","TRANSFER_DESK","ASK_CALLBACK_DETAILS","ASK_CONFIRMATION","SAY_COULD_NOT_RECORD","SAY_COULD_NOT_CHECK"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
-| `manage_booking.output.outcome` | `{"enum":["NOTED","CHANGED","CANCELLED","FOUND","NOT_FOUND","REJECTED","CONFLICT","UNCERTAIN","IDENTITY_UNAVAILABLE","CALLBACK_REQUIRED","CONFIRMATION_REQUIRED","OPERATION_CONTEXT_MISSING","COULD_NOT_RECORD","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category, defined below. |
+| `manage_booking.output.nextStep` | `{"enum":["SAY_REQUEST_NOTED","SAY_CHANGED","SAY_CANCELLED","OFFER_CHOICES","SAY_NOT_FOUND","ASK_TO_CORRECT","SAY_UNCERTAIN_AND_TRANSFER","TRANSFER_DESK","ASK_CALLBACK_DETAILS","ASK_CONFIRMATION","SAY_COULD_NOT_RECORD","SAY_COULD_NOT_CHECK","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_TIME","OFFER_OTHER_SESSION_OR_DATE"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
+| `manage_booking.output.outcome` | `{"enum":["NOTED","CHANGED","CANCELLED","FOUND","NOT_FOUND","REJECTED","CONFLICT","UNCERTAIN","IDENTITY_UNAVAILABLE","CALLBACK_REQUIRED","NOT_AVAILABLE","HANDOFF_REQUIRED","CONFIRMATION_REQUIRED","OPERATION_CONTEXT_MISSING","COULD_NOT_RECORD","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category, defined below. |
 | `manage_booking.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Upstream retry delay in seconds when supplied; optional. |
+| `manage_booking.output.sessions` | `{"items":{"anyOf":[{"$ref":"#/$defs/BoardSessionOut"},{"$ref":"#/$defs/UsualSessionOut"}]},"type":"array"}` | optional | Session alternatives for a booking decision; no reserved slots or capacity. |
 | `manage_booking.output.$defs.AppointmentOut.appointmentId` | `{"type":"string"}` | required | Operational appointment request identifier. |
 | `manage_booking.output.$defs.AppointmentOut.department` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Resolved department object; within AppointmentOut, the operational department identifier. |
 | `manage_booking.output.$defs.AppointmentOut.doctorId` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Operational doctor identifier. |
@@ -179,9 +178,24 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.output.$defs.AppointmentOut.patientName` | `{"type":"string"}` | required | Name on the appointment request; LIST is restricted to the verified caller’s own records. |
 | `manage_booking.output.$defs.AppointmentOut.status` | `{"enum":["NOTED","CONFIRMED_BY_DESK","CHANGED","CANCELLED"],"type":"string"}` | required | Board attendance status or appointment request status, according to its containing type and enum. |
 | `manage_booking.output.$defs.AppointmentOut.visitDate` | `{"type":"string"}` | required | Appointment visit date (YYYY-MM-DD). |
-| `manage_booking.output.$defs.Callback.ask` | `{"type":"string"}` | optional | Existing server-provided callback-name/number text field; retained response compatibility. |
-| `manage_booking.output.$defs.Callback.say` | `{"type":"string"}` | optional | Existing server-provided callback acknowledgement text field; retained response compatibility. |
+| `manage_booking.output.$defs.BoardSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
+| `manage_booking.output.$defs.BoardSessionOut.delayMinutes` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Board delay in minutes when supplied. |
+| `manage_booking.output.$defs.BoardSessionOut.expectedEndTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected end time in facility local time when supplied. |
+| `manage_booking.output.$defs.BoardSessionOut.expectedTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected start time or requested appointment time; not a guaranteed reservation. |
+| `manage_booking.output.$defs.BoardSessionOut.isStale` | `{"type":"boolean"}` | required | Owner-supplied board staleness flag; not an adapter-computed age threshold. |
+| `manage_booking.output.$defs.BoardSessionOut.note` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Owner-authored caller-facing board note, limited to 200 characters. |
+| `manage_booking.output.$defs.BoardSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
+| `manage_booking.output.$defs.BoardSessionOut.session` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Board session label when present. |
+| `manage_booking.output.$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Board attendance status or appointment request status, according to its containing type and enum. |
+| `manage_booking.output.$defs.Callback.reason` | `{"$ref":"#/$defs/Reason"}` | required | Machine-readable reason for this decision; null when no qualification applies. |
 | `manage_booking.output.$defs.Callback.summaryOutcome` | `{"const":"CALLBACK_NOTED","type":"string"}` | optional | CALLBACK_NOTED identifies the callback call-summary category. |
+| `manage_booking.output.$defs.UsualSessionOut.daysOfWeek` | `{"items":{"type":"string"},"type":"array"}` | required | Weekday codes for the usual session. |
+| `manage_booking.output.$defs.UsualSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
+| `manage_booking.output.$defs.UsualSessionOut.end` | `{"type":"string"}` | required | Usual session end time in facility local time. |
+| `manage_booking.output.$defs.UsualSessionOut.label` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Usual schedule session label. |
+| `manage_booking.output.$defs.UsualSessionOut.onRequestedDate` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | required | Whether the usual session includes the requested weekday; null when no date was supplied. |
+| `manage_booking.output.$defs.UsualSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
+| `manage_booking.output.$defs.UsualSessionOut.start` | `{"type":"string"}` | required | Usual session start time in facility local time. |
 
 ### Outcomes and nextStep meanings
 
@@ -197,6 +211,8 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.outcome.UNCERTAIN` | A write may have committed, but its result could not be verified. |
 | `manage_booking.outcome.IDENTITY_UNAVAILABLE` | Verified caller authority is unavailable for appointment lookup or modification. |
 | `manage_booking.outcome.CALLBACK_REQUIRED` | The relevant board is UNKNOWN; an appointment write is not submitted. Callback details belong to a CALLBACK_NOTED summary. |
+| `manage_booking.outcome.NOT_AVAILABLE` | Valid request, but the selected schedule or session is unavailable. |
+| `manage_booking.outcome.HANDOFF_REQUIRED` | Desk assistance is required because the search or time validation is incomplete. |
 | `manage_booking.outcome.CONFIRMATION_REQUIRED` | callerConfirmed is not true for the requested write. |
 | `manage_booking.outcome.OPERATION_CONTEXT_MISSING` | Trusted call or operation identity required for the write is absent or invalid. |
 | `manage_booking.outcome.COULD_NOT_RECORD` | The write could not be recorded; detail identifies the failure when available. |
@@ -214,6 +230,9 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.nextStep.ASK_CONFIRMATION` | The write lacks callerConfirmed=true. |
 | `manage_booking.nextStep.SAY_COULD_NOT_RECORD` | The requested write could not be recorded. |
 | `manage_booking.nextStep.SAY_COULD_NOT_CHECK` | The requested information could not be checked. |
+| `manage_booking.nextStep.ASK_WHICH_SESSION` | Sessions have different decisions; a session selection is required. |
+| `manage_booking.nextStep.OFFER_OTHER_SESSION_OR_TIME` | Other sessions on the requested date are supplied. |
+| `manage_booking.nextStep.OFFER_OTHER_SESSION_OR_DATE` | The requested session or date is unavailable; alternatives may be returned. |
 
 ## search_knowledge
 

@@ -36,19 +36,9 @@ def _choice(d: contract.Department) -> outcomes.DepartmentChoice:
     return outcomes.DepartmentChoice(id=d.id, name=d.name)
 
 
-def session_out(s: policy.SessionDecision, requested: policy.RequestedDate | None):
-    if s.basis == policy.Basis.LIVE_BOARD:
-        return outcomes.BoardSessionOut(session=s.label, status=s.owner_status, decision=s.decision, reason=s.reason,
-                                        expectedTime=s.start, expectedEndTime=s.end, delayMinutes=s.delay_minutes,
-                                        note=s.note, isStale=s.is_stale)
-    return outcomes.UsualSessionOut(label=s.label, daysOfWeek=list(s.days), start=s.start, end=s.end,
-                                    onRequestedDate=requested.weekday in s.days if requested else None,
-                                    decision=s.decision, reason=s.reason)
-
-
 def doctor_out(d: policy.DoctorDecision, requested: policy.RequestedDate | None) -> outcomes.DoctorAvailability:
     doctor, profile = d.facts.doctor, d.facts.profile
-    sessions = [session_out(s, requested) for s in d.sessions]
+    sessions = [outcomes.session_out(s, requested) for s in d.sessions]
     return outcomes.DoctorAvailability(
         doctorId=doctor.id, name=doctor.name, departments=[r.name for r in doctor.departments],
         attendanceType=doctor.attendanceType, gender=doctor.gender,
@@ -143,7 +133,8 @@ class AvailabilityService:
         return outcomes.AvailabilityResult(outcome=result.outcome, nextStep=result.next_step, **base,
             department=_choice(department), basis=basis, doctors=[doctor_out(d, requested) for d in listed],
             bookableFound=found.search.bookable_found, totalMatches=found.total, complete=found.search.complete,
-            detail=result.reason, callback=outcomes.Callback() if result.outcome == "CALLBACK_REQUIRED" else None)
+            detail=result.reason,
+            callback=outcomes.Callback(reason=result.reason) if result.outcome == "CALLBACK_REQUIRED" else None)
 
     @staticmethod
     def _single(d: policy.DoctorDecision, requested: policy.RequestedDate | None,
@@ -162,5 +153,5 @@ class AvailabilityService:
                       for s in d.sessions) if request.session else None
         return outcomes.AvailabilityResult(outcome=outcome, nextStep=step, **base, basis=d.basis,
             doctors=[doctor_out(d, requested)], detail=d.reason, sessionMatched=matched,
-            callback=outcomes.Callback() if outcome == "CALLBACK_REQUIRED" else None,
+            callback=outcomes.Callback(reason=d.reason) if outcome == "CALLBACK_REQUIRED" else None,
             bookableFound=int(d.decision == policy.Decision.APPOINTMENT_REQUEST))

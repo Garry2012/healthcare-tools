@@ -231,15 +231,8 @@
           "Callback": {
             "description": "Callback metadata for UNKNOWN availability; summary outcome is CALLBACK_NOTED.",
             "properties": {
-              "ask": {
-                "default": "May I have your name and a callback number?",
-                "title": "Ask",
-                "type": "string"
-              },
-              "say": {
-                "default": "Someone from the hospital will call you back.",
-                "title": "Say",
-                "type": "string"
+              "reason": {
+                "$ref": "#/$defs/Reason"
               },
               "summaryOutcome": {
                 "const": "CALLBACK_NOTED",
@@ -248,6 +241,9 @@
                 "type": "string"
               }
             },
+            "required": [
+              "reason"
+            ],
             "title": "Callback",
             "type": "object"
           },
@@ -706,7 +702,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require callerConfirmed=true and trusted call/operation headers. CREATE requires patientName, patientMobile, doctorId or departmentId, and visitDate. LIST/CANCEL/RESCHEDULE require verified caller identity. NOTED means a request is recorded, not a confirmed or reserved time. UNCERTAIN means the write may have committed without a verified result. CALLBACK_REQUIRED means the live board is UNKNOWN and the write was not submitted.",
+      "description": "CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require callerConfirmed=true and trusted call/operation headers. CREATE requires patientName, patientMobile, doctorId and visitDate. Department-level appointments are unsupported. LIST/CANCEL/RESCHEDULE require verified caller identity. Today is validated against the live board; future dates against usual hours, attendance not confirmed. ON_CALL requires callback. NOTED means a create or reschedule request is recorded, not a confirmed or reserved time; appointment.status preserves the owner status. UNCERTAIN means the write may have committed without a verified result. CALLBACK_REQUIRED means no write was submitted and callback facts belong in a call summary. NOT_AVAILABLE means the selected session or time is unavailable; TIME_OUTSIDE_SESSION identifies a time outside known bounds. Differing decisions without a session or time selection produce SESSION_REQUIRED and alternatives. A bookable session without an end time supports a session-only request; a specific time produces HANDOFF_REQUIRED/TIME_NOT_VERIFIABLE without a write or callback.",
       "inputSchema": {
         "properties": {
           "action": {
@@ -737,19 +733,6 @@
             "description": "Boolean declaring the caller's approval of this write; true is required for CREATE/CANCEL/RESCHEDULE.",
             "type": "boolean"
           },
-          "departmentId": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "CREATE department identifier when no individual doctor is selected."
-          },
           "doctorId": {
             "anyOf": [
               {
@@ -761,7 +744,7 @@
               }
             ],
             "default": null,
-            "description": "CREATE doctor identifier; doctorId or departmentId is required, but not both."
+            "description": "Required for CREATE: identifier of the selected doctor. Department-level appointments are unsupported."
           },
           "fromDate": {
             "anyOf": [
@@ -795,7 +778,6 @@
             "anyOf": [
               {
                 "maxLength": 10,
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
                 "type": "string"
               },
               {
@@ -803,7 +785,7 @@
               }
             ],
             "default": null,
-            "description": "Required for RESCHEDULE: new date in YYYY-MM-DD format, today or later in facility time."
+            "description": "Required for RESCHEDULE: 'today' or YYYY-MM-DD, on or after the facility date."
           },
           "patientMobile": {
             "anyOf": [
@@ -869,7 +851,7 @@
               }
             ],
             "default": null,
-            "description": "Optional CREATE board session label restricting the selected doctor's availability scope."
+            "description": "Optional CREATE or RESCHEDULE session label; required when differing session decisions remain unresolved."
           },
           "status": {
             "anyOf": [
@@ -907,7 +889,6 @@
             "anyOf": [
               {
                 "maxLength": 10,
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
                 "type": "string"
               },
               {
@@ -915,7 +896,7 @@
               }
             ],
             "default": null,
-            "description": "Required for CREATE: visit date in YYYY-MM-DD format, today or later in facility time."
+            "description": "Required for CREATE: 'today' or YYYY-MM-DD, on or after the facility date."
           }
         },
         "required": [
@@ -997,18 +978,111 @@
             "title": "AppointmentOut",
             "type": "object"
           },
+          "BoardSessionOut": {
+            "properties": {
+              "decision": {
+                "$ref": "#/$defs/Decision"
+              },
+              "delayMinutes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Delayminutes"
+              },
+              "expectedEndTime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expectedendtime"
+              },
+              "expectedTime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expectedtime"
+              },
+              "isStale": {
+                "title": "Isstale",
+                "type": "boolean"
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Note"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Reason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "session": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Session"
+              },
+              "status": {
+                "enum": [
+                  "IN",
+                  "LATE",
+                  "CANCELLED",
+                  "NOT_CONFIRMED",
+                  "UNKNOWN"
+                ],
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "required": [
+              "session",
+              "status",
+              "isStale",
+              "decision"
+            ],
+            "title": "BoardSessionOut",
+            "type": "object"
+          },
           "Callback": {
             "description": "Callback metadata for UNKNOWN availability; summary outcome is CALLBACK_NOTED.",
             "properties": {
-              "ask": {
-                "default": "May I have your name and a callback number?",
-                "title": "Ask",
-                "type": "string"
-              },
-              "say": {
-                "default": "Someone from the hospital will call you back.",
-                "title": "Say",
-                "type": "string"
+              "reason": {
+                "$ref": "#/$defs/Reason"
               },
               "summaryOutcome": {
                 "const": "CALLBACK_NOTED",
@@ -1017,7 +1091,108 @@
                 "type": "string"
               }
             },
+            "required": [
+              "reason"
+            ],
             "title": "Callback",
+            "type": "object"
+          },
+          "Decision": {
+            "enum": [
+              "APPOINTMENT_REQUEST",
+              "CALLBACK_REQUIRED",
+              "NOT_AVAILABLE",
+              "COULD_NOT_CHECK"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "Reason": {
+            "enum": [
+              "ON_CALL_DOCTOR",
+              "BOARD_UNKNOWN",
+              "BOARD_STALE",
+              "BOARD_ENTRY_MISSING",
+              "SESSION_NOT_ON_BOARD",
+              "BOARD_NOT_CONFIRMED",
+              "CANCELLED",
+              "SESSION_ENDED",
+              "NOT_USUAL_DAY",
+              "SESSION_NOT_USUAL",
+              "NO_USUAL_SCHEDULE",
+              "NO_REGULAR_HOURS",
+              "PROFILE_UNAVAILABLE",
+              "TIME_OUTSIDE_SESSION",
+              "SESSION_REQUIRED",
+              "TIME_NOT_VERIFIABLE",
+              "SEARCH_INCOMPLETE"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "UsualSessionOut": {
+            "properties": {
+              "daysOfWeek": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Daysofweek",
+                "type": "array"
+              },
+              "decision": {
+                "$ref": "#/$defs/Decision"
+              },
+              "end": {
+                "title": "End",
+                "type": "string"
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Label"
+              },
+              "onRequestedDate": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Onrequesteddate"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Reason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "start": {
+                "title": "Start",
+                "type": "string"
+              }
+            },
+            "required": [
+              "label",
+              "daysOfWeek",
+              "start",
+              "end",
+              "onRequestedDate",
+              "decision"
+            ],
+            "title": "UsualSessionOut",
             "type": "object"
           }
         },
@@ -1086,7 +1261,10 @@
               "ASK_CALLBACK_DETAILS",
               "ASK_CONFIRMATION",
               "SAY_COULD_NOT_RECORD",
-              "SAY_COULD_NOT_CHECK"
+              "SAY_COULD_NOT_CHECK",
+              "ASK_WHICH_SESSION",
+              "OFFER_OTHER_SESSION_OR_TIME",
+              "OFFER_OTHER_SESSION_OR_DATE"
             ],
             "title": "Nextstep",
             "type": "string"
@@ -1103,6 +1281,8 @@
               "UNCERTAIN",
               "IDENTITY_UNAVAILABLE",
               "CALLBACK_REQUIRED",
+              "NOT_AVAILABLE",
+              "HANDOFF_REQUIRED",
               "CONFIRMATION_REQUIRED",
               "OPERATION_CONTEXT_MISSING",
               "COULD_NOT_RECORD",
@@ -1123,6 +1303,21 @@
             ],
             "default": null,
             "title": "Retryafterseconds"
+          },
+          "sessions": {
+            "default": [],
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BoardSessionOut"
+                },
+                {
+                  "$ref": "#/$defs/UsualSessionOut"
+                }
+              ]
+            },
+            "title": "Sessions",
+            "type": "array"
           }
         },
         "required": [
