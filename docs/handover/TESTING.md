@@ -35,7 +35,9 @@ clock, so a result never depends on when you run it.
   supplied end time expiry in facility time; midnight boundaries; UNKNOWN/NOT_CONFIRMED callback;
   CANCELLED/ended unavailable; failed reads honest; ON_CALL callback. Future availability and
   WORKING_HOURS read profiles only, never boards. Missing date is DATE_REQUIRED for availability,
-  allowed for working hours. Mixed decisions require selection; equal decisions do not.
+  allowed for working hours. Single-doctor on-call/empty hours return full callback metadata; hours-only
+  results have zero bookableFound and a neutral next step. Future unmatched sessions retain same-day
+  alternatives and cannot match another weekday. Mixed decisions require selection; equal decisions do not.
   Sorted department batches stop at the limit, deadline or exhaustion. Failed/unchecked candidates
   mean incomplete; incomplete absence is handoff. Counts include all attendance types.
   No knowledge calls, including with knowledge unconfigured. Directory/profile cached, board not.
@@ -77,3 +79,8 @@ Availability evidence: [revision 6 hand-back](mcp-only/implementation/AVAILABILI
 checks, default 0.30 s deadline, profile-read counts and no future board reads. These in-process stub
 numbers omit Azure, gateway and audio latency. Real-host future benchmarking additionally needs
 `BENCH_FUTURE_DATE`, a future usual working date. No live writes are part of the local reviewer run.
+
+Review-fix evidence: [availability review hand-back](mcp-only/implementation/AVAILABILITY-REVIEW-FIX-HAND-BACK.md).
+Known-name on-call queries prove zero board reads; malformed owner doctor IDs return COULD_NOT_RECORD
+without reschedule writes; smoke accepts WORKING_HOURS or honest HANDOFF_REQUIRED for the hours probe.
+No overnight behavior, G-1 session-choice change or optional M-7 fact expansion is tested as implemented.

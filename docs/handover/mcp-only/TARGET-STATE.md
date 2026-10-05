@@ -80,7 +80,7 @@ Real-host MCP measurements still require declared concurrency, cold/warm token s
 outcomes/failure rates. End-to-end audio measurement belongs to the voice platform. Publishing a tool
 contract or passing fixture tests does not establish application safety or the caller-response target.
 
-## Availability policy — source contract 2026-10-05.1
+## Availability policy — source contract 2026-10-06.1
 
 Revision 6 is specified in [AVAILABILITY-POLICY-PLAN.md](implementation/AVAILABILITY-POLICY-PLAN.md).
 Today uses only live-board facts; future availability and WORKING_HOURS use usual schedules, with no
@@ -89,3 +89,9 @@ choice; CREATE requires doctorId and RESCHEDULE reads it from the caller's appoi
 sessions need no choice; differing decisions do. The owner board status remains unchanged alongside
 the MCP decision. Callback metadata contains no spoken script. No service ownership, secret, gateway
 header or authentication rule changes. Deployment and gateway/voice schema refresh require separate approval.
+
+The 6 October review corrections are recorded in DECISIONS A13. Single-doctor WORKING_HOURS returns
+full callback metadata for on-call or empty schedules; ordinary hours use PRESENT_WORKING_HOURS.
+All hours-only results have bookableFound=0; department hours retain on-call facts within the cap.
+Future unmatched sessions preserve usual sessions on the requested day as alternatives. Sessions
+crossing midnight are unsupported; mixed-session choice behavior remains unchanged pending G-1.

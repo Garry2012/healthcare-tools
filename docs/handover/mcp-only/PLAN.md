@@ -2,7 +2,7 @@
 
 Status: source migration implemented; current contract updated 4 October 2026. Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
 
-Availability decisions are superseded by the approved [revision 6 policy](implementation/AVAILABILITY-POLICY-PLAN.md) and schema `2026-10-05.1`; deployment is separate.
+Availability decisions are superseded by the approved [revision 6 policy](implementation/AVAILABILITY-POLICY-PLAN.md) with the 6 October corrections recorded in DECISIONS.md A13 and schema `2026-10-06.1`; deployment is separate.
 
 Updated 30 September 2026 from the user's decisions, the [published Manoj contract](https://healthcare-contract-docs.icytree-6543aaa9.centralindia.azurecontainerapps.io/openapi.yaml), and the [Opus review](OPUS-REVIEW.md). This is the migration plan, including the actionable review recommendations and the user's callback-only UNKNOWN policy. It supersedes earlier ownership proposals, slot requirements and the direct platform-to-REST summary path. Retirement, rollback and acceptance requirements are included here; the historical investigation is source evidence, not an additional implementation checklist. This is an implementation plan, not a claim of verified production readiness.
 
@@ -71,9 +71,11 @@ requirements; conversation design and tool selection belong to the calling appli
    requires a doctor; RESCHEDULE uses the verified appointment's doctor. Both apply the shared policy
    and return NOTED, not confirmed. Specific time in a bookable session with unknown end requires
    handoff without a write. LIST/CANCEL, confirmation, trusted IDs and uncertainty are unchanged.
-6. Department results list only bookable doctors when any exist, capped at 3 in name order. Otherwise
+6. Department AVAILABILITY results list only bookable doctors when any exist, capped at 3 in name order. Otherwise
    callback/unavailable facts are capped; incomplete absence gives handoff. totalMatches counts the
-   directory, bookableFound counts matches evaluated, complete means all evaluated successfully.
+   directory, bookableFound counts bookable matches evaluated, complete means all evaluated successfully.
+   WORKING_HOURS reports zero bookableFound and keeps on-call facts within its capped list; a single
+   on-call/empty schedule uses full callback metadata, while normal hours use PRESENT_WORKING_HOURS.
 
 Callback metadata contains reason and summaryOutcome, no spoken wording or separate callback task.
 Failed reads remain failures. No capacity, slots or clinical ranking is inferred. Facility timezone

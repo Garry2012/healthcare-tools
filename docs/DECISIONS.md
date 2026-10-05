@@ -134,3 +134,26 @@ trusted identity, operation keys, uncertainty, 401-only refresh and summary beha
 Summary text can contain callback name/date/session/reason, but these details are not enforced;
 summary quality needs acceptance when the voice agent is integrated. Live latency and output-schema
 propagation are separate post-deploy acceptance, not established by local fixtures.
+
+## A13 — Availability review corrections (6 October 2026)
+
+Future sessions are classified by their own weekdays, independently of a failed requested-session
+selection. The doctor-level refusal stays SESSION_NOT_USUAL; same-day sessions remain offerable
+alternatives, other-day sessions are NOT_USUAL_DAY. Booking preserves that doctor-level refusal.
+Session matching for future dates considers the requested weekday, not merely a matching label.
+
+Garima reconfirmed that ON_CALL always means callback, including single-doctor WORKING_HOURS.
+Single-doctor empty schedules also use the full callback result. Normal hours return a neutral
+PRESENT_WORKING_HOURS next step; all WORKING_HOURS results have bookableFound=0. Internal search matches
+still stop bounded schedule batches. Department hours keep on-call doctors as facts within the cap.
+The policy selects eligible result candidates; ranking only orders/caps them. No second policy or
+lookup path is introduced. An already identified on-call doctor's name query needs no board read.
+
+Schema 2026-10-06.1 adds PRESENT_WORKING_HOURS and removes the unused NO_REGULAR_HOURS reason in favor
+of ON_CALL_DOCTOR. Inputs and credentials are unchanged. A gateway already on 2026-10-05.1 therefore
+needs explicit discovery refresh and a manual output-schema comparison; input drift cannot prove it.
+
+Known limitation, confirmed by Garima: **sessions crossing midnight are unsupported**. This pass
+adds no overnight interpretation or defensive time rule. G-1 (whether cancelled/ended sessions
+should force a choice) remains pending; the approved mixed-decision rule is unchanged. Optional M-7
+(showing other board facts when a named today session is absent) is not implemented without approval.

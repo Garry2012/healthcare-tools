@@ -17,7 +17,8 @@ The application before this work had three MCP tools, our REST backend and Postg
 ## Current integration contract
 
 Availability: [revision 6 plan](implementation/AVAILABILITY-POLICY-PLAN.md) and
-[hand-back](implementation/AVAILABILITY-POLICY-HAND-BACK.md). Source schema 2026-10-05.1 is not yet deployed.
+[hand-back](implementation/AVAILABILITY-POLICY-HAND-BACK.md). Source schema 2026-10-06.1 is not yet deployed; review corrections and evidence are in
+[AVAILABILITY-REVIEW-FIX-HAND-BACK.md](implementation/AVAILABILITY-REVIEW-FIX-HAND-BACK.md).
 Historical migration status below is dated evidence, not today's deployment inventory.
 
 [VOICE-TEAM.md](../VOICE-TEAM.md) defines the four MCP tools and their interface. Voice prompts,
