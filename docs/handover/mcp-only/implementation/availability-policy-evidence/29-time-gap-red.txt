@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_time_between_known_windows_is_unavailable_not_callback __________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...i/v1/availability?date=today&doctorId=doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x108bb63c0>)
+
+    async def test_time_between_known_windows_is_unavailable_not_callback(h):
+        h.ops_state.set_board("2026-10-01", [
+            {"doctorId": "doc_garima", "session": "Morning", "status": "UNKNOWN", "expectedTime": "09:00",
+             "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+            {"doctorId": "doc_garima", "session": "Evening", "status": "IN", "expectedTime": "17:00",
+             "expectedEndTime": "20:00", "updatedMinutesAgo": 1}])
+        result = await run(h, **{**CREATE, "preferredTime": "14:00"})
+>       assert (result.outcome, result.detail) == ("NOT_AVAILABLE", "TIME_OUTSIDE_SESSION")
+E       AssertionError: assert ('CALLBACK_RE...OARD_UNKNOWN') == ('NOT_AVAILAB...SIDE_SESSION')
+E         
+E         At index 0 diff: 'CALLBACK_REQUIRED' != 'NOT_AVAILABLE'
+E         Use -v to get more diff
+
+tests/test_booking.py:141: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_booking.py::test_time_between_known_windows_is_unavailable_not_callback
+1 failed, 79 deselected in 0.24s

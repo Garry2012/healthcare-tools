@@ -131,6 +131,17 @@ async def test_selected_cancelled_session_offers_other_bookable_sessions(h):
     assert not sent(h, "/appointments")
 
 
+async def test_time_between_known_windows_is_unavailable_not_callback(h):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "UNKNOWN", "expectedTime": "09:00",
+         "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": "Evening", "status": "IN", "expectedTime": "17:00",
+         "expectedEndTime": "20:00", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "preferredTime": "14:00"})
+    assert (result.outcome, result.detail) == ("NOT_AVAILABLE", "TIME_OUTSIDE_SESSION")
+    assert [s.session for s in result.sessions] == ["Evening"] and not sent(h, "/appointments")
+
+
 @pytest.mark.parametrize("missing", ["call_id", "operation_id"])
 async def test_writes_refuse_without_trusted_call_and_operation_context(h, missing):
     ctx = h.ctx(call_id=None, operation_id="op-1") if missing == "call_id" else h.ctx(operation_id=None)

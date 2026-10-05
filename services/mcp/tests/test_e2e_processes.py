@@ -75,6 +75,7 @@ async def test_journey_and_summary_through_real_transport(processes):
     async with Client(StreamableHttpTransport(f"{base}/mcp/", headers=headers)) as c:
         today = await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "today"})
         assert today.structured_content["outcome"] in ("AVAILABILITY", "CALLBACK_REQUIRED", "NOT_AVAILABLE")
+        before_future = len(httpx.get(f"{processes['ops']}/__stub/state").json()["requests"])
         noted = (await c.call_tool("manage_booking", {
             "action": "CREATE", "patientName": "E2E Patient", "patientMobile": "9000000101", "doctorId": "doc_garima",
             "visitDate": "2099-01-05", "callerConfirmed": True})).structured_content
@@ -97,5 +98,6 @@ async def test_journey_and_summary_through_real_transport(processes):
             "summaryText": "E2E journey."})).structured_content
         assert again == {"outcome": "ALREADY_SAVED"}
     state = httpx.get(f"{processes['ops']}/__stub/state").json()
-    assert not any(r["path"] == "/availability" and r["method"] == "POST" for r in state["requests"])
+    assert not any(r["path"] == "/availability" and r["method"] == "GET"
+                   for r in state["requests"][before_future:])
     assert len(state["appointments"]) == 1 and len(state["summaries"]) == 1

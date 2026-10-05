@@ -281,7 +281,9 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
             sessions = matched + tuple(s for s in sessions if not normalised(s.label or "") and s not in matched)
         else:
             unbounded = tuple(s for s in sessions if s.start is None or s.end is None)
-            sessions = unbounded or sessions
+            if not unbounded:
+                return NotAvailable(Reason.TIME_OUTSIDE_SESSION, alternatives)
+            sessions = unbounded
     if sessions:
         kinds = {s.decision for s in sessions}
         if len(kinds) > 1 and not session and not preferred_time:
