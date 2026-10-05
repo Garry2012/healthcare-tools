@@ -1,0 +1,22 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_today_on_call_by_name_needs_no_board_read ________________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...vailability?date=today&doctorId=doc_vikram_desai')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c515fd0>)
+
+    async def test_today_on_call_by_name_needs_no_board_read(h):
+        h.ops_state.fail_next.append(("/availability", 500, {}))
+        result = await ask(h, doctorName="Vikram", date="today")
+>       assert (result.outcome, result.detail) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
+E       AssertionError: assert ('COULD_NOT_C..._UNAVAILABLE') == ('CALLBACK_RE..._CALL_DOCTOR')
+E         
+E         At index 0 diff: 'COULD_NOT_CHECK' != 'CALLBACK_REQUIRED'
+E         Use -v to get more diff
+
+tests/test_availability.py:521: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.ops_client:ops_client.py:332 ops_upstream_error
+WARNING  frontdesk_mcp.availability:availability.py:81 availability_could_not_check
+=========================== short test summary info ============================
+FAILED tests/test_availability.py::test_today_on_call_by_name_needs_no_board_read
+1 failed, 70 deselected in 0.24s

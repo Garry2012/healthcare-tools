@@ -513,3 +513,11 @@ async def test_working_hours_department_keeps_on_call_facts_without_bookable_cou
     oncall_result = next(d for d in result.doctors if d.doctorId == "doc_vikram_desai")
     assert oncall_result.reason == "ON_CALL_DOCTOR" and oncall_result.usualSessions == []
     assert "/availability" not in h.ops_paths() and "/doctors/doc_vikram_desai" not in h.ops_paths()
+
+
+async def test_today_on_call_by_name_needs_no_board_read(h):
+    h.ops_state.fail_next.append(("/availability", 500, {}))
+    result = await ask(h, doctorName="Vikram", date="today")
+    assert (result.outcome, result.detail) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
+    assert result.callback.model_dump() == {"reason": "ON_CALL_DOCTOR", "summaryOutcome": "CALLBACK_NOTED"}
+    assert h.ops_paths() == ["/doctors"]

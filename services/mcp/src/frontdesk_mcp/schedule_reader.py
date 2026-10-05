@@ -70,6 +70,8 @@ class ScheduleReader:
 
     async def doctor(self, doctor_id: str, requested: policy.RequestedDate | None, purpose: policy.Purpose,
                      deadline: Deadline, summary: contract.DoctorSummary | None = None) -> policy.DoctorFacts:
+        if summary is not None and summary.attendanceType == "ON_CALL":
+            return policy.DoctorFacts(summary)
         today = purpose == policy.Purpose.AVAILABILITY and requested.kind == policy.DateKind.TODAY
         if today:
             if summary is None:
@@ -82,8 +84,6 @@ class ScheduleReader:
                 return policy.DoctorFacts(profile, profile, tuple(e for e in board.items if e.doctorId == doctor_id))
             board = await self.board(deadline, doctor_id=doctor_id)
             return policy.DoctorFacts(summary, entries=tuple(e for e in board.items if e.doctorId == doctor_id))
-        if summary is not None and summary.attendanceType == "ON_CALL":
-            return policy.DoctorFacts(summary)
         profile = await self.profile(doctor_id, deadline)
         return policy.DoctorFacts(profile, profile)
 

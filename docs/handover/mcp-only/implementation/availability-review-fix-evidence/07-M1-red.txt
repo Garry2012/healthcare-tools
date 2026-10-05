@@ -1,0 +1,155 @@
+FFFFFFF.FF.                                                              [100%]
+=================================== FAILURES ===================================
+______ test_working_hours_need_no_date_and_never_read_live_board[target0] ______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma... 'http://ops-stub.test/api/v1/doctors/doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x1099d23c0>)
+target = {'doctorId': 'doc_garima'}
+
+    @pytest.mark.parametrize("target", [{"doctorId": "doc_garima"}, {"doctorName": "garima"},
+                                        {"departmentId": "dept_genmed"}])
+    async def test_working_hours_need_no_date_and_never_read_live_board(h, target):
+        result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+        assert result.outcome == "WORKING_HOURS" and result.basis == "USUAL_SCHEDULE"
+>       assert result.bookableFound == 0
+E       AssertionError: assert 1 == 0
+E        +  where 1 = AvailabilityResult(outcome='WORKING_HOURS', nextStep='OFFER_APPOINTMENT_REQUEST', facilityToday='2026-10-01', requeste...asis=<Basis.USUAL_SCHEDULE: 'USUAL_SCHEDULE'>, sessionMatched=None, callback=None, detail=None, retryAfterSeconds=None).bookableFound
+
+tests/test_availability.py:249: AssertionError
+______ test_working_hours_need_no_date_and_never_read_live_board[target1] ______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma... 'http://ops-stub.test/api/v1/doctors/doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109fe8050>)
+target = {'doctorName': 'garima'}
+
+    @pytest.mark.parametrize("target", [{"doctorId": "doc_garima"}, {"doctorName": "garima"},
+                                        {"departmentId": "dept_genmed"}])
+    async def test_working_hours_need_no_date_and_never_read_live_board(h, target):
+        result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+        assert result.outcome == "WORKING_HOURS" and result.basis == "USUAL_SCHEDULE"
+>       assert result.bookableFound == 0
+E       AssertionError: assert 1 == 0
+E        +  where 1 = AvailabilityResult(outcome='WORKING_HOURS', nextStep='OFFER_APPOINTMENT_REQUEST', facilityToday='2026-10-01', requeste...asis=<Basis.USUAL_SCHEDULE: 'USUAL_SCHEDULE'>, sessionMatched=None, callback=None, detail=None, retryAfterSeconds=None).bookableFound
+
+tests/test_availability.py:249: AssertionError
+______ test_working_hours_need_no_date_and_never_read_live_board[target2] ______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma... 'http://ops-stub.test/api/v1/doctors/doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109fe9f90>)
+target = {'departmentId': 'dept_genmed'}
+
+    @pytest.mark.parametrize("target", [{"doctorId": "doc_garima"}, {"doctorName": "garima"},
+                                        {"departmentId": "dept_genmed"}])
+    async def test_working_hours_need_no_date_and_never_read_live_board(h, target):
+        result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+        assert result.outcome == "WORKING_HOURS" and result.basis == "USUAL_SCHEDULE"
+>       assert result.bookableFound == 0
+E       AssertionError: assert 2 == 0
+E        +  where 2 = AvailabilityResult(outcome='WORKING_HOURS', nextStep='ASK_WHICH_DOCTOR', facilityToday='2026-10-01', requestedDate=Non...asis=<Basis.USUAL_SCHEDULE: 'USUAL_SCHEDULE'>, sessionMatched=None, callback=None, detail=None, retryAfterSeconds=None).bookableFound
+
+tests/test_availability.py:249: AssertionError
+______ test_working_hours_on_call_uses_the_full_callback_result[target0] _______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...://ops-stub.test/api/v1/doctors/doc_vikram_desai')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109fd9480>)
+target = {'doctorId': 'doc_vikram_desai'}
+
+    @pytest.mark.parametrize("target", [{"doctorId": "doc_vikram_desai"}, {"doctorName": "Vikram"}])
+    async def test_working_hours_on_call_uses_the_full_callback_result(h, target):
+        result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+>       assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+E       AssertionError: assert ('WORKING_HOURS' == 'CALLBACK_REQUIRED'
+E         
+E         - CALLBACK_REQUIRED
+E         + WORKING_HOURS)
+
+tests/test_availability.py:266: AssertionError
+______ test_working_hours_on_call_uses_the_full_callback_result[target1] _______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...t/api/v1/doctors?query=Vikram&limit=100&offset=0')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109fda520>)
+target = {'doctorName': 'Vikram'}
+
+    @pytest.mark.parametrize("target", [{"doctorId": "doc_vikram_desai"}, {"doctorName": "Vikram"}])
+    async def test_working_hours_on_call_uses_the_full_callback_result(h, target):
+        result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+>       assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+E       AssertionError: assert ('WORKING_HOURS' == 'CALLBACK_REQUIRED'
+E         
+E         - CALLBACK_REQUIRED
+E         + WORKING_HOURS)
+
+tests/test_availability.py:266: AssertionError
+_______ test_working_hours_empty_schedule_uses_the_full_callback_result ________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma... 'http://ops-stub.test/api/v1/doctors/doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109c157f0>)
+
+    async def test_working_hours_empty_schedule_uses_the_full_callback_result(h):
+        next(d for d in h.ops_state.data["doctors"] if d["id"] == "doc_garima")["usualSchedule"] = []
+        result = await ask(h, purpose="WORKING_HOURS", doctorId="doc_garima", date=None)
+>       assert (result.outcome, result.nextStep) == ("CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS")
+E       AssertionError: assert ('WORKING_HOU...BACK_DETAILS') == ('CALLBACK_RE...BACK_DETAILS')
+E         
+E         At index 0 diff: 'WORKING_HOURS' != 'CALLBACK_REQUIRED'
+E         Use -v to get more diff
+
+tests/test_availability.py:500: AssertionError
+___ test_working_hours_department_keeps_on_call_facts_without_bookable_count ___
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma... 'http://ops-stub.test/api/v1/doctors/doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109b03020>)
+
+    async def test_working_hours_department_keeps_on_call_facts_without_bookable_count(h):
+        oncall = next(d for d in h.ops_state.data["doctors"] if d["id"] == "doc_vikram_desai")
+        oncall["departments"] = [{"id": "dept_genmed", "name": "General Medicine"}]
+        result = await ask(h, purpose="WORKING_HOURS", departmentId="dept_genmed", date=None)
+        assert (result.outcome, result.nextStep) == ("WORKING_HOURS", "ASK_WHICH_DOCTOR")
+>       assert {d.doctorId for d in result.doctors} == {"doc_garima", "doc_arjun_menon", "doc_vikram_desai"}
+E       AssertionError: assert {'doc_arjun_m... 'doc_garima'} == {'doc_arjun_m...vikram_desai'}
+E         
+E         Extra items in the right set:
+E         'doc_vikram_desai'
+E         Use -v to get more diff
+
+tests/test_availability.py:511: AssertionError
+___________ test_on_call_is_callback_even_when_board_says_in[today] ____________
+
+day = 'today'
+
+    @pytest.mark.parametrize("day", ["today", "2026-10-05"])
+    def test_on_call_is_callback_even_when_board_says_in(day):
+        p = policy()
+        result = decide(facts(attendance="ON_CALL"), date=day)
+        assert (result.decision, result.reason) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
+        assert isinstance(p.decide_booking(result, session=None, preferred_time=None), p.Callback)
+        hours = p.working_hours(facts(attendance="ON_CALL"), None)
+>       assert hours.reason == "ON_CALL_DOCTOR" and not hours.sessions
+E       AssertionError: assert (<Reason.NO_RE...EGULAR_HOURS'> == 'ON_CALL_DOCTOR'
+E         
+E         - ON_CALL_DOCTOR
+E         + NO_REGULAR_HOURS)
+
+tests/test_availability_policy.py:111: AssertionError
+_________ test_on_call_is_callback_even_when_board_says_in[2026-10-05] _________
+
+day = '2026-10-05'
+
+    @pytest.mark.parametrize("day", ["today", "2026-10-05"])
+    def test_on_call_is_callback_even_when_board_says_in(day):
+        p = policy()
+        result = decide(facts(attendance="ON_CALL"), date=day)
+        assert (result.decision, result.reason) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
+        assert isinstance(p.decide_booking(result, session=None, preferred_time=None), p.Callback)
+        hours = p.working_hours(facts(attendance="ON_CALL"), None)
+>       assert hours.reason == "ON_CALL_DOCTOR" and not hours.sessions
+E       AssertionError: assert (<Reason.NO_RE...EGULAR_HOURS'> == 'ON_CALL_DOCTOR'
+E         
+E         - ON_CALL_DOCTOR
+E         + NO_REGULAR_HOURS)
+
+tests/test_availability_policy.py:111: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_availability.py::test_working_hours_need_no_date_and_never_read_live_board[target0]
+FAILED tests/test_availability.py::test_working_hours_need_no_date_and_never_read_live_board[target1]
+FAILED tests/test_availability.py::test_working_hours_need_no_date_and_never_read_live_board[target2]
+FAILED tests/test_availability.py::test_working_hours_on_call_uses_the_full_callback_result[target0]
+FAILED tests/test_availability.py::test_working_hours_on_call_uses_the_full_callback_result[target1]
+FAILED tests/test_availability.py::test_working_hours_empty_schedule_uses_the_full_callback_result
+FAILED tests/test_availability.py::test_working_hours_department_keeps_on_call_facts_without_bookable_count
+FAILED tests/test_availability_policy.py::test_on_call_is_callback_even_when_board_says_in[today]
+FAILED tests/test_availability_policy.py::test_on_call_is_callback_even_when_board_says_in[2026-10-05]
+9 failed, 2 passed, 92 deselected in 0.37s

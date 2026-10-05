@@ -1,0 +1,14 @@
+cd services/mcp && uv run ruff check . ../../deploy && uv run pytest tests -q -m "not e2e and not external"
+E501 Line too long (148 > 120)
+   --> src/frontdesk_mcp/outcomes.py:125:121
+    |
+123 | …oss all attendance types and decisions.")  # noqa: N815
+124 | …
+125 | …mong those checked; may exceed the capped list. Always zero for WORKING_HOURS.")  # noqa: N815
+    |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+126 | …
+127 | …
+    |
+
+Found 1 error.
+make: *** [test-fast] Error 1
