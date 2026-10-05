@@ -360,11 +360,15 @@ to voice integration. No new headers or credentials are introduced by this polic
 ## Changes in schema 2026-10-06.1
 
 - Working hours for a single on-call doctor or empty schedule uses the full CALLBACK_REQUIRED result,
-  including reason and summaryOutcome. ON_CALL_DOCTOR replaces the unused NO_REGULAR_HOURS reason.
+  including reason and summaryOutcome. ON_CALL_DOCTOR replaces NO_REGULAR_HOURS (emitted in schema
+  2026-10-05.1 for on-call working hours).
 - A single doctor with hours returns WORKING_HOURS/PRESENT_WORKING_HOURS, without an appointment offer.
   bookableFound is always zero for WORKING_HOURS, including department queries; schedule matches still
   bound the profile search. Department hours include on-call facts within the existing capped list.
 - Future-session mismatches preserve same-day alternatives; sessionMatched checks the requested weekday.
+- When the doctor is unavailable for the whole requested scope, booking reports the doctor's own reason
+  (CANCELLED, SESSION_ENDED, NOT_USUAL_DAY or SESSION_NOT_USUAL), even when a preferred time was given;
+  TIME_OUTSIDE_SESSION applies only when the doctor has bookable sessions and the chosen time falls outside them.
 - The existing mixed-session choice rule remains unchanged pending a separate decision (G-1).
 
 These source changes are not deployed. Refresh discovery and compare output schemas through the voice

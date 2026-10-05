@@ -72,6 +72,20 @@ async def test_unbookable_today_statuses_never_write(h, status, want, reason):
     assert (result.outcome, result.detail) == (want, reason) and not sent(h, "/appointments")
 
 
+@pytest.mark.parametrize("status,reason", [("IN", "SESSION_ENDED"), ("CANCELLED", "CANCELLED")])
+async def test_create_preferred_time_keeps_whole_scope_reason_without_a_write(h, status, reason):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Early", "status": status, "expectedTime": "06:00",
+         "expectedEndTime": "07:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": "Morning", "status": status, "expectedTime": "08:00",
+         "expectedEndTime": "09:00", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "preferredTime": "14:00"})
+    assert (result.outcome, result.detail, result.nextStep) == (
+        "NOT_AVAILABLE", reason, "OFFER_OTHER_SESSION_OR_DATE")
+    assert result.sessions == [] and result.callback is None
+    assert sent(h, "/appointments") == []
+
+
 @pytest.mark.parametrize("time", ["08:00", "09:30", "23:00"])
 async def test_bookable_session_without_end_and_specific_time_hands_off(h, time):
     h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "session": "Morning", "status": "IN",

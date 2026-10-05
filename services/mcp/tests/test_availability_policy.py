@@ -135,6 +135,21 @@ def test_outside_a_known_window_never_writes():
     assert isinstance(result, p.NotAvailable) and result.reason == "TIME_OUTSIDE_SESSION"
 
 
+@pytest.mark.parametrize("status,hour,doctor_decision,reason", [
+    ("IN", 20, "NOT_AVAILABLE", "SESSION_ENDED"),
+    ("CANCELLED", 10, "NOT_AVAILABLE", "CANCELLED"),
+    ("IN", 10, "APPOINTMENT_REQUEST", "TIME_OUTSIDE_SESSION"),
+])
+def test_preferred_time_preserves_whole_scope_unavailability_reason(status, hour, doctor_decision, reason):
+    p = policy()
+    doctor = decide(facts(statuses=(status, status), end="19:00"), now=NOW.replace(hour=hour))
+    assert doctor.decision == doctor_decision
+    assert len(doctor.sessions) == 2
+    assert all(s.decision == doctor_decision for s in doctor.sessions)
+    result = p.decide_booking(doctor, session=None, preferred_time="21:00")
+    assert isinstance(result, p.NotAvailable) and result.reason == reason
+
+
 def test_department_rollup_and_counts_do_not_list_callback_as_bookable():
     p = policy()
     good, callback = decide(facts()), decide(facts(attendance="ON_CALL"))

@@ -142,6 +142,8 @@ selection. The doctor-level refusal stays SESSION_NOT_USUAL; same-day sessions r
 alternatives, other-day sessions are NOT_USUAL_DAY. Booking preserves that doctor-level refusal.
 Session matching for future dates considers the requested weekday, not merely a matching label.
 
+When the doctor is unavailable for the whole requested scope, booking reports the doctor's own reason (CANCELLED, SESSION_ENDED, NOT_USUAL_DAY or SESSION_NOT_USUAL), even when a preferred time was given; TIME_OUTSIDE_SESSION applies only when the doctor has bookable sessions and the chosen time falls outside them.
+
 Garima reconfirmed that ON_CALL always means callback, including single-doctor WORKING_HOURS.
 Single-doctor empty schedules also use the full callback result. Normal hours return a neutral
 PRESENT_WORKING_HOURS next step; all WORKING_HOURS results have bookableFound=0. Internal search matches
@@ -149,8 +151,9 @@ still stop bounded schedule batches. Department hours keep on-call doctors as fa
 The policy selects eligible result candidates; ranking only orders/caps them. No second policy or
 lookup path is introduced. An already identified on-call doctor's name query needs no board read.
 
-Schema 2026-10-06.1 adds PRESENT_WORKING_HOURS and removes the unused NO_REGULAR_HOURS reason in favor
-of ON_CALL_DOCTOR. Inputs and credentials are unchanged. A gateway already on 2026-10-05.1 therefore
+Schema 2026-10-06.1 adds PRESENT_WORKING_HOURS and replaces NO_REGULAR_HOURS (emitted in schema
+2026-10-05.1 for on-call working hours) with ON_CALL_DOCTOR. Inputs and credentials are unchanged.
+A gateway already on 2026-10-05.1 therefore
 needs explicit discovery refresh and a manual output-schema comparison; input drift cannot prove it.
 
 Known limitation, confirmed by Garima: **sessions crossing midnight are unsupported**. This pass
