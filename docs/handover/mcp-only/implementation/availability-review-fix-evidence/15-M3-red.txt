@@ -1,0 +1,106 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_reschedule_malformed_owner_doctor_id_cannot_escape_as_protocol_error[../departments] _
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...-stub.test/api/v1/appointments?mobile=9000000101')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109bb63c0>)
+doctor_id = '../departments'
+
+    @pytest.mark.parametrize("doctor_id", ["../departments", "invalid/id"])
+    async def test_reschedule_malformed_owner_doctor_id_cannot_escape_as_protocol_error(h, doctor_id):
+        created = await run(h, **CREATE)
+        appointment_id = created.appointment.appointmentId
+        h.ops_state.appointments[appointment_id]["doctorId"] = doctor_id
+        h.requests.clear()
+>       result = await run(h, h.ctx(operation_id="move-1"), action="RESCHEDULE", appointmentId=appointment_id,
+                           newVisitDate="2026-10-05", callerConfirmed=True)
+
+tests/test_booking.py:674: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_booking.py:35: in run
+    return await service(h).manage(ctx or h.ctx(operation_id="op-1"), booking.BookingRequest(**args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/booking.py:106: in manage
+    return await self._change(ctx, request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/booking.py:263: in _change
+    if blocked := await self._reschedule_gate(mobile, request, requested, new_time, deadline):
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/booking.py:308: in _reschedule_gate
+    return await self._schedule_gate(current.doctorId, requested, request.session, new_time, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/booking.py:212: in _schedule_gate
+    facts = await self.reader.doctor(doctor_id, requested, policy.Purpose.AVAILABILITY, deadline)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/schedule_reader.py:87: in doctor
+    profile = await self.profile(doctor_id, deadline)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/schedule_reader.py:51: in profile
+    cached = await self.ops.get_doctor(doctor_id, deadline)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/ops_client.py:368: in get_doctor
+    path = f"/doctors/{_path_id(doctor_id)}"
+                       ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '../departments'
+
+    def _path_id(value: str) -> str:
+        if not _ID.fullmatch(value or ""):
+>           raise InvalidIdentifier("identifier must be one returned by the API")
+E           frontdesk_mcp.ops_client.InvalidIdentifier: identifier must be one returned by the API
+
+src/frontdesk_mcp/ops_client.py:66: InvalidIdentifier
+_ test_reschedule_malformed_owner_doctor_id_cannot_escape_as_protocol_error[invalid/id] _
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...-stub.test/api/v1/appointments?mobile=9000000101')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109dacc30>)
+doctor_id = 'invalid/id'
+
+    @pytest.mark.parametrize("doctor_id", ["../departments", "invalid/id"])
+    async def test_reschedule_malformed_owner_doctor_id_cannot_escape_as_protocol_error(h, doctor_id):
+        created = await run(h, **CREATE)
+        appointment_id = created.appointment.appointmentId
+        h.ops_state.appointments[appointment_id]["doctorId"] = doctor_id
+        h.requests.clear()
+>       result = await run(h, h.ctx(operation_id="move-1"), action="RESCHEDULE", appointmentId=appointment_id,
+                           newVisitDate="2026-10-05", callerConfirmed=True)
+
+tests/test_booking.py:674: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_booking.py:35: in run
+    return await service(h).manage(ctx or h.ctx(operation_id="op-1"), booking.BookingRequest(**args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/booking.py:106: in manage
+    return await self._change(ctx, request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/booking.py:263: in _change
+    if blocked := await self._reschedule_gate(mobile, request, requested, new_time, deadline):
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/booking.py:308: in _reschedule_gate
+    return await self._schedule_gate(current.doctorId, requested, request.session, new_time, deadline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/booking.py:212: in _schedule_gate
+    facts = await self.reader.doctor(doctor_id, requested, policy.Purpose.AVAILABILITY, deadline)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/schedule_reader.py:87: in doctor
+    profile = await self.profile(doctor_id, deadline)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/schedule_reader.py:51: in profile
+    cached = await self.ops.get_doctor(doctor_id, deadline)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/frontdesk_mcp/ops_client.py:368: in get_doctor
+    path = f"/doctors/{_path_id(doctor_id)}"
+                       ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = 'invalid/id'
+
+    def _path_id(value: str) -> str:
+        if not _ID.fullmatch(value or ""):
+>           raise InvalidIdentifier("identifier must be one returned by the API")
+E           frontdesk_mcp.ops_client.InvalidIdentifier: identifier must be one returned by the API
+
+src/frontdesk_mcp/ops_client.py:66: InvalidIdentifier
+=========================== short test summary info ============================
+FAILED tests/test_booking.py::test_reschedule_malformed_owner_doctor_id_cannot_escape_as_protocol_error[../departments]
+FAILED tests/test_booking.py::test_reschedule_malformed_owner_doctor_id_cannot_escape_as_protocol_error[invalid/id]
+2 failed, 80 deselected in 0.32s

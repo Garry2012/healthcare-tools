@@ -210,7 +210,7 @@ class BookingService:
                              preferred: str | None, deadline: Deadline) -> outcomes.BookingResult | None:
         try:
             facts = await self.reader.doctor(doctor_id, requested, policy.Purpose.AVAILABILITY, deadline)
-        except (Unavailable, Malformed) as exc:
+        except (Unavailable, Malformed, InvalidIdentifier) as exc:
             retry = exc.retry_after if isinstance(exc, Unavailable) else None
             detail = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else (
                 "BOARD_UNAVAILABLE" if getattr(exc, "stage", None) == "board" else "PROFILE_UNAVAILABLE")

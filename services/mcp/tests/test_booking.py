@@ -11,7 +11,6 @@ import json
 import pytest
 
 from frontdesk_mcp import booking
-from frontdesk_mcp.ops_client import InvalidIdentifier  # noqa: F401 - documents the guarded boundary
 
 from . import harness
 
@@ -663,3 +662,18 @@ async def test_create_propagates_unexpected_profile_failure_without_writing(make
     finally:
         await services.aclose()
         await h.aclose()
+
+
+@pytest.mark.parametrize("doctor_id", ["../departments", "invalid/id"])
+async def test_reschedule_malformed_owner_doctor_id_cannot_escape_as_protocol_error(h, doctor_id):
+    created = await run(h, **CREATE)
+    appointment_id = created.appointment.appointmentId
+    h.ops_state.appointments[appointment_id]["doctorId"] = doctor_id
+    h.requests.clear()
+    result = await run(h, h.ctx(operation_id="move-1"), action="RESCHEDULE", appointmentId=appointment_id,
+                       newVisitDate="2026-10-05", callerConfirmed=True)
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "COULD_NOT_RECORD", "SAY_COULD_NOT_RECORD", "PROFILE_UNAVAILABLE")
+    assert h.ops_paths() == ["/appointments"]
+    assert sent(h, "/reschedule") == [] and all(r.method == "GET" for r in h.requests)
+    assert doctor_id not in result.model_dump_json()
