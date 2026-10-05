@@ -1,0 +1,427 @@
+cd services/mcp && uv run python dev/demo.py
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+  from ._compat import httpx2
+
+== tools visible to the gateway
+{
+  "tools": [
+    "get_doctor_availability",
+    "manage_booking",
+    "search_knowledge",
+    "record_call_summary"
+  ]
+}
+
+== get_doctor_availability: Dr Garima today (board IN + NOT_CONFIRMED)
+{
+  "outcome": "AVAILABILITY",
+  "nextStep": "ASK_WHICH_SESSION",
+  "facilityToday": "2026-10-01",
+  "requestedDate": "2026-10-01",
+  "weekday": "THU",
+  "department": null,
+  "doctors": [
+    {
+      "doctorId": "doc_garima",
+      "name": "Dr. Garima",
+      "departments": [
+        "General Medicine"
+      ],
+      "attendanceType": "REGULAR",
+      "gender": "FEMALE",
+      "dataConfirmed": null,
+      "usualSessions": null,
+      "board": [
+        {
+          "session": "Morning",
+          "status": "IN",
+          "expectedTime": "09:10",
+          "expectedEndTime": "12:00",
+          "delayMinutes": null,
+          "note": null,
+          "isStale": false,
+          "decision": "APPOINTMENT_REQUEST",
+          "reason": null
+        },
+        {
+          "session": "Afternoon",
+          "status": "NOT_CONFIRMED",
+          "expectedTime": "15:00",
+          "expectedEndTime": "17:00",
+          "delayMinutes": null,
+          "note": null,
+          "isStale": false,
+          "decision": "CALLBACK_REQUIRED",
+          "reason": "BOARD_NOT_CONFIRMED"
+        }
+      ],
+      "decision": "APPOINTMENT_REQUEST",
+      "reason": null,
+      "sessionChoiceRequired": true
+    }
+  ],
+  "choices": [],
+  "departmentChoices": [],
+  "complete": true,
+  "totalMatches": null,
+  "bookableFound": 1,
+  "basis": "LIVE_BOARD",
+  "sessionMatched": null,
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+
+== get_doctor_availability: Dr Kiran Hegde (stale board → callback only)
+{
+  "outcome": "CALLBACK_REQUIRED",
+  "nextStep": "ASK_CALLBACK_DETAILS",
+  "facilityToday": "2026-10-01",
+  "requestedDate": "2026-10-01",
+  "weekday": "THU",
+  "department": null,
+  "doctors": [
+    {
+      "doctorId": "doc_kiran_hegde",
+      "name": "Dr. Kiran Hegde",
+      "departments": [
+        "Urology"
+      ],
+      "attendanceType": "REGULAR",
+      "gender": "MALE",
+      "dataConfirmed": null,
+      "usualSessions": null,
+      "board": [
+        {
+          "session": "Evening",
+          "status": "UNKNOWN",
+          "expectedTime": null,
+          "expectedEndTime": null,
+          "delayMinutes": null,
+          "note": null,
+          "isStale": true,
+          "decision": "CALLBACK_REQUIRED",
+          "reason": "BOARD_STALE"
+        }
+      ],
+      "decision": "CALLBACK_REQUIRED",
+      "reason": "BOARD_STALE",
+      "sessionChoiceRequired": false
+    }
+  ],
+  "choices": [],
+  "departmentChoices": [],
+  "complete": true,
+  "totalMatches": null,
+  "bookableFound": 0,
+  "basis": "LIVE_BOARD",
+  "sessionMatched": null,
+  "callback": {
+    "reason": "BOARD_STALE",
+    "summaryOutcome": "CALLBACK_NOTED"
+  },
+  "detail": "BOARD_STALE",
+  "retryAfterSeconds": null
+}
+
+== get_doctor_availability: Dr Sharma (two matches → clarification)
+{
+  "outcome": "CLARIFICATION_NEEDED",
+  "nextStep": "ASK_WHICH_DOCTOR",
+  "facilityToday": "2026-10-01",
+  "requestedDate": "2026-10-01",
+  "weekday": "THU",
+  "department": null,
+  "doctors": [],
+  "choices": [
+    {
+      "doctorId": "doc_anil_sharma",
+      "name": "Dr. Anil Sharma",
+      "departments": [
+        "Cardiology"
+      ],
+      "gender": "MALE"
+    },
+    {
+      "doctorId": "doc_ravi_sharma",
+      "name": "Dr. Ravi Sharma",
+      "departments": [
+        "Cardiology"
+      ],
+      "gender": null
+    }
+  ],
+  "departmentChoices": [],
+  "complete": true,
+  "totalMatches": 2,
+  "bookableFound": 0,
+  "basis": null,
+  "sessionMatched": null,
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+
+== usual hours without a date
+{
+  "outcome": "WORKING_HOURS",
+  "nextStep": "OFFER_APPOINTMENT_REQUEST",
+  "facilityToday": "2026-10-01",
+  "requestedDate": null,
+  "weekday": null,
+  "department": null,
+  "doctors": [
+    {
+      "doctorId": "doc_garima",
+      "name": "Dr. Garima",
+      "departments": [
+        "General Medicine"
+      ],
+      "attendanceType": "REGULAR",
+      "gender": "FEMALE",
+      "dataConfirmed": true,
+      "usualSessions": [
+        {
+          "label": "Morning",
+          "daysOfWeek": [
+            "MON",
+            "THU",
+            "FRI"
+          ],
+          "start": "09:00",
+          "end": "12:00",
+          "onRequestedDate": null,
+          "decision": "APPOINTMENT_REQUEST",
+          "reason": null
+        },
+        {
+          "label": "Afternoon",
+          "daysOfWeek": [
+            "MON",
+            "THU",
+            "FRI"
+          ],
+          "start": "15:00",
+          "end": "17:00",
+          "onRequestedDate": null,
+          "decision": "APPOINTMENT_REQUEST",
+          "reason": null
+        }
+      ],
+      "board": [],
+      "decision": "APPOINTMENT_REQUEST",
+      "reason": null,
+      "sessionChoiceRequired": false
+    }
+  ],
+  "choices": [],
+  "departmentChoices": [],
+  "complete": true,
+  "totalMatches": null,
+  "bookableFound": 1,
+  "basis": "USUAL_SCHEDULE",
+  "sessionMatched": null,
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+
+== future department from usual schedules
+{
+  "outcome": "AVAILABILITY",
+  "nextStep": "ASK_WHICH_DOCTOR",
+  "facilityToday": "2026-10-01",
+  "requestedDate": "2026-10-05",
+  "weekday": "MON",
+  "department": {
+    "id": "dept_policy",
+    "name": "Policy Clinic"
+  },
+  "doctors": [
+    {
+      "doctorId": "doc_fixture_01",
+      "name": "Dr. Fixture 01",
+      "departments": [
+        "Policy Clinic"
+      ],
+      "attendanceType": "VISITING",
+      "gender": null,
+      "dataConfirmed": null,
+      "usualSessions": [
+        {
+          "label": "Morning",
+          "daysOfWeek": [
+            "MON"
+          ],
+          "start": "09:00",
+          "end": "12:00",
+          "onRequestedDate": true,
+          "decision": "APPOINTMENT_REQUEST",
+          "reason": null
+        }
+      ],
+      "board": [],
+      "decision": "APPOINTMENT_REQUEST",
+      "reason": null,
+      "sessionChoiceRequired": false
+    },
+    {
+      "doctorId": "doc_fixture_06",
+      "name": "Dr. Fixture 06",
+      "departments": [
+        "Policy Clinic"
+      ],
+      "attendanceType": "REGULAR",
+      "gender": null,
+      "dataConfirmed": null,
+      "usualSessions": [
+        {
+          "label": "Morning",
+          "daysOfWeek": [
+            "MON"
+          ],
+          "start": "09:00",
+          "end": "12:00",
+          "onRequestedDate": true,
+          "decision": "APPOINTMENT_REQUEST",
+          "reason": null
+        }
+      ],
+      "board": [],
+      "decision": "APPOINTMENT_REQUEST",
+      "reason": null,
+      "sessionChoiceRequired": false
+    },
+    {
+      "doctorId": "doc_fixture_07",
+      "name": "Dr. Fixture 07",
+      "departments": [
+        "Policy Clinic"
+      ],
+      "attendanceType": "REGULAR",
+      "gender": null,
+      "dataConfirmed": null,
+      "usualSessions": [
+        {
+          "label": "Morning",
+          "daysOfWeek": [
+            "MON"
+          ],
+          "start": "09:00",
+          "end": "12:00",
+          "onRequestedDate": true,
+          "decision": "APPOINTMENT_REQUEST",
+          "reason": null
+        }
+      ],
+      "board": [],
+      "decision": "APPOINTMENT_REQUEST",
+      "reason": null,
+      "sessionChoiceRequired": false
+    }
+  ],
+  "choices": [],
+  "departmentChoices": [],
+  "complete": false,
+  "totalMatches": 12,
+  "bookableFound": 5,
+  "basis": "USUAL_SCHEDULE",
+  "sessionMatched": null,
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+
+== manage_booking CREATE (NOTED, not a reserved time)
+{
+  "sessions": [],
+  "outcome": "NOTED",
+  "nextStep": "SAY_REQUEST_NOTED",
+  "appointment": {
+    "appointmentId": "appt_0001",
+    "status": "NOTED",
+    "visitDate": "2026-10-02",
+    "expectedTime": "09:30",
+    "doctorId": "doc_garima",
+    "department": null,
+    "patientName": "Lakshmi Rao"
+  },
+  "appointments": [],
+  "fields": [],
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+
+== manage_booking LIST (trusted caller number only)
+{
+  "sessions": [],
+  "outcome": "FOUND",
+  "nextStep": "OFFER_CHOICES",
+  "appointment": null,
+  "appointments": [
+    {
+      "appointmentId": "appt_0001",
+      "status": "NOTED",
+      "visitDate": "2026-10-02",
+      "expectedTime": "09:30",
+      "doctorId": "doc_garima",
+      "department": null,
+      "patientName": "Lakshmi Rao"
+    }
+  ],
+  "fields": [],
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+
+== search_knowledge: ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ
+{
+  "outcome": "ANSWERED",
+  "nextStep": "SPEAK_ANSWER",
+  "answer": {
+    "text": "ಹೌದು. ನೆಲಮಾಳಿಗೆಯಲ್ಲಿ ಉಚಿತ ಪಾರ್ಕಿಂಗ್ ಇದೆ; ಮುಖ್ಯ ದ್ವಾರದ ಪಕ್ಕದ ರಸ್ತೆಯಿಂದ ಒಳಗೆ ಬನ್ನಿ.",
+    "language": "kn"
+  },
+  "sourceId": "kb_parking",
+  "destination": null,
+  "routing": null,
+  "detail": null
+}
+
+== search_knowledge with the caller's danger sign
+{
+  "outcome": "ROUTING_REQUIRED",
+  "nextStep": "TRANSFER_EMERGENCY",
+  "answer": null,
+  "sourceId": "routing-0",
+  "destination": null,
+  "routing": {
+    "decision": "EMERGENCY_TRANSFER",
+    "speak": {
+      "text": "This may be an emergency. I am connecting you to the emergency desk now.",
+      "language": "en"
+    },
+    "department": null
+  },
+  "detail": null
+}
+
+== all four tools visible to the gateway
+{
+  "tools": [
+    "get_doctor_availability",
+    "manage_booking",
+    "search_knowledge",
+    "record_call_summary"
+  ]
+}
+
+== record_call_summary (CALLBACK_NOTED)
+{
+  "outcome": "SAVED"
+}
