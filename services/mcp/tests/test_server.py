@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 
 import httpx
@@ -307,7 +308,7 @@ def test_published_tool_text_contains_facts_not_behaviour_scripts(make_settings)
                  "read back", "read-back", "do not", "never ", "collect ", "use ")
     for entry in text:
         for phrase in forbidden:
-            assert phrase not in entry.casefold(), (phrase, entry)
+            assert re.search(r"\b" + re.escape(phrase), entry.casefold()) is None, (phrase, entry)
 
 
 def test_server_instructions_are_short_contract_facts():

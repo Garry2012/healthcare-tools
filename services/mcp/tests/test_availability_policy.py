@@ -108,7 +108,7 @@ def test_on_call_is_callback_even_when_board_says_in(day):
     assert (result.decision, result.reason) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
     assert isinstance(p.decide_booking(result, session=None, preferred_time=None), p.Callback)
     hours = p.working_hours(facts(attendance="ON_CALL"), None)
-    assert hours.reason == "NO_REGULAR_HOURS" and not hours.sessions
+    assert hours.reason == "ON_CALL_DOCTOR" and not hours.sessions
 
 
 @pytest.mark.parametrize("attendance", ["REGULAR", "VISITING"])
@@ -141,7 +141,7 @@ def test_department_rollup_and_counts_do_not_list_callback_as_bookable():
     search = p.SearchState(matches_found=1, checked=2, complete=True)
     result = p.aggregate([callback, good], search)
     assert (result.outcome, result.next_step) == ("AVAILABILITY", "ASK_WHICH_DOCTOR")
-    assert p.rank([callback, good], 3) == [good]
+    assert p.rank(result.candidates, 3) == [good]
     assert p.aggregate([callback], p.SearchState(0, 1, False)).reason == "SEARCH_INCOMPLETE"
     assert p.aggregate([callback], p.SearchState(0, 1, True)).outcome == "CALLBACK_REQUIRED"
     assert len(p.rank([good] * 5, 3)) == 3

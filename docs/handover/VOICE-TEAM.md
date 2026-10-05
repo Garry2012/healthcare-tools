@@ -1,6 +1,6 @@
 # MCP tool interface
 
-Schema version: `2026-10-05.1`
+Schema version: `2026-10-06.1`
 
 ## Endpoint and transport
 
@@ -37,7 +37,7 @@ not implementation instructions for the calling application.
 
 ## get_doctor_availability
 
-Doctor or department availability for today or an explicit future date; WORKING_HOURS returns usual hours without a board check. Today is LIVE_BOARD: status is Manoj's IN, LATE, CANCELLED, NOT_CONFIRMED or UNKNOWN; decision is the separate MCP result. IN/LATE permit a request, CANCELLED is NOT_AVAILABLE, NOT_CONFIRMED/UNKNOWN require callback. A supplied passed end time means NOT_AVAILABLE/SESSION_ENDED; a missing end time is not given, not an ended session. ON_CALL always means CALLBACK_REQUIRED. Future dates describe normal working hours or visiting attendance days, attendance not confirmed. Several sessions with the same decision require no choice; differing decisions may require a session choice. Department results list only bookable doctors when any exist; otherwise callback or unavailable facts, capped by the configured limit. totalMatches is the directory count across all types and decisions; bookableFound is the bookable count found among those checked, potentially larger than the returned list; complete means every directory candidate was evaluated. An incomplete search with no match is HANDOFF_REQUIRED/SEARCH_INCOMPLETE, not unavailability. Callback details are stored only in record_call_summary as CALLBACK_NOTED. Ambiguous names return choices.
+Doctor or department availability for today or an explicit future date; WORKING_HOURS returns usual hours without a board check. Today is LIVE_BOARD: status is Manoj's IN, LATE, CANCELLED, NOT_CONFIRMED or UNKNOWN; decision is the separate MCP result. IN/LATE permit a request, CANCELLED is NOT_AVAILABLE, NOT_CONFIRMED/UNKNOWN require callback. A supplied passed end time means NOT_AVAILABLE/SESSION_ENDED; a missing end time is not given, not an ended session. ON_CALL always means CALLBACK_REQUIRED. Future dates describe normal working hours or visiting attendance days, attendance not confirmed. Several sessions with the same decision require no choice; differing decisions may require a session choice. Department AVAILABILITY results list only bookable doctors when any exist; otherwise callback or unavailable facts, capped by the configured limit. totalMatches is the directory count across all types and decisions; bookableFound is the bookable count found among those checked, potentially larger than the returned list; complete means every directory candidate was evaluated. An incomplete search with no match is HANDOFF_REQUIRED/SEARCH_INCOMPLETE, not unavailability. WORKING_HOURS with hours returns PRESENT_WORKING_HOURS for one doctor and always bookableFound=0; a single on-call doctor or empty schedule returns CALLBACK_REQUIRED with reason and summaryOutcome. Department WORKING_HOURS includes on-call doctors as facts within the list limit. Callback details are stored only in record_call_summary as CALLBACK_NOTED. Ambiguous names return choices.
 
 ### Parameters
 
@@ -57,21 +57,21 @@ Doctor or department availability for today or an explicit future date; WORKING_
 | Field path | Type / constraints (JSON Schema) | Presence | Meaning |
 |---|---|---|---|
 | `get_doctor_availability.output.basis` | `{"anyOf":[{"$ref":"#/$defs/Basis"},{"type":"null"}]}` | optional | Source used for this answer: LIVE_BOARD for today, USUAL_SCHEDULE for future dates or working hours. |
-| `get_doctor_availability.output.bookableFound` | `{"type":"integer"}` | optional | Bookable doctors found among those evaluated, including any omitted by the list cap. More may exist when complete=false. |
+| `get_doctor_availability.output.bookableFound` | `{"type":"integer"}` | optional | Bookable doctors found among those checked; may exceed the capped list. Always zero for WORKING_HOURS. |
 | `get_doctor_availability.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Callback reason and call-summary category; no separate callback action. |
 | `get_doctor_availability.output.choices` | `{"items":{"$ref":"#/$defs/DoctorChoice"},"type":"array"}` | optional | Ambiguous doctor-directory matches. |
-| `get_doctor_availability.output.complete` | `{"type":"boolean"}` | optional | Every directory candidate was evaluated; false for truncation, unchecked candidates or failed reads. |
+| `get_doctor_availability.output.complete` | `{"type":"boolean"}` | optional | Every directory candidate was evaluated; no failed or unchecked reads. |
 | `get_doctor_availability.output.department` | `{"anyOf":[{"$ref":"#/$defs/DepartmentChoice"},{"type":"null"}]}` | optional | Resolved department object; within AppointmentOut, the operational department identifier. |
 | `get_doctor_availability.output.departmentChoices` | `{"items":{"$ref":"#/$defs/DepartmentChoice"},"type":"array"}` | optional | Ambiguous department-directory matches. |
 | `get_doctor_availability.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for non-success outcomes. |
 | `get_doctor_availability.output.doctors` | `{"items":{"$ref":"#/$defs/DoctorAvailability"},"type":"array"}` | optional | Resolved doctors with usual hours and live board information. |
 | `get_doctor_availability.output.facilityToday` | `{"type":"string"}` | required | Current calendar date in the configured facility timezone (YYYY-MM-DD). |
-| `get_doctor_availability.output.nextStep` | `{"enum":["OFFER_APPOINTMENT_REQUEST","ASK_WHICH_DOCTOR","ASK_WHICH_DEPARTMENT","ASK_CALLBACK_DETAILS","TRANSFER_DESK","ASK_TO_REPHRASE","SAY_COULD_NOT_CHECK","ASK_EXPLICIT_DATE","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_DATE"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
+| `get_doctor_availability.output.nextStep` | `{"enum":["OFFER_APPOINTMENT_REQUEST","ASK_WHICH_DOCTOR","ASK_WHICH_DEPARTMENT","ASK_CALLBACK_DETAILS","TRANSFER_DESK","ASK_TO_REPHRASE","SAY_COULD_NOT_CHECK","ASK_EXPLICIT_DATE","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_DATE","PRESENT_WORKING_HOURS"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
 | `get_doctor_availability.output.outcome` | `{"enum":["AVAILABILITY","CLARIFICATION_NEEDED","CALLBACK_REQUIRED","NOT_FOUND","COULD_NOT_CHECK","INVALID_REQUEST","NOT_AVAILABLE","WORKING_HOURS","HANDOFF_REQUIRED"],"type":"string"}` | required | Result category, defined below. |
 | `get_doctor_availability.output.requestedDate` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Resolved availability date (YYYY-MM-DD), or null when unresolved. |
 | `get_doctor_availability.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Upstream retry delay in seconds when supplied; optional. |
 | `get_doctor_availability.output.sessionMatched` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | optional | Whether the requested session matched; null when not evaluated. |
-| `get_doctor_availability.output.totalMatches` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Directory count across all attendance types and decisions; not the count of bookable doctors. |
+| `get_doctor_availability.output.totalMatches` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Directory count across all attendance types and decisions. |
 | `get_doctor_availability.output.weekday` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Weekday of the requested date, or null when unresolved. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.delayMinutes` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Board delay in minutes when supplied. |
@@ -132,6 +132,7 @@ Doctor or department availability for today or an explicit future date; WORKING_
 | `get_doctor_availability.nextStep.ASK_EXPLICIT_DATE` | An accepted calendar-date value is required. |
 | `get_doctor_availability.nextStep.ASK_WHICH_SESSION` | Sessions have different decisions; a session selection is required. |
 | `get_doctor_availability.nextStep.OFFER_OTHER_SESSION_OR_DATE` | The requested session or date is unavailable; alternatives may be returned. |
+| `get_doctor_availability.nextStep.PRESENT_WORKING_HOURS` | Usual hours are returned for presentation, without an appointment offer or date-specific availability claim. |
 
 ## manage_booking
 
@@ -331,7 +332,6 @@ These codes describe owner facts or an incomplete check; they are not clinical r
 | NOT_USUAL_DAY | Usual schedule has no session on this future weekday. |
 | SESSION_NOT_USUAL | Requested session is not a usual session on that future date. |
 | NO_USUAL_SCHEDULE | No usual schedule is supplied for this doctor. |
-| NO_REGULAR_HOURS | On-call doctor has no regular working-hours answer. |
 | PROFILE_UNAVAILABLE | Required profile could not be read. |
 | TIME_OUTSIDE_SESSION | Requested time is outside the supplied known window(s). |
 | SESSION_REQUIRED | Differing session decisions need a session/time selection. |
@@ -348,3 +348,24 @@ only, NOT_AVAILABLE means the facts exclude the requested session/date, COULD_NO
 Callback names, requested dates/sessions and reason may be placed in summaryText, but their presence
 is not enforced; callerMobile remains required for CALLBACK_NOTED. Summary-quality acceptance belongs
 to voice integration. No new headers or credentials are introduced by this policy.
+
+## Changes in schema 2026-10-05.1
+
+- Doctor `journey` became `decision`; owner board `status` remained unchanged.
+- CALLBACK_ONLY/DESK decisions, `expired`, `unknownSessions`, and `callback.ask`/`say` were removed.
+- `purpose` was added; `date` became schema-optional, required in-band for AVAILABILITY.
+- `manage_booking.departmentId` was removed; CREATE requires a doctor.
+- Known limitation: sessions crossing midnight are unsupported.
+
+## Changes in schema 2026-10-06.1
+
+- Working hours for a single on-call doctor or empty schedule uses the full CALLBACK_REQUIRED result,
+  including reason and summaryOutcome. ON_CALL_DOCTOR replaces the unused NO_REGULAR_HOURS reason.
+- A single doctor with hours returns WORKING_HOURS/PRESENT_WORKING_HOURS, without an appointment offer.
+  bookableFound is always zero for WORKING_HOURS, including department queries; schedule matches still
+  bound the profile search. Department hours include on-call facts within the existing capped list.
+- Future-session mismatches preserve same-day alternatives; sessionMatched checks the requested weekday.
+- The existing mixed-session choice rule remains unchanged pending a separate decision (G-1).
+
+These source changes are not deployed. Refresh discovery and compare output schemas through the voice
+virtual server after a separately approved deployment; registration verifies input schemas only.

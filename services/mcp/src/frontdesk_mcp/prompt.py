@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .packs import Pack
 
-SCHEMA_VERSION = "2026-10-05.1"
+SCHEMA_VERSION = "2026-10-06.1"
 
 
 def instructions(pack: Pack, languages: tuple[str, ...], display_name: str = "") -> str:

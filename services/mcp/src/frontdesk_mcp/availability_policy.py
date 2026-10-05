@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from enum import StrEnum
@@ -45,7 +46,6 @@ class Reason(StrEnum):
     NOT_USUAL_DAY = "NOT_USUAL_DAY"
     SESSION_NOT_USUAL = "SESSION_NOT_USUAL"
     NO_USUAL_SCHEDULE = "NO_USUAL_SCHEDULE"
-    NO_REGULAR_HOURS = "NO_REGULAR_HOURS"
     PROFILE_UNAVAILABLE = "PROFILE_UNAVAILABLE"
     TIME_OUTSIDE_SESSION = "TIME_OUTSIDE_SESSION"
     SESSION_REQUIRED = "SESSION_REQUIRED"
@@ -142,6 +142,8 @@ class ResultOutcome:
     outcome: str
     next_step: str
     reason: Reason | None = None
+    candidates: tuple[DoctorDecision, ...] = ()
+    bookable_found: int = 0
 
 
 def resolve_date(text: str | None, facility_now: datetime, purpose: Purpose) -> RequestedDate | DateError | None:
@@ -258,7 +260,7 @@ def decide_doctor(facts: DoctorFacts, requested: RequestedDate, *, session: str 
 
 def working_hours(facts: DoctorFacts, requested: RequestedDate | None) -> DoctorDecision:
     if facts.doctor.attendanceType == "ON_CALL":
-        return DoctorDecision(facts, Decision.CALLBACK_REQUIRED, Reason.NO_REGULAR_HOURS, Basis.USUAL_SCHEDULE)
+        return _on_call(facts, Basis.USUAL_SCHEDULE)
     if facts.profile is None:
         return DoctorDecision(facts, Decision.COULD_NOT_CHECK, Reason.PROFILE_UNAVAILABLE, Basis.USUAL_SCHEDULE)
     if not facts.profile.usualSchedule:
@@ -307,25 +309,25 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
     return Write()
 
 
-def rank(decisions: list[DoctorDecision], limit: int) -> list[DoctorDecision]:
-    bookable = [d for d in decisions if d.decision == Decision.APPOINTMENT_REQUEST]
-    candidates = bookable or [d for d in decisions
-                             if d.decision in (Decision.CALLBACK_REQUIRED, Decision.NOT_AVAILABLE)]
+def rank(decisions: Sequence[DoctorDecision], limit: int) -> list[DoctorDecision]:
+    """Order and cap the candidates selected by the result policy."""
     order = {Decision.APPOINTMENT_REQUEST: 0, Decision.CALLBACK_REQUIRED: 1, Decision.NOT_AVAILABLE: 2}
-    return sorted(candidates,
+    return sorted(decisions,
                   key=lambda d: (order[d.decision], d.facts.doctor.name.casefold(), d.facts.doctor.id))[:limit]
 
 
 def aggregate(decisions: list[DoctorDecision], search: SearchState,
               purpose: Purpose = Purpose.AVAILABILITY) -> ResultOutcome:
-    if search.matches_found:
-        outcome = "WORKING_HOURS" if purpose == Purpose.WORKING_HOURS else "AVAILABILITY"
-        return ResultOutcome(outcome, "ASK_WHICH_DOCTOR")
-    if not search.complete:
+    if not search.matches_found and not search.complete:
         return ResultOutcome("HANDOFF_REQUIRED", "TRANSFER_DESK", Reason.SEARCH_INCOMPLETE)
+    resolved = tuple(d for d in decisions if d.decision != Decision.COULD_NOT_CHECK)
     if purpose == Purpose.WORKING_HOURS:
-        return ResultOutcome("WORKING_HOURS", "ASK_WHICH_DOCTOR")
-    callback = next((d for d in decisions if d.decision == Decision.CALLBACK_REQUIRED), None)
+        return ResultOutcome("WORKING_HOURS", "ASK_WHICH_DOCTOR", candidates=resolved)
+    if search.matches_found:
+        bookable = tuple(d for d in resolved if d.decision == Decision.APPOINTMENT_REQUEST)
+        return ResultOutcome("AVAILABILITY", "ASK_WHICH_DOCTOR", candidates=bookable,
+                             bookable_found=search.matches_found)
+    callback = next((d for d in resolved if d.decision == Decision.CALLBACK_REQUIRED), None)
     if callback:
-        return ResultOutcome("CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS", callback.reason)
-    return ResultOutcome("NOT_AVAILABLE", "OFFER_OTHER_SESSION_OR_DATE")
+        return ResultOutcome("CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS", callback.reason, candidates=resolved)
+    return ResultOutcome("NOT_AVAILABLE", "OFFER_OTHER_SESSION_OR_DATE", candidates=resolved)

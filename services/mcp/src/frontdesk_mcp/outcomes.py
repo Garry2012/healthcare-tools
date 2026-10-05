@@ -29,7 +29,7 @@ class Routing(_Out):
 
 
 class Callback(_Out):
-    """Callback metadata for UNKNOWN availability; summary outcome is CALLBACK_NOTED."""
+    """Callback reason and summary category; no appointment or separate task is created."""
 
     reason: Reason
     summaryOutcome: Literal["CALLBACK_NOTED"] = "CALLBACK_NOTED"  # noqa: N815 - wire names
@@ -103,7 +103,7 @@ AvailabilityOutcome = Literal[
 NextStep = Literal[
     "OFFER_APPOINTMENT_REQUEST", "ASK_WHICH_DOCTOR", "ASK_WHICH_DEPARTMENT", "ASK_CALLBACK_DETAILS",
     "TRANSFER_DESK", "ASK_TO_REPHRASE", "SAY_COULD_NOT_CHECK",
-    "ASK_EXPLICIT_DATE", "ASK_WHICH_SESSION", "OFFER_OTHER_SESSION_OR_DATE",
+    "ASK_EXPLICIT_DATE", "ASK_WHICH_SESSION", "OFFER_OTHER_SESSION_OR_DATE", "PRESENT_WORKING_HOURS",
 ]
 
 
@@ -122,7 +122,8 @@ class AvailabilityResult(_Out):
     totalMatches: int | None = Field(default=None,  # noqa: N815
                                     description="Directory count across all attendance types and decisions.")  # noqa: N815
     bookableFound: int = Field(default=0,  # noqa: N815
-                               description="Bookable doctors found among those checked; may exceed the capped list.")  # noqa: N815
+                               description="Bookable doctors found among those checked; may exceed the capped list. "
+                                           "Always zero for WORKING_HOURS.")  # noqa: N815
     basis: Basis | None = None
     sessionMatched: bool | None = None  # noqa: N815
     callback: Callback | None = None

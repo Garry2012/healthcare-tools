@@ -126,35 +126,32 @@ class AvailabilityService:
                                                department=_choice(department), detail="NO_DOCTORS")
         decisions = [evaluate(f) for f in found.facts]
         result = policy.aggregate(decisions, found.search, request.purpose)
-        listed = ([] if result.outcome == "HANDOFF_REQUIRED"
-                  else policy.rank(decisions, self.settings.doctor_choice_limit))
+        listed = policy.rank(result.candidates, self.settings.doctor_choice_limit)
         today = request.purpose == policy.Purpose.AVAILABILITY and requested.kind == policy.DateKind.TODAY
         basis = policy.Basis.LIVE_BOARD if today else policy.Basis.USUAL_SCHEDULE
         return outcomes.AvailabilityResult(outcome=result.outcome, nextStep=result.next_step, **base,
             department=_choice(department), basis=basis, doctors=[doctor_out(d, requested) for d in listed],
-            bookableFound=found.search.matches_found, totalMatches=found.total, complete=found.search.complete,
+            bookableFound=result.bookable_found, totalMatches=found.total, complete=found.search.complete,
             detail=result.reason,
             callback=outcomes.Callback(reason=result.reason) if result.outcome == "CALLBACK_REQUIRED" else None)
 
     @staticmethod
     def _single(d: policy.DoctorDecision, requested: policy.RequestedDate | None,
                 request: AvailabilityRequest, base: dict) -> outcomes.AvailabilityResult:
-        if request.purpose == policy.Purpose.WORKING_HOURS:
-            outcome = "WORKING_HOURS"
-            step = ("ASK_CALLBACK_DETAILS" if d.decision == policy.Decision.CALLBACK_REQUIRED
-                    else "OFFER_APPOINTMENT_REQUEST")
-        else:
-            outcome, step = {
-                policy.Decision.APPOINTMENT_REQUEST: ("AVAILABILITY", "ASK_WHICH_SESSION" if d.session_choice_required
-                                                     else "OFFER_APPOINTMENT_REQUEST"),
-                policy.Decision.CALLBACK_REQUIRED: ("CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
-                policy.Decision.NOT_AVAILABLE: ("NOT_AVAILABLE", "OFFER_OTHER_SESSION_OR_DATE"),
-                policy.Decision.COULD_NOT_CHECK: ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK"),
-            }[d.decision]
+        outcome, step = {
+            policy.Decision.APPOINTMENT_REQUEST: ("AVAILABILITY", "ASK_WHICH_SESSION" if d.session_choice_required
+                                                 else "OFFER_APPOINTMENT_REQUEST"),
+            policy.Decision.CALLBACK_REQUIRED: ("CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+            policy.Decision.NOT_AVAILABLE: ("NOT_AVAILABLE", "OFFER_OTHER_SESSION_OR_DATE"),
+            policy.Decision.COULD_NOT_CHECK: ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK"),
+        }[d.decision]
+        if request.purpose == policy.Purpose.WORKING_HOURS and d.decision == policy.Decision.APPOINTMENT_REQUEST:
+            outcome, step = "WORKING_HOURS", "PRESENT_WORKING_HOURS"
         matched = any(s.label and policy.normalised(s.label) == policy.normalised(request.session)
                       and (s.basis == policy.Basis.LIVE_BOARD or requested is None or requested.weekday in s.days)
                       for s in d.sessions) if request.session else None
         return outcomes.AvailabilityResult(outcome=outcome, nextStep=step, **base, basis=d.basis,
             doctors=[doctor_out(d, requested)], detail=d.reason, sessionMatched=matched,
             callback=outcomes.Callback(reason=d.reason) if outcome == "CALLBACK_REQUIRED" else None,
-            bookableFound=int(d.decision == policy.Decision.APPOINTMENT_REQUEST))
+            bookableFound=int(request.purpose == policy.Purpose.AVAILABILITY
+                              and d.decision == policy.Decision.APPOINTMENT_REQUEST))

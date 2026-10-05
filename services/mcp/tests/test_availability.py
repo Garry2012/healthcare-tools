@@ -246,6 +246,9 @@ async def test_no_target_is_invalid(h):
 async def test_working_hours_need_no_date_and_never_read_live_board(h, target):
     result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
     assert result.outcome == "WORKING_HOURS" and result.basis == "USUAL_SCHEDULE"
+    assert result.bookableFound == 0
+    if "departmentId" not in target:
+        assert result.nextStep == "PRESENT_WORKING_HOURS"
     assert result.requestedDate is None and result.doctors[0].usualSessions
     assert all(s.onRequestedDate is None for s in result.doctors[0].usualSessions)
     assert "/availability" not in h.ops_paths()
@@ -257,10 +260,13 @@ async def test_availability_missing_date_is_an_in_band_request_error(h):
     assert h.ops_paths() == []
 
 
-async def test_working_hours_on_call_does_not_offer_a_booking(h):
-    result = await ask(h, purpose="WORKING_HOURS", date=None, doctorId="doc_vikram_desai")
-    assert result.outcome == "WORKING_HOURS" and result.nextStep == "ASK_CALLBACK_DETAILS"
-    assert result.doctors[0].reason == "NO_REGULAR_HOURS"
+@pytest.mark.parametrize("target", [{"doctorId": "doc_vikram_desai"}, {"doctorName": "Vikram"}])
+async def test_working_hours_on_call_uses_the_full_callback_result(h, target):
+    result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+    assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+    assert result.doctors[0].reason == "ON_CALL_DOCTOR"
+    assert result.callback.model_dump() == {"reason": "ON_CALL_DOCTOR", "summaryOutcome": "CALLBACK_NOTED"}
+    assert result.bookableFound == 0 and "/availability" not in h.ops_paths()
 
 
 async def test_directory_and_profile_are_cached_but_the_board_is_not(h):
@@ -486,3 +492,24 @@ async def test_future_session_label_on_another_weekday_does_not_match(h):
     assert [(s.label, s.decision, s.reason, s.onRequestedDate) for s in result.doctors[0].usualSessions] == [
         ("Morning", "APPOINTMENT_REQUEST", None, True), ("Evening", "NOT_AVAILABLE", "NOT_USUAL_DAY", False)]
     assert "/availability" not in h.ops_paths()
+
+
+async def test_working_hours_empty_schedule_uses_the_full_callback_result(h):
+    next(d for d in h.ops_state.data["doctors"] if d["id"] == "doc_garima")["usualSchedule"] = []
+    result = await ask(h, purpose="WORKING_HOURS", doctorId="doc_garima", date=None)
+    assert (result.outcome, result.nextStep) == ("CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS")
+    assert result.callback.model_dump() == {"reason": "NO_USUAL_SCHEDULE", "summaryOutcome": "CALLBACK_NOTED"}
+    assert result.bookableFound == 0 and result.doctors[0].usualSessions == []
+    assert "/availability" not in h.ops_paths()
+
+
+async def test_working_hours_department_keeps_on_call_facts_without_bookable_count(h):
+    oncall = next(d for d in h.ops_state.data["doctors"] if d["id"] == "doc_vikram_desai")
+    oncall["departments"] = [{"id": "dept_genmed", "name": "General Medicine"}]
+    result = await ask(h, purpose="WORKING_HOURS", departmentId="dept_genmed", date=None)
+    assert (result.outcome, result.nextStep) == ("WORKING_HOURS", "ASK_WHICH_DOCTOR")
+    assert {d.doctorId for d in result.doctors} == {"doc_garima", "doc_arjun_menon", "doc_vikram_desai"}
+    assert result.bookableFound == 0 and result.totalMatches == 3 and result.complete is True
+    oncall_result = next(d for d in result.doctors if d.doctorId == "doc_vikram_desai")
+    assert oncall_result.reason == "ON_CALL_DOCTOR" and oncall_result.usualSessions == []
+    assert "/availability" not in h.ops_paths() and "/doctors/doc_vikram_desai" not in h.ops_paths()
