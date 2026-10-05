@@ -445,7 +445,7 @@ async def test_a_missing_row_for_a_usual_session_today_is_unknown_for_create_too
     service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
     morning = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today",
                                                                            session="Morning"))
-    assert morning.outcome == "CALLBACK_REQUIRED" and morning.detail == "SESSION_ROW_MISSING"
+    assert morning.outcome == "CALLBACK_REQUIRED" and morning.detail == "SESSION_NOT_ON_BOARD"
     created = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "session": "Morning"})
     assert created.outcome == "CALLBACK_REQUIRED" and sent(h, "/appointments") == []
     afternoon = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "session": "Afternoon", "preferredTime": "15:30"})
@@ -461,7 +461,8 @@ async def test_unresolved_scope_with_any_unknown_is_callback_for_create_as_for_a
     service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
     whole = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today"))
     created = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "preferredTime": None})
-    assert whole.outcome == created.outcome == "CALLBACK_REQUIRED"
+    assert whole.outcome == "AVAILABILITY" and whole.nextStep == "ASK_WHICH_SESSION"
+    assert created.outcome == "CALLBACK_REQUIRED"
     assert sent(h, "/appointments") == []
 
 

@@ -47,7 +47,11 @@ class ScheduleReader:
     async def profile(self, doctor_id: str, deadline: Deadline) -> contract.DoctorDetail:
         cached = self.cache.get(("doctor", doctor_id))
         if cached is None:
-            cached = await self.ops.get_doctor(doctor_id, deadline)
+            try:
+                cached = await self.ops.get_doctor(doctor_id, deadline)
+            except READ_ERRORS as exc:
+                exc.stage = "profile"
+                raise
             self.cache.set(("doctor", doctor_id), cached)
         return cached
 

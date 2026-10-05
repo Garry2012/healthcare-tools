@@ -1,6 +1,6 @@
 {
-  "instructions": "MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service. Availability date accepts only 'today' or YYYY-MM-DD; other relative dates are not accepted. NOTED is a recorded appointment request, not a confirmed or reserved time. CALLBACK_REQUIRED denotes UNKNOWN board availability; UNCERTAIN denotes an unverified write result. Gateway authentication covers all four tools. Supported languages: en, kn, hi. Tool schema 2026-10-04.2.",
-  "schemaVersion": "2026-10-04.2",
+  "instructions": "MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service. Availability date accepts only 'today' or YYYY-MM-DD; other relative dates are not accepted. NOTED is a recorded appointment request, not a confirmed or reserved time. CALLBACK_REQUIRED denotes an unresolved schedule or on-call doctor; UNCERTAIN denotes an unverified write result. Future answers describe usual working hours, not confirmed availability. Gateway authentication covers all four tools. Supported languages: en, kn, hi. Tool schema 2026-10-05.1.",
+  "schemaVersion": "2026-10-05.1",
   "tools": [
     {
       "annotations": {
@@ -106,8 +106,19 @@
       "name": "get_doctor_availability",
       "outputSchema": {
         "$defs": {
+          "Basis": {
+            "enum": [
+              "LIVE_BOARD",
+              "USUAL_SCHEDULE"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
           "BoardSessionOut": {
             "properties": {
+              "decision": {
+                "$ref": "#/$defs/Decision"
+              },
               "delayMinutes": {
                 "anyOf": [
                   {
@@ -144,11 +155,6 @@
                 "default": null,
                 "title": "Expectedtime"
               },
-              "expired": {
-                "description": "expectedEndTime has passed in facility time on the requested date.",
-                "title": "Expired",
-                "type": "boolean"
-              },
               "isStale": {
                 "title": "Isstale",
                 "type": "boolean"
@@ -164,6 +170,17 @@
                 ],
                 "default": null,
                 "title": "Note"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Reason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
               },
               "session": {
                 "anyOf": [
@@ -192,7 +209,7 @@
               "session",
               "status",
               "isStale",
-              "expired"
+              "decision"
             ],
             "title": "BoardSessionOut",
             "type": "object"
@@ -219,6 +236,16 @@
             },
             "title": "Callback",
             "type": "object"
+          },
+          "Decision": {
+            "enum": [
+              "APPOINTMENT_REQUEST",
+              "CALLBACK_REQUIRED",
+              "NOT_AVAILABLE",
+              "COULD_NOT_CHECK"
+            ],
+            "title": "Decision",
+            "type": "string"
           },
           "DepartmentChoice": {
             "properties": {
@@ -268,6 +295,9 @@
                 "default": null,
                 "title": "Dataconfirmed"
               },
+              "decision": {
+                "$ref": "#/$defs/Decision"
+              },
               "departments": {
                 "items": {
                   "type": "string"
@@ -291,26 +321,25 @@
                 "default": null,
                 "title": "Gender"
               },
-              "journey": {
-                "enum": [
-                  "APPOINTMENT_REQUEST",
-                  "CALLBACK_ONLY",
-                  "DESK"
-                ],
-                "title": "Journey",
-                "type": "string"
-              },
               "name": {
                 "title": "Name",
                 "type": "string"
               },
-              "unknownSessions": {
-                "default": [],
-                "items": {
-                  "type": "string"
-                },
-                "title": "Unknownsessions",
-                "type": "array"
+              "reason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Reason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "sessionChoiceRequired": {
+                "default": false,
+                "title": "Sessionchoicerequired",
+                "type": "boolean"
               },
               "usualSessions": {
                 "anyOf": [
@@ -335,7 +364,7 @@
               "attendanceType",
               "usualSessions",
               "board",
-              "journey"
+              "decision"
             ],
             "title": "DoctorAvailability",
             "type": "object"
@@ -378,6 +407,29 @@
             "title": "DoctorChoice",
             "type": "object"
           },
+          "Reason": {
+            "enum": [
+              "ON_CALL_DOCTOR",
+              "BOARD_UNKNOWN",
+              "BOARD_STALE",
+              "BOARD_ENTRY_MISSING",
+              "SESSION_NOT_ON_BOARD",
+              "BOARD_NOT_CONFIRMED",
+              "CANCELLED",
+              "SESSION_ENDED",
+              "NOT_USUAL_DAY",
+              "SESSION_NOT_USUAL",
+              "NO_USUAL_SCHEDULE",
+              "NO_REGULAR_HOURS",
+              "PROFILE_UNAVAILABLE",
+              "TIME_OUTSIDE_SESSION",
+              "SESSION_REQUIRED",
+              "TIME_NOT_VERIFIABLE",
+              "SEARCH_INCOMPLETE"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
           "UsualSessionOut": {
             "properties": {
               "daysOfWeek": {
@@ -386,6 +438,9 @@
                 },
                 "title": "Daysofweek",
                 "type": "array"
+              },
+              "decision": {
+                "$ref": "#/$defs/Decision"
               },
               "end": {
                 "title": "End",
@@ -403,8 +458,26 @@
                 "title": "Label"
               },
               "onRequestedDate": {
-                "title": "Onrequesteddate",
-                "type": "boolean"
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Onrequesteddate"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Reason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
               },
               "start": {
                 "title": "Start",
@@ -416,13 +489,31 @@
               "daysOfWeek",
               "start",
               "end",
-              "onRequestedDate"
+              "onRequestedDate",
+              "decision"
             ],
             "title": "UsualSessionOut",
             "type": "object"
           }
         },
         "properties": {
+          "basis": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Basis"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "bookableFound": {
+            "default": 0,
+            "description": "Bookable doctors found among those checked; may exceed the capped list.",
+            "title": "Bookablefound",
+            "type": "integer"
+          },
           "callback": {
             "anyOf": [
               {
@@ -444,6 +535,7 @@
           },
           "complete": {
             "default": true,
+            "description": "Every directory candidate was evaluated; no failed or unchecked reads.",
             "title": "Complete",
             "type": "boolean"
           },
@@ -500,7 +592,9 @@
               "TRANSFER_DESK",
               "ASK_TO_REPHRASE",
               "SAY_COULD_NOT_CHECK",
-              "ASK_EXPLICIT_DATE"
+              "ASK_EXPLICIT_DATE",
+              "ASK_WHICH_SESSION",
+              "OFFER_OTHER_SESSION_OR_DATE"
             ],
             "title": "Nextstep",
             "type": "string"
@@ -512,7 +606,10 @@
               "CALLBACK_REQUIRED",
               "NOT_FOUND",
               "COULD_NOT_CHECK",
-              "INVALID_REQUEST"
+              "INVALID_REQUEST",
+              "NOT_AVAILABLE",
+              "WORKING_HOURS",
+              "HANDOFF_REQUIRED"
             ],
             "title": "Outcome",
             "type": "string"
@@ -563,6 +660,7 @@
               }
             ],
             "default": null,
+            "description": "Directory count across all attendance types and decisions.",
             "title": "Totalmatches"
           },
           "weekday": {

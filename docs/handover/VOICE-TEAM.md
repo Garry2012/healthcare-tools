@@ -1,6 +1,6 @@
 # MCP tool interface
 
-Schema version: `2026-10-04.2`
+Schema version: `2026-10-05.1`
 
 ## Endpoint and transport
 
@@ -56,27 +56,30 @@ Doctor or department working hours qualified by the live availability board for 
 
 | Field path | Type / constraints (JSON Schema) | Presence | Meaning |
 |---|---|---|---|
+| `get_doctor_availability.output.basis` | `{"anyOf":[{"$ref":"#/$defs/Basis"},{"type":"null"}]}` | optional | Source used for this answer: LIVE_BOARD for today, USUAL_SCHEDULE for future dates or working hours. |
+| `get_doctor_availability.output.bookableFound` | `{"type":"integer"}` | optional | Bookable doctors found among those evaluated, including any omitted by the list cap. More may exist when complete=false. |
 | `get_doctor_availability.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Existing callback metadata associated with UNKNOWN availability. |
 | `get_doctor_availability.output.choices` | `{"items":{"$ref":"#/$defs/DoctorChoice"},"type":"array"}` | optional | Ambiguous doctor-directory matches. |
-| `get_doctor_availability.output.complete` | `{"type":"boolean"}` | optional | Whether the returned match list is complete. |
+| `get_doctor_availability.output.complete` | `{"type":"boolean"}` | optional | Every directory candidate was evaluated; false for truncation, unchecked candidates or failed reads. |
 | `get_doctor_availability.output.department` | `{"anyOf":[{"$ref":"#/$defs/DepartmentChoice"},{"type":"null"}]}` | optional | Resolved department object; within AppointmentOut, the operational department identifier. |
 | `get_doctor_availability.output.departmentChoices` | `{"items":{"$ref":"#/$defs/DepartmentChoice"},"type":"array"}` | optional | Ambiguous department-directory matches. |
-| `get_doctor_availability.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for a non-success result; optional. |
+| `get_doctor_availability.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for non-success outcomes. |
 | `get_doctor_availability.output.doctors` | `{"items":{"$ref":"#/$defs/DoctorAvailability"},"type":"array"}` | optional | Resolved doctors with usual hours and live board information. |
 | `get_doctor_availability.output.facilityToday` | `{"type":"string"}` | required | Current calendar date in the configured facility timezone (YYYY-MM-DD). |
-| `get_doctor_availability.output.nextStep` | `{"enum":["OFFER_APPOINTMENT_REQUEST","ASK_WHICH_DOCTOR","ASK_WHICH_DEPARTMENT","ASK_CALLBACK_DETAILS","TRANSFER_DESK","ASK_TO_REPHRASE","SAY_COULD_NOT_CHECK","ASK_EXPLICIT_DATE"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
-| `get_doctor_availability.output.outcome` | `{"enum":["AVAILABILITY","CLARIFICATION_NEEDED","CALLBACK_REQUIRED","NOT_FOUND","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category, defined below. |
+| `get_doctor_availability.output.nextStep` | `{"enum":["OFFER_APPOINTMENT_REQUEST","ASK_WHICH_DOCTOR","ASK_WHICH_DEPARTMENT","ASK_CALLBACK_DETAILS","TRANSFER_DESK","ASK_TO_REPHRASE","SAY_COULD_NOT_CHECK","ASK_EXPLICIT_DATE","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_DATE"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
+| `get_doctor_availability.output.outcome` | `{"enum":["AVAILABILITY","CLARIFICATION_NEEDED","CALLBACK_REQUIRED","NOT_FOUND","COULD_NOT_CHECK","INVALID_REQUEST","NOT_AVAILABLE","WORKING_HOURS","HANDOFF_REQUIRED"],"type":"string"}` | required | Result category, defined below. |
 | `get_doctor_availability.output.requestedDate` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Resolved availability date (YYYY-MM-DD), or null when unresolved. |
 | `get_doctor_availability.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Upstream retry delay in seconds when supplied; optional. |
 | `get_doctor_availability.output.sessionMatched` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | optional | Whether the requested session matched; null when not evaluated. |
-| `get_doctor_availability.output.totalMatches` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Known match count, or null. |
+| `get_doctor_availability.output.totalMatches` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Directory count across all attendance types and decisions; not the count of bookable doctors. |
 | `get_doctor_availability.output.weekday` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Weekday of the requested date, or null when unresolved. |
+| `get_doctor_availability.output.$defs.BoardSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.delayMinutes` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Board delay in minutes when supplied. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.expectedEndTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected end time in facility local time when supplied. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.expectedTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected start time or requested appointment time; not a guaranteed reservation. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.expired` | `{"type":"boolean"}` | required | Today-only end-time expiry; false for CANCELLED/UNKNOWN, missing end time or a date other than today. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.isStale` | `{"type":"boolean"}` | required | Owner-supplied board staleness flag; not an adapter-computed age threshold. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.note` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Owner-authored caller-facing board note, limited to 200 characters. |
+| `get_doctor_availability.output.$defs.BoardSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.session` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Board session label when present. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Board attendance status or appointment request status, according to its containing type and enum. |
 | `get_doctor_availability.output.$defs.Callback.ask` | `{"type":"string"}` | optional | Existing server-provided callback-name/number text field; retained response compatibility. |
@@ -87,21 +90,24 @@ Doctor or department working hours qualified by the live availability board for 
 | `get_doctor_availability.output.$defs.DoctorAvailability.attendanceType` | `{"enum":["REGULAR","VISITING","ON_CALL"],"type":"string"}` | required | Operational attendance classification: REGULAR, VISITING or ON_CALL. |
 | `get_doctor_availability.output.$defs.DoctorAvailability.board` | `{"items":{"$ref":"#/$defs/BoardSessionOut"},"type":"array"}` | required | Date/session-specific board rows. |
 | `get_doctor_availability.output.$defs.DoctorAvailability.dataConfirmed` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | optional | Owner confirmation metadata; null means unspecified. |
+| `get_doctor_availability.output.$defs.DoctorAvailability.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
 | `get_doctor_availability.output.$defs.DoctorAvailability.departments` | `{"items":{"type":"string"},"type":"array"}` | required | Department names associated with the doctor. |
 | `get_doctor_availability.output.$defs.DoctorAvailability.doctorId` | `{"type":"string"}` | required | Operational doctor identifier. |
 | `get_doctor_availability.output.$defs.DoctorAvailability.gender` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Doctor gender when available. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.journey` | `{"enum":["APPOINTMENT_REQUEST","CALLBACK_ONLY","DESK"],"type":"string"}` | required | APPOINTMENT_REQUEST: request path available; CALLBACK_ONLY: UNKNOWN board; DESK: desk disposition. |
 | `get_doctor_availability.output.$defs.DoctorAvailability.name` | `{"type":"string"}` | required | Doctor or department display name, according to its containing type. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.unknownSessions` | `{"items":{"type":"string"},"type":"array"}` | optional | Session labels with UNKNOWN availability. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.usualSessions` | `{"anyOf":[{"items":{"$ref":"#/$defs/UsualSessionOut"},"type":"array"},{"type":"null"}]}` | required | Usual schedule, independent of live attendance; null when no profile was fetched. |
+| `get_doctor_availability.output.$defs.DoctorAvailability.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
+| `get_doctor_availability.output.$defs.DoctorAvailability.sessionChoiceRequired` | `{"type":"boolean"}` | optional | Whether differing session decisions require a session choice. |
+| `get_doctor_availability.output.$defs.DoctorAvailability.usualSessions` | `{"anyOf":[{"items":{"$ref":"#/$defs/UsualSessionOut"},"type":"array"},{"type":"null"}]}` | required | Usual working hours, independent of live attendance. null when the profile was not fetched. |
 | `get_doctor_availability.output.$defs.DoctorChoice.departments` | `{"items":{"type":"string"},"type":"array"}` | required | Department names associated with the doctor. |
 | `get_doctor_availability.output.$defs.DoctorChoice.doctorId` | `{"type":"string"}` | required | Operational doctor identifier. |
 | `get_doctor_availability.output.$defs.DoctorChoice.gender` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Doctor gender when available. |
 | `get_doctor_availability.output.$defs.DoctorChoice.name` | `{"type":"string"}` | required | Doctor or department display name, according to its containing type. |
 | `get_doctor_availability.output.$defs.UsualSessionOut.daysOfWeek` | `{"items":{"type":"string"},"type":"array"}` | required | Weekday codes for the usual session. |
+| `get_doctor_availability.output.$defs.UsualSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
 | `get_doctor_availability.output.$defs.UsualSessionOut.end` | `{"type":"string"}` | required | Usual session end time in facility local time. |
 | `get_doctor_availability.output.$defs.UsualSessionOut.label` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Usual schedule session label. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.onRequestedDate` | `{"type":"boolean"}` | required | Whether the usual session applies to the requested weekday. |
+| `get_doctor_availability.output.$defs.UsualSessionOut.onRequestedDate` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | required | Whether the usual session includes the requested weekday; null when no date was supplied. |
+| `get_doctor_availability.output.$defs.UsualSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
 | `get_doctor_availability.output.$defs.UsualSessionOut.start` | `{"type":"string"}` | required | Usual session start time in facility local time. |
 
 ### Outcomes and nextStep meanings
@@ -114,6 +120,9 @@ Doctor or department working hours qualified by the live availability board for 
 | `get_doctor_availability.outcome.NOT_FOUND` | No matching doctor or department was found. |
 | `get_doctor_availability.outcome.COULD_NOT_CHECK` | A read could not be completed; this is not an empty or negative result. |
 | `get_doctor_availability.outcome.INVALID_REQUEST` | Request validation failed; fields or detail identify the issue when available. |
+| `get_doctor_availability.outcome.NOT_AVAILABLE` | Valid request, but the selected schedule or session is unavailable. |
+| `get_doctor_availability.outcome.WORKING_HOURS` | Normal working hours or attendance days; no live attendance check. |
+| `get_doctor_availability.outcome.HANDOFF_REQUIRED` | Desk assistance is required because the search or time validation is incomplete. |
 | `get_doctor_availability.nextStep.OFFER_APPOINTMENT_REQUEST` | An appointment request is possible for the returned scope; this is not a reservation. |
 | `get_doctor_availability.nextStep.ASK_WHICH_DOCTOR` | Multiple doctor matches require a selection. |
 | `get_doctor_availability.nextStep.ASK_WHICH_DEPARTMENT` | Multiple department matches require a selection. |
@@ -122,6 +131,8 @@ Doctor or department working hours qualified by the live availability board for 
 | `get_doctor_availability.nextStep.ASK_TO_REPHRASE` | The supplied name, department or question could not resolve the request. |
 | `get_doctor_availability.nextStep.SAY_COULD_NOT_CHECK` | The requested information could not be checked. |
 | `get_doctor_availability.nextStep.ASK_EXPLICIT_DATE` | An accepted calendar-date value is required. |
+| `get_doctor_availability.nextStep.ASK_WHICH_SESSION` | Sessions have different decisions; a session selection is required. |
+| `get_doctor_availability.nextStep.OFFER_OTHER_SESSION_OR_DATE` | The requested session or date is unavailable; alternatives may be returned. |
 
 ## manage_booking
 
@@ -156,7 +167,7 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.output.appointments` | `{"items":{"$ref":"#/$defs/AppointmentOut"},"type":"array"}` | optional | Appointment requests belonging to the verified caller. |
 | `manage_booking.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Existing callback metadata associated with UNKNOWN availability. |
 | `manage_booking.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for a non-success result; optional. |
-| `manage_booking.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Names of request fields rejected or requiring correction. |
+| `manage_booking.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Request fields that were invalid or rejected. |
 | `manage_booking.output.nextStep` | `{"enum":["SAY_REQUEST_NOTED","SAY_CHANGED","SAY_CANCELLED","OFFER_CHOICES","SAY_NOT_FOUND","ASK_TO_CORRECT","SAY_UNCERTAIN_AND_TRANSFER","TRANSFER_DESK","ASK_CALLBACK_DETAILS","ASK_CONFIRMATION","SAY_COULD_NOT_RECORD","SAY_COULD_NOT_CHECK"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
 | `manage_booking.output.outcome` | `{"enum":["NOTED","CHANGED","CANCELLED","FOUND","NOT_FOUND","REJECTED","CONFLICT","UNCERTAIN","IDENTITY_UNAVAILABLE","CALLBACK_REQUIRED","CONFIRMATION_REQUIRED","OPERATION_CONTEXT_MISSING","COULD_NOT_RECORD","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category, defined below. |
 | `manage_booking.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Upstream retry delay in seconds when supplied; optional. |
@@ -218,14 +229,14 @@ One knowledge-service request for hospital information or symptom-to-department 
 
 | Field path | Type / constraints (JSON Schema) | Presence | Meaning |
 |---|---|---|---|
-| `search_knowledge.output.answer` | `{"anyOf":[{"$ref":"#/$defs/Speech"},{"type":"null"}]}` | optional | Knowledge-service answer or clarification text; null on routing results. |
+| `search_knowledge.output.answer` | `{"anyOf":[{"$ref":"#/$defs/Speech"},{"type":"null"}]}` | optional | Knowledge-service answer or clarification text. |
 | `search_knowledge.output.destination` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Optional knowledge-service destination identifier. |
 | `search_knowledge.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for a non-success result; optional. |
 | `search_knowledge.output.nextStep` | `{"enum":["SPEAK_ANSWER","SAY_NO_ANSWER_AND_OFFER_DESK","ASK_CLARIFICATION","TRANSFER_DESK","TRANSFER_EMERGENCY","CHECK_AVAILABILITY","SAY_COULD_NOT_CHECK","ASK_TO_REPHRASE"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
 | `search_knowledge.output.outcome` | `{"enum":["ANSWERED","NO_ANSWER","CLARIFICATION_NEEDED","ROUTING_REQUIRED","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category, defined below. |
-| `search_knowledge.output.routing` | `{"anyOf":[{"$ref":"#/$defs/Routing"},{"type":"null"}]}` | optional | Knowledge-service routing decision and associated optional metadata. |
+| `search_knowledge.output.routing` | `{"anyOf":[{"$ref":"#/$defs/Routing"},{"type":"null"}]}` | optional | The owner's routing decision over the caller's words. |
 | `search_knowledge.output.sourceId` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Optional knowledge-service source identifier. |
-| `search_knowledge.output.$defs.Routing.decision` | `{"enum":["ROUTE_DEPARTMENT","DESK_TRANSFER","EMERGENCY_TRANSFER"],"type":"string"}` | required | ROUTE_DEPARTMENT, DESK_TRANSFER or EMERGENCY_TRANSFER from the knowledge service. |
+| `search_knowledge.output.$defs.Routing.decision` | `{"enum":["ROUTE_DEPARTMENT","DESK_TRANSFER","EMERGENCY_TRANSFER"],"type":"string"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
 | `search_knowledge.output.$defs.Routing.department` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Department name returned by the knowledge service; compatible with availability departmentName. |
 | `search_knowledge.output.$defs.Routing.speak` | `{"anyOf":[{"$ref":"#/$defs/Speech"},{"type":"null"}]}` | optional | Optional knowledge-service text associated with a routing decision; not duplicated in answer. |
 | `search_knowledge.output.$defs.Speech.language` | `{"type":"string"}` | required | Language of the knowledge-service text. |
@@ -252,17 +263,6 @@ One knowledge-service request for hospital information or symptom-to-department 
 
 ## record_call_summary
 
-CALLBACK_NOTED requires a caller-provided 10-digit callerMobile and rejects appointmentId and
-transferredTo. transferredTo is valid only for TRANSFERRED or EMERGENCY_TRANSFERRED. Caller names,
-requested dates/times and symptoms are part of summaryText, not separate parameters. Accepted text
-is sent unchanged; blank or 501–2,000 characters returns INVALID_REQUEST. The outer 2,000-character
-argument cap retains framework validation above that limit. No truncation or prefix is applied.
-
-Trusted summary context consists of X-Call-Id and X-Call-Started-At. No duration is sent upstream.
-The invocation and per-exchange limit is SUMMARY_DEADLINE_SECONDS (default 8 s, configurable above
-0 through 60 s), covering OAuth and any same-request retry. This is separate from the 0.30 s budget
-of the other three tools; it is not a sub-second response guarantee.
-
 Store one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.
 
 ### Parameters
@@ -285,18 +285,7 @@ Store one summary per call, covering the whole conversation. The first accepted 
 | `record_call_summary.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Names of rejected fields; present only on INVALID_REQUEST, possibly empty when no safe field names are available. |
 | `record_call_summary.output.outcome` | `{"enum":["SAVED","ALREADY_SAVED","INVALID_REQUEST","NOT_CONFIRMED","NOT_SAVED"],"type":"string"}` | required | Result category, defined below. |
 
-The service result contains only outcome, plus fields for INVALID_REQUEST. No summary text, callback
-number, stored-summary contents or diagnostics are returned. ALREADY_SAVED does not mean the newly
-submitted wording was stored. Summaries use callId deduplication without an Idempotency-Key header;
-bookings retain their separate operation keys.
-
-Framework validation errors (missing/wrong-type arguments or text beyond the outer cap) are protocol
-errors rather than the service result above. Summary validation errors contain only a fixed message:
-"Invalid call summary arguments. Check required fields, types and limits." Submitted values and
-untrusted argument names are omitted. Framework validation and the outer cap remain unchanged;
-there is no custom argument validator.
-
-### Outcome meanings
+### Outcomes and nextStep meanings
 
 | Code | Meaning |
 |---|---|

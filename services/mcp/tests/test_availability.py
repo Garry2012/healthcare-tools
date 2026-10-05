@@ -30,15 +30,14 @@ async def ask(h, ctx=None, **args):
 
 async def test_known_doctor_today_returns_every_window_and_every_board_session(h):
     result = await ask(h, doctorName="garima")
-    assert result.outcome == "AVAILABILITY" and result.nextStep == "OFFER_APPOINTMENT_REQUEST"
+    assert result.outcome == "AVAILABILITY" and result.nextStep == "ASK_WHICH_SESSION"
     assert result.facilityToday == "2026-10-01" and result.requestedDate == "2026-10-01" and result.weekday == "THU"
     [doctor] = result.doctors
     assert doctor.doctorId == "doc_garima" and doctor.departments == ["General Medicine"]
-    assert [(s.label, s.start, s.end, s.onRequestedDate) for s in doctor.usualSessions] == [
-        ("Morning", "09:00", "12:00", True), ("Afternoon", "15:00", "17:00", True)]
+    assert doctor.usualSessions is None
     assert [(b.session, b.status, b.expectedTime, b.expectedEndTime) for b in doctor.board] == [
         ("Morning", "IN", "09:10", "12:00"), ("Afternoon", "NOT_CONFIRMED", "15:00", "17:00")]
-    assert doctor.journey == "APPOINTMENT_REQUEST" and doctor.dataConfirmed is True
+    assert doctor.decision == "APPOINTMENT_REQUEST" and doctor.sessionChoiceRequired is True
     assert "patientsPerHour" not in result.model_dump_json() and "slot" not in result.model_dump_json().lower()
 
 
@@ -52,7 +51,7 @@ async def test_late_session_keeps_the_supplied_revised_time_without_adding_the_d
 async def test_cancelled_session_stays_visible(h):
     [doctor] = (await ask(h, doctorName="sunita")).doctors
     assert [(b.status, b.note) for b in doctor.board] == [("CANCELLED", "On leave")]
-    assert doctor.journey == "APPOINTMENT_REQUEST"  # cancelled today says nothing about another date
+    assert doctor.decision == "NOT_AVAILABLE" and doctor.reason == "CANCELLED"
 
 
 async def test_expected_end_time_expiry_uses_facility_time_and_the_requested_date(make_settings):
@@ -61,13 +60,13 @@ async def test_expected_end_time_expiry_uses_facility_time_and_the_requested_dat
     try:
         [early] = (await ask(before, doctorId="doc_meera_kulkarni")).doctors
         [late] = (await ask(after, doctorId="doc_meera_kulkarni")).doctors
-        assert [b.expired for b in early.board] == [False, False]
-        assert [b.expired for b in late.board] == [True, False]  # morning ended 11:00; evening untouched
+        assert [b.decision for b in early.board] == ["APPOINTMENT_REQUEST", "APPOINTMENT_REQUEST"]
+        assert [b.decision for b in late.board] == ["NOT_AVAILABLE", "APPOINTMENT_REQUEST"]
         after.ops_state.set_board("2026-10-02", [
             {"doctorId": "doc_meera_kulkarni", "session": "Morning", "status": "IN", "expectedTime": "09:00",
              "expectedEndTime": "11:00", "updatedMinutesAgo": 1}])
         [tomorrow] = (await ask(after, doctorId="doc_meera_kulkarni", date="2026-10-02")).doctors
-        assert tomorrow.board[0].expired is False  # a future session is not expired by today's clock
+        assert tomorrow.board == []  # a future session is not expired by today's clock
     finally:
         await before.aclose(), await after.aclose()
 
@@ -86,17 +85,16 @@ async def test_unknown_today_stops_the_journey_and_asks_for_callback_details(h, 
     result = await ask(h, doctorId=doctor_id)
     assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
     [doctor] = result.doctors
-    assert doctor.journey == "CALLBACK_ONLY" and all(b.status == "UNKNOWN" for b in doctor.board)
-    assert result.callback.ask and "call you back" in result.callback.say
+    assert doctor.decision == "CALLBACK_REQUIRED" and all(b.status == "UNKNOWN" for b in doctor.board)
     assert result.callback.summaryOutcome == "CALLBACK_NOTED"
-    assert "transfer" not in result.callback.say.lower()
-    assert doctor.usualSessions is not None  # hours still shown as background, never as attendance
+    assert doctor.usualSessions is None
 
 
-async def test_unknown_on_a_future_date_also_means_callback(h):
+async def test_future_date_uses_usual_schedule_not_the_board(h):
     result = await ask(h, doctorId="doc_garima", date="2026-10-05")
-    assert result.outcome == "CALLBACK_REQUIRED" and result.requestedDate == "2026-10-05" and result.weekday == "MON"
-    assert result.doctors[0].usualSessions[0].onRequestedDate is True  # MON is a usual day; still not attendance
+    assert result.outcome == "AVAILABILITY" and result.requestedDate == "2026-10-05" and result.weekday == "MON"
+    assert result.doctors[0].usualSessions[0].onRequestedDate is True
+    assert result.nextStep == "OFFER_APPOINTMENT_REQUEST" and "/availability" not in h.ops_paths()
 
 
 async def test_a_failed_board_is_a_service_error_not_unknown_and_not_hours(h):
@@ -111,19 +109,19 @@ async def test_a_failed_board_is_a_service_error_not_unknown_and_not_hours(h):
 async def test_profile_failure_still_reports_the_board(h):
     h.ops_state.fail_next.append(("/doctors/doc_garima", 500, {}))
     result = await ask(h, doctorId="doc_garima")
-    assert result.outcome == "AVAILABILITY" and result.doctors[0].usualSessions is None
+    assert result.outcome == "COULD_NOT_CHECK" and result.doctors == []
     assert result.detail == "PROFILE_UNAVAILABLE"
 
 
 async def test_on_call_doctor_with_a_confirmed_entry_is_offered_otherwise_desk(h):
     result = await ask(h, doctorId="doc_vikram_desai")
     [doctor] = result.doctors
-    assert doctor.attendanceType == "ON_CALL" and doctor.usualSessions == [] and doctor.board[0].status == "IN"
-    assert doctor.journey == "APPOINTMENT_REQUEST"
+    assert doctor.attendanceType == "ON_CALL" and doctor.usualSessions is None
+    assert doctor.decision == "CALLBACK_REQUIRED" and doctor.reason == "ON_CALL_DOCTOR"
     h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_vikram_desai", "status": "NOT_CONFIRMED",
                                           "updatedMinutesAgo": 5}])
     unconfirmed = await ask(h, doctorId="doc_vikram_desai")
-    assert unconfirmed.doctors[0].journey == "DESK" and unconfirmed.nextStep == "TRANSFER_DESK"
+    assert unconfirmed.doctors[0].decision == "CALLBACK_REQUIRED" and unconfirmed.nextStep == "ASK_CALLBACK_DETAILS"
 
 
 async def test_any_unknown_session_in_scope_stops_the_journey(h):
@@ -136,20 +134,21 @@ async def test_any_unknown_session_in_scope_stops_the_journey(h):
          "updatedMinutesAgo": 500},
     ])
     whole = await ask(h, doctorId="doc_garima")
-    assert whole.outcome == "CALLBACK_REQUIRED" and [b.status for b in whole.doctors[0].board] == ["IN", "UNKNOWN"]
-    assert whole.doctors[0].journey == "CALLBACK_ONLY" and whole.doctors[0].unknownSessions == ["Afternoon"]
+    assert whole.outcome == "AVAILABILITY" and [b.status for b in whole.doctors[0].board] == ["IN", "UNKNOWN"]
+    assert whole.doctors[0].sessionChoiceRequired is True and whole.nextStep == "ASK_WHICH_SESSION"
     afternoon = await ask(h, doctorId="doc_garima", session="afternoon")
     assert afternoon.outcome == "CALLBACK_REQUIRED" and [b.session for b in afternoon.doctors[0].board] == ["Afternoon"]
     morning = await ask(h, doctorId="doc_garima", session="Morning")
     assert morning.outcome == "AVAILABILITY" and [b.session for b in morning.doctors[0].board] == ["Morning"]
     unmatched = await ask(h, doctorId="doc_garima", session="this evening")
     assert unmatched.outcome == "CALLBACK_REQUIRED" and unmatched.sessionMatched is False
-    assert len(unmatched.doctors[0].board) == 2
+    assert unmatched.doctors[0].board == [] and unmatched.detail == "SESSION_NOT_ON_BOARD"
 
 
 async def test_unmatched_session_without_any_unknown_is_availability(h):
     result = await ask(h, doctorId="doc_garima", session="Night")  # fixture: Morning IN, Afternoon NOT_CONFIRMED
-    assert result.outcome == "AVAILABILITY" and result.sessionMatched is False and len(result.doctors[0].board) == 2
+    assert result.outcome == "CALLBACK_REQUIRED" and result.sessionMatched is False
+    assert result.detail == "SESSION_NOT_ON_BOARD"
 
 
 async def test_department_queries_honour_the_session_too(h):
@@ -160,9 +159,9 @@ async def test_department_queries_honour_the_session_too(h):
          "updatedMinutesAgo": 500},  # stale → UNKNOWN
     ])
     evening = await ask(h, departmentName="cardiology", session="Evening")
-    assert [d.doctorId for d in evening.doctors] == ["doc_ravi_sharma"] and evening.outcome == "CALLBACK_REQUIRED"
+    assert evening.outcome == "CALLBACK_REQUIRED" and len(evening.doctors) == 2
     none = await ask(h, departmentName="cardiology", session="Night")
-    assert none.outcome == "NOT_FOUND" and none.detail == "NO_SESSION"
+    assert none.outcome == "CALLBACK_REQUIRED" and all(d.reason == "SESSION_NOT_ON_BOARD" for d in none.doctors)
 
 
 async def test_a_board_that_omits_the_doctor_is_treated_as_unknown(h):
@@ -171,7 +170,7 @@ async def test_a_board_that_omits_the_doctor_is_treated_as_unknown(h):
     h.ops_state.omit_missing_entries = True
     h.ops_state.set_board("2026-10-01", [])
     result = await ask(h, doctorId="doc_garima")
-    assert result.outcome == "CALLBACK_REQUIRED" and result.doctors[0].journey == "CALLBACK_ONLY"
+    assert result.outcome == "CALLBACK_REQUIRED" and result.doctors[0].decision == "CALLBACK_REQUIRED"
     assert result.doctors[0].board == [] and result.detail == "BOARD_ENTRY_MISSING"
     department = await ask(h, departmentName="cardiology")
     assert department.outcome == "CALLBACK_REQUIRED"
@@ -186,11 +185,11 @@ async def test_ambiguous_name_asks_the_caller_to_choose(h):
 
 
 async def test_bounded_search_reports_incompleteness_instead_of_pretending(make_settings):
-    h3 = harness.build(make_settings(directory_page_size=3))
+    h3 = harness.build(make_settings(doctor_choice_limit=3))
     try:
         result = await ask(h3, doctorName="a")  # every demo name contains an 'a': ten matches, three returned
         assert result.outcome == "CLARIFICATION_NEEDED" and len(result.choices) == 3
-        assert result.complete is False and result.totalMatches == 10
+        assert result.complete is True and result.totalMatches == 10
     finally:
         await h3.aclose()
 
@@ -203,11 +202,10 @@ async def test_unknown_name_is_not_found_never_no_availability(h):
 async def test_department_by_name_uses_one_board_call_and_no_profile_fan_out(h):
     result = await ask(h, departmentName="cardiology")
     assert result.outcome == "AVAILABILITY" and result.nextStep == "ASK_WHICH_DOCTOR"
-    assert sorted(d.doctorId for d in result.doctors) == ["doc_anil_sharma", "doc_ravi_sharma"]
+    assert [d.doctorId for d in result.doctors] == ["doc_anil_sharma"]
     assert all(d.usualSessions is None for d in result.doctors)  # summaries only: bounded fan-out
     anil = next(d for d in result.doctors if d.doctorId == "doc_anil_sharma")
-    ravi = next(d for d in result.doctors if d.doctorId == "doc_ravi_sharma")
-    assert anil.board[0].status == "IN" and ravi.board[0].status == "UNKNOWN" and ravi.journey == "CALLBACK_ONLY"
+    assert anil.board[0].status == "IN" and result.bookableFound == 1 and result.totalMatches == 2
     paths = h.ops_paths()
     assert paths.count("/availability") == 1 and not any(p.startswith("/doctors/") for p in paths)
     assert result.department.id == "dept_cardio"
@@ -215,7 +213,7 @@ async def test_department_by_name_uses_one_board_call_and_no_profile_fan_out(h):
 
 async def test_department_with_all_unknown_is_callback_required(h):
     result = await ask(h, departmentId="dept_ortho")
-    assert result.outcome == "CALLBACK_REQUIRED" and result.doctors[0].journey == "CALLBACK_ONLY"
+    assert result.outcome == "CALLBACK_REQUIRED" and result.doctors[0].decision == "CALLBACK_REQUIRED"
 
 
 async def test_department_without_a_consultant_is_never_confirmed(h):
@@ -241,6 +239,22 @@ async def test_unmatched_department_name_offers_the_real_list(h):
 async def test_no_target_is_invalid(h):
     result = await ask(h)
     assert result.outcome == "INVALID_REQUEST" and result.detail == "TARGET_REQUIRED"
+
+
+@pytest.mark.parametrize("target", [{"doctorId": "doc_garima"}, {"doctorName": "garima"},
+                                    {"departmentId": "dept_genmed"}])
+async def test_working_hours_need_no_date_and_never_read_live_board(h, target):
+    result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+    assert result.outcome == "WORKING_HOURS" and result.basis == "USUAL_SCHEDULE"
+    assert result.requestedDate is None and result.doctors[0].usualSessions
+    assert all(s.onRequestedDate is None for s in result.doctors[0].usualSessions)
+    assert "/availability" not in h.ops_paths()
+
+
+async def test_availability_missing_date_is_an_in_band_request_error(h):
+    result = await ask(h, doctorId="doc_garima", date=None)
+    assert result.outcome == "INVALID_REQUEST" and result.detail == "DATE_REQUIRED"
+    assert h.ops_paths() == []
 
 
 async def test_directory_and_profile_are_cached_but_the_board_is_not(h):
@@ -303,7 +317,7 @@ async def test_department_session_query_keeps_a_sessionless_unknown_row(h):
     h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "status": "UNKNOWN", "updatedMinutesAgo": 1}])
     result = await ask(h, departmentName="General Medicine", session="Morning")
     assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
-    assert any(d.doctorId == "doc_garima" and d.journey == "CALLBACK_ONLY" for d in result.doctors)
+    assert any(d.doctorId == "doc_garima" and d.decision == "CALLBACK_REQUIRED" for d in result.doctors)
 
 
 async def test_department_session_query_with_a_missing_row_is_unknown_too(h):
@@ -357,11 +371,11 @@ async def test_a_missing_row_for_a_usual_session_today_is_unknown(h):
     h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "session": "Afternoon", "status": "IN",
                                           "expectedTime": "15:00", "expectedEndTime": "17:00", "updatedMinutesAgo": 1}])
     result = await ask(h, doctorId="doc_garima", session="Morning")
-    assert result.outcome == "CALLBACK_REQUIRED" and result.detail == "SESSION_ROW_MISSING"
+    assert result.outcome == "CALLBACK_REQUIRED" and result.detail == "SESSION_NOT_ON_BOARD"
     afternoon = await ask(h, doctorId="doc_garima", session="Afternoon")
     assert afternoon.outcome == "AVAILABILITY"
     saturday = await ask(h, doctorId="doc_garima", date="2026-10-03", session="Morning")  # not a usual Saturday session
-    assert saturday.outcome == "CALLBACK_REQUIRED"  # the whole future board is UNKNOWN anyway in the fixture
+    assert saturday.outcome == "NOT_AVAILABLE" and saturday.detail == "NOT_USUAL_DAY"
 
 
 async def test_profile_failure_with_no_board_row_is_could_not_check_not_not_found(h):
@@ -388,8 +402,8 @@ async def test_single_match_search_then_profile_and_board_overlap(make_settings)
 
 
 @pytest.mark.parametrize("target,expected,step", [
-    ({"doctorId": "doc_garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
-    ({"doctorName": "garima"}, "AVAILABILITY", "OFFER_APPOINTMENT_REQUEST"),
+    ({"doctorId": "doc_garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+    ({"doctorName": "garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
     ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
     ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
     ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
@@ -428,7 +442,7 @@ async def test_availability_is_independent_of_knowledge_and_transcript(make_sett
             assert result.doctors and result.doctors[0].board
         if expected == "AVAILABILITY":
             ids = {doctor.doctorId for doctor in result.doctors}
-            assert ids == ({"doc_anil_sharma", "doc_ravi_sharma"}
+            assert ids == ({"doc_anil_sharma"}
                            if "departmentId" in target or "departmentName" in target else {"doc_garima"})
             assert result.choices == []
         if expected == "CLARIFICATION_NEEDED":

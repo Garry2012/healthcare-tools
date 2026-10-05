@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from . import contract
 from . import knowledge_contract as kc
+from .availability_policy import Basis, Decision, Reason
 
 
 class _Out(BaseModel):
@@ -40,7 +41,9 @@ class UsualSessionOut(_Out):
     daysOfWeek: list[str]  # noqa: N815
     start: str
     end: str
-    onRequestedDate: bool  # noqa: N815
+    onRequestedDate: bool | None  # noqa: N815
+    decision: Decision
+    reason: Reason | None = None
 
 
 class BoardSessionOut(_Out):
@@ -51,10 +54,8 @@ class BoardSessionOut(_Out):
     delayMinutes: int | None = None  # noqa: N815
     note: str | None = None
     isStale: bool  # noqa: N815
-    expired: bool = Field(description="expectedEndTime has passed in facility time on the requested date.")
-
-
-Journey = Literal["APPOINTMENT_REQUEST", "CALLBACK_ONLY", "DESK"]
+    decision: Decision
+    reason: Reason | None = None
 
 
 class DoctorAvailability(_Out):
@@ -67,8 +68,9 @@ class DoctorAvailability(_Out):
     usualSessions: list[UsualSessionOut] | None = Field(  # noqa: N815
         description="Usual working hours, independent of live attendance. null when the profile was not fetched.")
     board: list[BoardSessionOut]
-    unknownSessions: list[str] = []  # noqa: N815
-    journey: Journey
+    decision: Decision
+    reason: Reason | None = None
+    sessionChoiceRequired: bool = False  # noqa: N815
 
 
 class DoctorChoice(_Out):
@@ -86,11 +88,12 @@ class DepartmentChoice(_Out):
 AvailabilityOutcome = Literal[
     "AVAILABILITY", "CLARIFICATION_NEEDED", "CALLBACK_REQUIRED",
     "NOT_FOUND", "COULD_NOT_CHECK", "INVALID_REQUEST",
+    "NOT_AVAILABLE", "WORKING_HOURS", "HANDOFF_REQUIRED",
 ]
 NextStep = Literal[
     "OFFER_APPOINTMENT_REQUEST", "ASK_WHICH_DOCTOR", "ASK_WHICH_DEPARTMENT", "ASK_CALLBACK_DETAILS",
     "TRANSFER_DESK", "ASK_TO_REPHRASE", "SAY_COULD_NOT_CHECK",
-    "ASK_EXPLICIT_DATE",
+    "ASK_EXPLICIT_DATE", "ASK_WHICH_SESSION", "OFFER_OTHER_SESSION_OR_DATE",
 ]
 
 
@@ -104,8 +107,13 @@ class AvailabilityResult(_Out):
     doctors: list[DoctorAvailability] = []
     choices: list[DoctorChoice] = []
     departmentChoices: list[DepartmentChoice] = []  # noqa: N815
-    complete: bool = True
-    totalMatches: int | None = None  # noqa: N815
+    complete: bool = Field(default=True,
+                           description="Every directory candidate was evaluated; no failed or unchecked reads.")
+    totalMatches: int | None = Field(default=None,  # noqa: N815
+                                    description="Directory count across all attendance types and decisions.")  # noqa: N815
+    bookableFound: int = Field(default=0,  # noqa: N815
+                               description="Bookable doctors found among those checked; may exceed the capped list.")  # noqa: N815
+    basis: Basis | None = None
     sessionMatched: bool | None = None  # noqa: N815
     callback: Callback | None = None
     detail: str | None = Field(default=None, description="Machine-readable reason for non-success outcomes.")

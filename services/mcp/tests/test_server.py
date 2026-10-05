@@ -109,7 +109,7 @@ async def test_the_whole_journey_over_http(served):
     base, h = served
     async with client(base, operation_id="op-1") as c:
         found = await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "2026-10-02"})
-        assert found.structured_content["outcome"] == "CALLBACK_REQUIRED"  # tomorrow's board is UNKNOWN in the fixture
+        assert found.structured_content["outcome"] == "AVAILABILITY"  # future uses the usual schedule
         today = (await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "today"})
                  ).structured_content
         assert today["outcome"] == "AVAILABILITY" and len(today["doctors"][0]["board"]) == 2
