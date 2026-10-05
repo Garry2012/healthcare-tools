@@ -138,7 +138,7 @@ def test_outside_a_known_window_never_writes():
 def test_department_rollup_and_counts_do_not_list_callback_as_bookable():
     p = policy()
     good, callback = decide(facts()), decide(facts(attendance="ON_CALL"))
-    search = p.SearchState(bookable_found=1, checked=2, complete=True)
+    search = p.SearchState(matches_found=1, checked=2, complete=True)
     result = p.aggregate([callback, good], search)
     assert (result.outcome, result.next_step) == ("AVAILABILITY", "ASK_WHICH_DOCTOR")
     assert p.rank([callback, good], 3) == [good]

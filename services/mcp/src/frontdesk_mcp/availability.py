@@ -132,7 +132,7 @@ class AvailabilityService:
         basis = policy.Basis.LIVE_BOARD if today else policy.Basis.USUAL_SCHEDULE
         return outcomes.AvailabilityResult(outcome=result.outcome, nextStep=result.next_step, **base,
             department=_choice(department), basis=basis, doctors=[doctor_out(d, requested) for d in listed],
-            bookableFound=found.search.bookable_found, totalMatches=found.total, complete=found.search.complete,
+            bookableFound=found.search.matches_found, totalMatches=found.total, complete=found.search.complete,
             detail=result.reason,
             callback=outcomes.Callback(reason=result.reason) if result.outcome == "CALLBACK_REQUIRED" else None)
 

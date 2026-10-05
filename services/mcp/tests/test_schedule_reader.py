@@ -82,14 +82,14 @@ async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat
 async def test_stops_after_a_full_successful_batch_in_name_order(make_settings):
     found, first, _, peak, _ = await run_search(make_settings, statuses=["match"] * 8, reverse=True)
     assert first == [0, 1, 2] and peak <= 3
-    assert found.search.bookable_found == 3 and found.search.complete is False and found.total == 8
+    assert found.search.matches_found == 3 and found.search.complete is False and found.total == 8
     assert [f.doctor.id for f in found.facts] == ["0", "1", "2"]
 
 
 async def test_continues_to_later_batches_and_counts_all_matches_in_the_batch(make_settings):
     found, first, _, _, _ = await run_search(make_settings, statuses=["miss"] * 3 + ["match"] * 3)
     assert first == [0, 1, 2, 3, 4, 5]
-    assert found.search.bookable_found == 3 and found.search.complete is True
+    assert found.search.matches_found == 3 and found.search.complete is True
 
 
 async def test_failed_read_keeps_search_incomplete(make_settings):
@@ -105,7 +105,7 @@ async def test_deadline_cancels_batch_and_never_claims_unavailability(make_setti
     found, first, _, peak, elapsed = await run_search(make_settings, statuses=["match"] * 5,
                                                      delays={0: .5, 1: .5, 2: .5}, budget=.08)
     assert first == [0, 1, 2] and peak <= 3 and elapsed < .15
-    assert not found.search.complete and found.search.checked == 0 and found.search.bookable_found == 0
+    assert not found.search.complete and found.search.checked == 0 and found.search.matches_found == 0
 
 
 async def test_headroom_prevents_a_new_batch(make_settings):
@@ -115,7 +115,7 @@ async def test_headroom_prevents_a_new_batch(make_settings):
 
 async def test_on_call_candidates_need_no_profile_reads(make_settings):
     found, first, _, _, _ = await run_search(make_settings, statuses=["oncall"] * 4)
-    assert first == [] and found.search.complete is True and found.search.bookable_found == 0
+    assert first == [] and found.search.complete is True and found.search.matches_found == 0
 
 
 async def test_completed_profiles_are_cached(make_settings):
@@ -139,7 +139,7 @@ async def test_twenty_owner_orders_produce_identical_sorted_candidates(make_sett
         found, first, _, peak, _ = await run_search(make_settings, statuses=["match"] * 12, order_seed=seed)
         assert first == [0, 1, 2], seed
         assert [f.doctor.id for f in found.facts] == ["0", "1", "2"], seed
-        assert found.search.bookable_found == 3 and found.total == 12 and not found.search.complete
+        assert found.search.matches_found == 3 and found.total == 12 and not found.search.complete
         assert peak <= 3
 
 
@@ -148,5 +148,5 @@ async def test_warm_cache_reaches_the_remaining_batch_after_cold_headroom_stop(m
         make_settings, statuses=["miss"] * 6, delays={i: .04 for i in range(6)}, budget=.08, repeat=True)
     assert cold == [0, 1, 2]
     assert all_reads == [0, 1, 2, 3, 4, 5]
-    assert found.search.complete and found.search.checked == 6 and found.search.bookable_found == 0
+    assert found.search.complete and found.search.checked == 6 and found.search.matches_found == 0
     assert peak <= 3 and elapsed < .15

@@ -130,7 +130,9 @@ BookingDecision = Write | SessionRequired | Callback | NotAvailable | Handoff
 
 @dataclass(frozen=True)
 class SearchState:
-    bookable_found: int
+    """Evaluated matches: date-specific requests or schedules, according to the query purpose."""
+
+    matches_found: int
     checked: int
     complete: bool
 
@@ -316,7 +318,7 @@ def rank(decisions: list[DoctorDecision], limit: int) -> list[DoctorDecision]:
 
 def aggregate(decisions: list[DoctorDecision], search: SearchState,
               purpose: Purpose = Purpose.AVAILABILITY) -> ResultOutcome:
-    if search.bookable_found:
+    if search.matches_found:
         outcome = "WORKING_HOURS" if purpose == Purpose.WORKING_HOURS else "AVAILABILITY"
         return ResultOutcome(outcome, "ASK_WHICH_DOCTOR")
     if not search.complete:
