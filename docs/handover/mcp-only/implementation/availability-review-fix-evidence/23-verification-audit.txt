@@ -1,0 +1,77 @@
+PASS generated make schema output exactly matches tracked snapshot
+PASS four tool names unchanged
+PASS get_doctor_availability inputSchema unchanged
+PASS manage_booking inputSchema unchanged
+PASS search_knowledge inputSchema unchanged
+PASS search_knowledge full tool schema unchanged
+PASS record_call_summary inputSchema unchanged
+PASS record_call_summary full tool schema unchanged
+PASS _combine AST unchanged (G-1/date/overnight/M-7)
+PASS _window AST unchanged (G-1/date/overnight/M-7)
+PASS resolve_date AST unchanged (G-1/date/overnight/M-7)
+PASS _today AST unchanged (G-1/date/overnight/M-7)
+PASS services/mcp/src/frontdesk_mcp/contract.py unchanged
+PASS services/mcp/src/frontdesk_mcp/context.py unchanged
+PASS services/mcp/src/frontdesk_mcp/identity.py unchanged
+PASS services/mcp/src/frontdesk_mcp/ops_client.py unchanged
+PASS services/mcp/src/frontdesk_mcp/config.py unchanged
+PASS deploy/azure/deploy.sh unchanged
+PASS deploy/contextforge/register.py unchanged
+PASS vulture --min-confidence 80 output empty (command exited 0)
+
+Runtime diff statistics:
+ services/mcp/src/frontdesk_mcp/availability.py     | 30 ++++++-------
+ .../mcp/src/frontdesk_mcp/availability_policy.py   | 52 ++++++++++++----------
+ services/mcp/src/frontdesk_mcp/booking.py          |  2 +-
+ services/mcp/src/frontdesk_mcp/outcomes.py         |  7 +--
+ .../mcp/src/frontdesk_mcp/packs/healthcare.json    |  2 +-
+ services/mcp/src/frontdesk_mcp/prompt.py           |  2 +-
+ services/mcp/src/frontdesk_mcp/schedule_reader.py  |  4 +-
+ 7 files changed, 52 insertions(+), 47 deletions(-)
+
+Local commit file counts:
+PASS 76661b5 <= 10 files (7)
+PASS 53f03d2 <= 10 files (7)
+PASS b874f24 <= 10 files (10)
+PASS 0d89e1f <= 10 files (10)
+PASS 5601879 <= 10 files (5)
+PASS b7c5a30 <= 10 files (6)
+
+Search audit against git-tracked files; historical review/evidence/brief references are retained as history.
+Old routing removal predates this fix pass. Historical hits do not imply executable paths.
+git grep -n -F '_Routing' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F '_routing_outcome' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F '_routing_out' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'routing_task' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'ROUTING_REQUIRED' -- services/mcp/src services/mcp/dev deploy
+deploy/azure/smoke.py:24:KNOWLEDGE_OK = {"ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED"}
+services/mcp/src/frontdesk_mcp/knowledge.py:46:        return outcomes.KnowledgeResult(outcome="ROUTING_REQUIRED", nextStep=step, **common,
+services/mcp/src/frontdesk_mcp/outcomes.py:177:KnowledgeOutcome = Literal["ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED",
+git grep -n -F 'ROUTING_UNAVAILABLE' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'ASK_ROUTING_CLARIFICATION' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'RouteRequest' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'RouteResponse' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'CLEARANCE' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'additionalText' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'TurnContext' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'TurnFailure' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'UTTERANCE_MAX' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'X-Turn-Context' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'NO_REGULAR_HOURS' -- services/mcp/src services/mcp/dev deploy
+0 hits
+git grep -n -F 'search.bookable_found' -- services/mcp/src services/mcp/dev deploy
+0 hits
