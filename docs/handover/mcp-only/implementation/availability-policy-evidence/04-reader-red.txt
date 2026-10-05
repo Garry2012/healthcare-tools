@@ -1,0 +1,229 @@
+FFFFFFFFFFFF.                                                            [100%]
+=================================== FAILURES ===================================
+_______________ test_invalid_search_bounds_are_refused[values0] ________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba291c0>
+values = {'profile_batch_size': 0}
+
+    @pytest.mark.parametrize("values", [{"profile_batch_size": 0}, {"doctor_choice_limit": 0},
+        {"profile_batch_size": 4, "ops_pool_max_connections": 3}, {"min_batch_headroom_seconds": -1}])
+    def test_invalid_search_bounds_are_refused(make_settings, values):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValidationError
+
+tests/test_schedule_reader.py:21: Failed
+_______________ test_invalid_search_bounds_are_refused[values1] ________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba707c0>
+values = {'doctor_choice_limit': 0}
+
+    @pytest.mark.parametrize("values", [{"profile_batch_size": 0}, {"doctor_choice_limit": 0},
+        {"profile_batch_size": 4, "ops_pool_max_connections": 3}, {"min_batch_headroom_seconds": -1}])
+    def test_invalid_search_bounds_are_refused(make_settings, values):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValidationError
+
+tests/test_schedule_reader.py:21: Failed
+_______________ test_invalid_search_bounds_are_refused[values2] ________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba70540>
+values = {'profile_batch_size': 4, 'ops_pool_max_connections': 3}
+
+    @pytest.mark.parametrize("values", [{"profile_batch_size": 0}, {"doctor_choice_limit": 0},
+        {"profile_batch_size": 4, "ops_pool_max_connections": 3}, {"min_batch_headroom_seconds": -1}])
+    def test_invalid_search_bounds_are_refused(make_settings, values):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValidationError
+
+tests/test_schedule_reader.py:21: Failed
+_______________ test_invalid_search_bounds_are_refused[values3] ________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba70cc0>
+values = {'min_batch_headroom_seconds': -1}
+
+    @pytest.mark.parametrize("values", [{"profile_batch_size": 0}, {"doctor_choice_limit": 0},
+        {"profile_batch_size": 4, "ops_pool_max_connections": 3}, {"min_batch_headroom_seconds": -1}])
+    def test_invalid_search_bounds_are_refused(make_settings, values):
+>       with pytest.raises(ValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValidationError
+
+tests/test_schedule_reader.py:21: Failed
+____________ test_stops_after_a_full_successful_batch_in_name_order ____________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba70fe0>
+
+    async def test_stops_after_a_full_successful_batch_in_name_order(make_settings):
+>       found, first, _, peak, _ = await run_search(make_settings, statuses=["match"] * 8, reverse=True)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_schedule_reader.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba70fe0>
+statuses = ['match', 'match', 'match', 'match', 'match', 'match', ...]
+delays = None, budget = 0.3, repeat = False, total = None, reverse = True
+
+    async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False):
+>       from frontdesk_mcp.schedule_reader import ScheduleReader
+E       ModuleNotFoundError: No module named 'frontdesk_mcp.schedule_reader'
+
+tests/test_schedule_reader.py:26: ModuleNotFoundError
+_____ test_continues_to_later_batches_and_counts_all_matches_in_the_batch ______
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba71120>
+
+    async def test_continues_to_later_batches_and_counts_all_matches_in_the_batch(make_settings):
+>       found, first, _, _, _ = await run_search(make_settings, statuses=["miss"] * 3 + ["match"] * 3)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_schedule_reader.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba71120>
+statuses = ['miss', 'miss', 'miss', 'match', 'match', 'match'], delays = None
+budget = 0.3, repeat = False, total = None, reverse = False
+
+    async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False):
+>       from frontdesk_mcp.schedule_reader import ScheduleReader
+E       ModuleNotFoundError: No module named 'frontdesk_mcp.schedule_reader'
+
+tests/test_schedule_reader.py:26: ModuleNotFoundError
+___________________ test_failed_read_keeps_search_incomplete ___________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba71d00>
+
+    async def test_failed_read_keeps_search_incomplete(make_settings):
+>       found, _, _, _, _ = await run_search(make_settings, statuses=["failure", "miss"])
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_schedule_reader.py:90: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba71d00>
+statuses = ['failure', 'miss'], delays = None, budget = 0.3, repeat = False
+total = None, reverse = False
+
+    async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False):
+>       from frontdesk_mcp.schedule_reader import ScheduleReader
+E       ModuleNotFoundError: No module named 'frontdesk_mcp.schedule_reader'
+
+tests/test_schedule_reader.py:26: ModuleNotFoundError
+_________ test_deadline_cancels_batch_and_never_claims_unavailability __________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba72160>
+
+    async def test_deadline_cancels_batch_and_never_claims_unavailability(make_settings):
+>       found, first, _, peak, elapsed = await run_search(make_settings, statuses=["match"] * 5,
+                                                         delays={0: .5, 1: .5, 2: .5}, budget=.08)
+
+tests/test_schedule_reader.py:99: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba72160>
+statuses = ['match', 'match', 'match', 'match', 'match']
+delays = {0: 0.5, 1: 0.5, 2: 0.5}, budget = 0.08, repeat = False, total = None
+reverse = False
+
+    async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False):
+>       from frontdesk_mcp.schedule_reader import ScheduleReader
+E       ModuleNotFoundError: No module named 'frontdesk_mcp.schedule_reader'
+
+tests/test_schedule_reader.py:26: ModuleNotFoundError
+______________________ test_headroom_prevents_a_new_batch ______________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba71da0>
+
+    async def test_headroom_prevents_a_new_batch(make_settings):
+>       found, first, _, _, _ = await run_search(make_settings, statuses=["match"] * 4, budget=.02)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_schedule_reader.py:106: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba71da0>
+statuses = ['match', 'match', 'match', 'match'], delays = None, budget = 0.02
+repeat = False, total = None, reverse = False
+
+    async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False):
+>       from frontdesk_mcp.schedule_reader import ScheduleReader
+E       ModuleNotFoundError: No module named 'frontdesk_mcp.schedule_reader'
+
+tests/test_schedule_reader.py:26: ModuleNotFoundError
+________________ test_on_call_candidates_need_no_profile_reads _________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba72ca0>
+
+    async def test_on_call_candidates_need_no_profile_reads(make_settings):
+>       found, first, _, _, _ = await run_search(make_settings, statuses=["oncall"] * 4)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_schedule_reader.py:111: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba72ca0>
+statuses = ['oncall', 'oncall', 'oncall', 'oncall'], delays = None, budget = 0.3
+repeat = False, total = None, reverse = False
+
+    async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False):
+>       from frontdesk_mcp.schedule_reader import ScheduleReader
+E       ModuleNotFoundError: No module named 'frontdesk_mcp.schedule_reader'
+
+tests/test_schedule_reader.py:26: ModuleNotFoundError
+______________________ test_completed_profiles_are_cached ______________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba73240>
+
+    async def test_completed_profiles_are_cached(make_settings):
+>       found, first, repeated, _, _ = await run_search(make_settings, statuses=["miss"] * 4, repeat=True)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_schedule_reader.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba73240>
+statuses = ['miss', 'miss', 'miss', 'miss'], delays = None, budget = 0.3
+repeat = True, total = None, reverse = False
+
+    async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False):
+>       from frontdesk_mcp.schedule_reader import ScheduleReader
+E       ModuleNotFoundError: No module named 'frontdesk_mcp.schedule_reader'
+
+tests/test_schedule_reader.py:26: ModuleNotFoundError
+_______________ test_directory_truncation_never_claims_complete ________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba72c00>
+
+    async def test_directory_truncation_never_claims_complete(make_settings):
+>       found, _, _, _, _ = await run_search(make_settings, statuses=["miss"], total=101)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_schedule_reader.py:121: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+make_settings = <function make_settings.<locals>.factory at 0x10ba72c00>
+statuses = ['miss'], delays = None, budget = 0.3, repeat = False, total = 101
+reverse = False
+
+    async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat=False, total=None, reverse=False):
+>       from frontdesk_mcp.schedule_reader import ScheduleReader
+E       ModuleNotFoundError: No module named 'frontdesk_mcp.schedule_reader'
+
+tests/test_schedule_reader.py:26: ModuleNotFoundError
+=========================== short test summary info ============================
+FAILED tests/test_schedule_reader.py::test_invalid_search_bounds_are_refused[values0]
+FAILED tests/test_schedule_reader.py::test_invalid_search_bounds_are_refused[values1]
+FAILED tests/test_schedule_reader.py::test_invalid_search_bounds_are_refused[values2]
+FAILED tests/test_schedule_reader.py::test_invalid_search_bounds_are_refused[values3]
+FAILED tests/test_schedule_reader.py::test_stops_after_a_full_successful_batch_in_name_order
+FAILED tests/test_schedule_reader.py::test_continues_to_later_batches_and_counts_all_matches_in_the_batch
+FAILED tests/test_schedule_reader.py::test_failed_read_keeps_search_incomplete
+FAILED tests/test_schedule_reader.py::test_deadline_cancels_batch_and_never_claims_unavailability
+FAILED tests/test_schedule_reader.py::test_headroom_prevents_a_new_batch - Mo...
+FAILED tests/test_schedule_reader.py::test_on_call_candidates_need_no_profile_reads
+FAILED tests/test_schedule_reader.py::test_completed_profiles_are_cached - Mo...
+FAILED tests/test_schedule_reader.py::test_directory_truncation_never_claims_complete
+12 failed, 1 passed in 0.18s

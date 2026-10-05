@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 
 import httpx
@@ -73,6 +74,39 @@ async def test_gateway_gets_all_four_tools_without_trusted_fields(served):
     assert "NOTED" in instructions and prompt.SCHEMA_VERSION in instructions
 
 
+async def test_working_hours_and_missing_date_are_exposed_through_mcp(served):
+    base, h = served
+    async with client(base) as c:
+        tool = next(t for t in await c.list_tools() if t.name == "get_doctor_availability")
+        hours = await c.call_tool("get_doctor_availability", {
+            "doctorId": "doc_garima", "purpose": "WORKING_HOURS"}, raise_on_error=False)
+        missing = await c.call_tool("get_doctor_availability", {"doctorId": "doc_garima"}, raise_on_error=False)
+    assert not hours.is_error and hours.structured_content["outcome"] == "WORKING_HOURS"
+    assert not missing.is_error and missing.structured_content["detail"] == "DATE_REQUIRED"
+    assert "date" not in tool.inputSchema.get("required", []) and "/availability" not in h.ops_paths()
+    assert tool.outputSchema["$defs"]["BoardSessionOut"]["properties"]["status"]["enum"] == [
+        "IN", "LATE", "CANCELLED", "NOT_CONFIRMED", "UNKNOWN"]
+
+
+def test_availability_description_distinguishes_counts_and_sources(make_settings):
+    doc = cli.schema_document(make_settings())
+    text = next(t["description"] for t in doc["tools"] if t["name"] == "get_doctor_availability")
+    for fact in ("totalMatches", "bookableFound", "complete", "WORKING_HOURS", "decision", "status",
+                 "NOT_AVAILABLE", "HANDOFF_REQUIRED", "SESSION_ENDED", "attendance not confirmed"):
+        assert fact in text
+
+
+async def test_department_booking_is_absent_from_schema_and_refused_without_writes(served):
+    base, h = served
+    async with client(base, operation_id="no-department") as c:
+        tool = next(t for t in await c.list_tools() if t.name == "manage_booking")
+        assert "departmentId" not in tool.inputSchema["properties"]
+        result = await c.call_tool("manage_booking", {"action": "CREATE", "departmentId": "dept_genmed",
+            "patientName": "Synthetic", "patientMobile": "9000000101", "visitDate": "2026-10-05",
+            "callerConfirmed": True}, raise_on_error=False)
+    assert result.is_error and not h.ops_state.appointments
+
+
 async def test_gateway_can_save_a_summary_with_trusted_call_identity(served):
     base, h = served
     async with client(base, started_at="2026-10-01T09:58:00+05:30") as c:
@@ -109,15 +143,16 @@ async def test_the_whole_journey_over_http(served):
     base, h = served
     async with client(base, operation_id="op-1") as c:
         found = await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "2026-10-02"})
-        assert found.structured_content["outcome"] == "CALLBACK_REQUIRED"  # tomorrow's board is UNKNOWN in the fixture
+        assert found.structured_content["outcome"] == "AVAILABILITY"  # future uses the usual schedule
         today = (await c.call_tool("get_doctor_availability", {"doctorName": "garima", "date": "today"})
                  ).structured_content
         assert today["outcome"] == "AVAILABILITY" and len(today["doctors"][0]["board"]) == 2
         unknown_day = (await c.call_tool("manage_booking", {
-            "action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101", "doctorId": "doc_garima",
+            "action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101",
+            "doctorId": "doc_vikram_desai",
             "visitDate": "2026-10-02", "preferredTime": "09:30", "reasonVerbatim": "fever", "callerConfirmed": True,
         })).structured_content
-        assert unknown_day["outcome"] == "CALLBACK_REQUIRED"  # the server refuses a create on an UNKNOWN date
+        assert unknown_day["outcome"] == "CALLBACK_REQUIRED"  # on-call is callback on every date
         noted = (await c.call_tool("manage_booking", {
             "action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101", "doctorId": "doc_garima",
             "visitDate": "2026-10-01", "preferredTime": "09:30", "reasonVerbatim": "fever", "callerConfirmed": True,
@@ -132,14 +167,11 @@ async def test_the_whole_journey_over_http(served):
         unknown_move = (await c.call_tool("manage_booking", {"action": "RESCHEDULE", "appointmentId": appointment_id,
                                                              "newVisitDate": "2026-10-03", "callerConfirmed": True})
                         ).structured_content
-        assert unknown_move["outcome"] == "CALLBACK_REQUIRED"  # the new date's board is UNKNOWN in the fixture
-        h.ops_state.set_board("2026-10-03", [{"doctorId": "doc_garima", "session": "Morning",
-                                              "status": "NOT_CONFIRMED", "expectedTime": "09:00",
-                                              "expectedEndTime": "12:00", "updatedMinutesAgo": 1}])
+        assert unknown_move["outcome"] == "NOT_AVAILABLE"  # Saturday is not a usual day
         moved = (await c.call_tool("manage_booking", {"action": "RESCHEDULE", "appointmentId": appointment_id,
-                                                      "newVisitDate": "2026-10-03", "callerConfirmed": True})
+                                                      "newVisitDate": "2026-10-05", "callerConfirmed": True})
                  ).structured_content
-        assert moved["outcome"] == "CHANGED"
+        assert moved["outcome"] == "NOTED"
     async with client(base, operation_id="op-3") as c:
         cancelled = (await c.call_tool("manage_booking", {"action": "CANCEL", "appointmentId": appointment_id,
                                                           "callerConfirmed": True})).structured_content
@@ -200,7 +232,7 @@ async def test_concurrent_calls_keep_their_own_identity(served):
         async with client(base, call_id=call_id, caller=caller, operation_id=f"op-{call_id}") as c:
             await c.call_tool("manage_booking", {
                 "action": "CREATE", "patientName": f"Patient {call_id}", "patientMobile": caller[3:],
-                "doctorId": "doc_garima", "visitDate": "2026-10-01", "callerConfirmed": True})
+                "doctorId": "doc_garima", "visitDate": "2026-10-01", "session": "Morning", "callerConfirmed": True})
             return (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content
 
     results = await asyncio.gather(*(one(f"call-{i}", f"+91900000010{i}") for i in range(1, 6)))
@@ -276,7 +308,7 @@ def test_published_tool_text_contains_facts_not_behaviour_scripts(make_settings)
                  "read back", "read-back", "do not", "never ", "collect ", "use ")
     for entry in text:
         for phrase in forbidden:
-            assert phrase not in entry.casefold(), (phrase, entry)
+            assert re.search(r"\b" + re.escape(phrase), entry.casefold()) is None, (phrase, entry)
 
 
 def test_server_instructions_are_short_contract_facts():
@@ -381,7 +413,7 @@ def test_interface_parameter_and_output_tables_match_pinned_schema():
     expected = {}
 
     def wire_shape(value):
-        # Descriptions are separate prose; output defaults include existing callback text,
+        # Descriptions are separate prose; output defaults include callback metadata,
         # which is intentionally not reproduced as a spoken script in the interface document.
         if isinstance(value, dict):
             return {k: wire_shape(v) for k, v in value.items() if k not in ("title", "description", "default")}

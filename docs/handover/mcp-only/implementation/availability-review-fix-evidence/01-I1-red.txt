@@ -1,0 +1,55 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__ test_future_unmatched_session_keeps_each_weekdays_facts_and_booking_reason __
+
+    def test_future_unmatched_session_keeps_each_weekdays_facts_and_booking_reason():
+        p = policy()
+        doctor = contract.DoctorDetail(id="d", name="Doctor", active=True, departments=[], attendanceType="REGULAR",
+            usualSchedule=[{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"},
+                           {"label": "Evening", "daysOfWeek": ["TUE"], "start": "17:00", "end": "19:00"}])
+        result = decide(p.DoctorFacts(doctor, doctor), date="2026-10-05", session="Evening")
+        assert (result.decision, result.reason) == ("NOT_AVAILABLE", "SESSION_NOT_USUAL")
+>       assert [(s.label, s.decision, s.reason) for s in result.sessions] == [
+            ("Morning", "APPOINTMENT_REQUEST", None), ("Evening", "NOT_AVAILABLE", "NOT_USUAL_DAY")]
+E       AssertionError: assert [('Morning', ..._NOT_USUAL'>)] == [('Morning', ...T_USUAL_DAY')]
+E         
+E         At index 0 diff: ('Morning', <Decision.NOT_AVAILABLE: 'NOT_AVAILABLE'>, <Reason.SESSION_NOT_USUAL: 'SESSION_NOT_USUAL'>) != ('Morning', 'APPOINTMENT_REQUEST', None)
+E         Use -v to get more diff
+
+tests/test_availability_policy.py:179: AssertionError
+______ test_future_unmatched_session_exposes_the_days_actual_alternatives ______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma... 'http://ops-stub.test/api/v1/doctors/doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x107f5b230>)
+
+    async def test_future_unmatched_session_exposes_the_days_actual_alternatives(h):
+        result = await ask(h, doctorId="doc_garima", date="2026-10-05", session="Evening")
+        assert (result.outcome, result.detail, result.nextStep) == (
+            "NOT_AVAILABLE", "SESSION_NOT_USUAL", "OFFER_OTHER_SESSION_OR_DATE")
+>       assert [(s.label, s.decision, s.reason, s.onRequestedDate) for s in result.doctors[0].usualSessions] == [
+            ("Morning", "APPOINTMENT_REQUEST", None, True), ("Afternoon", "APPOINTMENT_REQUEST", None, True)]
+E       AssertionError: assert [('Morning', ...SUAL'>, True)] == [('Morning', ..., None, True)]
+E         
+E         At index 0 diff: ('Morning', <Decision.NOT_AVAILABLE: 'NOT_AVAILABLE'>, <Reason.SESSION_NOT_USUAL: 'SESSION_NOT_USUAL'>, True) != ('Morning', 'APPOINTMENT_REQUEST', None, True)
+E         Use -v to get more diff
+
+tests/test_availability.py:472: AssertionError
+_________ test_future_session_label_on_another_weekday_does_not_match __________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma... 'http://ops-stub.test/api/v1/doctors/doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x107bf9090>)
+
+    async def test_future_session_label_on_another_weekday_does_not_match(h):
+        profile = next(d for d in h.ops_state.data["doctors"] if d["id"] == "doc_garima")
+        profile["usualSchedule"] = [
+            {"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"},
+            {"label": "Evening", "daysOfWeek": ["TUE"], "start": "17:00", "end": "19:00"}]
+        result = await ask(h, doctorId="doc_garima", date="2026-10-05", session="Evening")
+>       assert result.sessionMatched is False
+E       AssertionError: assert True is False
+E        +  where True = AvailabilityResult(outcome='NOT_AVAILABLE', nextStep='OFFER_OTHER_SESSION_OR_DATE', facilityToday='2026-10-01', reques...AL_SCHEDULE: 'USUAL_SCHEDULE'>, sessionMatched=True, callback=None, detail='SESSION_NOT_USUAL', retryAfterSeconds=None).sessionMatched
+
+tests/test_availability.py:485: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_availability_policy.py::test_future_unmatched_session_keeps_each_weekdays_facts_and_booking_reason
+FAILED tests/test_availability.py::test_future_unmatched_session_exposes_the_days_actual_alternatives
+FAILED tests/test_availability.py::test_future_session_label_on_another_weekday_does_not_match
+3 failed, 97 deselected in 0.28s

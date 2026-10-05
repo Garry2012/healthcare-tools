@@ -1,0 +1,97 @@
+.F.FFFF                                                                  [100%]
+=================================== FAILURES ===================================
+_____ test_blank_unknown_labels_stay_in_scope_and_prevent_writes[None-   ] _____
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...POST', 'http://ops-stub.test/api/v1/appointments')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10a484410>)
+label = '   ', session = None
+
+    @pytest.mark.parametrize("label", ["", "   "])
+    @pytest.mark.parametrize("session", [None, "Morning"])
+    async def test_blank_unknown_labels_stay_in_scope_and_prevent_writes(h, label, session):
+        h.ops_state.set_board("2026-10-01", [
+            {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
+             "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+            {"doctorId": "doc_garima", "session": label, "status": "UNKNOWN", "updatedMinutesAgo": 1}])
+        result = await run(h, **{**CREATE, "session": session})
+>       assert result.outcome == "CALLBACK_REQUIRED" and not sent(h, "/appointments")
+E       AssertionError: assert ('NOTED' == 'CALLBACK_REQUIRED'
+E         
+E         - CALLBACK_REQUIRED
+E         + NOTED)
+
+tests/test_booking.py:117: AssertionError
+___ test_blank_unknown_labels_stay_in_scope_and_prevent_writes[Morning-   ] ____
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...POST', 'http://ops-stub.test/api/v1/appointments')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10a48bce0>)
+label = '   ', session = 'Morning'
+
+    @pytest.mark.parametrize("label", ["", "   "])
+    @pytest.mark.parametrize("session", [None, "Morning"])
+    async def test_blank_unknown_labels_stay_in_scope_and_prevent_writes(h, label, session):
+        h.ops_state.set_board("2026-10-01", [
+            {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
+             "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+            {"doctorId": "doc_garima", "session": label, "status": "UNKNOWN", "updatedMinutesAgo": 1}])
+        result = await run(h, **{**CREATE, "session": session})
+>       assert result.outcome == "CALLBACK_REQUIRED" and not sent(h, "/appointments")
+E       AssertionError: assert ('NOTED' == 'CALLBACK_REQUIRED'
+E         
+E         - CALLBACK_REQUIRED
+E         + NOTED)
+
+tests/test_booking.py:117: AssertionError
+________ test_selected_cancelled_session_offers_other_bookable_sessions ________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...i/v1/availability?date=today&doctorId=doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x109c24f50>)
+
+    async def test_selected_cancelled_session_offers_other_bookable_sessions(h):
+        h.ops_state.set_board("2026-10-01", [
+            {"doctorId": "doc_garima", "session": "Morning", "status": "CANCELLED", "updatedMinutesAgo": 1},
+            {"doctorId": "doc_garima", "session": "Evening", "status": "IN", "expectedTime": "17:00",
+             "expectedEndTime": "19:00", "updatedMinutesAgo": 1}])
+        result = await run(h, **{**CREATE, "session": "Morning", "preferredTime": None})
+>       assert result.outcome == "NOT_AVAILABLE" and result.nextStep == "OFFER_OTHER_SESSION_OR_TIME"
+E       AssertionError: assert ('NOT_AVAILABLE' == 'NOT_AVAILABLE'
+E         
+E           NOT_AVAILABLE and 'OFFER_OTHER_SESSION_OR_DATE' == 'OFFER_OTHER_SESSION_OR_TIME'
+E         
+E         - OFFER_OTHER_SESSION_OR_TIME
+E         ?                         --
+E         + OFFER_OTHER_SESSION_OR_DATE
+E         ?                        ++)
+
+tests/test_booking.py:126: AssertionError
+_____________ test_working_hours_on_call_does_not_offer_a_booking ______________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...://ops-stub.test/api/v1/doctors/doc_vikram_desai')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10a477c50>)
+
+    async def test_working_hours_on_call_does_not_offer_a_booking(h):
+        result = await ask(h, purpose="WORKING_HOURS", date=None, doctorId="doc_vikram_desai")
+>       assert result.outcome == "WORKING_HOURS" and result.nextStep == "ASK_CALLBACK_DETAILS"
+E       AssertionError: assert ('WORKING_HOURS' == 'WORKING_HOURS'
+E         
+E           WORKING_HOURS and 'OFFER_APPOINTMENT_REQUEST' == 'ASK_CALLBACK_DETAILS'
+E         
+E         - ASK_CALLBACK_DETAILS
+E         + OFFER_APPOINTMENT_REQUEST)
+
+tests/test_availability.py:262: AssertionError
+___________________ test_end_time_precision_includes_seconds ___________________
+
+    def test_end_time_precision_includes_seconds():
+        p = policy()
+        result = decide(facts(end="10:00"), now=NOW.replace(second=30))
+>       assert result.decision == "NOT_AVAILABLE" and result.reason == "SESSION_ENDED"
+E       AssertionError: assert (<Decision.APP...MENT_REQUEST'> == 'NOT_AVAILABLE'
+E         
+E         - NOT_AVAILABLE
+E         + APPOINTMENT_REQUEST)
+
+tests/test_availability_policy.py:168: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_booking.py::test_blank_unknown_labels_stay_in_scope_and_prevent_writes[None-   ]
+FAILED tests/test_booking.py::test_blank_unknown_labels_stay_in_scope_and_prevent_writes[Morning-   ]
+FAILED tests/test_booking.py::test_selected_cancelled_session_offers_other_bookable_sessions
+FAILED tests/test_availability.py::test_working_hours_on_call_does_not_offer_a_booking
+FAILED tests/test_availability_policy.py::test_end_time_precision_includes_seconds
+5 failed, 2 passed, 169 deselected in 0.41s

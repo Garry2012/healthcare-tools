@@ -11,7 +11,6 @@ import json
 import pytest
 
 from frontdesk_mcp import booking
-from frontdesk_mcp.ops_client import InvalidIdentifier  # noqa: F401 - documents the guarded boundary
 
 from . import harness
 
@@ -61,6 +60,101 @@ async def test_create_needs_the_callers_confirmation(h):
     assert sent(h, "/appointments") == []
 
 
+@pytest.mark.parametrize("status,want,reason", [
+    ("CANCELLED", "NOT_AVAILABLE", "CANCELLED"),
+    ("NOT_CONFIRMED", "CALLBACK_REQUIRED", "BOARD_NOT_CONFIRMED"),
+    ("UNKNOWN", "CALLBACK_REQUIRED", "BOARD_UNKNOWN"),
+])
+async def test_unbookable_today_statuses_never_write(h, status, want, reason):
+    h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "status": status,
+        "expectedTime": "09:00", "expectedEndTime": "12:00", "updatedMinutesAgo": 1}])
+    result = await run(h, **CREATE)
+    assert (result.outcome, result.detail) == (want, reason) and not sent(h, "/appointments")
+
+
+@pytest.mark.parametrize("status,reason", [("IN", "SESSION_ENDED"), ("CANCELLED", "CANCELLED")])
+async def test_create_preferred_time_keeps_whole_scope_reason_without_a_write(h, status, reason):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Early", "status": status, "expectedTime": "06:00",
+         "expectedEndTime": "07:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": "Morning", "status": status, "expectedTime": "08:00",
+         "expectedEndTime": "09:00", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "preferredTime": "14:00"})
+    assert (result.outcome, result.detail, result.nextStep) == (
+        "NOT_AVAILABLE", reason, "OFFER_OTHER_SESSION_OR_DATE")
+    assert result.sessions == [] and result.callback is None
+    assert sent(h, "/appointments") == []
+
+
+@pytest.mark.parametrize("time", ["08:00", "09:30", "23:00"])
+async def test_bookable_session_without_end_and_specific_time_hands_off(h, time):
+    h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "session": "Morning", "status": "IN",
+                                         "expectedTime": "09:00", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "preferredTime": time, "session": "Morning"})
+    assert (result.outcome, result.detail, result.nextStep) == (
+        "HANDOFF_REQUIRED", "TIME_NOT_VERIFIABLE", "TRANSFER_DESK")
+    assert result.callback is None and not sent(h, "/appointments")
+
+
+async def test_same_decision_sessions_need_no_booking_choice(h):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": "Evening", "status": "IN", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "preferredTime": None})
+    assert result.outcome == "NOTED" and len(sent(h, "/appointments")) == 1
+
+
+async def test_on_call_and_failed_profile_never_reach_a_write(h):
+    result = await run(h, **{**CREATE, "doctorId": "doc_vikram_desai"})
+    assert result.outcome == "CALLBACK_REQUIRED" and result.detail == "ON_CALL_DOCTOR"
+    h.ops_state.fail_next.append(("/doctors/doc_garima", 503, {}))
+    failed = await run(h, **CREATE)
+    assert failed.outcome == "COULD_NOT_RECORD" and not sent(h, "/appointments")
+
+
+@pytest.mark.parametrize("value,reason", [(None, "DATE_REQUIRED"), ("2026-09-30", "PAST_DATE"),
+    ("tomorrow", "DATE_FORMAT"), ("2026-02-30", "DATE_FORMAT"), ("2026-1-5", "DATE_FORMAT"), ("", "DATE_FORMAT")])
+async def test_create_date_errors_use_the_shared_resolver(h, value, reason):
+    result = await run(h, **{**CREATE, "visitDate": value})
+    assert result.outcome == "INVALID_REQUEST" and result.detail == reason and not h.ops_paths()
+
+
+@pytest.mark.parametrize("label", ["", "   "])
+@pytest.mark.parametrize("session", [None, "Morning"])
+async def test_blank_unknown_labels_stay_in_scope_and_prevent_writes(h, label, session):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
+         "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": label, "status": "UNKNOWN", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "session": session})
+    assert result.outcome == "CALLBACK_REQUIRED" and not sent(h, "/appointments")
+
+
+async def test_selected_cancelled_session_offers_other_bookable_sessions(h):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "CANCELLED", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": "Evening", "status": "IN", "expectedTime": "17:00",
+         "expectedEndTime": "19:00", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "session": "Morning", "preferredTime": None})
+    assert result.outcome == "NOT_AVAILABLE" and result.nextStep == "OFFER_OTHER_SESSION_OR_TIME"
+    assert [(s.session, s.decision) for s in result.sessions] == [("Evening", "APPOINTMENT_REQUEST")]
+    future = await run(h, **{**CREATE, "visitDate": "2026-10-05", "session": "Night", "preferredTime": None})
+    assert future.detail == "SESSION_NOT_USUAL" and future.nextStep == "OFFER_OTHER_SESSION_OR_TIME"
+    assert {s.label for s in future.sessions} == {"Morning", "Afternoon"}
+    assert not sent(h, "/appointments")
+
+
+async def test_time_between_known_windows_is_unavailable_not_callback(h):
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "UNKNOWN", "expectedTime": "09:00",
+         "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": "Evening", "status": "IN", "expectedTime": "17:00",
+         "expectedEndTime": "20:00", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "preferredTime": "14:00"})
+    assert (result.outcome, result.detail) == ("NOT_AVAILABLE", "TIME_OUTSIDE_SESSION")
+    assert [s.session for s in result.sessions] == ["Evening"] and not sent(h, "/appointments")
+
+
 @pytest.mark.parametrize("missing", ["call_id", "operation_id"])
 async def test_writes_refuse_without_trusted_call_and_operation_context(h, missing):
     ctx = h.ctx(call_id=None, operation_id="op-1") if missing == "call_id" else h.ctx(operation_id=None)
@@ -100,7 +194,6 @@ async def test_concurrent_same_intent_attempts_record_one_appointment(h):
 @pytest.mark.parametrize("override,field", [
     ({"patientMobile": "+919000000101"}, "patientMobile"),
     ({"patientMobile": "90000001"}, "patientMobile"),
-    ({"departmentId": "dept_genmed"}, "doctorId"),
     ({"doctorId": None}, "doctorId"),
     ({"visitDate": "2026-09-30"}, "visitDate"),
     ({"visitDate": "20261001"}, "visitDate"),
@@ -180,7 +273,7 @@ async def test_list_uses_the_trusted_number_only(h):
 ])
 async def test_list_cancel_reschedule_need_an_authorised_number(h, ctx_kwargs):
     for args in ({"action": "LIST"}, {"action": "CANCEL", "appointmentId": "appt_0001", "callerConfirmed": True},
-                 {"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "2026-10-03",
+                 {"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "2026-10-05",
                   "callerConfirmed": True}):
         result = await run(h, h.ctx(operation_id="op-1", **ctx_kwargs), **args)
         assert result.outcome == "IDENTITY_UNAVAILABLE" and result.nextStep == "TRANSFER_DESK", args
@@ -203,16 +296,16 @@ async def test_list_with_nothing_registered_is_not_found(h):
 
 
 async def test_cancel_and_reschedule_follow_the_owner_lifecycle(h):
-    h.ops_state.set_board("2026-10-03", [{"doctorId": "doc_garima", "session": "Morning", "status": "NOT_CONFIRMED",
+    h.ops_state.set_board("2026-10-05", [{"doctorId": "doc_garima", "session": "Morning", "status": "NOT_CONFIRMED",
                                           "expectedTime": "09:00", "expectedEndTime": "12:00", "updatedMinutesAgo": 1}])
     created = await run(h, h.ctx(operation_id="op-1"), **CREATE)
     appointment_id = created.appointment.appointmentId
     moved = await run(h, h.ctx(operation_id="op-2"), action="RESCHEDULE", appointmentId=appointment_id,
-                      newVisitDate="2026-10-03", newPreferredTime="11:00", callerConfirmed=True)
-    assert moved.outcome == "CHANGED" and moved.appointment.visitDate == "2026-10-03"
-    assert moved.appointment.expectedTime == "11:00" and moved.nextStep == "SAY_CHANGED"
+                      newVisitDate="2026-10-05", newPreferredTime="11:00", callerConfirmed=True)
+    assert moved.outcome == "NOTED" and moved.appointment.visitDate == "2026-10-05"
+    assert moved.appointment.expectedTime == "11:00" and moved.nextStep == "SAY_REQUEST_NOTED"
     body = json.loads(sent(h, "/reschedule")[0].content)
-    assert body == {"callerMobile": "9000000101", "newVisitDate": "2026-10-03", "newExpectedTime": "11:00",
+    assert body == {"callerMobile": "9000000101", "newVisitDate": "2026-10-05", "newExpectedTime": "11:00",
                     "callId": "call-1"}
     cancelled = await run(h, h.ctx(operation_id="op-3"), action="CANCEL", appointmentId=appointment_id,
                           reasonVerbatim="coming another day", callerConfirmed=True)
@@ -240,9 +333,9 @@ async def test_another_callers_appointment_looks_exactly_like_not_found(h):
     ({"action": "RESCHEDULE", "appointmentId": "appt_0001", "callerConfirmed": True}, "newVisitDate"),
     ({"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "2026-09-01", "callerConfirmed": True},
      "newVisitDate"),
-    ({"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "2026-10-03", "doctorId": "doc_garima",
+    ({"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "2026-10-05", "doctorId": "doc_garima",
       "callerConfirmed": True}, "doctorId"),
-    ({"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "2026-10-03", "newPreferredTime": "11",
+    ({"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "2026-10-05", "newPreferredTime": "11",
       "callerConfirmed": True}, "newPreferredTime"),
 ])
 async def test_change_requests_are_validated_before_any_call(h, args, field):
@@ -285,29 +378,24 @@ async def test_a_dictated_number_never_reaches_a_lookup_or_change(h):
 
 async def test_a_changed_target_under_the_same_operation_is_a_conflict_not_a_second_appointment(h):
     await run(h, h.ctx(operation_id="op-1"), **CREATE)
-    changed = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "doctorId": "doc_arjun_menon"})
+    changed = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "doctorId": "doc_meera_kulkarni"})
     assert changed.outcome == "CONFLICT" and changed.detail == "IDEMPOTENCY_CONFLICT"
     assert len(h.ops_state.appointments) == 1
 
 
-async def test_create_checks_the_board_server_side_and_refuses_an_unknown_date(h):
-    """Review fix: the callback-only rule must not depend on the model obeying nextStep."""
-    tomorrow = await run(h, **{**CREATE, "visitDate": "2026-10-02"})  # fixture board: tomorrow is UNKNOWN
-    assert tomorrow.outcome == "CALLBACK_REQUIRED" and tomorrow.nextStep == "ASK_CALLBACK_DETAILS"
-    assert tomorrow.callback.summaryOutcome == "CALLBACK_NOTED" and sent(h, "/appointments") == []
-    h.ops_state.set_board("2026-10-02", [{"doctorId": "doc_garima", "session": "Morning", "status": "NOT_CONFIRMED",
-                                          "expectedTime": "09:00", "updatedMinutesAgo": 5}])
-    noted = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "visitDate": "2026-10-02"})
-    assert noted.outcome == "NOTED"
-    boards = [r for r in h.requests if r.url.path.endswith("/availability")]
-    assert boards and boards[0].url.params["doctorId"] == "doc_garima" and boards[0].url.params["date"] == "2026-10-02"
+async def test_future_create_uses_usual_schedule_without_any_board_read(h):
+    noted = await run(h, **{**CREATE, "visitDate": "2026-10-05"})
+    assert noted.outcome == "NOTED" and len(sent(h, "/appointments")) == 1
+    assert "/availability" not in h.ops_paths()
+    unavailable = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "visitDate": "2026-10-03"})
+    assert unavailable.outcome == "NOT_AVAILABLE" and unavailable.detail == "NOT_USUAL_DAY"
+    assert len(sent(h, "/appointments")) == 1
 
 
-async def test_create_for_a_department_refuses_only_when_every_doctor_is_unknown(h):
-    ortho = await run(h, **{**CREATE, "doctorId": None, "departmentId": "dept_ortho"})  # Rohan: missing → UNKNOWN
-    assert ortho.outcome == "CALLBACK_REQUIRED" and sent(h, "/appointments") == []
-    cardio = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "doctorId": None, "departmentId": "dept_cardio"})
-    assert cardio.outcome == "NOTED"  # Anil IN, Ravi UNKNOWN: the department still has a confirmed doctor
+async def test_create_requires_a_doctor_before_any_owner_call(h):
+    result = await run(h, **{**CREATE, "doctorId": None})
+    assert result.outcome == "INVALID_REQUEST" and "doctorId" in result.fields
+    assert not h.ops_paths()
 
 
 async def test_a_failed_board_read_blocks_the_create_honestly(h):
@@ -365,7 +453,7 @@ async def test_create_without_a_session_resolves_scope_from_the_preferred_time_o
     outside = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "preferredTime": "15:30"})
     assert outside.outcome == "CALLBACK_REQUIRED"  # the only session that could hold 15:30 is UNKNOWN
     unscoped = await run(h, h.ctx(operation_id="op-3"), **{**CREATE, "preferredTime": None})
-    assert unscoped.outcome == "CALLBACK_REQUIRED"  # unresolved scope with an UNKNOWN row: same as availability
+    assert unscoped.outcome == "INVALID_REQUEST" and unscoped.detail == "SESSION_REQUIRED"
     assert len(h.ops_state.appointments) == 1
 
 
@@ -399,45 +487,24 @@ async def test_availability_and_create_agree_when_an_unlabelled_unknown_row_is_p
     created = await run(h, h.ctx(operation_id="op-m"), **{**CREATE, "session": "Morning"})
     assert morning.outcome == created.outcome == "CALLBACK_REQUIRED"
     assert morning.nextStep == created.nextStep == "ASK_CALLBACK_DETAILS"
-    assert created.callback.ask and "call you back" in created.callback.say
+    assert created.callback.model_dump() == {"reason": "BOARD_UNKNOWN", "summaryOutcome": "CALLBACK_NOTED"}
     assert len(h.ops_state.appointments) == 0 and sent(h, "/appointments") == []
 
 
 # ------------------------------------------------------------------ re-review (scope consistency)
 
 
-async def test_department_create_uses_the_same_session_scope_as_availability(h):
-    """Garima Morning UNKNOWN, Arjun Evening IN: a Morning department query is callback-only, so a Morning
-    department CREATE must be too (Arjun has no Morning row and is out of scope)."""
-    from frontdesk_mcp import availability
-
-    h.ops_state.set_board("2026-10-01", [
-        {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
-         "expectedEndTime": "12:00", "updatedMinutesAgo": 500},  # stale → UNKNOWN
-        {"doctorId": "doc_arjun_menon", "session": "Evening", "status": "IN", "expectedTime": "17:00",
-         "expectedEndTime": "20:00", "updatedMinutesAgo": 1},
-    ])
-    service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
-    morning = await service.get(h.ctx(), availability.AvailabilityRequest(departmentId="dept_genmed", date="today",
-                                                                           session="Morning"))
-    assert morning.outcome == "CALLBACK_REQUIRED"
-    created = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "doctorId": None, "departmentId": "dept_genmed",
-                                                          "session": "Morning"})
-    assert created.outcome == "CALLBACK_REQUIRED" and sent(h, "/appointments") == []
-    evening = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "doctorId": None, "departmentId": "dept_genmed",
-                                                          "session": "Evening", "preferredTime": "18:00"})
-    assert evening.outcome == "NOTED"
 
 
 async def test_a_preferred_time_outside_the_chosen_session_window_is_rejected(h):
     h.ops_state.set_board("2026-10-01", MIXED_BOARD)
     result = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "session": "Morning", "preferredTime": "15:30"})
-    assert result.outcome == "INVALID_REQUEST" and "preferredTime" in result.fields and sent(h, "/appointments") == []
+    assert result.outcome == "NOT_AVAILABLE" and result.detail == "TIME_OUTSIDE_SESSION"
+    assert sent(h, "/appointments") == []
 
 
-async def test_a_missing_row_for_a_usual_session_today_is_unknown_for_create_too(h):
-    """Garima's profile lists Morning on Thursday; the board shows only Afternoon IN. The contract promises a row per
-    session, so the missing Morning row is UNKNOWN (callback), not 'no such session'."""
+async def test_a_named_session_absent_from_today_board_requires_callback(h):
+    """Today the board alone supplies sessions; an absent named session requires callback."""
     from frontdesk_mcp import availability
 
     h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "session": "Afternoon", "status": "IN",
@@ -445,39 +512,34 @@ async def test_a_missing_row_for_a_usual_session_today_is_unknown_for_create_too
     service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
     morning = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today",
                                                                            session="Morning"))
-    assert morning.outcome == "CALLBACK_REQUIRED" and morning.detail == "SESSION_ROW_MISSING"
+    assert morning.outcome == "CALLBACK_REQUIRED" and morning.detail == "SESSION_NOT_ON_BOARD"
     created = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "session": "Morning"})
     assert created.outcome == "CALLBACK_REQUIRED" and sent(h, "/appointments") == []
     afternoon = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "session": "Afternoon", "preferredTime": "15:30"})
     assert afternoon.outcome == "NOTED"
 
 
-async def test_unresolved_scope_with_any_unknown_is_callback_for_create_as_for_availability(h):
-    """Consistency: a whole-day availability query with mixed statuses is callback-only; a create without session or
-    time on that day must not get a friendlier answer."""
+async def test_mixed_scope_without_selection_requires_a_session_before_create(h):
+    """Mixed decisions expose a choice; creating without that choice must not write."""
     from frontdesk_mcp import availability
 
     h.ops_state.set_board("2026-10-01", MIXED_BOARD)
     service = availability.AvailabilityService(h.ops, h.cache, h.settings, h.clock)
     whole = await service.get(h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today"))
     created = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "preferredTime": None})
-    assert whole.outcome == created.outcome == "CALLBACK_REQUIRED"
+    assert whole.outcome == "AVAILABILITY" and whole.nextStep == "ASK_WHICH_SESSION"
+    assert created.outcome == "INVALID_REQUEST" and created.detail == "SESSION_REQUIRED"
     assert sent(h, "/appointments") == []
 
 
-async def test_reschedule_checks_the_board_for_the_new_date(h):
+async def test_reschedule_future_uses_usual_schedule_and_preserves_owner_status(h):
     created = await run(h, h.ctx(operation_id="op-1"), **CREATE)
     appointment_id = created.appointment.appointmentId
-    unknown_day = await run(h, h.ctx(operation_id="op-2"), action="RESCHEDULE", appointmentId=appointment_id,
-                            newVisitDate="2026-10-05", callerConfirmed=True)  # fixture board: UNKNOWN that day
-    assert unknown_day.outcome == "CALLBACK_REQUIRED" and sent(h, "/reschedule") == []
-    h.ops_state.set_board("2026-10-05", [{"doctorId": "doc_garima", "session": "Morning", "status": "NOT_CONFIRMED",
-                                          "expectedTime": "09:00", "expectedEndTime": "12:00", "updatedMinutesAgo": 1}])
-    moved = await run(h, h.ctx(operation_id="op-3"), action="RESCHEDULE", appointmentId=appointment_id,
+    before = h.ops_paths().count("/availability")
+    moved = await run(h, h.ctx(operation_id="op-2"), action="RESCHEDULE", appointmentId=appointment_id,
                       newVisitDate="2026-10-05", newPreferredTime="10:00", callerConfirmed=True)
-    assert moved.outcome == "CHANGED"
-    boards = [r for r in h.requests if r.url.path.endswith("/availability")]
-    assert all(r.url.params.get("doctorId") == "doc_garima" for r in boards[-2:])
+    assert moved.outcome == "NOTED" and moved.appointment.status == "CHANGED"
+    assert h.ops_paths().count("/availability") == before and len(sent(h, "/reschedule")) == 1
 
 
 async def test_reschedule_of_an_unknown_appointment_is_still_the_owners_neutral_not_found(h):
@@ -517,7 +579,7 @@ async def test_booking_journey_forwards_reason_without_knowledge_or_transcript(m
         assert result.outcome == "NOTED" and result.appointment.status == "NOTED"
         listed = await services.booking.manage(ctx, booking.BookingRequest(action="LIST"))
         assert listed.outcome == "FOUND" and len(listed.appointments) == 1
-        for action, expected in [("RESCHEDULE", "CHANGED"), ("CANCEL", "CANCELLED")]:
+        for action, expected in [("RESCHEDULE", "NOTED"), ("CANCEL", "CANCELLED")]:
             ctx = CallContext(call_id="call-1", caller_number=harness.CALLER,
                               caller_verification="SIP_CALLER_ID", operation_id=action)
             result = await services.booking.manage(ctx, booking.BookingRequest(
@@ -614,3 +676,18 @@ async def test_create_propagates_unexpected_profile_failure_without_writing(make
     finally:
         await services.aclose()
         await h.aclose()
+
+
+@pytest.mark.parametrize("doctor_id", ["../departments", "invalid/id"])
+async def test_reschedule_malformed_owner_doctor_id_cannot_escape_as_protocol_error(h, doctor_id):
+    created = await run(h, **CREATE)
+    appointment_id = created.appointment.appointmentId
+    h.ops_state.appointments[appointment_id]["doctorId"] = doctor_id
+    h.requests.clear()
+    result = await run(h, h.ctx(operation_id="move-1"), action="RESCHEDULE", appointmentId=appointment_id,
+                       newVisitDate="2026-10-05", callerConfirmed=True)
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "COULD_NOT_RECORD", "SAY_COULD_NOT_RECORD", "PROFILE_UNAVAILABLE")
+    assert h.ops_paths() == ["/appointments"]
+    assert sent(h, "/reschedule") == [] and all(r.method == "GET" for r in h.requests)
+    assert doctor_id not in result.model_dump_json()

@@ -80,3 +80,9 @@ async def test_stub_benchmark_measures_a_real_create_at_the_fixture_date(doctor,
     assert create["ok"] == ok and create["rejected_or_failed"] == 1 - ok
     assert report["owner_calls_verified"] is True
     assert "POST /appointments" in create["required_owner_calls"]
+    for mode in ("cold", "warm"):
+        future = report["scenarios"][f"availability_department_future_{mode}"]
+        assert future["ok"] == 1 and future["rejected_or_failed"] == 0
+        assert future["cache_mode"] == mode
+        assert "GET /availability" not in future["required_owner_calls"]
+        assert future["profile_reads"] > 0 if mode == "cold" else future["profile_reads"] == 0

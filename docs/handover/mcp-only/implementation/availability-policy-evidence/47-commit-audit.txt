@@ -1,0 +1,17 @@
+Commit file-count audit through ead9bc1; final evidence commit is described below.
+55b9347: 5 files — Define date-aware availability decisions from owner facts
+0bd4549: 6 files — Bound schedule reads by batch, cache and invocation deadline
+33e731e: 10 files — Apply today and future policy to availability responses
+a3d26c7: 10 files — Expose working-hours purpose and precise availability counts
+ed82228: 5 files — Keep unresolved and failed facts outside booking writes
+29c1024: 10 files — Apply shared schedule decisions before doctor appointment writes
+6906af7: 9 files — Close unsafe session edges and remove obsolete board scoping
+b89757f: 9 files — Exercise future schedules with synthetic batches and owner gates
+943ca2d: 7 files — Probe working hours and measure cold and warm future lookups
+fc0c779: 6 files — Reject times between known session windows before callback aggregation
+c55f60d: 9 files — Document date-aware policy and retire unused directory page setting
+011fc25: 8 files — Align owner and gateway acceptance with revision six availability
+fde0d55: 8 files — Prove deterministic profile order and warm search progress
+ead9bc1: 9 files — Close documentation review gaps and preserve booking evidence
+Final evidence commit: 9 files expected (plan, hand-back, full verification, demo, schema proof, removal audit, diff stat, final fast run, this audit).
+Every implementation/evidence commit preserves <=10 files. Branch was not renamed; no commits rewritten.

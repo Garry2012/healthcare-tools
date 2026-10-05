@@ -1,0 +1,1065 @@
+F.FF.FFF.FFFFFF.F.FF....FFFF..........F....F..FF.FF....FF.FF....         [100%]
+=================================== FAILURES ===================================
+_____ test_known_doctor_today_returns_every_window_and_every_board_session _____
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...i/v1/availability?date=today&doctorId=doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bf052b0>)
+
+    async def test_known_doctor_today_returns_every_window_and_every_board_session(h):
+        result = await ask(h, doctorName="garima")
+>       assert result.outcome == "AVAILABILITY" and result.nextStep == "ASK_WHICH_SESSION"
+E       AssertionError: assert ('AVAILABILITY' == 'AVAILABILITY'
+E         
+E           AVAILABILITY and 'OFFER_APPOINTMENT_REQUEST' == 'ASK_WHICH_SESSION'
+E         
+E         - ASK_WHICH_SESSION
+E         + OFFER_APPOINTMENT_REQUEST)
+
+services/mcp/tests/test_availability.py:33: AssertionError
+_____________________ test_cancelled_session_stays_visible _____________________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...vailability?date=today&doctorId=doc_sunita_patil')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bf57390>)
+
+    async def test_cancelled_session_stays_visible(h):
+        [doctor] = (await ask(h, doctorName="sunita")).doctors
+        assert [(b.status, b.note) for b in doctor.board] == [("CANCELLED", "On leave")]
+>       assert doctor.decision == "NOT_AVAILABLE" and doctor.reason == "CANCELLED"
+               ^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:54: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = DoctorAvailability(doctorId='doc_sunita_patil', name='Dr. Sunita Patil', departments=['Obstetrics & Gynaecology'], att... delayMinutes=None, note='On leave', isStale=False, expired=False)], unknownSessions=[], journey='APPOINTMENT_REQUEST')
+item = 'decision'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'DoctorAvailability' object has no attribute 'decision'
+
+services/mcp/.venv/lib/python3.13/site-packages/pydantic/main.py:1042: AttributeError
+___ test_expected_end_time_expiry_uses_facility_time_and_the_requested_date ____
+
+make_settings = <function make_settings.<locals>.factory at 0x10bf7d940>
+
+    async def test_expected_end_time_expiry_uses_facility_time_and_the_requested_date(make_settings):
+        before = harness.build(make_settings(), now=datetime(2026, 10, 1, 4, 30, tzinfo=UTC))  # 10:00 IST
+        after = harness.build(make_settings(), now=datetime(2026, 10, 1, 6, 0, tzinfo=UTC))  # 11:30 IST
+        try:
+            [early] = (await ask(before, doctorId="doc_meera_kulkarni")).doctors
+            [late] = (await ask(after, doctorId="doc_meera_kulkarni")).doctors
+>           assert [b.decision for b in early.board] == ["APPOINTMENT_REQUEST", "APPOINTMENT_REQUEST"]
+                    ^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:63: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = BoardSessionOut(session='Morning', status='IN', expectedTime='09:00', expectedEndTime='11:00', delayMinutes=None, note='Today only until 11', isStale=False, expired=False)
+item = 'decision'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'BoardSessionOut' object has no attribute 'decision'. Did you mean: 'session'?
+
+services/mcp/.venv/lib/python3.13/site-packages/pydantic/main.py:1042: AttributeError
+_ test_unknown_today_stops_the_journey_and_asks_for_callback_details[doc_kiran_hegde] _
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...availability?date=today&doctorId=doc_kiran_hegde')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bfb9150>)
+doctor_id = 'doc_kiran_hegde'
+
+    @pytest.mark.parametrize("doctor_id", ["doc_kiran_hegde", "doc_rohan_shetty"])  # stale entry, missing entry
+    async def test_unknown_today_stops_the_journey_and_asks_for_callback_details(h, doctor_id):
+        result = await ask(h, doctorId=doctor_id)
+        assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+        [doctor] = result.doctors
+>       assert doctor.decision == "CALLBACK_REQUIRED" and all(b.status == "UNKNOWN" for b in doctor.board)
+               ^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:88: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = DoctorAvailability(doctorId='doc_kiran_hegde', name='Dr. Kiran Hegde', departments=['Urology'], attendanceType='REGULA...one, delayMinutes=None, note=None, isStale=True, expired=False)], unknownSessions=['Evening'], journey='CALLBACK_ONLY')
+item = 'decision'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'DoctorAvailability' object has no attribute 'decision'
+
+services/mcp/.venv/lib/python3.13/site-packages/pydantic/main.py:1042: AttributeError
+_ test_unknown_today_stops_the_journey_and_asks_for_callback_details[doc_rohan_shetty] _
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...vailability?date=today&doctorId=doc_rohan_shetty')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bfba690>)
+doctor_id = 'doc_rohan_shetty'
+
+    @pytest.mark.parametrize("doctor_id", ["doc_kiran_hegde", "doc_rohan_shetty"])  # stale entry, missing entry
+    async def test_unknown_today_stops_the_journey_and_asks_for_callback_details(h, doctor_id):
+        result = await ask(h, doctorId=doctor_id)
+        assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+        [doctor] = result.doctors
+>       assert doctor.decision == "CALLBACK_REQUIRED" and all(b.status == "UNKNOWN" for b in doctor.board)
+               ^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:88: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = DoctorAvailability(doctorId='doc_rohan_shetty', name='Dr. Rohan Shetty', departments=['Orthopaedics'], attendanceType=...dTime=None, delayMinutes=None, note=None, isStale=True, expired=False)], unknownSessions=[''], journey='CALLBACK_ONLY')
+item = 'decision'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'DoctorAvailability' object has no attribute 'decision'
+
+services/mcp/.venv/lib/python3.13/site-packages/pydantic/main.py:1042: AttributeError
+______________ test_future_date_uses_usual_schedule_not_the_board ______________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...availability?date=2026-10-05&doctorId=doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c6e5150>)
+
+    async def test_future_date_uses_usual_schedule_not_the_board(h):
+        result = await ask(h, doctorId="doc_garima", date="2026-10-05")
+>       assert result.outcome == "AVAILABILITY" and result.requestedDate == "2026-10-05" and result.weekday == "MON"
+E       AssertionError: assert ('CALLBACK_REQUIRED' == 'AVAILABILITY'
+E         
+E         - AVAILABILITY
+E         + CALLBACK_REQUIRED)
+
+services/mcp/tests/test_availability.py:95: AssertionError
+_________________ test_profile_failure_still_reports_the_board _________________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...i/v1/availability?date=today&doctorId=doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c5c9130>)
+
+    async def test_profile_failure_still_reports_the_board(h):
+        h.ops_state.fail_next.append(("/doctors/doc_garima", 500, {}))
+        result = await ask(h, doctorId="doc_garima")
+>       assert result.outcome == "COULD_NOT_CHECK" and result.doctors == []
+E       AssertionError: assert ('AVAILABILITY' == 'COULD_NOT_CHECK'
+E         
+E         - COULD_NOT_CHECK
+E         + AVAILABILITY)
+
+services/mcp/tests/test_availability.py:112: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  frontdesk_mcp.ops_client:ops_client.py:332 ops_upstream_error
+_____ test_on_call_doctor_with_a_confirmed_entry_is_offered_otherwise_desk _____
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...vailability?date=today&doctorId=doc_vikram_desai')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c5ca3f0>)
+
+    async def test_on_call_doctor_with_a_confirmed_entry_is_offered_otherwise_desk(h):
+        result = await ask(h, doctorId="doc_vikram_desai")
+        [doctor] = result.doctors
+>       assert doctor.attendanceType == "ON_CALL" and doctor.usualSessions is None
+E       AssertionError: assert ('ON_CALL' == 'ON_CALL'
+E         
+E           ON_CALL and [] is None)
+E        +  where [] = DoctorAvailability(doctorId='doc_vikram_desai', name='Dr. Vikram Desai', departments=['Neurology'], attendanceType='ON...2:00', delayMinutes=None, note=None, isStale=False, expired=False)], unknownSessions=[], journey='APPOINTMENT_REQUEST').usualSessions
+
+services/mcp/tests/test_availability.py:119: AssertionError
+_____________ test_any_unknown_session_in_scope_stops_the_journey ______________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...i/v1/availability?date=today&doctorId=doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c568bb0>)
+
+    async def test_any_unknown_session_in_scope_stops_the_journey(h):
+        """Review fix: the caller may mean the UNKNOWN session; without a matched session the whole board is in
+        scope and one UNKNOWN entry is enough for callback-only."""
+        h.ops_state.set_board("2026-10-01", [
+            {"doctorId": "doc_garima", "session": "Morning", "status": "IN", "expectedTime": "09:00",
+             "updatedMinutesAgo": 5},
+            {"doctorId": "doc_garima", "session": "Afternoon", "status": "IN", "expectedTime": "15:00",
+             "updatedMinutesAgo": 500},
+        ])
+        whole = await ask(h, doctorId="doc_garima")
+>       assert whole.outcome == "AVAILABILITY" and [b.status for b in whole.doctors[0].board] == ["IN", "UNKNOWN"]
+E       AssertionError: assert ('CALLBACK_REQUIRED' == 'AVAILABILITY'
+E         
+E         - AVAILABILITY
+E         + CALLBACK_REQUIRED)
+
+services/mcp/tests/test_availability.py:137: AssertionError
+__________ test_unmatched_session_without_any_unknown_is_availability __________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...i/v1/availability?date=today&doctorId=doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c58c670>)
+
+    async def test_unmatched_session_without_any_unknown_is_availability(h):
+        result = await ask(h, doctorId="doc_garima", session="Night")  # fixture: Morning IN, Afternoon NOT_CONFIRMED
+>       assert result.outcome == "CALLBACK_REQUIRED" and result.sessionMatched is False and result.detail == "SESSION_NOT_ON_BOARD"
+E       AssertionError: assert ('AVAILABILITY' == 'CALLBACK_REQUIRED'
+E         
+E         - CALLBACK_REQUIRED
+E         + AVAILABILITY)
+
+services/mcp/tests/test_availability.py:150: AssertionError
+________________ test_department_queries_honour_the_session_too ________________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...1/availability?date=today&department=dept_cardio')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c64cef0>)
+
+    async def test_department_queries_honour_the_session_too(h):
+        h.ops_state.set_board("2026-10-01", [
+            {"doctorId": "doc_anil_sharma", "session": "Morning", "status": "IN", "expectedTime": "10:00",
+             "updatedMinutesAgo": 5},
+            {"doctorId": "doc_ravi_sharma", "session": "Evening", "status": "IN", "expectedTime": "16:00",
+             "updatedMinutesAgo": 500},  # stale → UNKNOWN
+        ])
+        evening = await ask(h, departmentName="cardiology", session="Evening")
+>       assert evening.outcome == "CALLBACK_REQUIRED" and len(evening.doctors) == 2
+E       AssertionError: assert ('CALLBACK_REQUIRED' == 'CALLBACK_REQUIRED'
+E         
+E           CALLBACK_REQUIRED and 1 == 2)
+E        +  where 1 = len([DoctorAvailability(doctorId='doc_ravi_sharma', name='Dr. Ravi Sharma', departments=['Cardiology'], attendanceType='RE...ne, delayMinutes=None, note=None, isStale=True, expired=False)], unknownSessions=['Evening'], journey='CALLBACK_ONLY')])
+E        +    where [DoctorAvailability(doctorId='doc_ravi_sharma', name='Dr. Ravi Sharma', departments=['Cardiology'], attendanceType='RE...ne, delayMinutes=None, note=None, isStale=True, expired=False)], unknownSessions=['Evening'], journey='CALLBACK_ONLY')] = AvailabilityResult(outcome='CALLBACK_REQUIRED', nextStep='ASK_CALLBACK_DETAILS', facilityToday='2026-10-01', requested...'Someone from the hospital will call you back.', summaryOutcome='CALLBACK_NOTED'), detail=None, retryAfterSeconds=None).doctors
+
+services/mcp/tests/test_availability.py:161: AssertionError
+___________ test_a_board_that_omits_the_doctor_is_treated_as_unknown ___________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...i/v1/availability?date=today&doctorId=doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bf3f110>)
+
+    async def test_a_board_that_omits_the_doctor_is_treated_as_unknown(h):
+        """The contract says a missing entry comes back as UNKNOWN; an owner that returns no row must not make
+        usual hours look bookable."""
+        h.ops_state.omit_missing_entries = True
+        h.ops_state.set_board("2026-10-01", [])
+        result = await ask(h, doctorId="doc_garima")
+>       assert result.outcome == "CALLBACK_REQUIRED" and result.doctors[0].decision == "CALLBACK_REQUIRED"
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:172: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = DoctorAvailability(doctorId='doc_garima', name='Dr. Garima', departments=['General Medicine'], attendanceType='REGULAR...HU', 'FRI'], start='15:00', end='17:00', onRequestedDate=True)], board=[], unknownSessions=[], journey='CALLBACK_ONLY')
+item = 'decision'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'DoctorAvailability' object has no attribute 'decision'
+
+services/mcp/.venv/lib/python3.13/site-packages/pydantic/main.py:1042: AttributeError
+_______ test_bounded_search_reports_incompleteness_instead_of_pretending _______
+
+make_settings = <function make_settings.<locals>.factory at 0x10c5aade0>
+
+    async def test_bounded_search_reports_incompleteness_instead_of_pretending(make_settings):
+        h3 = harness.build(make_settings(doctor_choice_limit=3))
+        try:
+            result = await ask(h3, doctorName="a")  # every demo name contains an 'a': ten matches, three returned
+>           assert result.outcome == "CLARIFICATION_NEEDED" and len(result.choices) == 3
+E           AssertionError: assert ('CLARIFICATION_NEEDED' == 'CLARIFICATION_NEEDED'
+E             
+E               CLARIFICATION_NEEDED and 10 == 3)
+E            +  where 10 = len([DoctorChoice(doctorId='doc_garima', name='Dr. Garima', departments=['General Medicine'], gender='FEMALE'), DoctorChoi...MALE'), DoctorChoice(doctorId='doc_ravi_sharma', name='Dr. Ravi Sharma', departments=['Cardiology'], gender=None), ...])
+E            +    where [DoctorChoice(doctorId='doc_garima', name='Dr. Garima', departments=['General Medicine'], gender='FEMALE'), DoctorChoi...MALE'), DoctorChoice(doctorId='doc_ravi_sharma', name='Dr. Ravi Sharma', departments=['Cardiology'], gender=None), ...] = AvailabilityResult(outcome='CLARIFICATION_NEEDED', nextStep='ASK_WHICH_DOCTOR', facilityToday='2026-10-01', requestedD...entChoices=[], complete=True, totalMatches=10, sessionMatched=None, callback=None, detail=None, retryAfterSeconds=None).choices
+
+services/mcp/tests/test_availability.py:190: AssertionError
+______ test_department_by_name_uses_one_board_call_and_no_profile_fan_out ______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...1/availability?date=today&department=dept_cardio')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c100af0>)
+
+    async def test_department_by_name_uses_one_board_call_and_no_profile_fan_out(h):
+        result = await ask(h, departmentName="cardiology")
+        assert result.outcome == "AVAILABILITY" and result.nextStep == "ASK_WHICH_DOCTOR"
+>       assert [d.doctorId for d in result.doctors] == ["doc_anil_sharma"]
+E       AssertionError: assert ['doc_anil_sh..._ravi_sharma'] == ['doc_anil_sharma']
+E         
+E         Left contains one more item: 'doc_ravi_sharma'
+E         Use -v to get more diff
+
+services/mcp/tests/test_availability.py:204: AssertionError
+____________ test_department_with_all_unknown_is_callback_required _____________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...v1/availability?date=today&department=dept_ortho')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c101090>)
+
+    async def test_department_with_all_unknown_is_callback_required(h):
+        result = await ask(h, departmentId="dept_ortho")
+>       assert result.outcome == "CALLBACK_REQUIRED" and result.doctors[0].decision == "CALLBACK_REQUIRED"
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = DoctorAvailability(doctorId='doc_rohan_shetty', name='Dr. Rohan Shetty', departments=['Orthopaedics'], attendanceType=...dTime=None, delayMinutes=None, note=None, isStale=True, expired=False)], unknownSessions=[''], journey='CALLBACK_ONLY')
+item = 'decision'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'DoctorAvailability' object has no attribute 'decision'
+
+services/mcp/.venv/lib/python3.13/site-packages/pydantic/main.py:1042: AttributeError
+______ test_working_hours_need_no_date_and_never_read_live_board[target0] ______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma....KnowledgeClient object at 0x10bfd3700>, requests=[], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c133380>)
+target = {'doctorId': 'doc_garima'}
+
+    @pytest.mark.parametrize("target", [{"doctorId": "doc_garima"}, {"doctorName": "garima"},
+                                        {"departmentId": "dept_genmed"}])
+    async def test_working_hours_need_no_date_and_never_read_live_board(h, target):
+>       result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:246: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma....KnowledgeClient object at 0x10bfd3700>, requests=[], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c133380>)
+ctx = None
+args = {'purpose': 'WORKING_HOURS', 'date': None, 'doctorId': 'doc_garima'}
+
+    async def ask(h, ctx=None, **args):
+>       return await service(h).get(ctx or h.ctx(), availability.AvailabilityRequest(**{"date": "today", **args}))
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AvailabilityRequest
+E       date
+E         Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_type
+
+services/mcp/tests/test_availability.py:28: ValidationError
+______ test_working_hours_need_no_date_and_never_read_live_board[target1] ______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma....KnowledgeClient object at 0x10bfdb290>, requests=[], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bfbfee0>)
+target = {'doctorName': 'garima'}
+
+    @pytest.mark.parametrize("target", [{"doctorId": "doc_garima"}, {"doctorName": "garima"},
+                                        {"departmentId": "dept_genmed"}])
+    async def test_working_hours_need_no_date_and_never_read_live_board(h, target):
+>       result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:246: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma....KnowledgeClient object at 0x10bfdb290>, requests=[], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bfbfee0>)
+ctx = None
+args = {'purpose': 'WORKING_HOURS', 'date': None, 'doctorName': 'garima'}
+
+    async def ask(h, ctx=None, **args):
+>       return await service(h).get(ctx or h.ctx(), availability.AvailabilityRequest(**{"date": "today", **args}))
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AvailabilityRequest
+E       date
+E         Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_type
+
+services/mcp/tests/test_availability.py:28: ValidationError
+______ test_working_hours_need_no_date_and_never_read_live_board[target2] ______
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma....KnowledgeClient object at 0x10bf684d0>, requests=[], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bfbd9b0>)
+target = {'departmentId': 'dept_genmed'}
+
+    @pytest.mark.parametrize("target", [{"doctorId": "doc_garima"}, {"doctorName": "garima"},
+                                        {"departmentId": "dept_genmed"}])
+    async def test_working_hours_need_no_date_and_never_read_live_board(h, target):
+>       result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:246: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma....KnowledgeClient object at 0x10bf684d0>, requests=[], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bfbd9b0>)
+ctx = None
+args = {'purpose': 'WORKING_HOURS', 'date': None, 'departmentId': 'dept_genmed'}
+
+    async def ask(h, ctx=None, **args):
+>       return await service(h).get(ctx or h.ctx(), availability.AvailabilityRequest(**{"date": "today", **args}))
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AvailabilityRequest
+E       date
+E         Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_type
+
+services/mcp/tests/test_availability.py:28: ValidationError
+__________ test_availability_missing_date_is_an_in_band_request_error __________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma....KnowledgeClient object at 0x10bf69fd0>, requests=[], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c550b40>)
+
+    async def test_availability_missing_date_is_an_in_band_request_error(h):
+>       result = await ask(h, doctorId="doc_garima", date=None)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:254: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma....KnowledgeClient object at 0x10bf69fd0>, requests=[], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10c550b40>)
+ctx = None, args = {'doctorId': 'doc_garima', 'date': None}
+
+    async def ask(h, ctx=None, **args):
+>       return await service(h).get(ctx or h.ctx(), availability.AvailabilityRequest(**{"date": "today", **args}))
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for AvailabilityRequest
+E       date
+E         Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_type
+
+services/mcp/tests/test_availability.py:28: ValidationError
+________ test_department_session_query_keeps_a_sessionless_unknown_row _________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...1/availability?date=today&department=dept_genmed')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bfbc1a0>)
+
+    async def test_department_session_query_keeps_a_sessionless_unknown_row(h):
+        """AR-03: a sessionless UNKNOWN row cannot be scoped away; it is unknown availability, not 'no such session'."""
+        h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "status": "UNKNOWN", "updatedMinutesAgo": 1}])
+        result = await ask(h, departmentName="General Medicine", session="Morning")
+        assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+>       assert any(d.doctorId == "doc_garima" and d.decision == "CALLBACK_REQUIRED" for d in result.doctors)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+services/mcp/tests/test_availability.py:319: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+services/mcp/tests/test_availability.py:319: in <genexpr>
+    assert any(d.doctorId == "doc_garima" and d.decision == "CALLBACK_REQUIRED" for d in result.doctors)
+                                              ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = DoctorAvailability(doctorId='doc_garima', name='Dr. Garima', departments=['General Medicine'], attendanceType='REGULAR...Time=None, delayMinutes=None, note=None, isStale=False, expired=False)], unknownSessions=[''], journey='CALLBACK_ONLY')
+item = 'decision'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'DoctorAvailability' object has no attribute 'decision'
+
+services/mcp/.venv/lib/python3.13/site-packages/pydantic/main.py:1042: AttributeError
+___________ test_a_missing_row_for_a_usual_session_today_is_unknown ____________
+
+h = Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provider_id='demo-hospital', doma...i/v1/availability?date=today&doctorId=doc_garima')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bfbfe70>)
+
+    async def test_a_missing_row_for_a_usual_session_today_is_unknown(h):
+        h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "session": "Afternoon", "status": "IN",
+                                              "expectedTime": "15:00", "expectedEndTime": "17:00", "updatedMinutesAgo": 1}])
+        result = await ask(h, doctorId="doc_garima", session="Morning")
+>       assert result.outcome == "CALLBACK_REQUIRED" and result.detail == "SESSION_NOT_ON_BOARD"
+E       AssertionError: assert ('CALLBACK_REQUIRED' == 'CALLBACK_REQUIRED'
+E         
+E           CALLBACK_REQUIRED and 'SESSION_ROW_MISSING' == 'SESSION_NOT_ON_BOARD'
+E         
+E         - SESSION_NOT_ON_BOARD
+E         + SESSION_ROW_MISSING)
+
+services/mcp/tests/test_availability.py:373: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-ASK_WHICH_SESSION] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10c56c180>
+target = {'doctorId': 'doc_garima'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_SESSION', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
+                                                                        step, configured):
+        import httpx
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+        from frontdesk_stubs import ops as ops_stub
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('AVAILABILIT...MENT_REQUEST') == ('AVAILABILIT...HICH_SESSION')
+E             
+E             At index 1 diff: 'OFFER_APPOINTMENT_REQUEST' != 'ASK_WHICH_SESSION'
+E             Use -v to get more diff
+
+services/mcp/tests/test_availability.py:437: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target1-AVAILABILITY-ASK_WHICH_SESSION] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10c56f600>
+target = {'doctorName': 'garima'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_SESSION', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
+                                                                        step, configured):
+        import httpx
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+        from frontdesk_stubs import ops as ops_stub
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('AVAILABILIT...MENT_REQUEST') == ('AVAILABILIT...HICH_SESSION')
+E             
+E             At index 1 diff: 'OFFER_APPOINTMENT_REQUEST' != 'ASK_WHICH_SESSION'
+E             Use -v to get more diff
+
+services/mcp/tests/test_availability.py:437: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target3-AVAILABILITY-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10c56dd00>
+target = {'departmentId': 'dept_cardio'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_DOCTOR', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
+                                                                        step, configured):
+        import httpx
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+        from frontdesk_stubs import ops as ops_stub
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+            assert (result.outcome, result.nextStep) == (expected, step)
+            assert result.facilityToday == "2026-10-01"
+            assert knowledge_requests == []
+            if expected == "AVAILABILITY":
+                assert result.doctors and result.doctors[0].board
+            if expected == "AVAILABILITY":
+                ids = {doctor.doctorId for doctor in result.doctors}
+>               assert ids == ({"doc_anil_sharma"}
+                               if "departmentId" in target or "departmentName" in target else {"doc_garima"})
+E                              AssertionError: assert {'doc_anil_sh..._ravi_sharma'} == {'doc_anil_sharma'}
+E                                
+E                                Extra items in the left set:
+E                                'doc_ravi_sharma'
+E                                Use -v to get more diff
+
+services/mcp/tests/test_availability.py:444: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[True-target4-AVAILABILITY-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10dab3c40>
+target = {'departmentName': 'cardiology'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_DOCTOR', configured = True
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
+                                                                        step, configured):
+        import httpx
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+        from frontdesk_stubs import ops as ops_stub
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+            assert (result.outcome, result.nextStep) == (expected, step)
+            assert result.facilityToday == "2026-10-01"
+            assert knowledge_requests == []
+            if expected == "AVAILABILITY":
+                assert result.doctors and result.doctors[0].board
+            if expected == "AVAILABILITY":
+                ids = {doctor.doctorId for doctor in result.doctors}
+>               assert ids == ({"doc_anil_sharma"}
+                               if "departmentId" in target or "departmentName" in target else {"doc_garima"})
+E                              AssertionError: assert {'doc_anil_sh..._ravi_sharma'} == {'doc_anil_sharma'}
+E                                
+E                                Extra items in the left set:
+E                                'doc_ravi_sharma'
+E                                Use -v to get more diff
+
+services/mcp/tests/test_availability.py:444: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target0-AVAILABILITY-ASK_WHICH_SESSION] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10db6d440>
+target = {'doctorId': 'doc_garima'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_SESSION', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
+                                                                        step, configured):
+        import httpx
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+        from frontdesk_stubs import ops as ops_stub
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('AVAILABILIT...MENT_REQUEST') == ('AVAILABILIT...HICH_SESSION')
+E             
+E             At index 1 diff: 'OFFER_APPOINTMENT_REQUEST' != 'ASK_WHICH_SESSION'
+E             Use -v to get more diff
+
+services/mcp/tests/test_availability.py:437: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target1-AVAILABILITY-ASK_WHICH_SESSION] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10db56f20>
+target = {'doctorName': 'garima'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_SESSION', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
+                                                                        step, configured):
+        import httpx
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+        from frontdesk_stubs import ops as ops_stub
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+>           assert (result.outcome, result.nextStep) == (expected, step)
+E           AssertionError: assert ('AVAILABILIT...MENT_REQUEST') == ('AVAILABILIT...HICH_SESSION')
+E             
+E             At index 1 diff: 'OFFER_APPOINTMENT_REQUEST' != 'ASK_WHICH_SESSION'
+E             Use -v to get more diff
+
+services/mcp/tests/test_availability.py:437: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target3-AVAILABILITY-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10db6c040>
+target = {'departmentId': 'dept_cardio'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_DOCTOR', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
+                                                                        step, configured):
+        import httpx
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+        from frontdesk_stubs import ops as ops_stub
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+            assert (result.outcome, result.nextStep) == (expected, step)
+            assert result.facilityToday == "2026-10-01"
+            assert knowledge_requests == []
+            if expected == "AVAILABILITY":
+                assert result.doctors and result.doctors[0].board
+            if expected == "AVAILABILITY":
+                ids = {doctor.doctorId for doctor in result.doctors}
+>               assert ids == ({"doc_anil_sharma"}
+                               if "departmentId" in target or "departmentName" in target else {"doc_garima"})
+E                              AssertionError: assert {'doc_anil_sh..._ravi_sharma'} == {'doc_anil_sharma'}
+E                                
+E                                Extra items in the left set:
+E                                'doc_ravi_sharma'
+E                                Use -v to get more diff
+
+services/mcp/tests/test_availability.py:444: AssertionError
+_ test_availability_is_independent_of_knowledge_and_transcript[False-target4-AVAILABILITY-ASK_WHICH_DOCTOR] _
+
+make_settings = <function make_settings.<locals>.factory at 0x10dba7920>
+target = {'departmentName': 'cardiology'}, expected = 'AVAILABILITY'
+step = 'ASK_WHICH_DOCTOR', configured = False
+
+    @pytest.mark.parametrize("target,expected,step", [
+        ({"doctorId": "doc_garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "garima"}, "AVAILABILITY", "ASK_WHICH_SESSION"),
+        ({"doctorName": "Dr Sharma"}, "CLARIFICATION_NEEDED", "ASK_WHICH_DOCTOR"),
+        ({"departmentId": "dept_cardio"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"departmentName": "cardiology"}, "AVAILABILITY", "ASK_WHICH_DOCTOR"),
+        ({"doctorId": "doc_rohan_shetty"}, "CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
+        ({"doctorName": "Nobody"}, "NOT_FOUND", "ASK_TO_REPHRASE"),
+        ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
+        ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
+    ])
+    @pytest.mark.parametrize("configured", [True, False])
+    async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
+                                                                        step, configured):
+        import httpx
+    
+        from frontdesk_mcp.context import CallContext
+        from frontdesk_mcp.tools import Services
+        from frontdesk_stubs import ops as ops_stub
+    
+        settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+        h = harness.build(settings)
+        knowledge_requests = []
+    
+        async def forbidden(request):
+            knowledge_requests.append(request)
+            raise AssertionError("availability must not contact knowledge")
+    
+        services = Services.build(settings, clock=h.clock,
+                                  ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
+                                  knowledge_transport=httpx.MockTransport(forbidden))
+        try:
+            result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
+                **{"date": "today", **target}))
+            assert (result.outcome, result.nextStep) == (expected, step)
+            assert result.facilityToday == "2026-10-01"
+            assert knowledge_requests == []
+            if expected == "AVAILABILITY":
+                assert result.doctors and result.doctors[0].board
+            if expected == "AVAILABILITY":
+                ids = {doctor.doctorId for doctor in result.doctors}
+>               assert ids == ({"doc_anil_sharma"}
+                               if "departmentId" in target or "departmentName" in target else {"doc_garima"})
+E                              AssertionError: assert {'doc_anil_sh..._ravi_sharma'} == {'doc_anil_sharma'}
+E                                
+E                                Extra items in the left set:
+E                                'doc_ravi_sharma'
+E                                Use -v to get more diff
+
+services/mcp/tests/test_availability.py:444: AssertionError
+=============================== warnings summary ===============================
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-ASK_WHICH_SESSION]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-ASK_WHICH_SESSION]
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED services/mcp/tests/test_availability.py::test_known_doctor_today_returns_every_window_and_every_board_session
+FAILED services/mcp/tests/test_availability.py::test_cancelled_session_stays_visible
+FAILED services/mcp/tests/test_availability.py::test_expected_end_time_expiry_uses_facility_time_and_the_requested_date
+FAILED services/mcp/tests/test_availability.py::test_unknown_today_stops_the_journey_and_asks_for_callback_details[doc_kiran_hegde]
+FAILED services/mcp/tests/test_availability.py::test_unknown_today_stops_the_journey_and_asks_for_callback_details[doc_rohan_shetty]
+FAILED services/mcp/tests/test_availability.py::test_future_date_uses_usual_schedule_not_the_board
+FAILED services/mcp/tests/test_availability.py::test_profile_failure_still_reports_the_board
+FAILED services/mcp/tests/test_availability.py::test_on_call_doctor_with_a_confirmed_entry_is_offered_otherwise_desk
+FAILED services/mcp/tests/test_availability.py::test_any_unknown_session_in_scope_stops_the_journey
+FAILED services/mcp/tests/test_availability.py::test_unmatched_session_without_any_unknown_is_availability
+FAILED services/mcp/tests/test_availability.py::test_department_queries_honour_the_session_too
+FAILED services/mcp/tests/test_availability.py::test_a_board_that_omits_the_doctor_is_treated_as_unknown
+FAILED services/mcp/tests/test_availability.py::test_bounded_search_reports_incompleteness_instead_of_pretending
+FAILED services/mcp/tests/test_availability.py::test_department_by_name_uses_one_board_call_and_no_profile_fan_out
+FAILED services/mcp/tests/test_availability.py::test_department_with_all_unknown_is_callback_required
+FAILED services/mcp/tests/test_availability.py::test_working_hours_need_no_date_and_never_read_live_board[target0]
+FAILED services/mcp/tests/test_availability.py::test_working_hours_need_no_date_and_never_read_live_board[target1]
+FAILED services/mcp/tests/test_availability.py::test_working_hours_need_no_date_and_never_read_live_board[target2]
+FAILED services/mcp/tests/test_availability.py::test_availability_missing_date_is_an_in_band_request_error
+FAILED services/mcp/tests/test_availability.py::test_department_session_query_keeps_a_sessionless_unknown_row
+FAILED services/mcp/tests/test_availability.py::test_a_missing_row_for_a_usual_session_today_is_unknown
+FAILED services/mcp/tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target0-AVAILABILITY-ASK_WHICH_SESSION]
+FAILED services/mcp/tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target1-AVAILABILITY-ASK_WHICH_SESSION]
+FAILED services/mcp/tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target3-AVAILABILITY-ASK_WHICH_DOCTOR]
+FAILED services/mcp/tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[True-target4-AVAILABILITY-ASK_WHICH_DOCTOR]
+FAILED services/mcp/tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target0-AVAILABILITY-ASK_WHICH_SESSION]
+FAILED services/mcp/tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target1-AVAILABILITY-ASK_WHICH_SESSION]
+FAILED services/mcp/tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target3-AVAILABILITY-ASK_WHICH_DOCTOR]
+FAILED services/mcp/tests/test_availability.py::test_availability_is_independent_of_knowledge_and_transcript[False-target4-AVAILABILITY-ASK_WHICH_DOCTOR]
+29 failed, 35 passed, 2 warnings in 2.21s

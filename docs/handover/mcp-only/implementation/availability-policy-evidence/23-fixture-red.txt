@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_policy_fixture_has_later_matches_and_records_profile_reads ________
+
+make_settings = <function make_settings.<locals>.factory at 0x10c9f53a0>
+
+    async def test_policy_fixture_has_later_matches_and_records_profile_reads(make_settings):
+        from frontdesk_mcp.availability import AvailabilityRequest, AvailabilityService
+        from . import harness
+        h = harness.build(make_settings())
+        try:
+            result = await AvailabilityService(h.ops, h.cache, h.settings, h.clock).get(
+                h.ctx(), AvailabilityRequest(departmentId="dept_policy", date="2026-10-05"))
+>           assert result.outcome == "AVAILABILITY" and len(result.doctors) == 3
+E           AssertionError: assert ('CLARIFICATION_NEEDED' == 'AVAILABILITY'
+E             
+E             - AVAILABILITY
+E             + CLARIFICATION_NEEDED)
+
+tests/test_stubs.py:41: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_stubs.py::test_policy_fixture_has_later_matches_and_records_profile_reads
+1 failed, 15 deselected in 0.26s

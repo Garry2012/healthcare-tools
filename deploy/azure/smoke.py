@@ -20,7 +20,7 @@ from fastmcp.exceptions import ClientError, FastMCPError
 from mcp import McpError
 
 TOOL_NAMES = {"get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary"}
-AVAILABILITY_OK = {"AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND"}
+AVAILABILITY_OK = {"AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND", "NOT_AVAILABLE"}
 KNOWLEDGE_OK = {"ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED"}
 
 
@@ -61,6 +61,8 @@ async def check_tools(client: Client, language: str, department: str, *, knowled
         raise RuntimeError("unexpected MCP tool set")
     cases = (
         ("get_doctor_availability", {"date": "today", "departmentName": department}, AVAILABILITY_OK),
+        ("get_doctor_availability", {"purpose": "WORKING_HOURS", "departmentName": department},
+         {"WORKING_HOURS", "CLARIFICATION_NEEDED", "NOT_FOUND", "HANDOFF_REQUIRED"}),
         ("search_knowledge", {"question": "deployment connectivity check", "language": language}, KNOWLEDGE_OK),
     )
     for name, arguments, outcomes in cases:

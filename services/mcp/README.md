@@ -7,8 +7,8 @@ two owner services over HTTPS and owns no data: Manoj's operational API (pinned 
 
 | Tool | Authentication | Owner calls |
 |---|---|---|
-| `get_doctor_availability` | gateway (in-call) | `GET /departments` or `GET /doctors?query=`; then `GET /doctors/{id}` ∥ `GET /availability?doctorId=&date=` (or `department=`) |
-| `manage_booking` | gateway (in-call) | `POST /appointments` (after confirmation and live-board check), `GET /appointments?mobile=`, `POST …/cancel`, `POST …/reschedule` |
+| `get_doctor_availability` | gateway (in-call) | `GET /departments` or `GET /doctors?query=`; today: directory/profile plus `GET /availability` (doctor or department); future/WORKING_HOURS: profiles only, bounded batches for departments |
+| `manage_booking` | gateway (in-call) | `POST /appointments` (after confirmation and the shared today/future schedule decision), `GET /appointments?mobile=`, `POST …/cancel`, `POST …/reschedule` |
 | `search_knowledge` | gateway (in-call) | one provisional `POST /v1/answer`: answer or routing outcome |
 | `record_call_summary` | gateway (LLM-called) | `POST /call-summaries` |
 
@@ -29,8 +29,14 @@ uv run frontdesk-mcp serve
 ```
 
 Layout: `src/frontdesk_mcp/` (config, context, identity, clock, ops_client, knowledge_client, cache,
-availability, booking, knowledge, summary, tools, server, prompt, packs/healthcare.json);
+availability_policy, schedule_reader, availability, booking, knowledge, summary, tools, server, prompt, packs/healthcare.json);
 `dev/frontdesk_stubs/` (development stubs and fixtures; never in the image); `tests/`.
 
 Scheduling has no knowledge dependency. An empty knowledge URL leaves only `search_knowledge` unavailable.
 The tool interface, parameters and result meanings are documented in `docs/handover/VOICE-TEAM.md` at the repository root.
+
+`DOCTOR_CHOICE_LIMIT=3`, `PROFILE_BATCH_SIZE=3` (≤ `OPS_POOL_MAX_CONNECTIONS`) and
+`MIN_BATCH_HEADROOM_SECONDS=0.05` bound future/working-hours searches within the existing 0.30 s share.
+Profiles use the existing 300 s cache; boards never do. `complete=false` exposes unevaluated candidates.
+No new endpoint, credential, secret or rollout identity is needed for this policy. The live owner must
+supply usable usual schedules for future requests; no future board is fetched.

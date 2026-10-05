@@ -1,0 +1,41 @@
+Using CPython 3.13.13 interpreter at: /opt/homebrew/opt/python@3.13/bin/python3.13
+Creating virtual environment at: .venv
+   Building frontdesk-mcp @ file:///Users/garima/conductor/workspaces/healthcare-tools/des-moines/.context/availability-review-check/services/mcp
+      Built frontdesk-mcp @ file:///Users/garima/conductor/workspaces/healthcare-tools/des-moines/.context/availability-review-check/services/mcp
+Installed 86 packages in 154ms
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_twenty_owner_orders_produce_identical_sorted_candidates _________
+
+make_settings = <function make_settings.<locals>.factory at 0x10c312520>
+
+    async def test_twenty_owner_orders_produce_identical_sorted_candidates(make_settings):
+        for seed in range(20):
+            found, first, _, peak, _ = await run_search(make_settings, statuses=["match"] * 12, order_seed=seed)
+>           assert first == [0, 1, 2], seed
+E           AssertionError: 0
+E           assert [1, 9, 8] == [0, 1, 2]
+E             
+E             At index 0 diff: 1 != 0
+E             Use -v to get more diff
+
+tests/test_schedule_reader.py:139: AssertionError
+_____ test_warm_cache_reaches_the_remaining_batch_after_cold_headroom_stop _____
+
+make_settings = <function make_settings.<locals>.factory at 0x10c3128e0>
+
+    async def test_warm_cache_reaches_the_remaining_batch_after_cold_headroom_stop(make_settings):
+        found, cold, all_reads, peak, elapsed = await run_search(
+            make_settings, statuses=["miss"] * 6, delays={i: .04 for i in range(6)}, budget=.08, repeat=True)
+        assert cold == [0, 1, 2]
+>       assert all_reads == [0, 1, 2, 3, 4, 5]
+E       assert [0, 1, 2, 0, 1, 2] == [0, 1, 2, 3, 4, 5]
+E         
+E         At index 3 diff: 0 != 3
+E         Use -v to get more diff
+
+tests/test_schedule_reader.py:149: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_schedule_reader.py::test_twenty_owner_orders_produce_identical_sorted_candidates
+FAILED tests/test_schedule_reader.py::test_warm_cache_reaches_the_remaining_batch_after_cold_headroom_stop
+2 failed, 13 deselected in 0.39s

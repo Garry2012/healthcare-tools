@@ -91,6 +91,8 @@ async def measure(base: str, name: str, tool: str, args: dict, expected: set[str
         return f"{outcome}:{body.get('detail')}"
     if RECORDING_OWNER_CALLS:
         seen = [path for cid, path in OWNER_CALLS if cid == call_id]  # attributed by call id, safe under concurrency
+        if "department_future" in name and "GET /availability" in seen:
+            return "WRONG_OWNER_READ:future called the live board"
         for path in paths:
             if path not in seen:
                 return f"{outcome}:owner call {path} not observed"
@@ -122,22 +124,54 @@ async def run(base: str, samples: int, concurrency: int, scenarios: dict) -> dic
         sem = asyncio.Semaphore(concurrency)
         results = await asyncio.gather(*(measure(base, name, tool, args, expected, paths, i, sem)
                                          for i in range(samples)))
-        timings = [r for r in results if isinstance(r, float)]
-        failed = [r for r in results if isinstance(r, str)]
-        failures = len(failed)
-        outcomes = {}
-        for r in results:
-            label = r if isinstance(r, str) else "ok"
-            outcomes[label] = outcomes.get(label, 0) + 1
-        report[name] = {"samples": samples, "ok": len(timings), "rejected_or_failed": failures,
-                        "over_budget_ms": BUDGET_MS, "over_budget": sum(1 for t in timings if t > BUDGET_MS),
-                        "expected_outcomes": sorted(expected), "required_owner_calls": list(paths),
-                        "outcomes": outcomes,
-                        "first_call_ms": round(results[0], 1) if isinstance(results[0], float) else results[0],
-                        "p50_ms": round(percentile(timings, 50), 1) if timings else None,
-                        "p95_ms": round(percentile(timings, 95), 1) if timings else None,
-                        "p99_ms": round(percentile(timings, 99), 1) if timings else None,
-                        "mean_ms": round(statistics.fmean(timings), 1) if timings else None}
+        report[name] = summarise(results, expected, paths)
+    return report
+
+
+def summarise(results: list[float | str], expected: set[str], paths: tuple[str, ...]) -> dict:
+    samples = len(results)
+    timings = [r for r in results if isinstance(r, float)]
+    failed = [r for r in results if isinstance(r, str)]
+    failures = len(failed)
+    outcomes = {}
+    for r in results:
+        label = r if isinstance(r, str) else "ok"
+        outcomes[label] = outcomes.get(label, 0) + 1
+    return {"samples": samples, "ok": len(timings), "rejected_or_failed": failures,
+                    "over_budget_ms": BUDGET_MS, "over_budget": sum(1 for t in timings if t > BUDGET_MS),
+                    "expected_outcomes": sorted(expected), "required_owner_calls": list(paths),
+                    "outcomes": outcomes,
+                    "first_call_ms": round(results[0], 1) if isinstance(results[0], float) else results[0],
+                    "p50_ms": round(percentile(timings, 50), 1) if timings else None,
+                    "p95_ms": round(percentile(timings, 95), 1) if timings else None,
+                    "p99_ms": round(percentile(timings, 99), 1) if timings else None,
+                    "mean_ms": round(statistics.fmean(timings), 1) if timings else None}
+
+async def future_cache_modes(app, base: str, samples: int, *, external: bool) -> dict:
+    # Cache is reset only in this local benchmark adapter, never on an owner service.
+    future_date = os.environ.get("BENCH_FUTURE_DATE") if external else "2026-10-05"
+    if not future_date:
+        return {}  # real-host future measurements need an explicit owner-designated usual day
+    args = {"date": future_date, "departmentName": DEPARTMENT} if external else {
+        "date": future_date, "departmentId": "dept_policy"}
+    report = {}
+    sem = asyncio.Semaphore(1)  # serialize cache experiments so one sample cannot warm another
+    for mode in ("cold", "warm"):
+        name = f"availability_department_future_{mode}"
+        results = []
+        if mode == "warm":
+            await measure(base, name + "_prime", "get_doctor_availability", args,
+                          {"AVAILABILITY"}, ("GET /doctors",), 0, sem)
+        start = len(OWNER_CALLS)
+        for i in range(samples):
+            if mode == "cold":
+                app.state.services.cache.clear()
+            results.append(await measure(base, name, "get_doctor_availability", args,
+                                         {"AVAILABILITY"}, ("GET /doctors",), i, sem))
+        report[name] = {**summarise(results, {"AVAILABILITY"}, ("GET /doctors",)),
+                        "cache_mode": mode, "concurrency": 1,
+                        "profile_reads": sum(path.startswith("GET /doctors/")
+                                             for _, path in OWNER_CALLS[start:]) if not external else None}
     return report
 
 
@@ -161,9 +195,9 @@ async def main() -> None:
         knowledge_base_url=os.environ.get("BENCH_KNOWLEDGE_BASE_URL") or "http://knowledge-stub.local",
         knowledge_bearer_token=os.environ.get("BENCH_KNOWLEDGE_BEARER_TOKEN") or "dev-knowledge-secret",
         mcp_bearer_token="gateway",
-        allow_budget_overrides=True,  # diagnostic: the bench runs from wherever it is started, not from the MCP region
-        read_deadline_seconds=float(os.environ.get("BENCH_READ_DEADLINE", "2.0")),
-        write_deadline_seconds=max(4.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))),
+        allow_budget_overrides=bool(real_ops),  # only distant real-host diagnostics exceed the in-call budget
+        read_deadline_seconds=float(os.environ.get("BENCH_READ_DEADLINE", "2.0")) if real_ops else None,
+        write_deadline_seconds=max(4.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))) if real_ops else None,
         summary_deadline_seconds=max(8.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))))
     if real_ops:
         knowledge = settings.knowledge_base_url
@@ -215,8 +249,12 @@ async def main() -> None:
         async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={"Authorization": "Bearer gateway"})) as c:
             await c.list_tools()
         report = await run(base, args.samples, args.concurrency, scenarios)
+        report.update(await future_cache_modes(app, base, args.samples, external=bool(real_ops)))
     print(json.dumps({"measured_at": datetime.now(UTC).isoformat(timespec="seconds"), "boundary": boundary,
                       "samples_per_scenario": args.samples, "concurrency": args.concurrency,
+                      "read_deadline_seconds": settings.read_deadline_seconds,
+                      "profile_batch_size": settings.profile_batch_size,
+                      "min_batch_headroom_seconds": settings.min_batch_headroom_seconds,
                       "warm": "token warmed at start-up; one tools/list before sampling; a new MCP session per sample",
                       "owner_calls_verified": RECORDING_OWNER_CALLS,
                       "omitted_scenarios": {name: "external writes disabled" for name in SCENARIOS

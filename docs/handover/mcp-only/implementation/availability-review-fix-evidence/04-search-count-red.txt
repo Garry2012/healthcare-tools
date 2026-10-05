@@ -1,0 +1,97 @@
+............................F........FF.F.F...FF                         [100%]
+=================================== FAILURES ===================================
+______ test_department_rollup_and_counts_do_not_list_callback_as_bookable ______
+
+    def test_department_rollup_and_counts_do_not_list_callback_as_bookable():
+        p = policy()
+        good, callback = decide(facts()), decide(facts(attendance="ON_CALL"))
+>       search = p.SearchState(matches_found=1, checked=2, complete=True)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: SearchState.__init__() got an unexpected keyword argument 'matches_found'
+
+tests/test_availability_policy.py:141: TypeError
+____________ test_stops_after_a_full_successful_batch_in_name_order ____________
+
+make_settings = <function make_settings.<locals>.factory at 0x108946020>
+
+    async def test_stops_after_a_full_successful_batch_in_name_order(make_settings):
+        found, first, _, peak, _ = await run_search(make_settings, statuses=["match"] * 8, reverse=True)
+        assert first == [0, 1, 2] and peak <= 3
+>       assert found.search.matches_found == 3 and found.search.complete is False and found.total == 8
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SearchState' object has no attribute 'matches_found'
+
+tests/test_schedule_reader.py:85: AttributeError
+_____ test_continues_to_later_batches_and_counts_all_matches_in_the_batch ______
+
+make_settings = <function make_settings.<locals>.factory at 0x10895d9e0>
+
+    async def test_continues_to_later_batches_and_counts_all_matches_in_the_batch(make_settings):
+        found, first, _, _, _ = await run_search(make_settings, statuses=["miss"] * 3 + ["match"] * 3)
+        assert first == [0, 1, 2, 3, 4, 5]
+>       assert found.search.matches_found == 3 and found.search.complete is True
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SearchState' object has no attribute 'matches_found'
+
+tests/test_schedule_reader.py:92: AttributeError
+_________ test_deadline_cancels_batch_and_never_claims_unavailability __________
+
+make_settings = <function make_settings.<locals>.factory at 0x10895dc60>
+
+    async def test_deadline_cancels_batch_and_never_claims_unavailability(make_settings):
+        found, first, _, peak, elapsed = await run_search(make_settings, statuses=["match"] * 5,
+                                                         delays={0: .5, 1: .5, 2: .5}, budget=.08)
+        assert first == [0, 1, 2] and peak <= 3 and elapsed < .15
+>       assert not found.search.complete and found.search.checked == 0 and found.search.matches_found == 0
+                                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SearchState' object has no attribute 'matches_found'
+
+tests/test_schedule_reader.py:108: AttributeError
+________________ test_on_call_candidates_need_no_profile_reads _________________
+
+make_settings = <function make_settings.<locals>.factory at 0x10895e660>
+
+    async def test_on_call_candidates_need_no_profile_reads(make_settings):
+        found, first, _, _, _ = await run_search(make_settings, statuses=["oncall"] * 4)
+>       assert first == [] and found.search.complete is True and found.search.matches_found == 0
+                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SearchState' object has no attribute 'matches_found'
+
+tests/test_schedule_reader.py:118: AttributeError
+_________ test_twenty_owner_orders_produce_identical_sorted_candidates _________
+
+make_settings = <function make_settings.<locals>.factory at 0x10895ec00>
+
+    async def test_twenty_owner_orders_produce_identical_sorted_candidates(make_settings):
+        for seed in range(20):
+            found, first, _, peak, _ = await run_search(make_settings, statuses=["match"] * 12, order_seed=seed)
+            assert first == [0, 1, 2], seed
+            assert [f.doctor.id for f in found.facts] == ["0", "1", "2"], seed
+>           assert found.search.matches_found == 3 and found.total == 12 and not found.search.complete
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'SearchState' object has no attribute 'matches_found'
+
+tests/test_schedule_reader.py:142: AttributeError
+_____ test_warm_cache_reaches_the_remaining_batch_after_cold_headroom_stop _____
+
+make_settings = <function make_settings.<locals>.factory at 0x10895f1a0>
+
+    async def test_warm_cache_reaches_the_remaining_batch_after_cold_headroom_stop(make_settings):
+        found, cold, all_reads, peak, elapsed = await run_search(
+            make_settings, statuses=["miss"] * 6, delays={i: .04 for i in range(6)}, budget=.08, repeat=True)
+        assert cold == [0, 1, 2]
+        assert all_reads == [0, 1, 2, 3, 4, 5]
+>       assert found.search.complete and found.search.checked == 6 and found.search.matches_found == 0
+                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SearchState' object has no attribute 'matches_found'
+
+tests/test_schedule_reader.py:151: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_availability_policy.py::test_department_rollup_and_counts_do_not_list_callback_as_bookable
+FAILED tests/test_schedule_reader.py::test_stops_after_a_full_successful_batch_in_name_order
+FAILED tests/test_schedule_reader.py::test_continues_to_later_batches_and_counts_all_matches_in_the_batch
+FAILED tests/test_schedule_reader.py::test_deadline_cancels_batch_and_never_claims_unavailability
+FAILED tests/test_schedule_reader.py::test_on_call_candidates_need_no_profile_reads
+FAILED tests/test_schedule_reader.py::test_twenty_owner_orders_produce_identical_sorted_candidates
+FAILED tests/test_schedule_reader.py::test_warm_cache_reaches_the_remaining_batch_after_cold_headroom_stop
+7 failed, 41 passed in 0.40s

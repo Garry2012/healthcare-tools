@@ -1,0 +1,7 @@
+make schema > .context/availability-final-schema.json
+cmp generated schema with pinned snapshot: exit 0
+JSON equality: PASS
+Four tools: get_doctor_availability, manage_booking, search_knowledge, record_call_summary
+Schema: 2026-10-05.1
+BoardSessionOut.status unchanged from 892e537: PASS
+Summary schema unchanged after removing approved description prose: PASS

@@ -1,0 +1,60 @@
+Removal audit: git-tracked repository before evidence/plan commit; no git history or .context/temp.
+Historical evidence and the approved plan may name removed code. Reviewer agent files are intentionally unchanged.
+
+PATTERN board_scope: 6 repository hits
+docs/handover/mcp-only/implementation/NEXT-AGENT-HANDOFF-20261002.md:51: - The previous UNKNOWN inconsistency is addressed with shared `board_scope.py`, used by availability
+docs/handover/mcp-only/implementation/NEXT-AGENT-HANDOFF-20261002.md:168: Source evidence: `board_scope.py`, `availability.py`, `booking.py`, `config.py`, `clock.py`,
+docs/handover/mcp-only/implementation/OPUS-CALL-SUMMARY-REVIEW.md:42: | Booking and date rule | No diff in `availability.py`, `booking.py` or `board_scope.py`. The `prompt.py` date sentence is unchanged. All booking, availability and knowledge suites are green | ✓ |
+docs/handover/mcp-only/implementation/REVIEW-REPORT.md:55: | Department CREATE ignored session/time; time outside the chosen window accepted; whole-day/unmatched scope answered differently from availability (safety 1, arch 2) | one shared rule `board_scope.py` for availability, CREATE and RESCHEDULE; department scope per doctor; time outside window → INVALID; unresolved scope with any UNKNOWN → callback in both tools (ASK_WHICH_SESSION removed) | `test_booking::test_department_create_uses_the_same_session_scope_as_availability`, `::test_a_preferred_time_outside_the_chosen_session_window_is_rejected`, `::test_unresolved_scope_with_any_unknown_is_callback_for_create_as_for_availability` |
+docs/handover/mcp-only/implementation/tool-contract-evidence/03-profile.txt:11: usual = board_scope.usual_sessions_on(profile, weekday)
+docs/handover/mcp-only/implementation/tool-contract-evidence/03-profile.txt:13: src/frontdesk_mcp/board_scope.py:83: in usual_sessions_on
+
+PATTERN unknownSessions: 1 repository hits
+docs/handover/mcp-only/implementation/opus-fix-evidence/A6-matrix-doctors.patch:11: unknownSessions=unknown, journey=journey)
+
+PATTERN CALLBACK_ONLY: 2 repository hits
+docs/handover/mcp-only/implementation/tool-contract-evidence/05-text.txt:42: E   AssertionError: ('do not', 'Doctor or department working hours qualified by the live availability board for a date. Applies to directo...rded in a call summary with CALLBACK_NOTED. A mixed result can contain individual doctors with journey=CALLBACK_ONLY.')
+docs/handover/mcp-only/implementation/tool-contract-evidence/06-outcome-drift.patch:7: -| `get_doctor_availability.outcome.AVAILABILITY` | Directory/schedule/board data are returned. Individual doctors can still have journey=CALLBACK_ONLY. |
+
+PATTERN SESSION_ROW_MISSING: 1 repository hits
+docs/handover/mcp-only/implementation/REVIEW-REPORT.md:56: | Missing row for a session the profile lists today treated as "no such session" (safety 2) | missing promised row = UNKNOWN (`SESSION_ROW_MISSING`) in availability and CREATE (profile read for the scope rule) | `test_availability::test_a_missing_row_for_a_usual_session_today_is_unknown`, `test_booking::test_a_missing_row_for_a_usual_session_today_is_unknown_for_create_too` |
+
+PATTERN _board_gate: 0 repository hits
+(none)
+
+PATTERN today or later: 1 repository hits
+.claude/agents/voice-safety-reviewer.md:17: 4. UNKNOWN board (today or later) stops the appointment journey: callback details and a
+
+PATTERN _requested_date: 1 repository hits
+docs/handover/mcp-only/implementation/REVIEW-REPORT.md:156: | Lookup: department ids, free-text match + clarification, explicit ISO dates, unsupported input | `availability.py::_resolve`, `_requested_date` | `test_availability.py` (ambiguous, bounded search, not found, department by name/id, unmatched, dates) | fixture-verified; real search semantics are Manoj's |
+
+PATTERN _overlay: 0 repository hits
+(none)
+
+PATTERN _finish: 1 repository hits
+docs/handover/mcp-only/implementation/REVIEW-REPORT.md:155: | UNKNOWN: today/future/stale/missing → name/number, callback wording, summary-only; board failure → service error | `availability.py` (`_finish`, `Callback`), `summary.py` (CALLBACK_NOTED rules), `prompt.py` rule 4 | `test_availability.py::test_unknown_*`, `test_a_failed_board_*`, `test_summary.py::test_callback_*` | fixture-verified |
+
+PATTERN _expired: 0 repository hits
+(none)
+
+PATTERN prefetch: 1 repository hits
+docs/handover/mcp-only/implementation/REVIEW-REPORT.md:59: | Single-match search waited for routing before profile/board (latency 6) | profile ∥ board start inside the prefetch | `test_availability::test_single_match_search_starts_profile_and_board_before_routing_finishes` |
+
+Scoped runtime removal checks:
+rg -n '\\b(DESK|unknownSessions|CALLBACK_ONLY|SESSION_ROW_MISSING|expired)\\b' services/mcp/src/frontdesk_mcp/availability.py services/mcp/src/frontdesk_mcp/availability_policy.py services/mcp/src/frontdesk_mcp/outcomes.py
+(zero hits)
+exit 1
+rg -n '\\b(ask|say)=' services/mcp/src/frontdesk_mcp/availability.py services/mcp/src/frontdesk_mcp/availability_policy.py services/mcp/src/frontdesk_mcp/outcomes.py
+(zero hits)
+exit 1
+rg -n 'departmentId' services/mcp/src/frontdesk_mcp/booking.py
+(zero hits)
+exit 1
+rg -n 'def _profile\\(' services/mcp/src/frontdesk_mcp/booking.py
+(zero hits)
+exit 1
+
+Exceptions: owner contract/source DESK and knowledge DESK_TRANSFER remain unrelated owner values; Deadline.expired remains a used timeout helper.
+Availability departmentId remains supported for directory queries; booking departmentId appears only in negative tests proving refusal.
+Future board removal is verified by HTTP request assertions, not by deleting the shared /availability owner endpoint.
+No reviewer agent files changed: True

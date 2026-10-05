@@ -1,0 +1,31 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_selected_unknown_stays_callback_even_with_an_unverifiable_time ______
+
+    def test_selected_unknown_stays_callback_even_with_an_unverifiable_time():
+        p = policy()
+        result = p.decide_booking(decide(facts(statuses=("UNKNOWN",), end=None)),
+                                  session="Morning", preferred_time="10:00")
+>       assert isinstance(result, p.Callback) and result.reason == "BOARD_UNKNOWN"
+E       AssertionError: assert (False)
+E        +  where False = isinstance(Handoff(reason=<Reason.TIME_NOT_VERIFIABLE: 'TIME_NOT_VERIFIABLE'>), <class 'frontdesk_mcp.availability_policy.Callback'>)
+E        +    where <class 'frontdesk_mcp.availability_policy.Callback'> = <module 'frontdesk_mcp.availability_policy' from '/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/availability_policy.py'>.Callback
+
+tests/test_availability_policy.py:154: AssertionError
+________________ test_failed_profile_cannot_be_a_write_decision ________________
+
+    def test_failed_profile_cannot_be_a_write_decision():
+        from dataclasses import replace
+        p = policy()
+        decision = decide(replace(facts(), profile=None), date="2026-10-05")
+        result = p.decide_booking(decision, session=None, preferred_time=None)
+>       assert isinstance(result, p.Handoff) and result.reason == "PROFILE_UNAVAILABLE"
+E       AssertionError: assert (False)
+E        +  where False = isinstance(Write(), <class 'frontdesk_mcp.availability_policy.Handoff'>)
+E        +    where <class 'frontdesk_mcp.availability_policy.Handoff'> = <module 'frontdesk_mcp.availability_policy' from '/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/availability_policy.py'>.Handoff
+
+tests/test_availability_policy.py:162: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_availability_policy.py::test_selected_unknown_stays_callback_even_with_an_unverifiable_time
+FAILED tests/test_availability_policy.py::test_failed_profile_cannot_be_a_write_decision
+2 failed, 29 deselected in 0.08s

@@ -71,7 +71,7 @@ These are engineering targets, not measured guarantees or MCP protocol requireme
 To keep the adapter thin and fast:
 
 - Reuse async HTTP connections and warm tokens; bound request/response sizes and fan-out. Cache only permitted stable directory/profile data, not current board truth or stale knowledge answers.
-- Overlap independent Manoj reads. Once the doctor is resolved, profile and board can run together. An appointment write requires caller confirmation and a current board check. Search-dependent reads cannot all be called parallel by assumption.
+- Overlap independent Manoj reads. Once the doctor is resolved, profile and board can run together. An appointment write requires caller confirmation and the shared schedule decision: fresh board for today, usual profile schedule for a future date. Search-dependent reads cannot all be called parallel by assumption.
 - Keep the gateway, MCP and owner services close enough in network terms to meet the measured budget. Bound cold-start delays with the chosen hosting setup; include cold starts in reporting.
 - Summaries have a separate default 8-second deadline and may be selected by the LLM; their timing is the voice application's responsibility. Durable retries belong to platform infrastructure; no database/queue backend belongs in MCP. Cancelling a local request does not prove a remote appointment was undone.
 - Measure the gateway separately and trace the entire LiveKit path. Owner API latency and any knowledge-service LLM work count against the same response budget. If either service is too slow, negotiate placement/contract performance with its owner; do not copy its implementation into MCP or invent local interpretation.
@@ -79,3 +79,19 @@ To keep the adapter thin and fast:
 Real-host MCP measurements still require declared concurrency, cold/warm token state and useful
 outcomes/failure rates. End-to-end audio measurement belongs to the voice platform. Publishing a tool
 contract or passing fixture tests does not establish application safety or the caller-response target.
+
+## Availability policy — source contract 2026-10-06.1
+
+Revision 6 is specified in [AVAILABILITY-POLICY-PLAN.md](implementation/AVAILABILITY-POLICY-PLAN.md).
+Today uses only live-board facts; future availability and WORKING_HOURS use usual schedules, with no
+claim of confirmed attendance. ON_CALL always yields callback. Department results lead to a doctor
+choice; CREATE requires doctorId and RESCHEDULE reads it from the caller's appointment. Same-decision
+sessions need no choice; differing decisions do. The owner board status remains unchanged alongside
+the MCP decision. Callback metadata contains no spoken script. No service ownership, secret, gateway
+header or authentication rule changes. Deployment and gateway/voice schema refresh require separate approval.
+
+The 6 October review corrections are recorded in DECISIONS A13. Single-doctor WORKING_HOURS returns
+full callback metadata for on-call or empty schedules; ordinary hours use PRESENT_WORKING_HOURS.
+All hours-only results have bookableFound=0; department hours retain on-call facts within the cap.
+Future unmatched sessions preserve usual sessions on the requested day as alternatives. Sessions
+crossing midnight are unsupported; mixed-session choice behavior remains unchanged pending G-1.

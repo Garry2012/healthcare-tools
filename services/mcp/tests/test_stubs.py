@@ -31,6 +31,24 @@ def conforms(instance, schema_name: str) -> None:
     jsonschema.Draft7Validator(root, format_checker=jsonschema.Draft7Validator.FORMAT_CHECKER).validate(instance)
 
 
+async def test_policy_fixture_has_later_matches_and_records_profile_reads(make_settings):
+    from frontdesk_mcp.availability import AvailabilityRequest, AvailabilityService
+
+    from . import harness
+    h = harness.build(make_settings())
+    try:
+        result = await AvailabilityService(h.ops, h.cache, h.settings, h.clock).get(
+            h.ctx(), AvailabilityRequest(departmentId="dept_policy", date="2026-10-05"))
+        assert result.outcome == "AVAILABILITY" and len(result.doctors) == 3
+        assert result.bookableFound == 5 and result.totalMatches == 12 and result.complete is False
+        assert [d.doctorId for d in result.doctors] == ["doc_fixture_01", "doc_fixture_06", "doc_fixture_07"]
+        paths = [r["path"] for r in h.ops_state.requests]
+        assert "/doctors/doc_fixture_00" not in paths and "/availability" not in paths
+        assert "/doctors/doc_fixture_09" in paths and "/doctors/doc_fixture_10" not in paths
+    finally:
+        await h.aclose()
+
+
 @pytest.fixture
 def ops():
     state = ops_stub.OpsStubState(clock=FixedClock(NOW), zone="Asia/Kolkata",
@@ -86,7 +104,7 @@ async def test_directory_responses_conform_to_the_contract(ops):
     assert [d["id"] for d in by_department["items"]] == ["doc_garima"]
 
     paged = (await http.get("/doctors", params={"limit": 3, "offset": 0}, headers=auth)).json()
-    assert len(paged["items"]) == 3 and paged["total"] == 10
+    assert len(paged["items"]) == 3 and paged["total"] == 22
 
     detail = (await http.get("/doctors/doc_garima", headers=auth)).json()
     conforms(detail, "DoctorDetail")

@@ -1,0 +1,87 @@
+Implementation diff through fde0d55 plus doc-review fixes; before final evidence/hand-back commits.
+ .env.example                                       |    5 +
+ CLAUDE.md                                          |    8 +-
+ README.md                                          |    5 +
+ deploy/azure/smoke.py                              |    4 +-
+ docs/DECISIONS.md                                  |   25 +
+ docs/architecture/TARGET.md                        |    9 +-
+ docs/handover/CONTEXTFORGE.md                      |   16 +
+ docs/handover/OWNER-INTEGRATION-MESSAGES.md        |   27 +-
+ docs/handover/TESTING.md                           |   41 +-
+ docs/handover/VOICE-TEAM.md                        |  173 ++--
+ docs/handover/mcp-only/PLAN.md                     |   65 +-
+ docs/handover/mcp-only/README.md                   |   10 +-
+ docs/handover/mcp-only/TARGET-STATE.md             |   12 +-
+ .../mcp-only/implementation/OPEN-DEPENDENCIES.md   |   15 +-
+ .../availability-policy-evidence/01-policy-red.txt |  593 +++++++++++
+ .../02-policy-green.txt                            |    2 +
+ .../03-policy-fast.txt                             |   21 +
+ .../availability-policy-evidence/04-reader-red.txt |  229 +++++
+ .../05-reader-green.txt                            |    2 +
+ .../06-reader-fast.txt                             |   21 +
+ .../07-availability-red.txt                        | 1065 ++++++++++++++++++++
+ .../08-availability-green.txt                      |   13 +
+ .../09-availability-fast.txt                       |   22 +
+ .../10-interface-red.txt                           |   62 ++
+ .../11-interface-green.txt                         |   13 +
+ .../12-interface-fast.txt                          |   22 +
+ .../13-booking-policy-red.txt                      |   31 +
+ .../14-booking-policy-green.txt                    |    2 +
+ .../15-booking-policy-fast.txt                     |   22 +
+ .../availability-policy-evidence/20-review-red.txt |   97 ++
+ .../21-review-green.txt                            |    2 +
+ .../22-review-fast.txt                             |   27 +
+ .../23-fixture-red.txt                             |   23 +
+ .../24-fixture-green.txt                           |    2 +
+ .../25-fixture-fast.txt                            |   22 +
+ .../26-tooling-red.txt                             |  130 +++
+ .../27-tooling-green.txt                           |   13 +
+ .../28-tooling-fast.txt                            |   22 +
+ .../29-time-gap-red.txt                            |   23 +
+ .../30-time-gap-green.txt                          |    2 +
+ .../31-time-gap-fast.txt                           |   22 +
+ .../33-doc-config-fast.txt                         |   22 +
+ .../34-integration-docs-fast.txt                   |   22 +
+ .../36-reader-mutation-red.txt                     |   41 +
+ .../37-reader-green.txt                            |    2 +
+ .../38-reader-lint-red.txt                         |   23 +
+ .../39-reader-fast.txt                             |   22 +
+ services/mcp/README.md                             |   12 +-
+ services/mcp/dev/bench.py                          |   76 +-
+ services/mcp/dev/demo.py                           |    6 +-
+ .../dev/frontdesk_stubs/data/demo_hospital.json    |   17 +-
+ services/mcp/dev/frontdesk_stubs/ops.py            |    8 +-
+ services/mcp/src/frontdesk_mcp/availability.py     |  331 ++----
+ .../mcp/src/frontdesk_mcp/availability_policy.py   |  327 ++++++
+ services/mcp/src/frontdesk_mcp/board_scope.py      |   83 --
+ services/mcp/src/frontdesk_mcp/booking.py          |  198 ++--
+ services/mcp/src/frontdesk_mcp/config.py           |   10 +-
+ services/mcp/src/frontdesk_mcp/outcomes.py         |   42 +-
+ .../mcp/src/frontdesk_mcp/packs/healthcare.json    |   22 +-
+ services/mcp/src/frontdesk_mcp/prompt.py           |    6 +-
+ services/mcp/src/frontdesk_mcp/schedule_reader.py  |  137 +++
+ services/mcp/src/frontdesk_mcp/tools.py            |   18 +-
+ .../mcp/tests/contracts/mcp-tools.snapshot.json    |  463 +++++++--
+ services/mcp/tests/test_availability.py            |   96 +-
+ services/mcp/tests/test_availability_policy.py     |  169 ++++
+ services/mcp/tests/test_bench.py                   |    6 +
+ services/mcp/tests/test_booking.py                 |  187 ++--
+ services/mcp/tests/test_deploy.py                  |   27 +-
+ services/mcp/tests/test_e2e_processes.py           |    9 +-
+ services/mcp/tests/test_external.py                |   18 +-
+ services/mcp/tests/test_schedule_reader.py         |  152 +++
+ services/mcp/tests/test_server.py                  |   53 +-
+ services/mcp/tests/test_stubs.py                   |   20 +-
+ 73 files changed, 4690 insertions(+), 855 deletions(-)
+
+Source numstat:
+94	237	services/mcp/src/frontdesk_mcp/availability.py
+327	0	services/mcp/src/frontdesk_mcp/availability_policy.py
+0	83	services/mcp/src/frontdesk_mcp/board_scope.py
+71	127	services/mcp/src/frontdesk_mcp/booking.py
+9	1	services/mcp/src/frontdesk_mcp/config.py
+31	11	services/mcp/src/frontdesk_mcp/outcomes.py
+11	11	services/mcp/src/frontdesk_mcp/packs/healthcare.json
+4	2	services/mcp/src/frontdesk_mcp/prompt.py
+137	0	services/mcp/src/frontdesk_mcp/schedule_reader.py
+10	8	services/mcp/src/frontdesk_mcp/tools.py

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from . import contract
 from . import knowledge_contract as kc
+from .availability_policy import Basis, Decision, Reason, RequestedDate, SessionDecision
 
 
 class _Out(BaseModel):
@@ -28,10 +29,9 @@ class Routing(_Out):
 
 
 class Callback(_Out):
-    """Callback metadata for UNKNOWN availability; summary outcome is CALLBACK_NOTED."""
+    """Callback reason and summary category; no appointment or separate task is created."""
 
-    ask: str = "May I have your name and a callback number?"
-    say: str = "Someone from the hospital will call you back."
+    reason: Reason
     summaryOutcome: Literal["CALLBACK_NOTED"] = "CALLBACK_NOTED"  # noqa: N815 - wire names
 
 
@@ -40,7 +40,9 @@ class UsualSessionOut(_Out):
     daysOfWeek: list[str]  # noqa: N815
     start: str
     end: str
-    onRequestedDate: bool  # noqa: N815
+    onRequestedDate: bool | None  # noqa: N815
+    decision: Decision
+    reason: Reason | None = None
 
 
 class BoardSessionOut(_Out):
@@ -51,10 +53,19 @@ class BoardSessionOut(_Out):
     delayMinutes: int | None = None  # noqa: N815
     note: str | None = None
     isStale: bool  # noqa: N815
-    expired: bool = Field(description="expectedEndTime has passed in facility time on the requested date.")
+    decision: Decision
+    reason: Reason | None = None
 
 
-Journey = Literal["APPOINTMENT_REQUEST", "CALLBACK_ONLY", "DESK"]
+def session_out(s: SessionDecision, requested: RequestedDate | None):
+    if s.basis == Basis.LIVE_BOARD:
+        return BoardSessionOut(session=s.label, status=s.owner_status, decision=s.decision, reason=s.reason,
+                                        expectedTime=s.start, expectedEndTime=s.end, delayMinutes=s.delay_minutes,
+                                        note=s.note, isStale=s.is_stale)
+    return UsualSessionOut(label=s.label, daysOfWeek=list(s.days), start=s.start, end=s.end,
+                                    onRequestedDate=requested.weekday in s.days if requested else None,
+                                    decision=s.decision, reason=s.reason)
+
 
 
 class DoctorAvailability(_Out):
@@ -67,8 +78,9 @@ class DoctorAvailability(_Out):
     usualSessions: list[UsualSessionOut] | None = Field(  # noqa: N815
         description="Usual working hours, independent of live attendance. null when the profile was not fetched.")
     board: list[BoardSessionOut]
-    unknownSessions: list[str] = []  # noqa: N815
-    journey: Journey
+    decision: Decision
+    reason: Reason | None = None
+    sessionChoiceRequired: bool = False  # noqa: N815
 
 
 class DoctorChoice(_Out):
@@ -86,11 +98,12 @@ class DepartmentChoice(_Out):
 AvailabilityOutcome = Literal[
     "AVAILABILITY", "CLARIFICATION_NEEDED", "CALLBACK_REQUIRED",
     "NOT_FOUND", "COULD_NOT_CHECK", "INVALID_REQUEST",
+    "NOT_AVAILABLE", "WORKING_HOURS", "HANDOFF_REQUIRED",
 ]
 NextStep = Literal[
     "OFFER_APPOINTMENT_REQUEST", "ASK_WHICH_DOCTOR", "ASK_WHICH_DEPARTMENT", "ASK_CALLBACK_DETAILS",
     "TRANSFER_DESK", "ASK_TO_REPHRASE", "SAY_COULD_NOT_CHECK",
-    "ASK_EXPLICIT_DATE",
+    "ASK_EXPLICIT_DATE", "ASK_WHICH_SESSION", "OFFER_OTHER_SESSION_OR_DATE", "PRESENT_WORKING_HOURS",
 ]
 
 
@@ -104,8 +117,14 @@ class AvailabilityResult(_Out):
     doctors: list[DoctorAvailability] = []
     choices: list[DoctorChoice] = []
     departmentChoices: list[DepartmentChoice] = []  # noqa: N815
-    complete: bool = True
-    totalMatches: int | None = None  # noqa: N815
+    complete: bool = Field(default=True,
+                           description="Every directory candidate was evaluated; no failed or unchecked reads.")
+    totalMatches: int | None = Field(default=None,  # noqa: N815
+                                    description="Directory count across all attendance types and decisions.")  # noqa: N815
+    bookableFound: int = Field(default=0,  # noqa: N815
+                               description="Bookable doctors found among those checked; may exceed the capped list. "
+                                           "Always zero for WORKING_HOURS.")  # noqa: N815
+    basis: Basis | None = None
     sessionMatched: bool | None = None  # noqa: N815
     callback: Callback | None = None
     detail: str | None = Field(default=None, description="Machine-readable reason for non-success outcomes.")
@@ -129,17 +148,19 @@ class AppointmentOut(_Out):
 
 BookingOutcome = Literal[
     "NOTED", "CHANGED", "CANCELLED", "FOUND", "NOT_FOUND", "REJECTED", "CONFLICT", "UNCERTAIN",
-    "IDENTITY_UNAVAILABLE", "CALLBACK_REQUIRED",
+    "IDENTITY_UNAVAILABLE", "CALLBACK_REQUIRED", "NOT_AVAILABLE", "HANDOFF_REQUIRED",
     "CONFIRMATION_REQUIRED", "OPERATION_CONTEXT_MISSING", "COULD_NOT_RECORD", "COULD_NOT_CHECK", "INVALID_REQUEST",
 ]
 BookingNextStep = Literal[
     "SAY_REQUEST_NOTED", "SAY_CHANGED", "SAY_CANCELLED", "OFFER_CHOICES", "SAY_NOT_FOUND", "ASK_TO_CORRECT",
     "SAY_UNCERTAIN_AND_TRANSFER", "TRANSFER_DESK",
     "ASK_CALLBACK_DETAILS", "ASK_CONFIRMATION", "SAY_COULD_NOT_RECORD", "SAY_COULD_NOT_CHECK",
+    "ASK_WHICH_SESSION", "OFFER_OTHER_SESSION_OR_TIME", "OFFER_OTHER_SESSION_OR_DATE",
 ]
 
 
 class BookingResult(_Out):
+    sessions: list[BoardSessionOut | UsualSessionOut] = []
     outcome: BookingOutcome
     nextStep: BookingNextStep  # noqa: N815
     appointment: AppointmentOut | None = None

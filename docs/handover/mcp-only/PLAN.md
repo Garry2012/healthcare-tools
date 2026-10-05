@@ -2,7 +2,9 @@
 
 Status: source migration implemented; current contract updated 4 October 2026. Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
 
-Updated 30 September 2026 from the user's decisions, the [published Manoj contract](https://healthcare-contract-docs.icytree-6543aaa9.centralindia.azurecontainerapps.io/openapi.yaml), and the [Opus review](OPUS-REVIEW.md). This is the current plan, including the actionable review recommendations and the user's callback-only UNKNOWN policy. It supersedes earlier ownership proposals, slot requirements and the direct platform-to-REST summary path. Retirement, rollback and acceptance requirements are included here; the historical investigation is source evidence, not an additional implementation checklist. This is an implementation plan, not a claim of verified production readiness.
+Availability decisions are superseded by the approved [revision 6 policy](implementation/AVAILABILITY-POLICY-PLAN.md) with the 6 October corrections recorded in DECISIONS.md A13 and schema `2026-10-06.1`; deployment is separate.
+
+Updated 30 September 2026 from the user's decisions, the [published Manoj contract](https://healthcare-contract-docs.icytree-6543aaa9.centralindia.azurecontainerapps.io/openapi.yaml), and the [Opus review](OPUS-REVIEW.md). This is the migration plan, including the actionable review recommendations and the user's callback-only UNKNOWN policy. It supersedes earlier ownership proposals, slot requirements and the direct platform-to-REST summary path. Retirement, rollback and acceptance requirements are included here; the historical investigation is source evidence, not an additional implementation checklist. This is an implementation plan, not a claim of verified production readiness.
 
 Keep the repository and extract in place. Our deliverable is the MCP server and tools consuming Manoj's operational backend and Shobhit's knowledge base. No operational backend, scheduling engine, interpretation engine, knowledge retrieval engine or application database should remain in our production implementation.
 
@@ -21,12 +23,12 @@ The public interfaces are the only dependency on either owner's implementation: 
 
 | Decision | Integration consequence |
 |---|---|
-| Slot API is pending; combine working hours with the live board | `GET /doctors/{doctorId}` supplies the usual schedule; `GET /availability` qualifies/overrides it for the requested date and session, analogous to the legacy board_entries role. Do not synthesize slot IDs, capacity, token numbers or available appointment slots. The missing slot endpoint does not block this interim journey. |
+| Slot API is pending; combine working hours with the live board | `GET /doctors/{doctorId}` supplies the usual schedule; `GET /availability` supplies authoritative status/times for today only; future dates and WORKING_HOURS use usual schedules, with attendance unconfirmed. Do not synthesize slot IDs, capacity, token numbers or available appointment slots. The missing slot endpoint does not block this interim journey. |
 | Patient suggests a preferred time; agent creates the appointment | Send the chosen doctor, patient details, visit date and preferred time through the appointment contract. Current API returns NOTED: tell the caller the request was recorded, without promising a reserved time. |
 | Rich multilingual date interpretation, ambiguous-name handling and department synonyms will be developed as we proceed | Start with the existing department list, free-text doctor search and explicit calendar dates. No new interpretation endpoint is a prerequisite. Basic caller clarification is sufficient when the returned choices or date are unclear; do not copy the legacy interpretation engine. |
 | Shobhit owns symptom routing, red-flag detection and hospital information | Consume explicit routing/emergency/approved-answer results from the knowledge service. Do not ask Manoj to implement clinical routing or retain the old lexical engine locally. |
 | Call summaries need an MCP tool | Add a proposed `record_call_summary` tool using `createCallSummary`. Route call finalization through MCP; do not require a separate direct REST writer in the voice platform. |
-| UNKNOWN availability means callback details and call summary only | UNKNOWN prevents appointment writes; CALLBACK_NOTED summaries carry callback contact details. No appointment, transfer, alternate booking, notification or separate callback task is created. Applies to today and future dates when the requested availability is UNKNOWN. |
+| UNKNOWN availability means callback details and call summary only | UNKNOWN prevents appointment writes; CALLBACK_NOTED summaries carry callback contact details. No appointment, transfer, alternate booking, notification or separate callback task is created. Today NOT_CONFIRMED also requires callback; future decisions use usual schedules. ON_CALL always requires callback. |
 
 **What the published contract changes**
 
@@ -58,34 +60,33 @@ requirements; conversation design and tool selection belong to the calling appli
    reasonVerbatim is operational data forwarded without interpretation.
 2. Directory reads resolve names and department IDs. Ambiguity returns structured choices; specialized
    phonetic, synonym and multilingual interpretation remains external service work.
-3. Resolved-doctor profile and live-board reads run concurrently. Usual windows and session-specific
-   board rows remain distinct; missing routine hours do not invalidate a board entry.
-4. UNKNOWN returns callback metadata and prevents the affected booking write. Failed reads return
-   service failures. NOTED denotes a recorded request; UNCERTAIN denotes an unverified write result.
-5. Write inputs require callerConfirmed=true, the trusted call/operation identifiers and explicit
-   ISO dates/local HH:MM times. These are tool requirements, not conversational scripts. Relative-date
-   interpretation is outside the adapter; existing date validation is unchanged.
+3. Today: known doctor ID reads profile and board concurrently; name resolution supplies attendance
+   type before its board read. Department list and board run concurrently. Board times/status are
+   authoritative, without profile-based missing-session inference. Future and WORKING_HOURS read
+   profiles only. Sequential sorted profile batches are concurrent within each batch and deadline-bound.
+4. Owner status is unchanged; MCP decision/reason is separate. UNKNOWN/NOT_CONFIRMED and ON_CALL
+   return callback metadata; CANCELLED or a supplied passed end time is unavailable. A missing end
+   time is not inferred. Mixed decisions require selection; same decisions permit a day-level request.
+5. AVAILABILITY requires today or strict future YYYY-MM-DD; WORKING_HOURS permits no date. CREATE
+   requires a doctor; RESCHEDULE uses the verified appointment's doctor. Both apply the shared policy
+   and return NOTED, not confirmed. Specific time in a bookable session with unknown end requires
+   handoff without a write. LIST/CANCEL, confirmation, trusted IDs and uncertainty are unchanged.
+6. Department AVAILABILITY results list only bookable doctors when any exist, capped at 3 in name order. Otherwise
+   callback/unavailable facts are capped; incomplete absence gives handoff. totalMatches counts the
+   directory, bookableFound counts bookable matches evaluated, complete means all evaluated successfully.
+   WORKING_HOURS reports zero bookableFound and keeps on-call facts within its capped list; a single
+   on-call/empty schedule uses full callback metadata, while normal hours use PRESENT_WORKING_HOURS.
 
-Working hours spanning multiple sessions or two hours remain complete windows. A caller's preferred time is an expectation, not proof of capacity. Validation of appointment dates, allowable times, doctor changes and any future slot allocation belongs to Manoj. Do not build these operational rules into the stub or MCP.
-
-The callback-only outcome changes no owner scheduling rule. MCP creates no appointment or separate
-callback task for UNKNOWN; the call summary can record CALLBACK_NOTED. A transport failure is
-not a valid UNKNOWN board response.
-
-The live board acts as a status/timing overlay, not merely a filter that removes rows. Keep cancelled and unknown sessions visible in the structured result so the agent can explain them. Prefer supplied expectedTime/expectedEndTime for the specific board session without adding delayMinutes again to a possibly already revised time. Do not infer a missing end time or join ambiguous session labels arbitrarily. On board failure, report that current status could not be checked; do not turn standard hours into a successful current-availability answer. Tests should distinguish normal, late, cancelled, unconfirmed, unknown/stale, expired, multiple-session and on-call cases. The slot API remains a separate future capability.
-
-Department availability uses one department board read, not one board call per doctor. Directory
-results preserve ambiguity and completeness; the adapter does not rank clinical suitability.
-
-Configure the facility's IANA timezone and inject a controllable clock for tests. Use the full board date plus local time for expiry; a future session is not expired merely because its clock time has passed today, and a past entry is not current attendance. Confirm weekday selection in facility time around midnight. Qualify `DoctorDetail.dataConfirmed=false` data as unconfirmed; missing optional confirmation metadata is not proof of approval. Never use `patientsPerHour` to allocate capacity or derive patient arrival times.
-
-One `get_doctor_availability` invocation composes directory search, profile and board internally. It returns a complete result or clarification choices. The diagram's caller-clarification branch represents a genuine additional conversation turn, not separate model-facing search/profile tools. Facility clock handling and formatting explicit dates are basic adapter responsibilities; richer spoken-date/name/synonym interpretation remains deferred.
+Callback metadata contains reason and summaryOutcome, no spoken wording or separate callback task.
+Failed reads remain failures. No capacity, slots or clinical ranking is inferred. Facility timezone
+controls date and expiry. Details and exact result precedence are in revision 6, which supersedes
+earlier board-overlay, department-write and future-UNKNOWN instructions.
 
 **Planned MCP tool surface**
 
 | Tool | Consumer contract | Change |
 |---|---|---|
-| `get_doctor_availability` | Manoj department list, free-text doctor search, doctor profile and live board | User-selected name, replacing the proposed `get_doctor_working_hours`. Replace the legacy `find_availability` tool during implementation. Return working hours qualified by date/session-specific live-board status. Slot availability is not yet supported. |
+| `get_doctor_availability` | Manoj department list, free-text doctor search, doctor profile and live board | User-selected name, replacing the proposed `get_doctor_working_hours`. Replace the legacy `find_availability` tool during implementation. Today returns live-board facts; future and WORKING_HOURS return usual schedules. Slot availability is not yet supported. |
 | `manage_booking` | Manoj create/list/cancel/reschedule operations | Replace slot/newSlot inputs with target/date/preferred time as supported by each operation. Keep identity protections and honest lifecycle status. No need to settle a new action name before contract design. |
 | `search_knowledge` | Shobhit interface, pending | One planned tool covers symptom routing, emergency/desk escalation and hospital answers. Its downstream endpoint and payload remain pending Shobhit's contract. |
 | `record_call_summary` | `createCallSummary`, `POST /call-summaries` | New required MCP tool. Expose to the LLM through gateway authentication; no summary listing or staff tools implied. |
@@ -121,8 +122,8 @@ Paths below are relative to the configured service base URL. Manoj's documented 
 | `get_doctor_availability` — department lookup | Manoj | `GET /departments` (`listDepartments`) | Obtain department names, IDs and staffing state. |
 | `get_doctor_availability` — doctor search | Manoj | `GET /doctors?query=...` and/or `department=...` (`searchDoctors`) | Find doctor records and IDs; optional gender filter where requested. Clarify multiple matches. |
 | `get_doctor_availability` — doctor details | Manoj | `GET /doctors/{doctorId}` (`getDoctor`) | Read `usualSchedule` for working-hour sessions and requested profile information. |
-| `get_doctor_availability` — live board | Manoj | `GET /availability?doctorId=...&date=...` or `GET /availability?department=...&date=...` (`getAvailability`) | Qualify/override usual hours with date/session-specific attendance, delays, cancellations, unconfirmed/unknown state and expected timing. Exactly one target filter per call. |
-| `manage_booking` — create | Manoj | `POST /appointments` (`createAppointment`) | Record patient details, doctor or department, visit date and optional preferred time. Success is NOTED, not a reserved slot. |
+| `get_doctor_availability` — live board | Manoj | `GET /availability?doctorId=...&date=...` or `GET /availability?department=...&date=...` (`getAvailability`) | Today only: attendance, delays, cancellations, unconfirmed/unknown state and expected timing. Exactly one target filter per call. |
+| `manage_booking` — create | Manoj | `POST /appointments` (`createAppointment`) | Record patient details, required doctorId, visit date and optional preferred time. Success is NOTED, not a reserved slot. |
 | `manage_booking` — list | Manoj | `GET /appointments?mobile=...` (`findAppointments`) | Retrieve appointments for the authorized number; optional from/to/status filters. |
 | `manage_booking` — cancel | Manoj | `POST /appointments/{appointmentId}/cancel` (`cancelAppointment`) | Cancel using trusted caller identity and the documented request fields. |
 | `manage_booking` — reschedule | Manoj | `POST /appointments/{appointmentId}/reschedule` (`rescheduleAppointment`) | Change visit date and optional preferred time; no new doctor/department field is currently specified. |
@@ -200,7 +201,7 @@ Measure end of caller speech to first audible useful result at the caller. Fille
 | Headroom | 100 ms |
 | Total planning allocation | 1,000 ms |
 
-These allocations are engineering hypotheses, not measurements or a proof obtained by adding stage percentiles. Derive an absolute tool deadline from the remaining turn budget, reserving response/TTS time, and measure the complete journey directly. Availability may require doctor search followed by parallel profile/board reads without a knowledge call. Known IDs and valid cached profile data remove directory hops; the fresh board still remains. A creation requires caller confirmation and a fresh board; the voice platform enforces its safety state before dispatch.
+These allocations are engineering hypotheses, not measurements or a proof obtained by adding stage percentiles. Derive an absolute tool deadline from the remaining turn budget, reserving response/TTS time, and measure the complete journey directly. Availability may require doctor search followed by parallel profile/board reads without a knowledge call. Known IDs and valid cached profile data remove directory hops; the fresh board still remains. A creation requires caller confirmation and the shared policy (fresh board today, usual schedule for future); the voice platform enforces its safety state before dispatch.
 
 Cache tenant-bound department/profile data with bounded TTL and agreed invalidation; cache neither live-board truth across turns nor knowledge results across changed caller questions. Preserve persistent connections and warm OAuth tokens. Bound directory pagination and profile fan-out; show incomplete results explicitly rather than claim no match. Keep one model-facing availability invocation for the internal composition. Add an early latency spike as soon as the real service hosts exist, from the intended MCP region; if the downstream critical path cannot fit, discuss service placement or owner-provided aggregation then, not speculative aggregation endpoints now.
 
@@ -221,9 +222,9 @@ Keep any temporary legacy test profile explicitly named during migration. The ne
 
 **Prompt and gateway migration**
 
-Rewrite `prompt.py` and the healthcare pack around board-qualified working hours, clarification, CALLBACK_NOTED and truthful appointment states. Remove slotId/newSlotId, capacity/confirmation-code promises and obsolete timingCertainty/outcome branches. CONFIRMED_BY_DESK can be described as desk acknowledgement; it still does not mean a guaranteed time under Manoj's contract. Include explicit instructions for missing identity, routing failures and uncertain mutations.
+Maintain `prompt.py` and the healthcare pack around date-aware facts, clarification, CALLBACK_NOTED and truthful appointment states. Remove slotId/newSlotId, capacity/confirmation-code promises and obsolete timingCertainty/outcome branches. CONFIRMED_BY_DESK can be described as desk acknowledgement; it still does not mean a guaranteed time under Manoj's contract. Include explicit instructions for missing identity, routing failures and uncertain mutations.
 
-Replace the old three-tool discovery expectations with the four planned names, versioned schemas and instructions. `register.py` currently treats matching registration metadata as a no-op; change the workflow to verify/refresh actual tool schemas and instructions, not merely registration name/URL. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
+Replace the old three-tool discovery expectations with the four planned names, versioned schemas and instructions. `register.py` currently treats matching registration metadata as a no-op; change the workflow to verify/refresh actual tool schemas and instructions, not merely registration name/URL. The implemented script checks names/input schemas only; output schemas require manual comparison through the voice virtual server against `make schema` after separately approved deployment. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
 
 **Active repository retirement inventory**
 
@@ -256,12 +257,12 @@ Execute source removal and infrastructure decommission as distinct steps within 
 | Area | Required checks |
 |---|---|
 | Hours and board | Full two-hour/multiple-session windows; morning IN/evening unconfirmed; LATE without double delay; cancellation; optional end/time fields; expiry with facility timezone; unconfirmed profile data; on-call and future dates. No slot/capacity invention. |
-| UNKNOWN callback | Today/future and stale/missing entries returned as UNKNOWN collect name/number and save CALLBACK_NOTED only. No appointment, transfer, alternate booking, notification or task; never treat a failed board request as successful UNKNOWN. |
+| UNKNOWN callback | Today stale/missing entries returned as UNKNOWN collect name/number and save CALLBACK_NOTED only. No appointment, transfer, alternate booking, notification or task; never treat a failed board request as successful UNKNOWN. |
 | Basic lookup | Department IDs, free-text doctor search, multiple-choice clarification, explicit dates, pagination and unknown gender/language. Preserve incompleteness; advanced multilingual/synonym parsing is deferred. |
 | Identity | Model phone/header/tenant override rejected; configured E.164 normalization; missing/unsupported verification; cross-number family access refused; concurrent calls/tenants isolated; patient/callback contact never reused as authorization. |
 | Routing | Availability and booking make zero knowledge requests. search_knowledge makes one verbatim request. Voice-side tests prove every-turn emergency coverage, stale-result handling and write ordering. |
 | Writes | Concurrent same-intent retry, changed payload, correction after definite rejection, uncertain commit, malformed success, replay after later mutation, missing call ID, 429/5xx/401 and total deadlines. Never uncertain write → success; never new key just because a response was lost. |
-| Summaries | Call-end-only access, trusted metadata after disconnect, fixed-payload 200 replay, lost response, supported/unsupported languages, 500-character limit preserving callback details, known completed outcome surviving hang-up. No separate callback task. |
+| Summaries | Same gateway access as all tools; trusted call/start headers; exact whole-call text within 500 characters, no composition or truncation; verified same-call 200 is ALREADY_SAVED even with changed payload; lost response uncertainty and language validation. Callback detail quality and disconnect recovery belong to the voice platform; no separate callback task. |
 | Runtime/release | OAuth skew/single-flight/401 handling, mock/backend prefixes, local readiness plus separate dependency health, refreshed four-tool schemas/prompts, read-only production smoke, production cannot use development stubs. |
 | Separation | Required tests pass in a clean environment without API source/virtualenv/PostgreSQL. MCP builds/deploys independently. Active scripts/hooks/docs no longer start or generate the backend. No hidden knowledge fallback. |
 | Azure retirement | Mandatory phase 6: scoped removal of obsolete resources, shared-consumer preservation/relocation, data disposition, no obsolete active references, remaining-resource ownership and cost verification. |

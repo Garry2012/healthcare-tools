@@ -109,3 +109,54 @@ Consequences: breaking tool schema and access change, requiring coordinated MCP/
 Schema bumps: 2026-10-03.3 → 2026-10-04.1 for summary request/result, then → 2026-10-04.2 for gateway
 access metadata. Live verification still requires calls.write and an owner-designated synthetic tenant.
 The old deployment secret remains untouched until separately authorized retirement.
+
+## A12 — Date-aware schedule facts and bounded profile reads (5 October 2026)
+
+Context: applying an UNKNOWN future board blocked requests even when a doctor had a usual schedule.
+Approved revision 6 separates today, future dates and WORKING_HOURS in one pure policy and one reader.
+Today uses only live-board status/times; future and hours queries never fetch the board. ON_CALL is
+always callback. No capacity, slot allocation, end time or confirmed attendance is inferred.
+Owner `status` is preserved; our `decision` and `reason` explain the result. Same-decision sessions
+permit a day-level request; differing decisions need selection. CREATE requires a doctor; RESCHEDULE
+uses the verified caller's appointment doctor. A bookable session with unknown end time and a specific
+requested time requires handoff, not a write. Callback stores only a call summary.
+
+Future department profiles are read in sorted sequential batches, concurrent only within each batch,
+under one deadline. Defaults: limit 3, batch 3, minimum headroom 0.05 s, existing cache 300 s. Results
+separate directory total, bookable found and completeness; incomplete absence is never unavailability.
+Rejected: future board gating, inferring missing sessions from profiles today, department writes,
+unbounded profile fan-out, parallel policy paths and conversational scripts in responses.
+
+Consequences: breaking schema 2026-10-05.1 needs gateway/voice refresh; unchanged owner API and scopes.
+Owner usual schedules must be populated. ON_CALL and today-only board use are explicit consumer policy
+choices, not revisions to Manoj's published contract. The owner still validates writes. LIST/CANCEL,
+trusted identity, operation keys, uncertainty, 401-only refresh and summary behavior are unchanged.
+Summary text can contain callback name/date/session/reason, but these details are not enforced;
+summary quality needs acceptance when the voice agent is integrated. Live latency and output-schema
+propagation are separate post-deploy acceptance, not established by local fixtures.
+
+## A13 — Availability review corrections (6 October 2026)
+
+Future sessions are classified by their own weekdays, independently of a failed requested-session
+selection. The doctor-level refusal stays SESSION_NOT_USUAL; same-day sessions remain offerable
+alternatives, other-day sessions are NOT_USUAL_DAY. Booking preserves that doctor-level refusal.
+Session matching for future dates considers the requested weekday, not merely a matching label.
+
+When the doctor is unavailable for the whole requested scope, booking reports the doctor's own reason (CANCELLED, SESSION_ENDED, NOT_USUAL_DAY or SESSION_NOT_USUAL), even when a preferred time was given; TIME_OUTSIDE_SESSION applies only when the doctor has bookable sessions and the chosen time falls outside them.
+
+Garima reconfirmed that ON_CALL always means callback, including single-doctor WORKING_HOURS.
+Single-doctor empty schedules also use the full callback result. Normal hours return a neutral
+PRESENT_WORKING_HOURS next step; all WORKING_HOURS results have bookableFound=0. Internal search matches
+still stop bounded schedule batches. Department hours keep on-call doctors as facts within the cap.
+The policy selects eligible result candidates; ranking only orders/caps them. No second policy or
+lookup path is introduced. An already identified on-call doctor's name query needs no board read.
+
+Schema 2026-10-06.1 adds PRESENT_WORKING_HOURS and replaces NO_REGULAR_HOURS (emitted in schema
+2026-10-05.1 for on-call working hours) with ON_CALL_DOCTOR. Inputs and credentials are unchanged.
+A gateway already on 2026-10-05.1 therefore
+needs explicit discovery refresh and a manual output-schema comparison; input drift cannot prove it.
+
+Known limitation, confirmed by Garima: **sessions crossing midnight are unsupported**. This pass
+adds no overnight interpretation or defensive time rule. G-1 (whether cancelled/ended sessions
+should force a choice) remains pending; the approved mixed-decision rule is unchanged. Optional M-7
+(showing other board facts when a named today session is absent) is not implemented without approval.
