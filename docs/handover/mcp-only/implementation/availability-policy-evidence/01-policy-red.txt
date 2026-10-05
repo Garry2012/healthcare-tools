@@ -1,0 +1,593 @@
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFF                                            [100%]
+=================================== FAILURES ===================================
+_ test_each_owner_status_has_a_separate_decision[IN-APPOINTMENT_REQUEST-None] __
+
+status = 'IN', want = 'APPOINTMENT_REQUEST', reason = None
+
+    @pytest.mark.parametrize("status,want,reason", [
+        ("IN", "APPOINTMENT_REQUEST", None), ("LATE", "APPOINTMENT_REQUEST", None),
+        ("CANCELLED", "NOT_AVAILABLE", "CANCELLED"),
+        ("NOT_CONFIRMED", "CALLBACK_REQUIRED", "BOARD_NOT_CONFIRMED"),
+        ("UNKNOWN", "CALLBACK_REQUIRED", "BOARD_UNKNOWN"),
+    ])
+    def test_each_owner_status_has_a_separate_decision(status, want, reason):
+>       result = decide(facts(statuses=(status,)))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:41: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_ test_each_owner_status_has_a_separate_decision[LATE-APPOINTMENT_REQUEST-None] _
+
+status = 'LATE', want = 'APPOINTMENT_REQUEST', reason = None
+
+    @pytest.mark.parametrize("status,want,reason", [
+        ("IN", "APPOINTMENT_REQUEST", None), ("LATE", "APPOINTMENT_REQUEST", None),
+        ("CANCELLED", "NOT_AVAILABLE", "CANCELLED"),
+        ("NOT_CONFIRMED", "CALLBACK_REQUIRED", "BOARD_NOT_CONFIRMED"),
+        ("UNKNOWN", "CALLBACK_REQUIRED", "BOARD_UNKNOWN"),
+    ])
+    def test_each_owner_status_has_a_separate_decision(status, want, reason):
+>       result = decide(facts(statuses=(status,)))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:41: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_ test_each_owner_status_has_a_separate_decision[CANCELLED-NOT_AVAILABLE-CANCELLED] _
+
+status = 'CANCELLED', want = 'NOT_AVAILABLE', reason = 'CANCELLED'
+
+    @pytest.mark.parametrize("status,want,reason", [
+        ("IN", "APPOINTMENT_REQUEST", None), ("LATE", "APPOINTMENT_REQUEST", None),
+        ("CANCELLED", "NOT_AVAILABLE", "CANCELLED"),
+        ("NOT_CONFIRMED", "CALLBACK_REQUIRED", "BOARD_NOT_CONFIRMED"),
+        ("UNKNOWN", "CALLBACK_REQUIRED", "BOARD_UNKNOWN"),
+    ])
+    def test_each_owner_status_has_a_separate_decision(status, want, reason):
+>       result = decide(facts(statuses=(status,)))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:41: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_ test_each_owner_status_has_a_separate_decision[NOT_CONFIRMED-CALLBACK_REQUIRED-BOARD_NOT_CONFIRMED] _
+
+status = 'NOT_CONFIRMED', want = 'CALLBACK_REQUIRED'
+reason = 'BOARD_NOT_CONFIRMED'
+
+    @pytest.mark.parametrize("status,want,reason", [
+        ("IN", "APPOINTMENT_REQUEST", None), ("LATE", "APPOINTMENT_REQUEST", None),
+        ("CANCELLED", "NOT_AVAILABLE", "CANCELLED"),
+        ("NOT_CONFIRMED", "CALLBACK_REQUIRED", "BOARD_NOT_CONFIRMED"),
+        ("UNKNOWN", "CALLBACK_REQUIRED", "BOARD_UNKNOWN"),
+    ])
+    def test_each_owner_status_has_a_separate_decision(status, want, reason):
+>       result = decide(facts(statuses=(status,)))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:41: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_ test_each_owner_status_has_a_separate_decision[UNKNOWN-CALLBACK_REQUIRED-BOARD_UNKNOWN] _
+
+status = 'UNKNOWN', want = 'CALLBACK_REQUIRED', reason = 'BOARD_UNKNOWN'
+
+    @pytest.mark.parametrize("status,want,reason", [
+        ("IN", "APPOINTMENT_REQUEST", None), ("LATE", "APPOINTMENT_REQUEST", None),
+        ("CANCELLED", "NOT_AVAILABLE", "CANCELLED"),
+        ("NOT_CONFIRMED", "CALLBACK_REQUIRED", "BOARD_NOT_CONFIRMED"),
+        ("UNKNOWN", "CALLBACK_REQUIRED", "BOARD_UNKNOWN"),
+    ])
+    def test_each_owner_status_has_a_separate_decision(status, want, reason):
+>       result = decide(facts(statuses=(status,)))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:41: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+__________ test_date_errors_are_machine_readable[None-DATE_REQUIRED] ___________
+
+value = None, want = 'DATE_REQUIRED'
+
+    @pytest.mark.parametrize("value,want", [(None, "DATE_REQUIRED"), ("", "DATE_FORMAT"),
+        ("tomorrow", "DATE_FORMAT"), ("2026-1-5", "DATE_FORMAT"), ("2026-02-30", "DATE_FORMAT"),
+        ("05/10/2026", "DATE_FORMAT"), ("2026-09-30", "PAST_DATE")])
+    def test_date_errors_are_machine_readable(value, want):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_____________ test_date_errors_are_machine_readable[-DATE_FORMAT] ______________
+
+value = '', want = 'DATE_FORMAT'
+
+    @pytest.mark.parametrize("value,want", [(None, "DATE_REQUIRED"), ("", "DATE_FORMAT"),
+        ("tomorrow", "DATE_FORMAT"), ("2026-1-5", "DATE_FORMAT"), ("2026-02-30", "DATE_FORMAT"),
+        ("05/10/2026", "DATE_FORMAT"), ("2026-09-30", "PAST_DATE")])
+    def test_date_errors_are_machine_readable(value, want):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_________ test_date_errors_are_machine_readable[tomorrow-DATE_FORMAT] __________
+
+value = 'tomorrow', want = 'DATE_FORMAT'
+
+    @pytest.mark.parametrize("value,want", [(None, "DATE_REQUIRED"), ("", "DATE_FORMAT"),
+        ("tomorrow", "DATE_FORMAT"), ("2026-1-5", "DATE_FORMAT"), ("2026-02-30", "DATE_FORMAT"),
+        ("05/10/2026", "DATE_FORMAT"), ("2026-09-30", "PAST_DATE")])
+    def test_date_errors_are_machine_readable(value, want):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_________ test_date_errors_are_machine_readable[2026-1-5-DATE_FORMAT] __________
+
+value = '2026-1-5', want = 'DATE_FORMAT'
+
+    @pytest.mark.parametrize("value,want", [(None, "DATE_REQUIRED"), ("", "DATE_FORMAT"),
+        ("tomorrow", "DATE_FORMAT"), ("2026-1-5", "DATE_FORMAT"), ("2026-02-30", "DATE_FORMAT"),
+        ("05/10/2026", "DATE_FORMAT"), ("2026-09-30", "PAST_DATE")])
+    def test_date_errors_are_machine_readable(value, want):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+________ test_date_errors_are_machine_readable[2026-02-30-DATE_FORMAT] _________
+
+value = '2026-02-30', want = 'DATE_FORMAT'
+
+    @pytest.mark.parametrize("value,want", [(None, "DATE_REQUIRED"), ("", "DATE_FORMAT"),
+        ("tomorrow", "DATE_FORMAT"), ("2026-1-5", "DATE_FORMAT"), ("2026-02-30", "DATE_FORMAT"),
+        ("05/10/2026", "DATE_FORMAT"), ("2026-09-30", "PAST_DATE")])
+    def test_date_errors_are_machine_readable(value, want):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+________ test_date_errors_are_machine_readable[05/10/2026-DATE_FORMAT] _________
+
+value = '05/10/2026', want = 'DATE_FORMAT'
+
+    @pytest.mark.parametrize("value,want", [(None, "DATE_REQUIRED"), ("", "DATE_FORMAT"),
+        ("tomorrow", "DATE_FORMAT"), ("2026-1-5", "DATE_FORMAT"), ("2026-02-30", "DATE_FORMAT"),
+        ("05/10/2026", "DATE_FORMAT"), ("2026-09-30", "PAST_DATE")])
+    def test_date_errors_are_machine_readable(value, want):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_________ test_date_errors_are_machine_readable[2026-09-30-PAST_DATE] __________
+
+value = '2026-09-30', want = 'PAST_DATE'
+
+    @pytest.mark.parametrize("value,want", [(None, "DATE_REQUIRED"), ("", "DATE_FORMAT"),
+        ("tomorrow", "DATE_FORMAT"), ("2026-1-5", "DATE_FORMAT"), ("2026-02-30", "DATE_FORMAT"),
+        ("05/10/2026", "DATE_FORMAT"), ("2026-09-30", "PAST_DATE")])
+    def test_date_errors_are_machine_readable(value, want):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+____________ test_optional_working_hours_date_and_facility_midnight ____________
+
+    def test_optional_working_hours_date_and_facility_midnight():
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_ test_only_a_supplied_passed_end_time_ends_a_session[09:59-NOT_AVAILABLE-SESSION_ENDED] _
+
+end = '09:59', decision = 'NOT_AVAILABLE', reason = 'SESSION_ENDED'
+
+    @pytest.mark.parametrize("end,decision,reason", [("09:59", "NOT_AVAILABLE", "SESSION_ENDED"),
+        ("10:01", "APPOINTMENT_REQUEST", None), (None, "APPOINTMENT_REQUEST", None)])
+    def test_only_a_supplied_passed_end_time_ends_a_session(end, decision, reason):
+>       result = decide(facts(end=end))
+                        ^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_ test_only_a_supplied_passed_end_time_ends_a_session[10:01-APPOINTMENT_REQUEST-None] _
+
+end = '10:01', decision = 'APPOINTMENT_REQUEST', reason = None
+
+    @pytest.mark.parametrize("end,decision,reason", [("09:59", "NOT_AVAILABLE", "SESSION_ENDED"),
+        ("10:01", "APPOINTMENT_REQUEST", None), (None, "APPOINTMENT_REQUEST", None)])
+    def test_only_a_supplied_passed_end_time_ends_a_session(end, decision, reason):
+>       result = decide(facts(end=end))
+                        ^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_ test_only_a_supplied_passed_end_time_ends_a_session[None-APPOINTMENT_REQUEST-None] _
+
+end = None, decision = 'APPOINTMENT_REQUEST', reason = None
+
+    @pytest.mark.parametrize("end,decision,reason", [("09:59", "NOT_AVAILABLE", "SESSION_ENDED"),
+        ("10:01", "APPOINTMENT_REQUEST", None), (None, "APPOINTMENT_REQUEST", None)])
+    def test_only_a_supplied_passed_end_time_ends_a_session(end, decision, reason):
+>       result = decide(facts(end=end))
+                        ^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_______________ test_specific_time_without_end_hands_off[08:00] ________________
+
+preferred = '08:00'
+
+    @pytest.mark.parametrize("preferred", ["08:00", "09:30", "23:00"])
+    def test_specific_time_without_end_hands_off(preferred):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:73: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_______________ test_specific_time_without_end_hands_off[09:30] ________________
+
+preferred = '09:30'
+
+    @pytest.mark.parametrize("preferred", ["08:00", "09:30", "23:00"])
+    def test_specific_time_without_end_hands_off(preferred):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:73: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_______________ test_specific_time_without_end_hands_off[23:00] ________________
+
+preferred = '23:00'
+
+    @pytest.mark.parametrize("preferred", ["08:00", "09:30", "23:00"])
+    def test_specific_time_without_end_hands_off(preferred):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:73: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+________________ test_session_without_time_or_end_can_be_noted _________________
+
+    def test_session_without_time_or_end_can_be_noted():
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+________ test_mixed_sessions_ask_for_choice_but_equal_decisions_do_not _________
+
+    def test_mixed_sessions_ask_for_choice_but_equal_decisions_do_not():
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+______________ test_missing_and_stale_rows_have_distinct_reasons _______________
+
+    def test_missing_and_stale_rows_have_distinct_reasons():
+        from dataclasses import replace
+>       f = facts(statuses=("UNKNOWN",))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:97: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+___________ test_on_call_is_callback_even_when_board_says_in[today] ____________
+
+day = 'today'
+
+    @pytest.mark.parametrize("day", ["today", "2026-10-05"])
+    def test_on_call_is_callback_even_when_board_says_in(day):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:106: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_________ test_on_call_is_callback_even_when_board_says_in[2026-10-05] _________
+
+day = '2026-10-05'
+
+    @pytest.mark.parametrize("day", ["today", "2026-10-05"])
+    def test_on_call_is_callback_even_when_board_says_in(day):
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:106: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+________ test_future_uses_usual_days_and_ignores_unknown_board[REGULAR] ________
+
+attendance = 'REGULAR'
+
+    @pytest.mark.parametrize("attendance", ["REGULAR", "VISITING"])
+    def test_future_uses_usual_days_and_ignores_unknown_board(attendance):
+>       f = facts(statuses=("UNKNOWN",), attendance=attendance)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+_______ test_future_uses_usual_days_and_ignores_unknown_board[VISITING] ________
+
+attendance = 'VISITING'
+
+    @pytest.mark.parametrize("attendance", ["REGULAR", "VISITING"])
+    def test_future_uses_usual_days_and_ignores_unknown_board(attendance):
+>       f = facts(statuses=("UNKNOWN",), attendance=attendance)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_availability_policy.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_availability_policy.py:18: in facts
+    p = policy()
+        ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+__________________ test_working_hours_are_not_live_attendance __________________
+
+    def test_working_hours_are_not_live_attendance():
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:126: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+___________________ test_outside_a_known_window_never_writes ___________________
+
+    def test_outside_a_known_window_never_writes():
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:133: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+______ test_department_rollup_and_counts_do_not_list_callback_as_bookable ______
+
+    def test_department_rollup_and_counts_do_not_list_callback_as_bookable():
+>       p = policy()
+            ^^^^^^^^
+
+tests/test_availability_policy.py:139: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def policy():
+>       from frontdesk_mcp import availability_policy
+E       ImportError: cannot import name 'availability_policy' from 'frontdesk_mcp' (/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/src/frontdesk_mcp/__init__.py)
+
+tests/test_availability_policy.py:13: ImportError
+=========================== short test summary info ============================
+FAILED tests/test_availability_policy.py::test_each_owner_status_has_a_separate_decision[IN-APPOINTMENT_REQUEST-None]
+FAILED tests/test_availability_policy.py::test_each_owner_status_has_a_separate_decision[LATE-APPOINTMENT_REQUEST-None]
+FAILED tests/test_availability_policy.py::test_each_owner_status_has_a_separate_decision[CANCELLED-NOT_AVAILABLE-CANCELLED]
+FAILED tests/test_availability_policy.py::test_each_owner_status_has_a_separate_decision[NOT_CONFIRMED-CALLBACK_REQUIRED-BOARD_NOT_CONFIRMED]
+FAILED tests/test_availability_policy.py::test_each_owner_status_has_a_separate_decision[UNKNOWN-CALLBACK_REQUIRED-BOARD_UNKNOWN]
+FAILED tests/test_availability_policy.py::test_date_errors_are_machine_readable[None-DATE_REQUIRED]
+FAILED tests/test_availability_policy.py::test_date_errors_are_machine_readable[-DATE_FORMAT]
+FAILED tests/test_availability_policy.py::test_date_errors_are_machine_readable[tomorrow-DATE_FORMAT]
+FAILED tests/test_availability_policy.py::test_date_errors_are_machine_readable[2026-1-5-DATE_FORMAT]
+FAILED tests/test_availability_policy.py::test_date_errors_are_machine_readable[2026-02-30-DATE_FORMAT]
+FAILED tests/test_availability_policy.py::test_date_errors_are_machine_readable[05/10/2026-DATE_FORMAT]
+FAILED tests/test_availability_policy.py::test_date_errors_are_machine_readable[2026-09-30-PAST_DATE]
+FAILED tests/test_availability_policy.py::test_optional_working_hours_date_and_facility_midnight
+FAILED tests/test_availability_policy.py::test_only_a_supplied_passed_end_time_ends_a_session[09:59-NOT_AVAILABLE-SESSION_ENDED]
+FAILED tests/test_availability_policy.py::test_only_a_supplied_passed_end_time_ends_a_session[10:01-APPOINTMENT_REQUEST-None]
+FAILED tests/test_availability_policy.py::test_only_a_supplied_passed_end_time_ends_a_session[None-APPOINTMENT_REQUEST-None]
+FAILED tests/test_availability_policy.py::test_specific_time_without_end_hands_off[08:00]
+FAILED tests/test_availability_policy.py::test_specific_time_without_end_hands_off[09:30]
+FAILED tests/test_availability_policy.py::test_specific_time_without_end_hands_off[23:00]
+FAILED tests/test_availability_policy.py::test_session_without_time_or_end_can_be_noted
+FAILED tests/test_availability_policy.py::test_mixed_sessions_ask_for_choice_but_equal_decisions_do_not
+FAILED tests/test_availability_policy.py::test_missing_and_stale_rows_have_distinct_reasons
+FAILED tests/test_availability_policy.py::test_on_call_is_callback_even_when_board_says_in[today]
+FAILED tests/test_availability_policy.py::test_on_call_is_callback_even_when_board_says_in[2026-10-05]
+FAILED tests/test_availability_policy.py::test_future_uses_usual_days_and_ignores_unknown_board[REGULAR]
+FAILED tests/test_availability_policy.py::test_future_uses_usual_days_and_ignores_unknown_board[VISITING]
+FAILED tests/test_availability_policy.py::test_working_hours_are_not_live_attendance
+FAILED tests/test_availability_policy.py::test_outside_a_known_window_never_writes
+FAILED tests/test_availability_policy.py::test_department_rollup_and_counts_do_not_list_callback_as_bookable
+29 failed in 0.20s
