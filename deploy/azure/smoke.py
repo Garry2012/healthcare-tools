@@ -62,7 +62,7 @@ async def check_tools(client: Client, language: str, department: str, *, knowled
     cases = (
         ("get_doctor_availability", {"date": "today", "departmentName": department}, AVAILABILITY_OK),
         ("get_doctor_availability", {"purpose": "WORKING_HOURS", "departmentName": department},
-         {"WORKING_HOURS", "CLARIFICATION_NEEDED", "NOT_FOUND"}),
+         {"WORKING_HOURS", "CLARIFICATION_NEEDED", "NOT_FOUND", "HANDOFF_REQUIRED"}),
         ("search_knowledge", {"question": "deployment connectivity check", "language": language}, KNOWLEDGE_OK),
     )
     for name, arguments, outcomes in cases:

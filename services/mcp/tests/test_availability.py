@@ -106,14 +106,14 @@ async def test_a_failed_board_is_a_service_error_not_unknown_and_not_hours(h):
     assert (await ask(h, doctorId="doc_garima")).outcome == "COULD_NOT_CHECK"
 
 
-async def test_profile_failure_still_reports_the_board(h):
+async def test_required_profile_failure_returns_could_not_check(h):
     h.ops_state.fail_next.append(("/doctors/doc_garima", 500, {}))
     result = await ask(h, doctorId="doc_garima")
     assert result.outcome == "COULD_NOT_CHECK" and result.doctors == []
     assert result.detail == "PROFILE_UNAVAILABLE"
 
 
-async def test_on_call_doctor_with_a_confirmed_entry_is_offered_otherwise_desk(h):
+async def test_on_call_doctor_requires_callback_regardless_of_board_status(h):
     result = await ask(h, doctorId="doc_vikram_desai")
     [doctor] = result.doctors
     assert doctor.attendanceType == "ON_CALL" and doctor.usualSessions is None
@@ -145,7 +145,7 @@ async def test_any_unknown_session_in_scope_stops_the_journey(h):
     assert unmatched.doctors[0].board == [] and unmatched.detail == "SESSION_NOT_ON_BOARD"
 
 
-async def test_unmatched_session_without_any_unknown_is_availability(h):
+async def test_unmatched_today_session_requires_callback(h):
     result = await ask(h, doctorId="doc_garima", session="Night")  # fixture: Morning IN, Afternoon NOT_CONFIRMED
     assert result.outcome == "CALLBACK_REQUIRED" and result.sessionMatched is False
     assert result.detail == "SESSION_NOT_ON_BOARD"
@@ -184,7 +184,7 @@ async def test_ambiguous_name_asks_the_caller_to_choose(h):
     assert "/availability" not in h.ops_paths()  # no board call before the caller chose
 
 
-async def test_bounded_search_reports_incompleteness_instead_of_pretending(make_settings):
+async def test_capped_name_choices_preserve_complete_directory_count(make_settings):
     h3 = harness.build(make_settings(doctor_choice_limit=3))
     try:
         result = await ask(h3, doctorName="a")  # every demo name contains an 'a': ten matches, three returned

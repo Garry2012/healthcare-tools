@@ -66,7 +66,8 @@ async def test_smoke_requires_all_four_tools(missing):
             await SMOKE["check_tools"](client, "en", "General Medicine")
 
 
-async def test_smoke_probes_working_hours_and_accepts_a_closed_session():
+@pytest.mark.parametrize("hours_outcome", ["WORKING_HOURS", "HANDOFF_REQUIRED"])
+async def test_smoke_probes_working_hours_and_accepts_a_closed_session(hours_outcome):
     from fastmcp import Client, FastMCP
     remote = FastMCP("read-only-policy-probe")
     purposes = []
@@ -75,7 +76,7 @@ async def test_smoke_probes_working_hours_and_accepts_a_closed_session():
     def get_doctor_availability(departmentName: str, date: str | None = None,  # noqa: N803
                                 purpose: str = "AVAILABILITY") -> dict:
         purposes.append(purpose)
-        return {"outcome": "WORKING_HOURS" if purpose == "WORKING_HOURS" else "NOT_AVAILABLE"}
+        return {"outcome": hours_outcome if purpose == "WORKING_HOURS" else "NOT_AVAILABLE"}
 
     @remote.tool()
     def search_knowledge(question: str, language: str) -> dict:
