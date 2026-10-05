@@ -1,0 +1,3 @@
+Command: uvx vulture services/mcp/src --min-confidence 80
+Exit: 0
+Output: (empty; no findings)

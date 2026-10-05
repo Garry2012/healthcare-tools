@@ -1,0 +1,44 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_department_booking_is_absent_from_schema_and_refused_without_writes ___
+
+served = ('http://127.0.0.1:52612', Harness(settings=Settings(env='test', log_level='INFO', host='127.0.0.1', port=8100, provid...'POST', 'http://ops-stub.test/api/v1/auth/token')>], cache=<frontdesk_mcp.cache.DirectoryCache object at 0x10bc0cec0>))
+
+    async def test_department_booking_is_absent_from_schema_and_refused_without_writes(served):
+        base, h = served
+        async with client(base, operation_id="no-department") as c:
+            tool = next(t for t in await c.list_tools() if t.name == "manage_booking")
+>           assert "departmentId" not in tool.inputSchema["properties"]
+E           AssertionError: assert 'departmentId' not in {'action': {'enum': ['CREATE', 'LIST', 'CANCEL', 'RESCHEDULE'], 'type': 'string', 'description': 'Required action: CRE... 'default': None, 'description': 'CREATE doctor identifier; doctorId or departmentId is required, but not both.'}, ...}
+
+tests/test_server.py:102: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+{"ts": "2026-10-05T12:11:58.432112+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Started server process [77537]", "provider": "demo-hospital"}
+{"ts": "2026-10-05T12:11:58.432396+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application startup.", "provider": "demo-hospital"}
+{"ts": "2026-10-05T12:11:58.432535+00:00", "level": "INFO", "logger": "frontdesk_mcp.server", "msg": "service_started", "provider": "demo-hospital", "env": "test", "pack": "healthcare", "schemaVersion": "2026-10-05.1"}
+{"ts": "2026-10-05T12:11:58.444762+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application startup complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-05T12:11:58.445647+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Uvicorn running on http://127.0.0.1:52612 (Press CTRL+C to quit)", "provider": "demo-hospital"}
+--------------------------- Captured stdout teardown ---------------------------
+{"ts": "2026-10-05T12:11:58.583382+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Shutting down", "provider": "demo-hospital"}
+{"ts": "2026-10-05T12:11:58.684661+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Waiting for application shutdown.", "provider": "demo-hospital"}
+{"ts": "2026-10-05T12:11:58.685655+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Application shutdown complete.", "provider": "demo-hospital"}
+{"ts": "2026-10-05T12:11:58.685724+00:00", "level": "INFO", "logger": "uvicorn.error", "msg": "Finished server process [77537]", "provider": "demo-hospital"}
+---------------------------- Captured log teardown -----------------------------
+INFO     uvicorn.error:server.py:282 Shutting down
+INFO     uvicorn.error:on.py:67 Waiting for application shutdown.
+INFO     uvicorn.error:on.py:76 Application shutdown complete.
+INFO     uvicorn.error:server.py:113 Finished server process [77537]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_server.py::test_department_booking_is_absent_from_schema_and_refused_without_writes
+1 failed, 39 deselected, 2 warnings in 1.17s

@@ -115,7 +115,7 @@ Doctor or department availability for today or an explicit future date; WORKING_
 |---|---|
 | `get_doctor_availability.outcome.AVAILABILITY` | Requested-date facts are returned, with each doctor/session decision and any required selection. |
 | `get_doctor_availability.outcome.CLARIFICATION_NEEDED` | Multiple directory matches require a doctor or department selection. |
-| `get_doctor_availability.outcome.CALLBACK_REQUIRED` | The relevant board is UNKNOWN; an appointment write is not submitted. Callback details belong to a CALLBACK_NOTED summary. |
+| `get_doctor_availability.outcome.CALLBACK_REQUIRED` | The returned reason requires callback (including today UNKNOWN/NOT_CONFIRMED, ON_CALL, or missing usual schedule); no appointment write is submitted. Details belong to a CALLBACK_NOTED summary. |
 | `get_doctor_availability.outcome.NOT_FOUND` | No matching doctor or department was found. |
 | `get_doctor_availability.outcome.COULD_NOT_CHECK` | A read could not be completed; this is not an empty or negative result. |
 | `get_doctor_availability.outcome.INVALID_REQUEST` | Request validation failed; fields or detail identify the issue when available. |
@@ -209,7 +209,7 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.outcome.CONFLICT` | The owner reported an operation or idempotency conflict. |
 | `manage_booking.outcome.UNCERTAIN` | A write may have committed, but its result could not be verified. |
 | `manage_booking.outcome.IDENTITY_UNAVAILABLE` | Verified caller authority is unavailable for appointment lookup or modification. |
-| `manage_booking.outcome.CALLBACK_REQUIRED` | The relevant board is UNKNOWN; an appointment write is not submitted. Callback details belong to a CALLBACK_NOTED summary. |
+| `manage_booking.outcome.CALLBACK_REQUIRED` | The returned reason requires callback (including today UNKNOWN/NOT_CONFIRMED, ON_CALL, or missing usual schedule); no appointment write is submitted. Details belong to a CALLBACK_NOTED summary. |
 | `manage_booking.outcome.NOT_AVAILABLE` | Valid request, but the selected schedule or session is unavailable. |
 | `manage_booking.outcome.HANDOFF_REQUIRED` | Desk assistance is required because the search or time validation is incomplete. |
 | `manage_booking.outcome.CONFIRMATION_REQUIRED` | callerConfirmed is not true for the requested write. |

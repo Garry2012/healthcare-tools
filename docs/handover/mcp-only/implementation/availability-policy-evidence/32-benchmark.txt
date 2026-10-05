@@ -1,0 +1,223 @@
+cd services/mcp && uv run python dev/bench.py
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+  from ._compat import httpx2
+{
+  "measured_at": "2026-10-05T12:27:58+00:00",
+  "boundary": "laptop \u2192 MCP (local TCP) \u2192 in-process stubs (ASGI, no network): fixture timings only",
+  "samples_per_scenario": 50,
+  "concurrency": 1,
+  "read_deadline_seconds": 0.3,
+  "profile_batch_size": 3,
+  "min_batch_headroom_seconds": 0.05,
+  "warm": "token warmed at start-up; one tools/list before sampling; a new MCP session per sample",
+  "owner_calls_verified": true,
+  "omitted_scenarios": {},
+  "note": "timings cover tools/call after MCP session initialization, including client schema checking; a sample counts only when the intended outcome and owner call were observed",
+  "scenarios": {
+    "availability_known_doctor": {
+      "samples": 50,
+      "ok": 50,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "AVAILABILITY",
+        "CALLBACK_REQUIRED"
+      ],
+      "required_owner_calls": [
+        "GET /availability"
+      ],
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 40.0,
+      "p50_ms": 27.9,
+      "p95_ms": 31.7,
+      "p99_ms": 58.9,
+      "mean_ms": 29.0
+    },
+    "availability_name_search": {
+      "samples": 50,
+      "ok": 50,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "AVAILABILITY",
+        "CALLBACK_REQUIRED"
+      ],
+      "required_owner_calls": [
+        "GET /doctors",
+        "GET /availability"
+      ],
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 27.6,
+      "p50_ms": 27.8,
+      "p95_ms": 35.9,
+      "p99_ms": 40.8,
+      "mean_ms": 29.2
+    },
+    "availability_ambiguous": {
+      "samples": 50,
+      "ok": 50,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "CLARIFICATION_NEEDED"
+      ],
+      "required_owner_calls": [
+        "GET /doctors"
+      ],
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 32.1,
+      "p50_ms": 28.4,
+      "p95_ms": 32.1,
+      "p99_ms": 43.8,
+      "mean_ms": 29.2
+    },
+    "availability_department": {
+      "samples": 50,
+      "ok": 50,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "AVAILABILITY",
+        "CALLBACK_REQUIRED"
+      ],
+      "required_owner_calls": [
+        "GET /availability"
+      ],
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 29.4,
+      "p50_ms": 30.2,
+      "p95_ms": 37.4,
+      "p99_ms": 73.0,
+      "mean_ms": 31.4
+    },
+    "knowledge_answer": {
+      "samples": 50,
+      "ok": 50,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "ANSWERED",
+        "NO_ANSWER"
+      ],
+      "required_owner_calls": [
+        "POST /v1/answer"
+      ],
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 17.4,
+      "p50_ms": 14.9,
+      "p95_ms": 29.5,
+      "p99_ms": 37.5,
+      "mean_ms": 16.8
+    },
+    "booking_list": {
+      "samples": 50,
+      "ok": 50,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "FOUND",
+        "NOT_FOUND"
+      ],
+      "required_owner_calls": [
+        "GET /appointments"
+      ],
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 26.3,
+      "p50_ms": 21.6,
+      "p95_ms": 26.3,
+      "p99_ms": 28.4,
+      "mean_ms": 22.3
+    },
+    "booking_create": {
+      "samples": 50,
+      "ok": 50,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "NOTED"
+      ],
+      "required_owner_calls": [
+        "GET /availability",
+        "POST /appointments"
+      ],
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 25.9,
+      "p50_ms": 22.7,
+      "p95_ms": 28.8,
+      "p99_ms": 73.1,
+      "mean_ms": 24.6
+    },
+    "availability_department_future_cold": {
+      "samples": 50,
+      "ok": 50,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "AVAILABILITY"
+      ],
+      "required_owner_calls": [
+        "GET /doctors"
+      ],
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 33.8,
+      "p50_ms": 31.4,
+      "p95_ms": 41.2,
+      "p99_ms": 45.2,
+      "mean_ms": 32.6,
+      "cache_mode": "cold",
+      "concurrency": 1,
+      "profile_reads": 450
+    },
+    "availability_department_future_warm": {
+      "samples": 50,
+      "ok": 50,
+      "rejected_or_failed": 0,
+      "over_budget_ms": 300.0,
+      "over_budget": 0,
+      "expected_outcomes": [
+        "AVAILABILITY"
+      ],
+      "required_owner_calls": [
+        "GET /doctors"
+      ],
+      "outcomes": {
+        "ok": 50
+      },
+      "first_call_ms": 28.6,
+      "p50_ms": 28.4,
+      "p95_ms": 31.8,
+      "p99_ms": 32.7,
+      "mean_ms": 28.7,
+      "cache_mode": "warm",
+      "concurrency": 1,
+      "profile_reads": 0
+    }
+  }
+}
