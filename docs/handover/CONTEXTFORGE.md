@@ -150,3 +150,19 @@ partial snapshots. The summary budget defaults to 8 seconds, separate from the s
 Rollback needs matching MCP image, gateway discovery and voice schema; the previous image expects
 separate summary authentication. Do not reactivate it with only the new single-token configuration.
 The 4 October deployment refreshed the existing registration; it did not rotate tokens or delete Key Vault secrets.
+
+## Pending availability-policy release — 2026-10-05.1 (not deployed)
+
+After separate deployment approval, rerun `register.py`. It checks exactly four names and complete
+**input** schemas; the new purpose/date and doctor-only booking inputs trigger refresh. It does not
+verify output schemas. No script, token, passthrough header or access-scope change is required.
+
+Manual acceptance: run `make schema`, list tools via the voice-facing virtual-server URL, and compare
+each tool's `outputSchema` (including nested definitions and required fields) to that generated JSON.
+Confirm unchanged owner BoardSessionOut.status plus new decision/reason; removed journey/expired and
+spoken callback fields; and booking sessions/outcomes. Record differences and refresh gateway discovery
+until they match. Then refresh virtual-server/voice caches. An input-only script pass is insufficient.
+Exercise General Medicine/Gynaecology today and future and Dr. Shreyas WORKING_HOURS; future queries
+must use populated profiles without board reads. Measure actual voice-path latency separately.
+Keep image, gateway discovery and voice schema aligned on rollback; 2026-10-04.2 and 2026-10-05.1
+are not interchangeable consumer schemas. The verified deployment section above is historical evidence.

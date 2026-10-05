@@ -32,8 +32,7 @@ Malformed identifiers/timing are treated as absent. Header names are case-insens
 
 The tables below describe the pinned wire schema, including nested `$defs` types. “Required” means
 schema-required; action-specific requirements appear in the meaning column. Optional fields can have
-server defaults; the schema remains authoritative for those defaults. Existing callback text fields
-are described without reproducing their spoken content. Outcomes and nextStep are returned codes,
+server defaults; the schema remains authoritative for those defaults. Callback metadata contains reason and summaryOutcome only, with no spoken script. Outcomes and nextStep are returned codes,
 not implementation instructions for the calling application.
 
 ## get_doctor_availability
@@ -59,7 +58,7 @@ Doctor or department availability for today or an explicit future date; WORKING_
 |---|---|---|---|
 | `get_doctor_availability.output.basis` | `{"anyOf":[{"$ref":"#/$defs/Basis"},{"type":"null"}]}` | optional | Source used for this answer: LIVE_BOARD for today, USUAL_SCHEDULE for future dates or working hours. |
 | `get_doctor_availability.output.bookableFound` | `{"type":"integer"}` | optional | Bookable doctors found among those evaluated, including any omitted by the list cap. More may exist when complete=false. |
-| `get_doctor_availability.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Existing callback metadata associated with UNKNOWN availability. |
+| `get_doctor_availability.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Callback reason and call-summary category; no separate callback action. |
 | `get_doctor_availability.output.choices` | `{"items":{"$ref":"#/$defs/DoctorChoice"},"type":"array"}` | optional | Ambiguous doctor-directory matches. |
 | `get_doctor_availability.output.complete` | `{"type":"boolean"}` | optional | Every directory candidate was evaluated; false for truncation, unchecked candidates or failed reads. |
 | `get_doctor_availability.output.department` | `{"anyOf":[{"$ref":"#/$defs/DepartmentChoice"},{"type":"null"}]}` | optional | Resolved department object; within AppointmentOut, the operational department identifier. |
@@ -82,8 +81,8 @@ Doctor or department availability for today or an explicit future date; WORKING_
 | `get_doctor_availability.output.$defs.BoardSessionOut.note` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Owner-authored caller-facing board note, limited to 200 characters. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
 | `get_doctor_availability.output.$defs.BoardSessionOut.session` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Board session label when present. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Board attendance status or appointment request status, according to its containing type and enum. |
-| `get_doctor_availability.output.$defs.Callback.reason` | `{"$ref":"#/$defs/Reason"}` | required | Machine-readable reason for this decision; null when no qualification applies. |
+| `get_doctor_availability.output.$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Manoj's original board status, unchanged; MCP decision is separate. |
+| `get_doctor_availability.output.$defs.Callback.reason` | `{"$ref":"#/$defs/Reason"}` | required | Required machine-readable reason for callback. |
 | `get_doctor_availability.output.$defs.Callback.summaryOutcome` | `{"const":"CALLBACK_NOTED","type":"string"}` | optional | CALLBACK_NOTED identifies the callback call-summary category. |
 | `get_doctor_availability.output.$defs.DepartmentChoice.id` | `{"type":"string"}` | required | Department directory identifier. |
 | `get_doctor_availability.output.$defs.DepartmentChoice.name` | `{"type":"string"}` | required | Doctor or department display name, according to its containing type. |
@@ -114,7 +113,7 @@ Doctor or department availability for today or an explicit future date; WORKING_
 
 | Code | Meaning |
 |---|---|
-| `get_doctor_availability.outcome.AVAILABILITY` | Directory/schedule/board data are returned. Individual doctors can still have journey=CALLBACK_ONLY. |
+| `get_doctor_availability.outcome.AVAILABILITY` | Requested-date facts are returned, with each doctor/session decision and any required selection. |
 | `get_doctor_availability.outcome.CLARIFICATION_NEEDED` | Multiple directory matches require a doctor or department selection. |
 | `get_doctor_availability.outcome.CALLBACK_REQUIRED` | The relevant board is UNKNOWN; an appointment write is not submitted. Callback details belong to a CALLBACK_NOTED summary. |
 | `get_doctor_availability.outcome.NOT_FOUND` | No matching doctor or department was found. |
@@ -126,7 +125,7 @@ Doctor or department availability for today or an explicit future date; WORKING_
 | `get_doctor_availability.nextStep.OFFER_APPOINTMENT_REQUEST` | An appointment request is possible for the returned scope; this is not a reservation. |
 | `get_doctor_availability.nextStep.ASK_WHICH_DOCTOR` | Multiple doctor matches require a selection. |
 | `get_doctor_availability.nextStep.ASK_WHICH_DEPARTMENT` | Multiple department matches require a selection. |
-| `get_doctor_availability.nextStep.ASK_CALLBACK_DETAILS` | UNKNOWN availability corresponds to callback contact details and a call summary. |
+| `get_doctor_availability.nextStep.ASK_CALLBACK_DETAILS` | Callback policy requires contact details and a call summary; no appointment is written. |
 | `get_doctor_availability.nextStep.TRANSFER_DESK` | Desk assistance is the returned disposition; MCP does not execute a telephone transfer. |
 | `get_doctor_availability.nextStep.ASK_TO_REPHRASE` | The supplied name, department or question could not resolve the request. |
 | `get_doctor_availability.nextStep.SAY_COULD_NOT_CHECK` | The requested information could not be checked. |
@@ -164,7 +163,7 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 |---|---|---|---|
 | `manage_booking.output.appointment` | `{"anyOf":[{"$ref":"#/$defs/AppointmentOut"},{"type":"null"}]}` | optional | Single appointment request returned by a write. |
 | `manage_booking.output.appointments` | `{"items":{"$ref":"#/$defs/AppointmentOut"},"type":"array"}` | optional | Appointment requests belonging to the verified caller. |
-| `manage_booking.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Existing callback metadata associated with UNKNOWN availability. |
+| `manage_booking.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Callback reason and call-summary category; no separate callback action. |
 | `manage_booking.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for a non-success result; optional. |
 | `manage_booking.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Request fields that were invalid or rejected. |
 | `manage_booking.output.nextStep` | `{"enum":["SAY_REQUEST_NOTED","SAY_CHANGED","SAY_CANCELLED","OFFER_CHOICES","SAY_NOT_FOUND","ASK_TO_CORRECT","SAY_UNCERTAIN_AND_TRANSFER","TRANSFER_DESK","ASK_CALLBACK_DETAILS","ASK_CONFIRMATION","SAY_COULD_NOT_RECORD","SAY_COULD_NOT_CHECK","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_TIME","OFFER_OTHER_SESSION_OR_DATE"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
@@ -176,7 +175,7 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.output.$defs.AppointmentOut.doctorId` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Operational doctor identifier. |
 | `manage_booking.output.$defs.AppointmentOut.expectedTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected start time or requested appointment time; not a guaranteed reservation. |
 | `manage_booking.output.$defs.AppointmentOut.patientName` | `{"type":"string"}` | required | Name on the appointment request; LIST is restricted to the verified caller’s own records. |
-| `manage_booking.output.$defs.AppointmentOut.status` | `{"enum":["NOTED","CONFIRMED_BY_DESK","CHANGED","CANCELLED"],"type":"string"}` | required | Board attendance status or appointment request status, according to its containing type and enum. |
+| `manage_booking.output.$defs.AppointmentOut.status` | `{"enum":["NOTED","CONFIRMED_BY_DESK","CHANGED","CANCELLED"],"type":"string"}` | required | Manoj's appointment status, unchanged (including CHANGED after reschedule). |
 | `manage_booking.output.$defs.AppointmentOut.visitDate` | `{"type":"string"}` | required | Appointment visit date (YYYY-MM-DD). |
 | `manage_booking.output.$defs.BoardSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
 | `manage_booking.output.$defs.BoardSessionOut.delayMinutes` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Board delay in minutes when supplied. |
@@ -186,8 +185,8 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.output.$defs.BoardSessionOut.note` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Owner-authored caller-facing board note, limited to 200 characters. |
 | `manage_booking.output.$defs.BoardSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
 | `manage_booking.output.$defs.BoardSessionOut.session` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Board session label when present. |
-| `manage_booking.output.$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Board attendance status or appointment request status, according to its containing type and enum. |
-| `manage_booking.output.$defs.Callback.reason` | `{"$ref":"#/$defs/Reason"}` | required | Machine-readable reason for this decision; null when no qualification applies. |
+| `manage_booking.output.$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Manoj's original board status, unchanged; MCP decision is separate. |
+| `manage_booking.output.$defs.Callback.reason` | `{"$ref":"#/$defs/Reason"}` | required | Required machine-readable reason for callback. |
 | `manage_booking.output.$defs.Callback.summaryOutcome` | `{"const":"CALLBACK_NOTED","type":"string"}` | optional | CALLBACK_NOTED identifies the callback call-summary category. |
 | `manage_booking.output.$defs.UsualSessionOut.daysOfWeek` | `{"items":{"type":"string"},"type":"array"}` | required | Weekday codes for the usual session. |
 | `manage_booking.output.$defs.UsualSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
@@ -226,7 +225,7 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.nextStep.ASK_TO_CORRECT` | Request fields need correction. |
 | `manage_booking.nextStep.SAY_UNCERTAIN_AND_TRANSFER` | Write completion is uncertain and desk assistance is the disposition; no telephone transfer is executed by MCP. |
 | `manage_booking.nextStep.TRANSFER_DESK` | Desk assistance is the returned disposition; MCP does not execute a telephone transfer. |
-| `manage_booking.nextStep.ASK_CALLBACK_DETAILS` | UNKNOWN availability corresponds to callback contact details and a call summary. |
+| `manage_booking.nextStep.ASK_CALLBACK_DETAILS` | Callback policy requires contact details and a call summary; no appointment is written. |
 | `manage_booking.nextStep.ASK_CONFIRMATION` | The write lacks callerConfirmed=true. |
 | `manage_booking.nextStep.SAY_COULD_NOT_RECORD` | The requested write could not be recorded. |
 | `manage_booking.nextStep.SAY_COULD_NOT_CHECK` | The requested information could not be checked. |
@@ -256,7 +255,7 @@ One knowledge-service request for hospital information or symptom-to-department 
 | `search_knowledge.output.outcome` | `{"enum":["ANSWERED","NO_ANSWER","CLARIFICATION_NEEDED","ROUTING_REQUIRED","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category, defined below. |
 | `search_knowledge.output.routing` | `{"anyOf":[{"$ref":"#/$defs/Routing"},{"type":"null"}]}` | optional | The owner's routing decision over the caller's words. |
 | `search_knowledge.output.sourceId` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Optional knowledge-service source identifier. |
-| `search_knowledge.output.$defs.Routing.decision` | `{"enum":["ROUTE_DEPARTMENT","DESK_TRANSFER","EMERGENCY_TRANSFER"],"type":"string"}` | required | MCP decision: APPOINTMENT_REQUEST, CALLBACK_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK; distinct from the owner status. |
+| `search_knowledge.output.$defs.Routing.decision` | `{"enum":["ROUTE_DEPARTMENT","DESK_TRANSFER","EMERGENCY_TRANSFER"],"type":"string"}` | required | Knowledge owner routing decision, distinct from schedule decisions. |
 | `search_knowledge.output.$defs.Routing.department` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Department name returned by the knowledge service; compatible with availability departmentName. |
 | `search_knowledge.output.$defs.Routing.speak` | `{"anyOf":[{"$ref":"#/$defs/Speech"},{"type":"null"}]}` | optional | Optional knowledge-service text associated with a routing decision; not duplicated in answer. |
 | `search_knowledge.output.$defs.Speech.language` | `{"type":"string"}` | required | Language of the knowledge-service text. |
@@ -314,3 +313,38 @@ Store one summary per call, covering the whole conversation. The first accepted 
 | `record_call_summary.outcome.INVALID_REQUEST` | Local validation or the owner's definite 400 rejected the request; fields contains safe field names. |
 | `record_call_summary.outcome.NOT_CONFIRMED` | Persistence is unverified or temporarily unavailable, including unanswered writes, malformed success, call-ID mismatch, transport failures, rate limits and server failures. |
 | `record_call_summary.outcome.NOT_SAVED` | Trusted call ID/start is missing or malformed, or credentials were definitely refused. A previous possibly committed send takes precedence and remains NOT_CONFIRMED. |
+
+## Availability policy reason codes
+
+These codes describe owner facts or an incomplete check; they are not clinical routing decisions.
+
+| Reason | Meaning |
+|---|---|
+| ON_CALL_DOCTOR | On-call attendance requires callback on any date. |
+| BOARD_UNKNOWN | Today's owner status is UNKNOWN. |
+| BOARD_STALE | Owner marks today's row stale. |
+| BOARD_ENTRY_MISSING | Today has no board entry for this doctor. |
+| SESSION_NOT_ON_BOARD | Requested session is absent from today's board. |
+| BOARD_NOT_CONFIRMED | Today's owner status is NOT_CONFIRMED. |
+| CANCELLED | Owner cancelled this session. |
+| SESSION_ENDED | Supplied end time has passed in facility time. |
+| NOT_USUAL_DAY | Usual schedule has no session on this future weekday. |
+| SESSION_NOT_USUAL | Requested session is not a usual session on that future date. |
+| NO_USUAL_SCHEDULE | No usual schedule is supplied for this doctor. |
+| NO_REGULAR_HOURS | On-call doctor has no regular working-hours answer. |
+| PROFILE_UNAVAILABLE | Required profile could not be read. |
+| TIME_OUTSIDE_SESSION | Requested time is outside the supplied known window(s). |
+| SESSION_REQUIRED | Differing session decisions need a session/time selection. |
+| TIME_NOT_VERIFIABLE | Specific time cannot be checked against an incomplete window. |
+| SEARCH_INCOMPLETE | Some candidates remain unchecked or failed; absence is not established. |
+
+AVAILABILITY is date-specific and requires a target and date. WORKING_HOURS permits no date and
+returns usual hours, never current attendance. Date errors are DATE_REQUIRED, DATE_FORMAT and PAST_DATE.
+Same-decision sessions require no selection. Future REGULAR/VISITING hours describe usual working or
+attendance days, not confirmed attendance. `status` always retains Manoj's value, `decision` is MCP's.
+APPOINTMENT_REQUEST means a request is permitted by supplied facts, CALLBACK_REQUIRED means summary
+only, NOT_AVAILABLE means the facts exclude the requested session/date, COULD_NOT_CHECK means a read failed.
+
+Callback names, requested dates/sessions and reason may be placed in summaryText, but their presence
+is not enforced; callerMobile remains required for CALLBACK_NOTED. Summary-quality acceptance belongs
+to voice integration. No new headers or credentials are introduced by this policy.

@@ -1,4 +1,4 @@
-# Owner integration messages — contract updated 4 October 2026
+# Owner integration messages — contract updated 5 October 2026
 
 Live-service observations below are from 2 October; they were not rechecked in this source-only task.
 
@@ -18,16 +18,15 @@ permission using this runtime client's existing scope. The pinned contract alrea
 
 ## Manoj — synthetic booking test data
 
-> `/availability` currently returns UNKNOWN for the doctor/date combinations we inspected, so there
-> is no usable known availability for a positive booking test. Please confirm `jayashree` is safe for
-> synthetic writes (or provide a dedicated synthetic tenant/client), and prepare fresh IN boards for
-> Dr. V Shreyas Kumar (`30b5941b-1e7a-43cb-b994-eb8b47729736`) on two consecutive future dates,
-> with a session covering 10:00, plus a separate UNKNOWN date; send the dates and session windows.
+> Please confirm the MCP client's tenant is synthetic and provide a REGULAR/VISITING doctor's ID
+> with populated `usualSchedule` and two future usual working dates for CREATE/reschedule testing.
+> For the negative test, designate a doctor whose board today is UNKNOWN or NOT_CONFIRMED.
 
-The journey creates on the first date, reschedules to the next day, cancels, and stores/replays its
-summary. This is not a request for slot inventory. Boards must satisfy the contract's freshness and
-end-time rules at test time. The MCP client lacks staff `availability.write`; the owner/staff service
-should prepare these rows. We will not modify Manoj's database or guess that a tenant is synthetic.
+The future journey uses profiles only, not future boards; no staff write scope is needed by MCP.
+Before release, check one live profile has usable usualSchedule. Please document the two consumer
+policy differences: MCP uses `/availability` only for today despite the contract's date parameter,
+and treats ON_CALL as callback even with IN. Manoj remains the authority for appointment validation.
+We do not modify owner data or assume a tenant is synthetic. Existing client scopes/credentials remain.
 
 ## Shobhit — knowledge and routing
 
@@ -79,7 +78,7 @@ that explicit adapter change. Merely adding a second URL does not implement prov
 > Register the canary MCP URL over Streamable HTTP with vault `mcp-token`, enable the listed trusted
 > headers, and create a team-scoped virtual server exposing all four tools.
 > Give Rajiv its `/servers/<server-id>/mcp` URL and a secure reference to a scoped voice-client token.
-> Refresh the new summary schema (`2026-10-04.2`). Follow the exact commands, REST payload and
+> After separately approved deployment, refresh schema `2026-10-05.1` (availability and doctor-only booking). Follow the exact commands, REST payload and
 > acceptance checks in [CONTEXTFORGE.md](CONTEXTFORGE.md).
 
 We already have access to inspect the gateway and can perform its configuration/registration when
@@ -87,3 +86,9 @@ that deployment task is assigned. The platform owner supplies the intended team/
 new external service or backend credential is needed to start discovery; full voice acceptance still
 requires the owner services and the voice integration. This pass prepared code/instructions only:
 no registration, deployment, Azure deletion or live appointment/summary write was performed.
+
+Gateway acceptance: registration checks names/input schemas only. Manually compare every tool's
+outputSchema through the voice virtual server against `make schema`, then refresh the voice cache.
+Voice integration must consume separate status/decision, structured callback reasons, same-decision
+sessions, date-required availability and optional-date WORKING_HOURS. The summary schema is unchanged;
+name/date/session/callback reason remain free text and need voice-team quality checks.
