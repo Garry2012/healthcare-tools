@@ -1,0 +1,130 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_________ test_smoke_probes_working_hours_and_accepts_a_closed_session _________
+
+    async def test_smoke_probes_working_hours_and_accepts_a_closed_session():
+        from fastmcp import Client, FastMCP
+        remote = FastMCP("read-only-policy-probe")
+        purposes = []
+    
+        @remote.tool()
+        def get_doctor_availability(departmentName: str, date: str | None = None,  # noqa: N803
+                                    purpose: str = "AVAILABILITY") -> dict:
+            purposes.append(purpose)
+            return {"outcome": "WORKING_HOURS" if purpose == "WORKING_HOURS" else "NOT_AVAILABLE"}
+    
+        @remote.tool()
+        def search_knowledge(question: str, language: str) -> dict:
+            return {"outcome": "ANSWERED"}
+    
+        for name in ("manage_booking", "record_call_summary"):
+            remote.tool(name=name)(lambda: pytest.fail("smoke wrote data"))
+        async with Client(remote) as client:
+>           await SMOKE["check_tools"](client, "en", "General Medicine")
+
+tests/test_deploy.py:87: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+client = <fastmcp.client.client.Client object at 0x10bafd400>, language = 'en'
+department = 'General Medicine', knowledge_configured = True
+
+    async def check_tools(client: Client, language: str, department: str, *, knowledge_configured: bool = True) -> None:
+        names = {tool.name for tool in await client.list_tools()}
+        if names != TOOL_NAMES:
+            raise RuntimeError("unexpected MCP tool set")
+        cases = (
+            ("get_doctor_availability", {"date": "today", "departmentName": department}, AVAILABILITY_OK),
+            ("search_knowledge", {"question": "deployment connectivity check", "language": language}, KNOWLEDGE_OK),
+        )
+        for name, arguments, outcomes in cases:
+            result = await client.call_tool(name, arguments, raise_on_error=False)
+            body = result.structured_content
+            if name == "search_knowledge" and not knowledge_configured:
+                if result.is_error or not isinstance(body, dict) or (body.get("outcome"), body.get("detail")) != (
+                        "COULD_NOT_CHECK", "NOT_CONFIGURED"):
+                    raise RuntimeError("knowledge configuration and tool result disagree")
+                print("knowledge: NOT_CONFIGURED; scheduling verified, knowledge integration remains pending")
+                continue
+            # MCP can return HTTP 200 with a tool failure envelope. That is not a pass.
+            if (result.is_error or not isinstance(body, dict) or body.get("error")
+                    or body.get("outcome") not in outcomes):
+>               raise RuntimeError(f"{name} failed its read-only smoke check")
+E               RuntimeError: get_doctor_availability failed its read-only smoke check
+
+../../deploy/azure/smoke.py:78: RuntimeError
+_ test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_garima-1] _
+
+doctor = 'doc_garima', ok = 1
+
+    @pytest.mark.parametrize("doctor,ok", [("doc_garima", 1), ("doc_rohan_shetty", 0)])
+    async def test_stub_benchmark_measures_a_real_create_at_the_fixture_date(doctor, ok):
+        import asyncio
+        import json
+        import os
+    
+        env = {key: value for key, value in os.environ.items() if not key.startswith(("BENCH_", "OPS_E2E_"))}
+        env["BENCH_DOCTOR_ID"] = doctor
+        process = await asyncio.create_subprocess_exec(
+            "uv", "run", "python", "dev/bench.py", "--samples", "1", "--concurrency", "1",
+            cwd=Path(__file__).resolve().parents[1], env=env,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+        assert process.returncode == 0, stderr.decode()[-2000:]
+        report = json.loads(stdout)
+        create = report["scenarios"]["booking_create"]
+        assert create["expected_outcomes"] == ["NOTED"]
+        assert create["ok"] == ok and create["rejected_or_failed"] == 1 - ok
+        assert report["owner_calls_verified"] is True
+        assert "POST /appointments" in create["required_owner_calls"]
+        for mode in ("cold", "warm"):
+>           future = report["scenarios"][f"availability_department_future_{mode}"]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'availability_department_future_cold'
+
+tests/test_bench.py:84: KeyError
+_ test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_rohan_shetty-0] _
+
+doctor = 'doc_rohan_shetty', ok = 0
+
+    @pytest.mark.parametrize("doctor,ok", [("doc_garima", 1), ("doc_rohan_shetty", 0)])
+    async def test_stub_benchmark_measures_a_real_create_at_the_fixture_date(doctor, ok):
+        import asyncio
+        import json
+        import os
+    
+        env = {key: value for key, value in os.environ.items() if not key.startswith(("BENCH_", "OPS_E2E_"))}
+        env["BENCH_DOCTOR_ID"] = doctor
+        process = await asyncio.create_subprocess_exec(
+            "uv", "run", "python", "dev/bench.py", "--samples", "1", "--concurrency", "1",
+            cwd=Path(__file__).resolve().parents[1], env=env,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+        assert process.returncode == 0, stderr.decode()[-2000:]
+        report = json.loads(stdout)
+        create = report["scenarios"]["booking_create"]
+        assert create["expected_outcomes"] == ["NOTED"]
+        assert create["ok"] == ok and create["rejected_or_failed"] == 1 - ok
+        assert report["owner_calls_verified"] is True
+        assert "POST /appointments" in create["required_owner_calls"]
+        for mode in ("cold", "warm"):
+>           future = report["scenarios"][f"availability_department_future_{mode}"]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'availability_department_future_cold'
+
+tests/test_bench.py:84: KeyError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/garima/conductor/workspaces/healthcare-tools/des-moines/services/mcp/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_deploy.py::test_smoke_probes_working_hours_and_accepts_a_closed_session
+FAILED tests/test_bench.py::test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_garima-1]
+FAILED tests/test_bench.py::test_stub_benchmark_measures_a_real_create_at_the_fixture_date[doc_rohan_shetty-0]
+3 failed, 42 deselected, 2 warnings in 3.88s

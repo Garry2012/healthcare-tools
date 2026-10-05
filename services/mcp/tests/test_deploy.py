@@ -66,6 +66,28 @@ async def test_smoke_requires_all_four_tools(missing):
             await SMOKE["check_tools"](client, "en", "General Medicine")
 
 
+async def test_smoke_probes_working_hours_and_accepts_a_closed_session():
+    from fastmcp import Client, FastMCP
+    remote = FastMCP("read-only-policy-probe")
+    purposes = []
+
+    @remote.tool()
+    def get_doctor_availability(departmentName: str, date: str | None = None,  # noqa: N803
+                                purpose: str = "AVAILABILITY") -> dict:
+        purposes.append(purpose)
+        return {"outcome": "WORKING_HOURS" if purpose == "WORKING_HOURS" else "NOT_AVAILABLE"}
+
+    @remote.tool()
+    def search_knowledge(question: str, language: str) -> dict:
+        return {"outcome": "ANSWERED"}
+
+    for name in ("manage_booking", "record_call_summary"):
+        remote.tool(name=name)(lambda: pytest.fail("smoke wrote data"))
+    async with Client(remote) as client:
+        await SMOKE["check_tools"](client, "en", "General Medicine")
+    assert purposes == ["AVAILABILITY", "WORKING_HOURS"]
+
+
 @pytest.mark.parametrize("body", [
     {"outcome": "COULD_NOT_CHECK"}, {"outcome": "UNKNOWN_OUTCOME"}, {"outcome": "INVALID_REQUEST"},
     {"error": {"code": "UNAUTHORIZED"}}, None,
@@ -326,8 +348,9 @@ async def test_unconfigured_smoke_refuses_mismatched_or_error_results(body, erro
     remote = FastMCP("inconsistent-remote")
 
     @remote.tool()
-    def get_doctor_availability(date: str, departmentName: str) -> dict:  # noqa: N803
-        return {"outcome": "CALLBACK_REQUIRED"}
+    def get_doctor_availability(departmentName: str, date: str | None = None,  # noqa: N803
+                                purpose: str = "AVAILABILITY") -> dict:
+        return {"outcome": "WORKING_HOURS" if purpose == "WORKING_HOURS" else "CALLBACK_REQUIRED"}
 
     @remote.tool()
     def manage_booking(action: str) -> dict:
