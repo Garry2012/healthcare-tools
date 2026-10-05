@@ -71,7 +71,6 @@ class Settings(BaseSettings):
     token_refresh_check_seconds: float = Field(default=15.0, gt=0, le=3600)  # background refresher cadence
     token_refresh_timeout_seconds: float = Field(default=5.0, gt=0, le=60)  # background/start-up refresh: not in-call
     directory_cache_seconds: int = Field(default=300, ge=0, le=86400)
-    directory_page_size: int = Field(default=25, ge=1, le=100)  # bounded search/department fan-out
     doctor_choice_limit: int = Field(default=3, ge=1, le=100)
     profile_batch_size: int = Field(default=3, ge=1, le=100)
     min_batch_headroom_seconds: float = Field(default=0.05, ge=0, le=30)

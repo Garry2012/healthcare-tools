@@ -58,3 +58,8 @@ docs/           handover/mcp-only (plan, contracts, implementation evidence), ha
 
 Scheduling tools call only Manoj; the LLM explicitly chooses `search_knowledge` for information or symptoms.
 Voice behaviour and prompts belong to the voice team; the published interface is [VOICE-TEAM.md](docs/handover/VOICE-TEAM.md).
+
+Availability policy: today uses Manoj's live board; future dates use usual working hours, with attendance
+unconfirmed. `purpose=WORKING_HOURS` allows an omitted date; AVAILABILITY requires today or an explicit
+future date and a doctor/department target. CREATE requires a doctor. The approved revision 6 plan and
+implementation evidence are in `docs/handover/mcp-only/implementation/`.

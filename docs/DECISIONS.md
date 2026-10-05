@@ -109,3 +109,28 @@ Consequences: breaking tool schema and access change, requiring coordinated MCP/
 Schema bumps: 2026-10-03.3 → 2026-10-04.1 for summary request/result, then → 2026-10-04.2 for gateway
 access metadata. Live verification still requires calls.write and an owner-designated synthetic tenant.
 The old deployment secret remains untouched until separately authorized retirement.
+
+## A12 — Date-aware schedule facts and bounded profile reads (5 October 2026)
+
+Context: applying an UNKNOWN future board blocked requests even when a doctor had a usual schedule.
+Approved revision 6 separates today, future dates and WORKING_HOURS in one pure policy and one reader.
+Today uses only live-board status/times; future and hours queries never fetch the board. ON_CALL is
+always callback. No capacity, slot allocation, end time or confirmed attendance is inferred.
+Owner `status` is preserved; our `decision` and `reason` explain the result. Same-decision sessions
+permit a day-level request; differing decisions need selection. CREATE requires a doctor; RESCHEDULE
+uses the verified caller's appointment doctor. A bookable session with unknown end time and a specific
+requested time requires handoff, not a write. Callback stores only a call summary.
+
+Future department profiles are read in sorted sequential batches, concurrent only within each batch,
+under one deadline. Defaults: limit 3, batch 3, minimum headroom 0.05 s, existing cache 300 s. Results
+separate directory total, bookable found and completeness; incomplete absence is never unavailability.
+Rejected: future board gating, inferring missing sessions from profiles today, department writes,
+unbounded profile fan-out, parallel policy paths and conversational scripts in responses.
+
+Consequences: breaking schema 2026-10-05.1 needs gateway/voice refresh; unchanged owner API and scopes.
+Owner usual schedules must be populated. ON_CALL and today-only board use are explicit consumer policy
+choices, not revisions to Manoj's published contract. The owner still validates writes. LIST/CANCEL,
+trusted identity, operation keys, uncertainty, 401-only refresh and summary behavior are unchanged.
+Summary text can contain callback name/date/session/reason, but these details are not enforced;
+summary quality needs acceptance when the voice agent is integrated. Live latency and output-schema
+propagation are separate post-deploy acceptance, not established by local fixtures.
