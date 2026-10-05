@@ -463,3 +463,26 @@ async def test_availability_is_independent_of_knowledge_and_transcript(make_sett
     finally:
         await services.aclose()
         await h.aclose()
+
+
+async def test_future_unmatched_session_exposes_the_days_actual_alternatives(h):
+    result = await ask(h, doctorId="doc_garima", date="2026-10-05", session="Evening")
+    assert (result.outcome, result.detail, result.nextStep) == (
+        "NOT_AVAILABLE", "SESSION_NOT_USUAL", "OFFER_OTHER_SESSION_OR_DATE")
+    assert [(s.label, s.decision, s.reason, s.onRequestedDate) for s in result.doctors[0].usualSessions] == [
+        ("Morning", "APPOINTMENT_REQUEST", None, True), ("Afternoon", "APPOINTMENT_REQUEST", None, True)]
+    assert result.sessionMatched is False
+    assert "/availability" not in h.ops_paths()
+    assert all(r.method == "GET" or r.url.path.endswith("/auth/token") for r in h.requests)
+
+
+async def test_future_session_label_on_another_weekday_does_not_match(h):
+    profile = next(d for d in h.ops_state.data["doctors"] if d["id"] == "doc_garima")
+    profile["usualSchedule"] = [
+        {"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"},
+        {"label": "Evening", "daysOfWeek": ["TUE"], "start": "17:00", "end": "19:00"}]
+    result = await ask(h, doctorId="doc_garima", date="2026-10-05", session="Evening")
+    assert result.sessionMatched is False
+    assert [(s.label, s.decision, s.reason, s.onRequestedDate) for s in result.doctors[0].usualSessions] == [
+        ("Morning", "APPOINTMENT_REQUEST", None, True), ("Evening", "NOT_AVAILABLE", "NOT_USUAL_DAY", False)]
+    assert "/availability" not in h.ops_paths()

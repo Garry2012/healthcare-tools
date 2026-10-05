@@ -234,16 +234,16 @@ def _future(facts: DoctorFacts, requested: RequestedDate, session: str | None) -
     usual = facts.profile.usualSchedule
     if not usual:
         return DoctorDecision(facts, Decision.CALLBACK_REQUIRED, Reason.NO_USUAL_SCHEDULE, Basis.USUAL_SCHEDULE)
-    day = [s for s in usual if requested.weekday in s.daysOfWeek]
-    alternatives = tuple(_usual(s) for s in day)
-    selected = [s for s in day if not session or normalised(s.label or "") == normalised(session)]
+    sessions = tuple(_usual(s) if requested.weekday in s.daysOfWeek
+                     else _usual(s, Decision.NOT_AVAILABLE, Reason.NOT_USUAL_DAY) for s in usual)
+    alternatives = tuple(s for s in sessions if s.decision == Decision.APPOINTMENT_REQUEST)
+    selected = tuple(s for s in alternatives if not session or normalised(s.label or "") == normalised(session))
     if not selected:
-        reason = Reason.SESSION_NOT_USUAL if day and session else Reason.NOT_USUAL_DAY
+        reason = Reason.SESSION_NOT_USUAL if alternatives and session else Reason.NOT_USUAL_DAY
         return DoctorDecision(facts, Decision.NOT_AVAILABLE, reason, Basis.USUAL_SCHEDULE,
-                              tuple(_usual(s, Decision.NOT_AVAILABLE, reason) for s in usual),
-                              alternatives=alternatives)
+                              sessions, alternatives=alternatives)
     return DoctorDecision(facts, Decision.APPOINTMENT_REQUEST, None, Basis.USUAL_SCHEDULE,
-                          tuple(_usual(s) for s in selected), alternatives=alternatives)
+                          selected, alternatives=alternatives)
 
 
 def decide_doctor(facts: DoctorFacts, requested: RequestedDate, *, session: str | None,
@@ -273,6 +273,8 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
         return Callback(decision.reason)
     if decision.decision == Decision.COULD_NOT_CHECK:
         return Handoff(Reason.PROFILE_UNAVAILABLE)
+    if decision.decision == Decision.NOT_AVAILABLE:
+        return NotAvailable(decision.reason, decision.alternatives)
     sessions = decision.sessions
     alternatives = decision.alternatives
     if preferred_time and sessions and not session:

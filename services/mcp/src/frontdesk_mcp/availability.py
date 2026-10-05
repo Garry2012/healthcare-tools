@@ -152,6 +152,7 @@ class AvailabilityService:
                 policy.Decision.COULD_NOT_CHECK: ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK"),
             }[d.decision]
         matched = any(s.label and policy.normalised(s.label) == policy.normalised(request.session)
+                      and (s.basis == policy.Basis.LIVE_BOARD or requested is None or requested.weekday in s.days)
                       for s in d.sessions) if request.session else None
         return outcomes.AvailabilityResult(outcome=outcome, nextStep=step, **base, basis=d.basis,
             doctors=[doctor_out(d, requested)], detail=d.reason, sessionMatched=matched,

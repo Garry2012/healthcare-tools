@@ -167,3 +167,17 @@ def test_end_time_precision_includes_seconds():
     result = decide(facts(end="10:00"), now=NOW.replace(second=30))
     assert result.decision == "NOT_AVAILABLE" and result.reason == "SESSION_ENDED"
     assert isinstance(p.decide_booking(result, session="Morning", preferred_time=None), p.NotAvailable)
+
+
+def test_future_unmatched_session_keeps_each_weekdays_facts_and_booking_reason():
+    p = policy()
+    doctor = contract.DoctorDetail(id="d", name="Doctor", active=True, departments=[], attendanceType="REGULAR",
+        usualSchedule=[{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"},
+                       {"label": "Evening", "daysOfWeek": ["TUE"], "start": "17:00", "end": "19:00"}])
+    result = decide(p.DoctorFacts(doctor, doctor), date="2026-10-05", session="Evening")
+    assert (result.decision, result.reason) == ("NOT_AVAILABLE", "SESSION_NOT_USUAL")
+    assert [(s.label, s.decision, s.reason) for s in result.sessions] == [
+        ("Morning", "APPOINTMENT_REQUEST", None), ("Evening", "NOT_AVAILABLE", "NOT_USUAL_DAY")]
+    booking = p.decide_booking(result, session="Evening", preferred_time=None)
+    assert isinstance(booking, p.NotAvailable) and booking.reason == "SESSION_NOT_USUAL"
+    assert [s.label for s in booking.alternatives] == ["Morning"]
