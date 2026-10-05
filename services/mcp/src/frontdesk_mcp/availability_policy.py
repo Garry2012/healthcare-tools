@@ -265,6 +265,10 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
                    preferred_time: str | None) -> BookingDecision:
     if decision.reason == Reason.ON_CALL_DOCTOR:
         return Callback(Reason.ON_CALL_DOCTOR)
+    if decision.decision == Decision.CALLBACK_REQUIRED:
+        return Callback(decision.reason)
+    if decision.decision == Decision.COULD_NOT_CHECK:
+        return Handoff(Reason.PROFILE_UNAVAILABLE)
     sessions = decision.sessions
     alternatives = tuple(s for s in sessions if s.decision == Decision.APPOINTMENT_REQUEST)
     if preferred_time and sessions:

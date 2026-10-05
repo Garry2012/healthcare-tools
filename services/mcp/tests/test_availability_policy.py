@@ -145,3 +145,18 @@ def test_department_rollup_and_counts_do_not_list_callback_as_bookable():
     assert p.aggregate([callback], p.SearchState(0, 1, False)).reason == "SEARCH_INCOMPLETE"
     assert p.aggregate([callback], p.SearchState(0, 1, True)).outcome == "CALLBACK_REQUIRED"
     assert len(p.rank([good] * 5, 3)) == 3
+
+
+def test_selected_unknown_stays_callback_even_with_an_unverifiable_time():
+    p = policy()
+    result = p.decide_booking(decide(facts(statuses=("UNKNOWN",), end=None)),
+                              session="Morning", preferred_time="10:00")
+    assert isinstance(result, p.Callback) and result.reason == "BOARD_UNKNOWN"
+
+
+def test_failed_profile_cannot_be_a_write_decision():
+    from dataclasses import replace
+    p = policy()
+    decision = decide(replace(facts(), profile=None), date="2026-10-05")
+    result = p.decide_booking(decision, session=None, preferred_time=None)
+    assert isinstance(result, p.Handoff) and result.reason == "PROFILE_UNAVAILABLE"
