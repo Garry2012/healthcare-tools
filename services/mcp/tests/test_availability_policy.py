@@ -71,23 +71,24 @@ def test_only_a_supplied_passed_end_time_ends_a_session(end, decision, reason):
 @pytest.mark.parametrize("preferred", ["08:00", "09:30", "23:00"])
 def test_specific_time_without_end_hands_off(preferred):
     p = policy()
-    result = p.decide_booking(decide(facts(end=None)), session="Morning", preferred_time=preferred)
+    result = p.decide_booking(decide(facts(end=None)), session="Morning", preferred_time=preferred, now=NOW)
     assert isinstance(result, p.Handoff) and result.reason == "TIME_NOT_VERIFIABLE"
 
 
 def test_session_without_time_or_end_can_be_noted():
     p = policy()
-    assert isinstance(p.decide_booking(decide(facts(end=None)), session="Morning", preferred_time=None), p.Write)
+    assert isinstance(p.decide_booking(decide(facts(end=None)), session="Morning", preferred_time=None, now=NOW),
+                      p.Write)
 
 
 def test_mixed_sessions_ask_for_choice_but_equal_decisions_do_not():
     p = policy()
     mixed = decide(facts(statuses=("IN", "UNKNOWN")))
     assert mixed.session_choice_required is True
-    assert isinstance(p.decide_booking(mixed, session=None, preferred_time=None), p.SessionRequired)
+    assert isinstance(p.decide_booking(mixed, session=None, preferred_time=None, now=NOW), p.SessionRequired)
     equal = decide(facts(statuses=("IN", "IN")))
     assert equal.session_choice_required is False
-    assert isinstance(p.decide_booking(equal, session=None, preferred_time=None), p.Write)
+    assert isinstance(p.decide_booking(equal, session=None, preferred_time=None, now=NOW), p.Write)
     chosen = decide(facts(statuses=("IN", "UNKNOWN")), session="evening")
     assert chosen.decision == "CALLBACK_REQUIRED" and len(chosen.sessions) == 1
 
@@ -106,7 +107,7 @@ def test_on_call_is_callback_even_when_board_says_in(day):
     p = policy()
     result = decide(facts(attendance="ON_CALL"), date=day)
     assert (result.decision, result.reason) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
-    assert isinstance(p.decide_booking(result, session=None, preferred_time=None), p.Callback)
+    assert isinstance(p.decide_booking(result, session=None, preferred_time=None, now=NOW), p.Callback)
     hours = p.working_hours(facts(attendance="ON_CALL"), None)
     assert hours.reason == "ON_CALL_DOCTOR" and not hours.sessions
 
@@ -131,7 +132,7 @@ def test_working_hours_are_not_live_attendance():
 
 def test_outside_a_known_window_never_writes():
     p = policy()
-    result = p.decide_booking(decide(facts()), session="Morning", preferred_time="14:00")
+    result = p.decide_booking(decide(facts()), session="Morning", preferred_time="14:00", now=NOW)
     assert isinstance(result, p.NotAvailable) and result.reason == "TIME_OUTSIDE_SESSION"
 
 
@@ -146,7 +147,7 @@ def test_preferred_time_preserves_whole_scope_unavailability_reason(status, hour
     assert doctor.decision == doctor_decision
     assert len(doctor.sessions) == 2
     assert all(s.decision == doctor_decision for s in doctor.sessions)
-    result = p.decide_booking(doctor, session=None, preferred_time="21:00")
+    result = p.decide_booking(doctor, session=None, preferred_time="21:00", now=NOW.replace(hour=hour))
     assert isinstance(result, p.NotAvailable) and result.reason == reason
 
 
@@ -165,7 +166,7 @@ def test_department_rollup_and_counts_do_not_list_callback_as_bookable():
 def test_selected_unknown_stays_callback_even_with_an_unverifiable_time():
     p = policy()
     result = p.decide_booking(decide(facts(statuses=("UNKNOWN",), end=None)),
-                              session="Morning", preferred_time="10:00")
+                              session="Morning", preferred_time="10:00", now=NOW)
     assert isinstance(result, p.Callback) and result.reason == "BOARD_UNKNOWN"
 
 
@@ -173,7 +174,7 @@ def test_failed_profile_cannot_be_a_write_decision():
     from dataclasses import replace
     p = policy()
     decision = decide(replace(facts(), profile=None), date="2026-10-05")
-    result = p.decide_booking(decision, session=None, preferred_time=None)
+    result = p.decide_booking(decision, session=None, preferred_time=None, now=NOW)
     assert isinstance(result, p.Handoff) and result.reason == "PROFILE_UNAVAILABLE"
 
 
@@ -181,7 +182,8 @@ def test_end_time_precision_includes_seconds():
     p = policy()
     result = decide(facts(end="10:00"), now=NOW.replace(second=30))
     assert result.decision == "NOT_AVAILABLE" and result.reason == "SESSION_ENDED"
-    assert isinstance(p.decide_booking(result, session="Morning", preferred_time=None), p.NotAvailable)
+    assert isinstance(p.decide_booking(result, session="Morning", preferred_time=None, now=NOW.replace(second=30)),
+                      p.NotAvailable)
 
 
 def test_future_unmatched_session_keeps_each_weekdays_facts_and_booking_reason():
@@ -193,6 +195,35 @@ def test_future_unmatched_session_keeps_each_weekdays_facts_and_booking_reason()
     assert (result.decision, result.reason) == ("NOT_AVAILABLE", "SESSION_NOT_USUAL")
     assert [(s.label, s.decision, s.reason) for s in result.sessions] == [
         ("Morning", "APPOINTMENT_REQUEST", None), ("Evening", "NOT_AVAILABLE", "NOT_USUAL_DAY")]
-    booking = p.decide_booking(result, session="Evening", preferred_time=None)
+    booking = p.decide_booking(result, session="Evening", preferred_time=None, now=NOW)
     assert isinstance(booking, p.NotAvailable) and booking.reason == "SESSION_NOT_USUAL"
     assert [s.label for s in booking.alternatives] == ["Morning"]
+
+
+@pytest.mark.parametrize("day", ["today", "2026-10-05"])
+@pytest.mark.parametrize("session", [None, "Morning"])
+@pytest.mark.parametrize("preferred", ["09:15", "10:30", "10:45"])
+def test_booking_window_uses_facility_minute_only_for_today(day, session, preferred):
+    p = policy()
+    now = NOW.replace(minute=30, second=40)
+    doctor = decide(facts(end="11:00"), date=day, session=session, now=now)
+    result = p.decide_booking(doctor, session=session, preferred_time=preferred, now=now)
+    if day == "today" and preferred == "09:15":
+        assert isinstance(result, p.NotAvailable) and result.reason == "TIME_OUTSIDE_SESSION"
+        assert [(s.label, s.start, s.end, s.decision) for s in result.alternatives] == [
+            ("Morning", "09:00", "11:00", "APPOINTMENT_REQUEST")]
+    else:
+        assert isinstance(result, p.Write)
+
+
+@pytest.mark.parametrize("start,end", [(None, "11:00"), ("09:00", None), (None, None)])
+@pytest.mark.parametrize("session", [None, "Morning"])
+@pytest.mark.parametrize("preferred", ["09:15", "10:45"])
+def test_booking_window_keeps_unknown_boundaries_unverifiable(start, end, session, preferred):
+    from dataclasses import replace
+    p = policy()
+    f = facts(end=end)
+    row = f.entries[0].model_copy(update={"expectedTime": start})
+    doctor = decide(replace(f, entries=(row,)), session=session, now=NOW.replace(minute=30))
+    result = p.decide_booking(doctor, session=session, preferred_time=preferred, now=NOW.replace(minute=30))
+    assert isinstance(result, p.Handoff) and result.reason == "TIME_NOT_VERIFIABLE"

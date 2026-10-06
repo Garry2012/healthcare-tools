@@ -58,7 +58,7 @@ SCENARIOS = {
     "booking_list": ("manage_booking", {"action": "LIST"}, {"FOUND", "NOT_FOUND"}, ("GET /appointments",)),
     "booking_create": ("manage_booking", {"action": "CREATE", "patientName": "Bench Patient",
                                           "patientMobile": "9000000101", "doctorId": DOCTOR_ID, "visitDate": "today",
-                                          "preferredTime": "09:30", "callerConfirmed": True},
+                                          "preferredTime": "10:45", "callerConfirmed": True},
                        {"NOTED"}, ("GET /availability", "POST /appointments")),
 }
 

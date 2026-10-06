@@ -160,3 +160,9 @@ Known limitation, confirmed by Garima: **sessions crossing midnight are unsuppor
 adds no overnight interpretation or defensive time rule. G-1 (whether cancelled/ended sessions
 should force a choice) remains pending; the approved mixed-decision rule is unchanged. Optional M-7
 (showing other board facts when a named today session is absent) is not implemented without approval.
+
+## A14 — Booking window and actionable rejection fields (6 October 2026)
+
+Today's booking window starts at the later of the session start and facility now (strict, minute precision); future usual schedules and unknown-boundary handoffs are unchanged.
+
+Booking rejection fields are tool argument names only: owner names are translated using the write-body mapping, and names without a tool argument are dropped.

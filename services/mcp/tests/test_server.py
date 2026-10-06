@@ -155,7 +155,7 @@ async def test_the_whole_journey_over_http(served):
         assert unknown_day["outcome"] == "CALLBACK_REQUIRED"  # on-call is callback on every date
         noted = (await c.call_tool("manage_booking", {
             "action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101", "doctorId": "doc_garima",
-            "visitDate": "2026-10-01", "preferredTime": "09:30", "reasonVerbatim": "fever", "callerConfirmed": True,
+            "visitDate": "2026-10-01", "preferredTime": "10:45", "reasonVerbatim": "fever", "callerConfirmed": True,
         })).structured_content
         assert noted["outcome"] == "NOTED"
         appointment_id = noted["appointment"]["appointmentId"]

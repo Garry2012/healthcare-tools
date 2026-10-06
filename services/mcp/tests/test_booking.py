@@ -15,7 +15,7 @@ from frontdesk_mcp import booking
 from . import harness
 
 CREATE = {"action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101", "doctorId": "doc_garima",
-          "visitDate": "2026-10-01", "preferredTime": "09:30", "reasonVerbatim": "fever for three days",
+          "visitDate": "2026-10-01", "preferredTime": "10:45", "reasonVerbatim": "fever for three days",
           "callerConfirmed": True}
 
 
@@ -42,13 +42,13 @@ async def test_create_is_noted_with_a_frozen_body_and_a_bound_key(h):
     result = await run(h, **CREATE)
     assert result.outcome == "NOTED" and result.nextStep == "SAY_REQUEST_NOTED"
     assert result.appointment.status == "NOTED" and result.appointment.visitDate == "2026-10-01"
-    assert result.appointment.expectedTime == "09:30" and result.appointment.doctorId == "doc_garima"
+    assert result.appointment.expectedTime == "10:45" and result.appointment.doctorId == "doc_garima"
     dumped = result.model_dump_json()
     assert "9000000101" not in dumped and "fever" not in dumped  # contact and reason never echoed to the model
     [request] = sent(h, "/appointments")
     body = json.loads(request.content)
     assert body == {"patientName": "Lakshmi Rao", "mobile": "9000000101", "doctorId": "doc_garima",
-                    "visitDate": "2026-10-01", "expectedTime": "09:30", "reasonVerbatim": "fever for three days",
+                    "visitDate": "2026-10-01", "expectedTime": "10:45", "reasonVerbatim": "fever for three days",
                     "callId": "call-1"}
     expected = hashlib.sha256(b"demo-hospital|call-1|CREATE|op-1").hexdigest()  # no target: changed target conflicts
     assert request.headers["idempotency-key"] == expected and len(expected) == 64
@@ -448,7 +448,7 @@ async def test_create_scope_follows_the_session_the_caller_chose(h):
 
 async def test_create_without_a_session_resolves_scope_from_the_preferred_time_or_asks(h):
     h.ops_state.set_board("2026-10-01", MIXED_BOARD)
-    inside_morning = await run(h, h.ctx(operation_id="op-1"), **CREATE)  # 09:30 falls in the Morning window
+    inside_morning = await run(h, h.ctx(operation_id="op-1"), **CREATE)  # 10:45 falls in the Morning window
     assert inside_morning.outcome == "NOTED"
     outside = await run(h, h.ctx(operation_id="op-2"), **{**CREATE, "preferredTime": "15:30"})
     assert outside.outcome == "CALLBACK_REQUIRED"  # the only session that could hold 15:30 is UNKNOWN
@@ -691,3 +691,106 @@ async def test_reschedule_malformed_owner_doctor_id_cannot_escape_as_protocol_er
     assert h.ops_paths() == ["/appointments"]
     assert sent(h, "/reschedule") == [] and all(r.method == "GET" for r in h.requests)
     assert doctor_id not in result.model_dump_json()
+
+
+@pytest.fixture
+async def booking_mcp(make_settings):
+    from frontdesk_mcp.server import create_app
+
+    from .conftest import serving
+
+    h = harness.build(make_settings(), now=harness.NOW.replace(hour=5, minute=0, second=40))  # 10:30:40 IST
+    h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_meera_kulkarni", "session": "Morning",
+        "status": "IN", "expectedTime": "09:00", "expectedEndTime": "11:00", "updatedMinutesAgo": 1}])
+    app = create_app(h.settings, clock=h.clock, ops_transport=h.ops.http._transport,
+                     knowledge_transport=h.knowledge.http._transport)
+    try:
+        async with serving(app) as base:
+            yield base, h
+    finally:
+        await h.aclose()
+
+
+@pytest.mark.parametrize("preferred,outcome", [("09:15", "NOT_AVAILABLE"), ("10:30", "NOTED"), ("10:45", "NOTED")])
+async def test_mcp_create_respects_todays_current_minute(booking_mcp, preferred, outcome):
+    from .test_server import client
+
+    base, h = booking_mcp
+    async with client(base, operation_id="create") as c:
+        result = (await c.call_tool("manage_booking", {**CREATE, "doctorId": "doc_meera_kulkarni",
+                                                      "preferredTime": preferred})).structured_content
+    assert result["outcome"] == outcome
+    if outcome == "NOT_AVAILABLE":
+        assert (result["detail"], result["nextStep"]) == ("TIME_OUTSIDE_SESSION", "OFFER_OTHER_SESSION_OR_TIME")
+        assert [(s["session"], s["decision"]) for s in result["sessions"]] == [("Morning", "APPOINTMENT_REQUEST")]
+        assert sent(h, "/appointments") == []
+    else:
+        assert len(sent(h, "/appointments")) == 1
+        assert json.loads(sent(h, "/appointments")[0].content)["expectedTime"] == preferred
+    assert h.ops_paths().count("/availability") == 1
+
+
+async def test_mcp_reschedule_refuses_a_passed_time_today(booking_mcp):
+    from .test_server import client
+
+    base, h = booking_mcp
+    async with client(base, operation_id="create") as c:
+        created = (await c.call_tool("manage_booking", {**CREATE, "doctorId": "doc_meera_kulkarni",
+                                                       "preferredTime": "10:45"})).structured_content
+    assert created["outcome"] == "NOTED"
+    async with client(base, operation_id="move") as c:
+        result = (await c.call_tool("manage_booking", {"action": "RESCHEDULE",
+            "appointmentId": created["appointment"]["appointmentId"], "newVisitDate": "today",
+            "newPreferredTime": "09:15", "callerConfirmed": True})).structured_content
+    assert (result["outcome"], result["detail"], result["nextStep"]) == (
+        "NOT_AVAILABLE", "TIME_OUTSIDE_SESSION", "OFFER_OTHER_SESSION_OR_TIME")
+    assert [(s["session"], s["decision"]) for s in result["sessions"]] == [("Morning", "APPOINTMENT_REQUEST")]
+    assert sent(h, "/reschedule") == []
+    assert h.ops_state.appointments[created["appointment"]["appointmentId"]]["expectedTime"] == "10:45"
+
+
+@pytest.mark.parametrize("owner_fields,tool_fields", [
+    (["mobile"], ["patientMobile"]), (["expectedTime"], ["preferredTime"]),
+    (["patientName", "doctorId", "visitDate", "reasonVerbatim"],
+     ["doctorId", "patientName", "reasonVerbatim", "visitDate"]),
+    (["callerMobile"], []), (["callId"], []), (["unrecognisedOwnerField"], []),
+    (["mobile", "mobile", "patientMobile", "unrecognisedOwnerField"], ["patientMobile"]),
+])
+async def test_owner_create_rejection_names_only_actionable_tool_arguments(h, owner_fields, tool_fields):
+    h.ops_state.reject_next_create = [{"field": field, "issue": "owner-only text"} for field in owner_fields]
+    result = await run(h, **{**CREATE, "preferredTime": "10:45"})
+    assert (result.outcome, result.nextStep, result.detail, result.fields) == (
+        "REJECTED", "ASK_TO_CORRECT", "VALIDATION_FAILED", tool_fields)
+    assert len(sent(h, "/appointments")) == 1 and not h.ops_state.appointments
+    assert "owner-only text" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize("action,owner_field,tool_field", [
+    ("RESCHEDULE", "newExpectedTime", "newPreferredTime"),
+    ("RESCHEDULE", "newVisitDate", "newVisitDate"),
+    ("CANCEL", "reason", "reasonVerbatim"),
+])
+async def test_owner_change_rejection_names_the_tool_argument(h, action, owner_field, tool_field):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    created = await run(h, **{**CREATE, "preferredTime": "10:45"})
+    assert created.outcome == "NOTED"
+    path = f"/appointments/{created.appointment.appointmentId}/{action.lower()}"
+
+    async def owner(request):
+        if request.method == "POST" and request.url.path.endswith(path):
+            h.requests.append(request)
+            return httpx.Response(400, json={"error": {"code": "VALIDATION_FAILED", "message": "owner-only text",
+                "details": [{"field": owner_field, "issue": "invalid"}]}})
+        return await h.ops.http._transport.handle_async_request(request)
+
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await booking.BookingService(ops, h.settings, h.clock).manage(h.ctx(operation_id="change"),
+            booking.BookingRequest(action=action, appointmentId=created.appointment.appointmentId,
+                newVisitDate="2026-10-05", newPreferredTime="10:45", reasonVerbatim="change requested",
+                callerConfirmed=True))
+    assert (result.outcome, result.detail, result.fields) == ("REJECTED", "VALIDATION_FAILED", [tool_field])
+    assert len(sent(h, path)) == 1
+    assert "owner-only text" not in result.model_dump_json()

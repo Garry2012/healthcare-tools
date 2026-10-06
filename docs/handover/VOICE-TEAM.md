@@ -622,6 +622,8 @@ caller identity for CANCEL/RESCHEDULE (`IDENTITY_UNAVAILABLE`) → schedule poli
 (`INVALID_REQUEST`/`SESSION_REQUIRED`, `CALLBACK_REQUIRED`, `NOT_AVAILABLE`, `HANDOFF_REQUIRED`) → owner write.
 
 - Set `callerConfirmed: true` only after the caller has agreed to the exact details being sent.
+- Today's booking window starts at the later of the session start and facility now (strict, minute precision); future dates are unchanged.
+- Booking rejection `fields` contain tool argument names only; owner names are translated and names without a tool argument are dropped.
 - When the result is `ASK_WHICH_SESSION`, `sessions` lists the choices; call again with `session` set to
   the chosen label and the same other fields.
 - When the result is `NOT_AVAILABLE`, `sessions` lists alternatives on that date when any exist

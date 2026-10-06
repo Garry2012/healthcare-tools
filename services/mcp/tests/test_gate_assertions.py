@@ -46,7 +46,7 @@ async def test_the_negative_gate_needs_a_successful_baseline_and_detects_a_creat
     before = gates.assert_list_succeeded(await run(h, h.ctx(), action="LIST"))
     assert before == []
     created = await run(h, h.ctx(operation_id="op-1"), action="CREATE", patientName="P", patientMobile="9000000101",
-                        doctorId="doc_garima", visitDate="2026-10-01", preferredTime="09:30", callerConfirmed=True)
+                        doctorId="doc_garima", visitDate="2026-10-01", preferredTime="10:45", callerConfirmed=True)
     assert created.outcome == "NOTED"
     after = gates.assert_list_succeeded(await run(h, h.ctx(), action="LIST"))
     with pytest.raises(gates.GateFailure, match="was created"):
