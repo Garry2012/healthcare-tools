@@ -165,4 +165,4 @@ should force a choice) remains pending; the approved mixed-decision rule is unch
 
 Today's booking window starts at the later of the session start and facility now (strict, minute precision); future usual schedules and unknown-boundary handoffs are unchanged.
 
-Booking rejection fields are tool argument names only: owner names are translated using the write-body mapping, and names without a tool argument are dropped.
+Booking rejection fields are tool argument names only: owner names are translated using the originating action's owner-field mapping (also used for write bodies), and names without a tool argument for that action are dropped.

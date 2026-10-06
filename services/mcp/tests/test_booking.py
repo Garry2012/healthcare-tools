@@ -794,3 +794,69 @@ async def test_owner_change_rejection_names_the_tool_argument(h, action, owner_f
     assert (result.outcome, result.detail, result.fields) == ("REJECTED", "VALIDATION_FAILED", [tool_field])
     assert len(sent(h, path)) == 1
     assert "owner-only text" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize("action,owner_fields,tool_fields", [
+    ("LIST", ["mobile"], []),
+    ("LIST", ["from", "to"], ["fromDate", "toDate"]),
+    ("LIST", ["status", "fromDate"], ["fromDate", "status"]),
+    ("LIST", ["patientMobile", "doctorId", "callId", "unknown"], []),
+    ("RESCHEDULE", ["mobile"], []),
+    ("RESCHEDULE", ["from", "to", "status", "patientMobile"], []),
+    ("RESCHEDULE", ["newExpectedTime", "newPreferredTime"], ["newPreferredTime"]),
+])
+async def test_appointment_lookup_rejection_uses_the_requested_action(h, action, owner_fields, tool_fields):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    async def owner(request):
+        if request.method == "GET" and request.url.path.endswith("/appointments"):
+            h.requests.append(request)
+            return httpx.Response(400, json={"error": {"code": "VALIDATION_FAILED", "message": "owner-only text",
+                "details": [{"field": field, "issue": "invalid"} for field in owner_fields]}})
+        return await h.ops.http._transport.handle_async_request(request)
+
+    args = {"fromDate": "2026-10-01", "toDate": "2026-10-05", "status": "NOTED"} if action == "LIST" else {
+        "appointmentId": "apt-synthetic", "newVisitDate": "2026-10-05", "newPreferredTime": "10:45",
+        "callerConfirmed": True}
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await booking.BookingService(ops, h.settings, h.clock).manage(h.ctx(operation_id="lookup"),
+            booking.BookingRequest(action=action, **args))
+    [request] = [r for r in h.requests if r.method == "GET" and r.url.path.endswith("/appointments")]
+    assert dict(request.url.params) == ({"mobile": "9000000101", "from": "2026-10-01", "to": "2026-10-05",
+                                         "status": "NOTED"} if action == "LIST" else {"mobile": "9000000101"})
+    assert sent(h, "/reschedule") == [] and sent(h, "/appointments") == []
+    assert (result.outcome, result.nextStep, result.detail, result.fields) == (
+        "REJECTED", "ASK_TO_CORRECT", "VALIDATION_FAILED", tool_fields)
+    assert "owner-only text" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize("action,tool_fields", [("CREATE", ["doctorId"]), ("RESCHEDULE", ["newPreferredTime"])])
+async def test_schedule_rejection_uses_the_originating_action(h, action, tool_fields):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    created = await run(h, **CREATE)
+    assert created.outcome == "NOTED"
+    h.requests.clear()
+
+    async def owner(request):
+        if request.method == "GET" and request.url.path.endswith("/doctors/doc_garima"):
+            h.requests.append(request)
+            return httpx.Response(400, json={"error": {"code": "VALIDATION_FAILED", "message": "owner-only text",
+                "details": [{"field": field, "issue": "invalid"} for field in ["doctorId", "newExpectedTime"]]}})
+        return await h.ops.http._transport.handle_async_request(request)
+
+    args = {**CREATE, "visitDate": "2026-10-05"} if action == "CREATE" else {
+        "action": "RESCHEDULE", "appointmentId": created.appointment.appointmentId,
+        "newVisitDate": "2026-10-05", "newPreferredTime": "10:45", "callerConfirmed": True}
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await booking.BookingService(ops, h.settings, h.clock).manage(h.ctx(operation_id="schedule"),
+            booking.BookingRequest(**args))
+    assert len([r for r in h.requests if r.method == "GET" and r.url.path.endswith("/doctors/doc_garima")]) == 1
+    assert sent(h, "/reschedule") == [] and sent(h, "/appointments") == []
+    assert (result.outcome, result.nextStep, result.detail, result.fields) == (
+        "REJECTED", "ASK_TO_CORRECT", "VALIDATION_FAILED", tool_fields)
+    assert "owner-only text" not in result.model_dump_json()
