@@ -269,8 +269,17 @@ def working_hours(facts: DoctorFacts, requested: RequestedDate | None) -> Doctor
                           tuple(_usual(s) for s in facts.profile.usualSchedule))
 
 
+def _contains_time(s: SessionDecision, preferred: str, now: datetime) -> bool:
+    if s.start is None or s.end is None:
+        return False
+    start = time.fromisoformat(s.start)
+    if s.basis == Basis.LIVE_BOARD:
+        start = max(start, now.time().replace(second=0, microsecond=0))
+    return start <= time.fromisoformat(preferred) <= time.fromisoformat(s.end)
+
+
 def decide_booking(decision: DoctorDecision, *, session: str | None,
-                   preferred_time: str | None) -> BookingDecision:
+                   preferred_time: str | None, now: datetime) -> BookingDecision:
     if decision.reason == Reason.ON_CALL_DOCTOR:
         return Callback(Reason.ON_CALL_DOCTOR)
     if decision.decision == Decision.CALLBACK_REQUIRED:
@@ -282,7 +291,7 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
     sessions = decision.sessions
     alternatives = decision.alternatives
     if preferred_time and sessions and not session:
-        matched = tuple(s for s in sessions if s.start and s.end and s.start <= preferred_time <= s.end)
+        matched = tuple(s for s in sessions if _contains_time(s, preferred_time, now))
         if matched:
             sessions = matched + tuple(s for s in sessions if not normalised(s.label or "") and s not in matched)
         else:
@@ -304,7 +313,7 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
     if preferred_time and sessions:
         if any(_window(s.end) == "UNKNOWN_END" or s.start is None for s in sessions):
             return Handoff(Reason.TIME_NOT_VERIFIABLE)
-        if not any(s.start <= preferred_time <= s.end for s in sessions):
+        if not any(_contains_time(s, preferred_time, now) for s in sessions):
             return NotAvailable(Reason.TIME_OUTSIDE_SESSION, alternatives)
     return Write()
 
