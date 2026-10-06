@@ -6,7 +6,11 @@ Schema version: `2026-10-06.1`
 
 Streamable HTTP at `/mcp/` on the configured MCP host. The direct URL is the deployment's
 `MCP_PUBLIC_URL`; for example, `https://<mcp-host>/mcp/`. The ContextForge virtual-server URL is a
-separate gateway endpoint supplied by its owner. This document does not assert which revision is deployed.
+separate gateway endpoint supplied by its owner; the voice agent normally calls tools through it.
+
+Deployed: Azure canary `mcp-demo-hospital-canary`, image `frontdesk-mcp:36336aa`, schema `2026-10-06.1`
+(6 October 2026). `GET /ready` on the MCP host returns the served `schemaVersion`; if it differs from the
+version at the top of this document, this document is out of date.
 
 ## Authentication
 
@@ -30,6 +34,61 @@ separate. Credentials, caller authority and call start time are not tool argumen
 
 Malformed identifiers/timing are treated as absent. Header names are case-insensitive. Tenant comes from deployment configuration; access is authenticated by the gateway bearer, not model arguments.
 
+## Calling rules (read first)
+
+These rules apply to every tool. Most failed calls break one of them.
+
+1. **The live schema is `tools/list`.** The MCP server publishes each tool's exact input schema, output
+   schema and description. The input schemas below are copied from the pinned snapshot for schema
+   `2026-10-06.1`. If `tools/list` and this document disagree, `tools/list` wins.
+2. **Send only the fields listed for that tool.** An unknown argument (for example `doctorName` on
+   `manage_booking`, or `callerName` on `record_call_summary`) is rejected before the tool runs. The schema
+   does not say this, so the agent must not invent fields.
+3. **Omit optional fields you do not use.** `null` is accepted where the schema type includes `null`.
+   Never send `null` for `purpose`, `callerConfirmed`, `action`, `intent`, `outcome`, `question`,
+   `language` or `summaryText`.
+4. **Use the exact formats.** Enums are upper case and must match exactly. Dates are `today` or
+   `YYYY-MM-DD` (facility calendar, not in the past); `tomorrow`, `next Monday` and similar are refused, so
+   convert them first using `facilityToday` from any availability result. Times are 24-hour `HH:MM`
+   (`00:00`–`23:59`). Mobiles are exactly 10 digits, with no `+91`, spaces or dashes.
+5. **Use identifiers returned by the tools.** `doctorId` comes from `doctors[].doctorId` or
+   `choices[].doctorId`; `departmentId` from `department.id` or `departmentChoices[].id`; `session` from
+   `board[].session` or `usualSessions[].label`; `appointmentId` from `appointment.appointmentId` or
+   `appointments[].appointmentId`. Do not make identifiers up.
+6. **Two kinds of failure.**
+   - `isError: true` with a text message and no structured result: the arguments were rejected before the
+     tool ran (unknown field, wrong type, enum mismatch, value over `maxLength`; `summaryText` over 500
+     characters is the exception and returns `INVALID_REQUEST`). Fix the arguments; an
+     identical retry fails the same way. For `record_call_summary` the message is deliberately generic and
+     does not name the field.
+   - A normal structured result with `outcome` such as `INVALID_REQUEST`: the tool ran and refused the
+     request. `fields` (booking, summary) or `detail` (availability) names what to correct.
+7. **Branch on `outcome` and `nextStep`, never on text.** Every structured result has `outcome`; all except
+   `record_call_summary` also have `nextStep`. The meanings are in each tool's tables below.
+8. **Trusted headers are set by the platform on the MCP request, never by the model.** They are not tool
+   arguments. Which tool needs which header:
+
+| Tool and action | Authorization | X-Call-Id | X-Operation-Id | X-Caller-Number + X-Caller-Verification | X-Call-Started-At |
+|---|---|---|---|---|---|
+| get_doctor_availability | required | not used | not used | not used | not used |
+| search_knowledge | required | not used | not used | not used | not used |
+| manage_booking CREATE | required | required | required | not used | not used |
+| manage_booking LIST | required | not used | not used | required | not used |
+| manage_booking CANCEL, RESCHEDULE | required | required | required | required | not used |
+| record_call_summary | required | required | not used | not used | required |
+
+Missing write headers return `OPERATION_CONTEXT_MISSING`; missing or unverified caller identity returns
+`IDENTITY_UNAVAILABLE`; missing summary headers return `NOT_SAVED`. **Use a new `X-Operation-Id` for each
+distinct write the caller confirms.** Reuse the same one only to retry the identical write; reusing it with
+different arguments returns `CONFLICT`.
+
+| Tool | Read-only | Changes data | Safe to retry with the same arguments |
+|---|---|---|---|
+| get_doctor_availability | yes | no | yes |
+| search_knowledge | yes | no | yes |
+| manage_booking | LIST only | CREATE, CANCEL, RESCHEDULE | yes, with the same `X-Operation-Id` |
+| record_call_summary | no | stores one summary per call | yes; a repeat returns `ALREADY_SAVED` |
+
 The tables below describe the pinned wire schema, including nested `$defs` types. “Required” means
 schema-required; action-specific requirements appear in the meaning column. Optional fields can have
 server defaults; the schema remains authoritative for those defaults. Callback metadata contains reason and summaryOutcome only, with no spoken script. Outcomes and nextStep are returned codes,
@@ -38,6 +97,131 @@ not implementation instructions for the calling application.
 ## get_doctor_availability
 
 Doctor or department availability for today or an explicit future date; WORKING_HOURS returns usual hours without a board check. Today is LIVE_BOARD: status is Manoj's IN, LATE, CANCELLED, NOT_CONFIRMED or UNKNOWN; decision is the separate MCP result. IN/LATE permit a request, CANCELLED is NOT_AVAILABLE, NOT_CONFIRMED/UNKNOWN require callback. A supplied passed end time means NOT_AVAILABLE/SESSION_ENDED; a missing end time is not given, not an ended session. ON_CALL always means CALLBACK_REQUIRED. Future dates describe normal working hours or visiting attendance days, attendance not confirmed. Several sessions with the same decision require no choice; differing decisions may require a session choice. Department AVAILABILITY results list only bookable doctors when any exist; otherwise callback or unavailable facts, capped by the configured limit. totalMatches is the directory count across all types and decisions; bookableFound is the bookable count found among those checked, potentially larger than the returned list; complete means every directory candidate was evaluated. An incomplete search with no match is HANDOFF_REQUIRED/SEARCH_INCOMPLETE, not unavailability. WORKING_HOURS with hours returns PRESENT_WORKING_HOURS for one doctor and always bookableFound=0; a single on-call doctor or empty schedule returns CALLBACK_REQUIRED with reason and summaryOutcome. Department WORKING_HOURS includes on-call doctors as facts within the list limit. Callback details are stored only in record_call_summary as CALLBACK_NOTED. Ambiguous names return choices.
+
+### How to call
+
+| Need | Send |
+|---|---|
+| Target (exactly one kind) | `doctorId`, else `doctorName`, else `departmentId` or `departmentName`. If several are sent, the first in this order is used. None returns `INVALID_REQUEST` with detail `TARGET_REQUIRED`. |
+| Availability on a date | `purpose` omitted (or `AVAILABILITY`) and `date` = `today` or `YYYY-MM-DD`. Without `date`: `INVALID_REQUEST`/`ASK_EXPLICIT_DATE`, detail `DATE_REQUIRED`. Other words: `DATE_FORMAT`. Past dates: `PAST_DATE`. |
+| Usual working hours | `purpose` = `WORKING_HOURS`; `date` optional. Never reads today's live board. |
+| One session only | `session` = a label returned earlier (`board[].session` or `usualSessions[].label`). |
+| Female or male doctor | `gender` = `FEMALE` or `MALE`. |
+| After `ASK_WHICH_DOCTOR` / `ASK_WHICH_DEPARTMENT` | Call again with the chosen `doctorId` or `departmentId`, keeping the same `date` and `purpose`. |
+| Before booking | Use `doctors[].doctorId` and, when `sessionChoiceRequired` is true, the chosen session label. |
+
+### Input schema (exact)
+
+```json
+{
+  "properties": {
+    "date": {
+      "anyOf": [
+        {
+          "maxLength": 10,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "'today' or YYYY-MM-DD; required for AVAILABILITY, optional for WORKING_HOURS. Other relative dates are not accepted."
+    },
+    "departmentId": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Directory identifier for a selected department; optional alternative to departmentName."
+    },
+    "departmentName": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Department or speciality name for directory search; optional."
+    },
+    "doctorId": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Directory identifier for a selected doctor; optional alternative to doctorName."
+    },
+    "doctorName": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Doctor name for directory search, in the caller's original wording; optional."
+    },
+    "gender": {
+      "anyOf": [
+        {
+          "enum": [
+            "FEMALE",
+            "MALE"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional doctor gender filter: FEMALE or MALE."
+    },
+    "purpose": {
+      "default": "AVAILABILITY",
+      "description": "AVAILABILITY (default) checks a requested date; WORKING_HOURS returns normal working hours or attendance days, not live availability.",
+      "enum": [
+        "AVAILABILITY",
+        "WORKING_HOURS"
+      ],
+      "type": "string"
+    },
+    "session": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional selected session label; limits the requested schedule or live-board sessions."
+    }
+  },
+  "type": "object"
+}
+```
 
 ### Parameters
 
@@ -134,9 +318,522 @@ Doctor or department availability for today or an explicit future date; WORKING_
 | `get_doctor_availability.nextStep.OFFER_OTHER_SESSION_OR_DATE` | The requested session or date is unavailable; alternatives may be returned. |
 | `get_doctor_availability.nextStep.PRESENT_WORKING_HOURS` | Usual hours are returned for presentation, without an appointment offer or date-specific availability claim. |
 
+### Examples
+
+Examples come from the development stubs (facility date 2026-10-01, Thursday, 10:00); names and
+identifiers are fixtures. Live values differ; field names and shapes do not.
+
+**1. Doctor today, two sessions with different decisions**
+
+Arguments:
+
+```json
+{
+  "doctorName": "garima",
+  "date": "today"
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "AVAILABILITY",
+  "nextStep": "ASK_WHICH_SESSION",
+  "facilityToday": "2026-10-01",
+  "requestedDate": "2026-10-01",
+  "weekday": "THU",
+  "department": null,
+  "doctors": [
+    {
+      "doctorId": "doc_garima",
+      "name": "Dr. Garima",
+      "departments": [
+        "General Medicine"
+      ],
+      "attendanceType": "REGULAR",
+      "gender": "FEMALE",
+      "dataConfirmed": null,
+      "usualSessions": null,
+      "board": [
+        {
+          "session": "Morning",
+          "status": "IN",
+          "expectedTime": "09:10",
+          "expectedEndTime": "12:00",
+          "delayMinutes": null,
+          "note": null,
+          "isStale": false,
+          "decision": "APPOINTMENT_REQUEST",
+          "reason": null
+        },
+        {
+          "session": "Afternoon",
+          "status": "NOT_CONFIRMED",
+          "expectedTime": "15:00",
+          "expectedEndTime": "17:00",
+          "delayMinutes": null,
+          "note": null,
+          "isStale": false,
+          "decision": "CALLBACK_REQUIRED",
+          "reason": "BOARD_NOT_CONFIRMED"
+        }
+      ],
+      "decision": "APPOINTMENT_REQUEST",
+      "reason": null,
+      "sessionChoiceRequired": true
+    }
+  ],
+  "choices": [],
+  "departmentChoices": [],
+  "complete": true,
+  "totalMatches": null,
+  "bookableFound": 1,
+  "basis": "LIVE_BOARD",
+  "sessionMatched": null,
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+```
+
+`sessionChoiceRequired` is true: Morning permits a request, Afternoon needs a callback. Ask which session before booking.
+
+**2. Usual working hours, no date**
+
+Arguments:
+
+```json
+{
+  "doctorName": "garima",
+  "purpose": "WORKING_HOURS"
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "WORKING_HOURS",
+  "nextStep": "PRESENT_WORKING_HOURS",
+  "facilityToday": "2026-10-01",
+  "requestedDate": null,
+  "weekday": null,
+  "department": null,
+  "doctors": [
+    {
+      "doctorId": "doc_garima",
+      "name": "Dr. Garima",
+      "departments": [
+        "General Medicine"
+      ],
+      "attendanceType": "REGULAR",
+      "gender": "FEMALE",
+      "dataConfirmed": true,
+      "usualSessions": [
+        {
+          "label": "Morning",
+          "daysOfWeek": [
+            "MON",
+            "THU",
+            "FRI"
+          ],
+          "start": "09:00",
+          "end": "12:00",
+          "onRequestedDate": null,
+          "decision": "APPOINTMENT_REQUEST",
+          "reason": null
+        },
+        {
+          "label": "Afternoon",
+          "daysOfWeek": [
+            "MON",
+            "THU",
+            "FRI"
+          ],
+          "start": "15:00",
+          "end": "17:00",
+          "onRequestedDate": null,
+          "decision": "APPOINTMENT_REQUEST",
+          "reason": null
+        }
+      ],
+      "board": [],
+      "decision": "APPOINTMENT_REQUEST",
+      "reason": null,
+      "sessionChoiceRequired": false
+    }
+  ],
+  "choices": [],
+  "departmentChoices": [],
+  "complete": true,
+  "totalMatches": null,
+  "bookableFound": 0,
+  "basis": "USUAL_SCHEDULE",
+  "sessionMatched": null,
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+```
+
+**3. Callback required**
+
+Arguments:
+
+```json
+{
+  "doctorName": "kiran",
+  "date": "today"
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "CALLBACK_REQUIRED",
+  "nextStep": "ASK_CALLBACK_DETAILS",
+  "facilityToday": "2026-10-01",
+  "requestedDate": "2026-10-01",
+  "weekday": "THU",
+  "department": null,
+  "doctors": [
+    {
+      "doctorId": "doc_kiran_hegde",
+      "name": "Dr. Kiran Hegde",
+      "departments": [
+        "Urology"
+      ],
+      "attendanceType": "REGULAR",
+      "gender": "MALE",
+      "dataConfirmed": null,
+      "usualSessions": null,
+      "board": [
+        {
+          "session": "Evening",
+          "status": "UNKNOWN",
+          "expectedTime": null,
+          "expectedEndTime": null,
+          "delayMinutes": null,
+          "note": null,
+          "isStale": true,
+          "decision": "CALLBACK_REQUIRED",
+          "reason": "BOARD_STALE"
+        }
+      ],
+      "decision": "CALLBACK_REQUIRED",
+      "reason": "BOARD_STALE",
+      "sessionChoiceRequired": false
+    }
+  ],
+  "choices": [],
+  "departmentChoices": [],
+  "complete": true,
+  "totalMatches": null,
+  "bookableFound": 0,
+  "basis": "LIVE_BOARD",
+  "sessionMatched": null,
+  "callback": {
+    "reason": "BOARD_STALE",
+    "summaryOutcome": "CALLBACK_NOTED"
+  },
+  "detail": "BOARD_STALE",
+  "retryAfterSeconds": null
+}
+```
+
+Collect a callback number, then record the call with `outcome: CALLBACK_NOTED`.
+
+**4. Date missing**
+
+Arguments:
+
+```json
+{
+  "doctorName": "garima"
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "INVALID_REQUEST",
+  "nextStep": "ASK_EXPLICIT_DATE",
+  "facilityToday": "2026-10-01",
+  "requestedDate": null,
+  "weekday": null,
+  "department": null,
+  "doctors": [],
+  "choices": [],
+  "departmentChoices": [],
+  "complete": true,
+  "totalMatches": null,
+  "bookableFound": 0,
+  "basis": null,
+  "sessionMatched": null,
+  "callback": null,
+  "detail": "DATE_REQUIRED",
+  "retryAfterSeconds": null
+}
+```
+
+**5. Unknown argument (rejected before the tool runs)**
+
+Arguments:
+
+```json
+{
+  "doctorName": "garima",
+  "date": "today",
+  "foo": "x"
+}
+```
+
+Result (`isError: true`, text content; no structured result):
+
+```text
+1 validation error for call[get_doctor_availability]
+foo
+  Unexpected keyword argument [type=unexpected_keyword_argument, input_value='x', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/unexpected_keyword_argument
+```
+
 ## manage_booking
 
 CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require callerConfirmed=true and trusted call/operation headers. CREATE requires patientName, patientMobile, doctorId and visitDate. Department-level appointments are unsupported. LIST/CANCEL/RESCHEDULE require verified caller identity. Today is validated against the live board; future dates against usual hours, attendance not confirmed. ON_CALL requires callback. NOTED means a create or reschedule request is recorded, not a confirmed or reserved time; appointment.status preserves the owner status. UNCERTAIN means the write may have committed without a verified result. CALLBACK_REQUIRED means no write was submitted and callback facts belong in a call summary. NOT_AVAILABLE means the selected session or time is unavailable; TIME_OUTSIDE_SESSION identifies a time outside known bounds. Differing decisions without a session or time selection produce SESSION_REQUIRED and alternatives. A bookable session without an end time supports a session-only request; a specific time produces HANDOFF_REQUIRED/TIME_NOT_VERIFIABLE without a write or callback.
+
+### How to call
+
+Required fields per action (beyond `action`). The schema marks only `action` as required; the tool checks
+the rest and returns `INVALID_REQUEST` with `fields` naming each missing or malformed field.
+
+| Action | Required | Optional | Must not send | Headers |
+|---|---|---|---|---|
+| CREATE | `patientName`, `patientMobile` (10 digits), `doctorId`, `visitDate` (`today` or `YYYY-MM-DD`), `callerConfirmed: true` | `preferredTime` (`HH:MM`), `session`, `reasonVerbatim` | `departmentId`, `doctorName` (unknown fields) | X-Call-Id, X-Operation-Id |
+| LIST | none | `fromDate`, `toDate` (`YYYY-MM-DD`; `today` is refused), `status` | write fields | X-Caller-Number, X-Caller-Verification |
+| CANCEL | `appointmentId`, `callerConfirmed: true` | `reasonVerbatim` | | X-Call-Id, X-Operation-Id, X-Caller-Number, X-Caller-Verification |
+| RESCHEDULE | `appointmentId`, `newVisitDate` (`today` or `YYYY-MM-DD`), `callerConfirmed: true` | `newPreferredTime` (`HH:MM`), `session` | `doctorId` (returns `INVALID_REQUEST`, detail `DOCTOR_CHANGE_UNSUPPORTED`) | X-Call-Id, X-Operation-Id, X-Caller-Number, X-Caller-Verification |
+
+For CREATE, CANCEL and RESCHEDULE, checks run in this order and the first failure is returned: field validation (`INVALID_REQUEST`) →
+`callerConfirmed` (`CONFIRMATION_REQUIRED`) → call and operation headers (`OPERATION_CONTEXT_MISSING`) →
+caller identity for CANCEL/RESCHEDULE (`IDENTITY_UNAVAILABLE`) → schedule policy for CREATE/RESCHEDULE
+(`INVALID_REQUEST`/`SESSION_REQUIRED`, `CALLBACK_REQUIRED`, `NOT_AVAILABLE`, `HANDOFF_REQUIRED`) → owner write.
+
+- Set `callerConfirmed: true` only after the caller has agreed to the exact details being sent.
+- When the result is `ASK_WHICH_SESSION`, `sessions` lists the choices; call again with `session` set to
+  the chosen label and the same other fields.
+- When the result is `NOT_AVAILABLE`, `sessions` lists alternatives on that date when any exist
+  (`OFFER_OTHER_SESSION_OR_TIME`); otherwise offer another date (`OFFER_OTHER_SESSION_OR_DATE`).
+- `patientMobile` is contact data only. Permission to list, cancel or reschedule comes from the trusted
+  caller-number headers, never from a number the caller says.
+
+### Input schema (exact)
+
+```json
+{
+  "properties": {
+    "action": {
+      "description": "Required action: CREATE, LIST, CANCEL or RESCHEDULE.",
+      "enum": [
+        "CREATE",
+        "LIST",
+        "CANCEL",
+        "RESCHEDULE"
+      ],
+      "type": "string"
+    },
+    "appointmentId": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Required for CANCEL/RESCHEDULE: identifier of the appointment request."
+    },
+    "callerConfirmed": {
+      "default": false,
+      "description": "Boolean declaring the caller's approval of this write; true is required for CREATE/CANCEL/RESCHEDULE.",
+      "type": "boolean"
+    },
+    "doctorId": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Required for CREATE: identifier of the selected doctor. Department-level appointments are unsupported."
+    },
+    "fromDate": {
+      "anyOf": [
+        {
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional LIST lower date filter in YYYY-MM-DD format; past dates are accepted."
+    },
+    "newPreferredTime": {
+      "anyOf": [
+        {
+          "maxLength": 5,
+          "pattern": "^\\d{2}:\\d{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional RESCHEDULE preferred time in HH:MM 24-hour format."
+    },
+    "newVisitDate": {
+      "anyOf": [
+        {
+          "maxLength": 10,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Required for RESCHEDULE: 'today' or YYYY-MM-DD, on or after the facility date."
+    },
+    "patientMobile": {
+      "anyOf": [
+        {
+          "maxLength": 20,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Required for CREATE: 10-digit contact mobile. This is contact data, not caller authority."
+    },
+    "patientName": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Required for CREATE: patient name; nonblank, at most 100 characters."
+    },
+    "preferredTime": {
+      "anyOf": [
+        {
+          "maxLength": 5,
+          "pattern": "^\\d{2}:\\d{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional CREATE preferred time in HH:MM 24-hour format; a request, not a reserved time."
+    },
+    "reasonVerbatim": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional CREATE/CANCEL reason in the caller's original words; forwarded without interpretation."
+    },
+    "session": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional CREATE or RESCHEDULE session label; required when differing session decisions remain unresolved."
+    },
+    "status": {
+      "anyOf": [
+        {
+          "enum": [
+            "NOTED",
+            "CONFIRMED_BY_DESK",
+            "CHANGED",
+            "CANCELLED"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional LIST appointment-status filter."
+    },
+    "toDate": {
+      "anyOf": [
+        {
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional LIST upper date filter in YYYY-MM-DD format; past dates are accepted."
+    },
+    "visitDate": {
+      "anyOf": [
+        {
+          "maxLength": 10,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Required for CREATE: 'today' or YYYY-MM-DD, on or after the facility date."
+    }
+  },
+  "required": [
+    "action"
+  ],
+  "type": "object"
+}
+```
 
 ### Parameters
 
@@ -234,9 +931,267 @@ CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require caller
 | `manage_booking.nextStep.OFFER_OTHER_SESSION_OR_TIME` | Other sessions on the requested date are supplied. |
 | `manage_booking.nextStep.OFFER_OTHER_SESSION_OR_DATE` | The requested session or date is unavailable; alternatives may be returned. |
 
+### Examples
+
+Examples come from the development stubs (facility date 2026-10-01, Thursday, 10:00); names and
+identifiers are fixtures. Live values differ; field names and shapes do not.
+
+**1. CREATE recorded**
+
+Arguments:
+
+```json
+{
+  "action": "CREATE",
+  "patientName": "Lakshmi Rao",
+  "patientMobile": "9000000101",
+  "doctorId": "doc_garima",
+  "visitDate": "2026-10-02",
+  "preferredTime": "09:30",
+  "reasonVerbatim": "ಜ್ವರ ಮೂರು ದಿನದಿಂದ",
+  "callerConfirmed": true
+}
+```
+
+Structured result:
+
+```json
+{
+  "sessions": [],
+  "outcome": "NOTED",
+  "nextStep": "SAY_REQUEST_NOTED",
+  "appointment": {
+    "appointmentId": "appt_0001",
+    "status": "NOTED",
+    "visitDate": "2026-10-02",
+    "expectedTime": "09:30",
+    "doctorId": "doc_garima",
+    "department": null,
+    "patientName": "Lakshmi Rao"
+  },
+  "appointments": [],
+  "fields": [],
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+```
+
+`NOTED` means the request is recorded; the time is not confirmed or reserved.
+
+**2. LIST the verified caller's appointments**
+
+Arguments:
+
+```json
+{
+  "action": "LIST"
+}
+```
+
+Structured result:
+
+```json
+{
+  "sessions": [],
+  "outcome": "FOUND",
+  "nextStep": "OFFER_CHOICES",
+  "appointment": null,
+  "appointments": [
+    {
+      "appointmentId": "appt_0001",
+      "status": "NOTED",
+      "visitDate": "2026-10-02",
+      "expectedTime": "09:30",
+      "doctorId": "doc_garima",
+      "department": null,
+      "patientName": "Lakshmi Rao"
+    }
+  ],
+  "fields": [],
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+```
+
+**3. CREATE without caller confirmation**
+
+Arguments:
+
+```json
+{
+  "action": "CREATE",
+  "patientName": "A",
+  "patientMobile": "9000000101",
+  "doctorId": "doc_garima",
+  "visitDate": "2026-10-02"
+}
+```
+
+Structured result:
+
+```json
+{
+  "sessions": [],
+  "outcome": "CONFIRMATION_REQUIRED",
+  "nextStep": "ASK_CONFIRMATION",
+  "appointment": null,
+  "appointments": [],
+  "fields": [],
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+```
+
+**4. CREATE when sessions differ and none was chosen**
+
+Arguments:
+
+```json
+{
+  "action": "CREATE",
+  "patientName": "A",
+  "patientMobile": "9000000101",
+  "doctorId": "doc_garima",
+  "visitDate": "today",
+  "callerConfirmed": true
+}
+```
+
+Structured result:
+
+```json
+{
+  "sessions": [
+    {
+      "session": "Morning",
+      "status": "IN",
+      "expectedTime": "09:10",
+      "expectedEndTime": "12:00",
+      "delayMinutes": null,
+      "note": null,
+      "isStale": false,
+      "decision": "APPOINTMENT_REQUEST",
+      "reason": null
+    },
+    {
+      "session": "Afternoon",
+      "status": "NOT_CONFIRMED",
+      "expectedTime": "15:00",
+      "expectedEndTime": "17:00",
+      "delayMinutes": null,
+      "note": null,
+      "isStale": false,
+      "decision": "CALLBACK_REQUIRED",
+      "reason": "BOARD_NOT_CONFIRMED"
+    }
+  ],
+  "outcome": "INVALID_REQUEST",
+  "nextStep": "ASK_WHICH_SESSION",
+  "appointment": null,
+  "appointments": [],
+  "fields": [
+    "session"
+  ],
+  "callback": null,
+  "detail": "SESSION_REQUIRED",
+  "retryAfterSeconds": null
+}
+```
+
+Ask which session, then repeat the call with `"session": "Morning"`.
+
+**5. Mobile in the wrong format**
+
+Arguments:
+
+```json
+{
+  "action": "CREATE",
+  "patientName": "A",
+  "patientMobile": "+919000000101",
+  "doctorId": "doc_garima",
+  "visitDate": "today"
+}
+```
+
+Structured result:
+
+```json
+{
+  "sessions": [],
+  "outcome": "INVALID_REQUEST",
+  "nextStep": "ASK_TO_CORRECT",
+  "appointment": null,
+  "appointments": [],
+  "fields": [
+    "patientMobile"
+  ],
+  "callback": null,
+  "detail": null,
+  "retryAfterSeconds": null
+}
+```
+
+Send the 10-digit number without `+91`.
+
+**6. Unknown argument (rejected before the tool runs)**
+
+Arguments:
+
+```json
+{
+  "action": "CREATE",
+  "doctorName": "garima"
+}
+```
+
+Result (`isError: true`, text content; no structured result):
+
+```text
+1 validation error for call[manage_booking]
+doctorName
+  Unexpected keyword argument [type=unexpected_keyword_argument, input_value='garima', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/unexpected_keyword_argument
+```
+
 ## search_knowledge
 
 One knowledge-service request for hospital information or symptom-to-department routing. It does not read availability or change appointments. ANSWERED and CLARIFICATION_NEEDED carry owner-provided text in answer.text. Routing results carry text only in routing.speak, when present. TRANSFER_EMERGENCY means the knowledge service decided the caller needs emergency help; TRANSFER_DESK means desk assistance; CHECK_AVAILABILITY identifies a department in routing.department. NO_ANSWER is an owner decision; COULD_NOT_CHECK is a service failure.
+
+### How to call
+
+Both fields are required. Send `question` exactly as the caller said it (no translation or summary, at
+most 500 characters) and `language` as the caller's language code (`en`, `kn` or `hi`).
+
+**Provisional:** the knowledge service contract is still being agreed with its owner. The input fields are
+not expected to change; output fields may. The version at the top of this document will change if they do.
+
+### Input schema (exact)
+
+```json
+{
+  "properties": {
+    "language": {
+      "description": "Required nonblank language code, up to 16 characters; forwarded unchanged to the knowledge service.",
+      "maxLength": 16,
+      "type": "string"
+    },
+    "question": {
+      "description": "Required original question, untranslated and unsummarised; nonblank, maximum 500 characters.",
+      "maxLength": 500,
+      "type": "string"
+    }
+  },
+  "required": [
+    "question",
+    "language"
+  ],
+  "type": "object"
+}
+```
 
 ### Parameters
 
@@ -281,9 +1236,211 @@ One knowledge-service request for hospital information or symptom-to-department 
 | `search_knowledge.nextStep.SAY_COULD_NOT_CHECK` | The requested information could not be checked. |
 | `search_knowledge.nextStep.ASK_TO_REPHRASE` | The supplied name, department or question could not resolve the request. |
 
+### Examples
+
+Examples come from the development stubs (facility date 2026-10-01, Thursday, 10:00); names and
+identifiers are fixtures. Live values differ; field names and shapes do not.
+
+**1. Hospital information**
+
+Arguments:
+
+```json
+{
+  "question": "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ",
+  "language": "kn"
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "ANSWERED",
+  "nextStep": "SPEAK_ANSWER",
+  "answer": {
+    "text": "ಹೌದು. ನೆಲಮಾಳಿಗೆಯಲ್ಲಿ ಉಚಿತ ಪಾರ್ಕಿಂಗ್ ಇದೆ; ಮುಖ್ಯ ದ್ವಾರದ ಪಕ್ಕದ ರಸ್ತೆಯಿಂದ ಒಳಗೆ ಬನ್ನಿ.",
+    "language": "kn"
+  },
+  "sourceId": "kb_parking",
+  "destination": null,
+  "routing": null,
+  "detail": null
+}
+```
+
+**2. Emergency routing**
+
+Arguments:
+
+```json
+{
+  "question": "Dr Garima, I have chest pain",
+  "language": "en"
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "ROUTING_REQUIRED",
+  "nextStep": "TRANSFER_EMERGENCY",
+  "answer": null,
+  "sourceId": "routing-0",
+  "destination": null,
+  "routing": {
+    "decision": "EMERGENCY_TRANSFER",
+    "speak": {
+      "text": "This may be an emergency. I am connecting you to the emergency desk now.",
+      "language": "en"
+    },
+    "department": null
+  },
+  "detail": null
+}
+```
+
+`TRANSFER_EMERGENCY` is the knowledge service's decision. MCP does not transfer the call.
+
 ## record_call_summary
 
 Store one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.
+
+### How to call
+
+Call once, at the end of the call, after the last tool result. The first accepted summary is final.
+
+| Field | Rule |
+|---|---|
+| `intent`, `outcome`, `summaryText` | Always required. `summaryText` is nonblank, at most 500 characters, and is never shortened by MCP; longer text returns `INVALID_REQUEST` with `fields: ["summaryText"]`. |
+| `callerMobile` | Required when `outcome` is `CALLBACK_NOTED`. When sent, exactly 10 digits. |
+| `appointmentId` | Optional; must not be sent with `CALLBACK_NOTED`. Use the id returned by `manage_booking`. |
+| `transferredTo` | Only with `TRANSFERRED` or `EMERGENCY_TRANSFERRED`; refused with any other outcome. |
+| `doctorId`, `language` | Optional. `language` `en`, `kn` or `hi` is stored; other codes are dropped. |
+| Caller name, symptoms, dates, sessions | Write them inside `summaryText`. There are no separate fields for them; sending one is an unknown argument. |
+
+Headers: X-Call-Id and X-Call-Started-At (ISO timestamp with offset). Without them the result is
+`NOT_SAVED` and nothing is sent.
+
+### Input schema (exact)
+
+```json
+{
+  "properties": {
+    "appointmentId": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional identifier of the appointment request associated with the call."
+    },
+    "callerMobile": {
+      "anyOf": [
+        {
+          "maxLength": 20,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID."
+    },
+    "doctorId": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional identifier of the doctor associated with the call."
+    },
+    "intent": {
+      "description": "Required call-intent category.",
+      "enum": [
+        "AVAILABILITY",
+        "BOOKING",
+        "RESCHEDULE",
+        "CANCEL",
+        "GENERAL_INFO",
+        "LAB",
+        "INSURANCE",
+        "EMERGENCY",
+        "AMBULANCE",
+        "SYMPTOM_ROUTING",
+        "COMPLAINT",
+        "ADMIN",
+        "OTHER"
+      ],
+      "type": "string"
+    },
+    "language": {
+      "anyOf": [
+        {
+          "maxLength": 16,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional call language; en, kn and hi primary codes map to the operational contract. Other codes are omitted upstream."
+    },
+    "outcome": {
+      "description": "Required hospital-facing call outcome category.",
+      "enum": [
+        "RESOLVED_BY_AGENT",
+        "APPOINTMENT_NOTED",
+        "APPOINTMENT_CANCELLED",
+        "APPOINTMENT_RESCHEDULED",
+        "TRANSFERRED",
+        "EMERGENCY_TRANSFERRED",
+        "AMBULANCE_NUMBER_GIVEN",
+        "CALLBACK_NOTED",
+        "ABANDONED"
+      ],
+      "type": "string"
+    },
+    "summaryText": {
+      "description": "Required. Summary of the whole call in plain sentences, up to 500 characters: what the caller asked, what was explained or done, and any follow-up promised. Contains all relevant information mentioned in the call, including: the caller's name, the callback phone number, the symptoms or reason the caller described, the doctor's name, the department, and the requested date, time, session and callback reason. Not a transcript.",
+      "maxLength": 500,
+      "type": "string"
+    },
+    "transferredTo": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional destination associated with a transfer outcome."
+    }
+  },
+  "required": [
+    "intent",
+    "outcome",
+    "summaryText"
+  ],
+  "type": "object"
+}
+```
 
 ### Parameters
 
@@ -314,6 +1471,121 @@ Store one summary per call, covering the whole conversation. The first accepted 
 | `record_call_summary.outcome.INVALID_REQUEST` | Local validation or the owner's definite 400 rejected the request; fields contains safe field names. |
 | `record_call_summary.outcome.NOT_CONFIRMED` | Persistence is unverified or temporarily unavailable, including unanswered writes, malformed success, call-ID mismatch, transport failures, rate limits and server failures. |
 | `record_call_summary.outcome.NOT_SAVED` | Trusted call ID/start is missing or malformed, or credentials were definitely refused. A previous possibly committed send takes precedence and remains NOT_CONFIRMED. |
+
+### Examples
+
+Examples come from the development stubs (facility date 2026-10-01, Thursday, 10:00); names and
+identifiers are fixtures. Live values differ; field names and shapes do not.
+
+**1. Appointment call saved**
+
+Arguments:
+
+```json
+{
+  "intent": "BOOKING",
+  "outcome": "APPOINTMENT_NOTED",
+  "doctorId": "doc_garima",
+  "appointmentId": "appt_0001",
+  "language": "en",
+  "summaryText": "Lakshmi Rao (9000000101) has had fever for three days and asked for Dr. Garima, General Medicine. Appointment request noted for 2026-10-02, Morning session, preferred 09:30; told it is a request, not a confirmed time."
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "SAVED"
+}
+```
+
+**2. Callback call saved**
+
+Arguments:
+
+```json
+{
+  "intent": "AVAILABILITY",
+  "outcome": "CALLBACK_NOTED",
+  "callerMobile": "9000000101",
+  "doctorId": "doc_kiran_hegde",
+  "language": "kn",
+  "summaryText": "Lakshmi Rao, 9000000101, asked for Dr. Kiran Hegde this evening; board UNKNOWN; callback promised."
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "SAVED"
+}
+```
+
+**3. Second summary for the same call**
+
+Arguments:
+
+```json
+{
+  "intent": "BOOKING",
+  "outcome": "APPOINTMENT_NOTED",
+  "summaryText": "second attempt"
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "ALREADY_SAVED"
+}
+```
+
+Nothing was changed; the first summary stays.
+
+**4. CALLBACK_NOTED without callerMobile**
+
+Arguments:
+
+```json
+{
+  "intent": "AVAILABILITY",
+  "outcome": "CALLBACK_NOTED",
+  "summaryText": "x"
+}
+```
+
+Structured result:
+
+```json
+{
+  "outcome": "INVALID_REQUEST",
+  "fields": [
+    "callerMobile"
+  ]
+}
+```
+
+**5. Unknown argument (rejected before the tool runs)**
+
+Arguments:
+
+```json
+{
+  "intent": "AVAILABILITY",
+  "outcome": "RESOLVED_BY_AGENT",
+  "summaryText": "x",
+  "callerName": "A"
+}
+```
+
+Result (`isError: true`, text content; no structured result):
+
+```text
+Invalid call summary arguments. Check required fields, types and limits.
+```
 
 ## Availability policy reason codes
 
@@ -371,5 +1643,6 @@ to voice integration. No new headers or credentials are introduced by this polic
   TIME_OUTSIDE_SESSION applies only when the doctor has bookable sessions and the chosen time falls outside them.
 - The existing mixed-session choice rule remains unchanged pending a separate decision (G-1).
 
-These source changes are not deployed. Refresh discovery and compare output schemas through the voice
-virtual server after a separately approved deployment; registration verifies input schemas only.
+Schema 2026-10-06.1 is deployed (canary image `frontdesk-mcp:36336aa`, 6 October 2026). A gateway that
+discovered 2026-10-05.1 must refresh discovery and compare output schemas through the voice virtual
+server; registration verifies input schemas only.
