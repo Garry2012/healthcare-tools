@@ -860,3 +860,75 @@ async def test_schedule_rejection_uses_the_originating_action(h, action, tool_fi
     assert (result.outcome, result.nextStep, result.detail, result.fields) == (
         "REJECTED", "ASK_TO_CORRECT", "VALIDATION_FAILED", tool_fields)
     assert "owner-only text" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+async def test_definite_slot_full_returns_no_invented_alternatives_or_write(h, action, caplog):
+    before = {}
+    path = "/appointments"
+    args = CREATE
+    if action == "RESCHEDULE":
+        created = await run(h, **CREATE)
+        assert created.outcome == "NOTED"
+        appointment_id = created.appointment.appointmentId
+        before = json.loads(json.dumps(h.ops_state.appointments))
+        path = f"/appointments/{appointment_id}/reschedule"
+        args = {"action": action, "appointmentId": appointment_id, "newVisitDate": "2026-10-05",
+                "newPreferredTime": "11:00", "callerConfirmed": True}
+    h.requests.clear()
+    h.ops_state.write_outcomes = {path: [(409, "SLOT_FULL")]}
+    result = await run(h, h.ctx(operation_id="full-time"), **args)
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "NOT_AVAILABLE", "OFFER_OTHER_SESSION_OR_TIME", "SLOT_FULL")
+    assert result.sessions == [] and result.fields == [] and result.appointment is None
+    assert len(sent(h, path)) == 1 and h.ops_state.appointments == before
+    assert "scripted owner response" not in result.model_dump_json() + caplog.text
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+async def test_slot_full_after_an_unanswered_same_key_attempt_stays_uncertain(h, action, caplog):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    path = "/appointments"
+    args = CREATE
+    if action == "RESCHEDULE":
+        created = await run(h, **CREATE)
+        assert created.outcome == "NOTED"
+        appointment_id = created.appointment.appointmentId
+        path = f"/appointments/{appointment_id}/reschedule"
+        args = {"action": action, "appointmentId": appointment_id, "newVisitDate": "2026-10-05",
+                "newPreferredTime": "11:00", "callerConfirmed": True}
+    before = json.loads(json.dumps(h.ops_state.appointments))
+    attempts = []
+
+    async def owner(request):
+        if request.method == "POST" and request.url.path.endswith(path):
+            attempts.append(request)
+            if len(attempts) == 1:
+                raise httpx.ReadTimeout("response lost", request=request)
+        return await h.ops.http._transport.handle_async_request(request)
+
+    h.ops_state.write_outcomes = {path: [(409, "SLOT_FULL")]}
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await booking.BookingService(ops, h.settings, h.clock).manage(
+            h.ctx(operation_id="retry-full"), booking.BookingRequest(**args))
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "UNCERTAIN", "SAY_UNCERTAIN_AND_TRANSFER", "NO_VERIFIED_RESPONSE")
+    assert result.sessions == [] and result.fields == [] and result.appointment is None
+    assert len(attempts) == 2
+    assert attempts[0].headers["idempotency-key"] == attempts[1].headers["idempotency-key"]
+    assert attempts[0].content == attempts[1].content
+    assert h.ops_state.appointments == before
+    assert "scripted owner response" not in result.model_dump_json() + caplog.text
+
+
+async def test_unsupported_capability_write_keeps_the_generic_rejection(h, caplog):
+    h.ops_state.write_outcomes = {"/appointments": [(400, "UNSUPPORTED_CAPABILITY")]}
+    result = await run(h, **CREATE)
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "REJECTED", "ASK_TO_CORRECT", "UNSUPPORTED_CAPABILITY")
+    assert result.fields == [] and result.sessions == []
+    assert len(sent(h, "/appointments")) == 1 and h.ops_state.appointments == {}
+    assert "scripted owner response" not in result.model_dump_json() + caplog.text

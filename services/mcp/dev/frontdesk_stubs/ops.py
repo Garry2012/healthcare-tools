@@ -26,6 +26,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
 from frontdesk_mcp.clock import Clock, SystemClock
+from frontdesk_mcp.contract import ErrorCode
 
 DATA = Path(__file__).parent / "data/demo_hospital.json"
 MOBILE = re.compile(r"^[0-9]{10}$")
@@ -54,6 +55,7 @@ class OpsStubState:
     boards: dict[str, list[dict[str, Any]]] = field(default_factory=dict)  # ISO date → scripted entries
     # scenarios
     fail_next: list[tuple[str, int, dict[str, str]]] = field(default_factory=list)  # (path prefix, status, headers)
+    write_outcomes: dict[str, list[tuple[int, ErrorCode]]] = field(default_factory=dict)  # exact path → FIFO
     malformed_next: list[str] = field(default_factory=list)  # path prefixes answering {"unexpected": true}
     commit_then: dict[str, int] = field(default_factory=dict)  # path prefix → status returned AFTER committing
     delay_seconds: float = 0.0
@@ -89,6 +91,7 @@ class OpsStubState:
     def reset(self) -> None:
         self.appointments.clear(), self.summaries.clear(), self.idempotency.clear(), self.boards.clear()
         self.fail_next.clear(), self.malformed_next.clear(), self.commit_then.clear()
+        self.write_outcomes.clear()
         self.delay_seconds = 0.0
         self.delay_for_prefix.clear()
         self.requests.clear()
@@ -297,6 +300,9 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
             if stored_hash != body_hash(body):
                 return error(409, "IDEMPOTENCY_CONFLICT", "Same key, different body")
             return JSONResponse(stored, status_code=status)
+        if scripted := state.write_outcomes.get(relative_path(request)):
+            status, code = scripted.pop(0)
+            return error(status, code, "scripted owner response")
         status, payload = handler(body)
         if status < 300 and key:
             state.idempotency[key] = (body_hash(body), status, payload)
@@ -454,6 +460,8 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         body = await request.json()
         for item in body.get("failNext", []):
             state.fail_next.append((item["path"], int(item["status"]), dict(item.get("headers", {}))))
+        for path, items in body.get("writeOutcomes", {}).items():
+            state.write_outcomes.setdefault(path, []).extend((int(item["status"]), item["code"]) for item in items)
         state.malformed_next.extend(body.get("malformedNext", []))
         state.commit_then.update({k: int(v) for k, v in body.get("commitThen", {}).items()})
         if "delaySeconds" in body:

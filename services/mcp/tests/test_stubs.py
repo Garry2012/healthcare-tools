@@ -336,3 +336,65 @@ async def test_summary_ignores_supplied_idempotency_keys_and_keeps_first_call_bo
                                headers={**auth, "Idempotency-Key": "different-key"})
     assert repeated.status_code == 200 and repeated.json() == first.json()
     assert len(state.summaries) == 2 and state.idempotency == {}
+
+
+@pytest.mark.parametrize("code,status", [("SLOT_FULL", 409), ("UNSUPPORTED_CAPABILITY", 400),
+                                        ("NOT_A_CONTRACT_CODE", 409)])
+async def test_scripted_write_outcomes_are_checked_against_the_owner_contract(ops, code, status):
+    state, http = ops
+    auth = {**await token(http), "Idempotency-Key": "scripted"}
+    state.write_outcomes = {"/appointments": [(status, code)]}
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    response = await http.post("/appointments", json=body, headers=auth)
+    assert response.status_code == status and state.appointments == {}
+    assert response.json()["error"] == {"code": code, "message": "scripted owner response"}
+    if code == "NOT_A_CONTRACT_CODE":
+        with pytest.raises(jsonschema.ValidationError):
+            conforms(response.json(), "Error")
+    else:
+        conforms(response.json(), "Error")
+
+
+async def test_scripted_write_queue_over_http_keeps_auth_replay_fifo_and_read_boundaries(ops):
+    state, http = ops
+    auth = await token(http)
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    created = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "original"})
+    assert created.status_code == 201
+    configured = await http.post("/__stub/scenario", json={"writeOutcomes": {
+        "/appointments": [{"status": 409, "code": "SLOT_FULL"}, {"status": 400, "code": "UNSUPPORTED_CAPABILITY"}]}})
+    assert configured.status_code == 200
+    assert (await http.post("/appointments", json=body)).status_code == 401
+    readonly = await token(http, "readonly", "ro-secret")
+    assert (await http.post("/appointments", json=body, headers=readonly)).status_code == 403
+    replay = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "original"})
+    assert replay.json() == created.json() and replay.status_code == 201
+    conflict = await http.post("/appointments", json={**body, "patientName": "Changed"},
+                               headers={**auth, "Idempotency-Key": "original"})
+    assert conflict.status_code == 409 and conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    assert (await http.get("/appointments", params={"mobile": "9000000101"}, headers=auth)).status_code == 200
+    for key, status, code in [("full", 409, "SLOT_FULL"), ("unsupported", 400, "UNSUPPORTED_CAPABILITY")]:
+        response = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": key})
+        assert response.status_code == status and response.json()["error"]["code"] == code
+        conforms(response.json(), "Error")
+    assert len(state.appointments) == 1
+    # A rejection is not saved as a successful replay; the consumed queue leaves normal handling intact.
+    accepted = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "full"})
+    assert accepted.status_code == 201 and len(state.appointments) == 2
+
+
+async def test_scripted_write_queue_is_path_specific_and_reset_clears_it(ops):
+    state, http = ops
+    auth = await token(http)
+    state.write_outcomes = {"/appointments/other/reschedule": [(409, "SLOT_FULL")]}
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    assert (await http.post("/appointments", json=body, headers=auth)).status_code == 201
+    # Infrastructure failure must not consume the later owner decision.
+    state.fail_next.append(("/appointments/other/reschedule", 503, {}))
+    response = await http.post("/appointments/other/reschedule", json={}, headers=auth)
+    assert response.status_code == 503 and response.json()["error"]["code"] == "INTERNAL"
+    response = await http.post("/appointments/other/reschedule", json={}, headers=auth)
+    assert response.status_code == 409 and response.json()["error"]["code"] == "SLOT_FULL"
+    state.write_outcomes = {"/appointments": [(409, "SLOT_FULL")]}
+    assert (await http.post("/__stub/reset")).status_code == 200
+    assert (await http.post("/appointments", json=body, headers=auth)).status_code == 201

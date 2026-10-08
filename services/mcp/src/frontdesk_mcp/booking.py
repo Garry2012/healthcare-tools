@@ -154,6 +154,9 @@ class BookingService:
                                               detail="IDEMPOTENCY_CONFLICT")
             if exc.code == "CONFLICT":
                 return outcomes.BookingResult(outcome="CONFLICT", nextStep="TRANSFER_DESK", detail="STATE_CONFLICT")
+            if exc.code == "SLOT_FULL":
+                return outcomes.BookingResult(outcome="NOT_AVAILABLE", nextStep="OFFER_OTHER_SESSION_OR_TIME",
+                                              detail="SLOT_FULL")
             names = _REJECTION_FIELDS[action]
             fields = {names[field] for field in exc.fields if field in names}
             return outcomes.BookingResult(outcome="REJECTED", nextStep="ASK_TO_CORRECT", fields=sorted(fields),

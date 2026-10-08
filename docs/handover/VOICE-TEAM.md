@@ -627,7 +627,11 @@ caller identity for CANCEL/RESCHEDULE (`IDENTITY_UNAVAILABLE`) → schedule poli
 - When the result is `ASK_WHICH_SESSION`, `sessions` lists the choices; call again with `session` set to
   the chosen label and the same other fields.
 - When the result is `NOT_AVAILABLE`, `sessions` lists alternatives on that date when any exist
-  (`OFFER_OTHER_SESSION_OR_TIME`); otherwise offer another date (`OFFER_OTHER_SESSION_OR_DATE`).
+  (`OFFER_OTHER_SESSION_OR_TIME`); offer only those returned. If none are returned with that nextStep,
+  check availability again. `OFFER_OTHER_SESSION_OR_DATE` means the requested session or date is unavailable.
+- Booking `detail: SLOT_FULL` means the chosen time is full. An owner's definite rejection returns empty
+  `sessions` and `fields`; check availability again before offering another time. The rejection alone
+  proves nothing about other times. A rejection after an unanswered write attempt remains `UNCERTAIN`.
 - `patientMobile` is contact data only. Permission to list, cancel or reschedule comes from the trusted
   caller-number headers, never from a number the caller says.
 
@@ -930,7 +934,7 @@ caller identity for CANCEL/RESCHEDULE (`IDENTITY_UNAVAILABLE`) → schedule poli
 | `manage_booking.nextStep.SAY_COULD_NOT_RECORD` | The requested write could not be recorded. |
 | `manage_booking.nextStep.SAY_COULD_NOT_CHECK` | The requested information could not be checked. |
 | `manage_booking.nextStep.ASK_WHICH_SESSION` | Sessions have different decisions; a session selection is required. |
-| `manage_booking.nextStep.OFFER_OTHER_SESSION_OR_TIME` | Other sessions on the requested date are supplied. |
+| `manage_booking.nextStep.OFFER_OTHER_SESSION_OR_TIME` | Offer only the sessions returned; when none are returned, check availability again before offering another time. |
 | `manage_booking.nextStep.OFFER_OTHER_SESSION_OR_DATE` | The requested session or date is unavailable; alternatives may be returned. |
 
 ### Examples
