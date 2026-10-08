@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from . import contract
 from . import knowledge_contract as kc
-from .availability_policy import Basis, Decision, Reason, RequestedDate, SessionDecision
+from .availability_policy import Basis, Decision, Reason, RequestedDate, SessionDecision, on_requested_date
 
 
 class _Out(BaseModel):
@@ -85,13 +85,16 @@ class BoardSessionOut(_Out):
 
 
 def session_out(s: SessionDecision, requested: RequestedDate | None):
+    slots = None if s.open_slots is None else [SlotOut(start=b.start, end=b.end, available=b.available)
+                                              for b in s.open_slots]
     if s.basis == Basis.LIVE_BOARD:
         return BoardSessionOut(session=s.label, status=s.owner_status, decision=s.decision, reason=s.reason,
                                         expectedTime=s.start, expectedEndTime=s.end, delayMinutes=s.delay_minutes,
-                                        note=s.note, isStale=s.is_stale)
+                                        note=s.note, isStale=s.is_stale, openSlots=slots)
     return UsualSessionOut(label=s.label, daysOfWeek=list(s.days), start=s.start, end=s.end,
-                                    onRequestedDate=requested.weekday in s.days if requested else None,
-                                    decision=s.decision, reason=s.reason)
+                                    onRequestedDate=on_requested_date(s, requested) if requested else None,
+                                    decision=s.decision, reason=s.reason, openSlots=slots,
+                                    status=s.owner_status, oneDay=s.one_day)
 
 
 

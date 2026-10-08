@@ -104,9 +104,9 @@ async def test_same_decision_sessions_need_no_booking_choice(h):
     assert result.outcome == "NOTED" and len(sent(h, "/appointments")) == 1
 
 
-async def test_on_call_and_failed_profile_never_reach_a_write(h):
+async def test_on_call_outside_window_and_failed_profile_never_reach_a_write(h):
     result = await run(h, **{**CREATE, "doctorId": "doc_vikram_desai"})
-    assert result.outcome == "CALLBACK_REQUIRED" and result.detail == "ON_CALL_DOCTOR"
+    assert result.outcome == "NOT_AVAILABLE" and result.detail == "TIME_OUTSIDE_SESSION"
     h.ops_state.fail_next.append(("/doctors/doc_garima", 503, {}))
     failed = await run(h, **CREATE)
     assert failed.outcome == "COULD_NOT_RECORD" and not sent(h, "/appointments")
@@ -1008,7 +1008,7 @@ async def test_non_scheduling_actions_never_read_slots(h):
 
 @pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
 @pytest.mark.parametrize("date", ["2026-10-01", "2026-10-05"])
-async def test_enabled_slot_facts_do_not_change_booking_policy_yet(h, action, date):
+async def test_enabled_slots_refuse_cancelled_session_before_booking(h, action, date):
     args = {**CREATE, "visitDate": date}
     if action == "RESCHEDULE":
         created = await run(h, **CREATE)
@@ -1020,8 +1020,92 @@ async def test_enabled_slot_facts_do_not_change_booking_policy_yet(h, action, da
 
     plan = slot_example("morningCancelled") | {"doctorId": "doc_garima", "date": date}
     h.ops_state.set_slots("doc_garima", date, plan)
-    result = await run(h, h.ctx(operation_id="slots-not-active-yet"), **args)
-    assert (result.outcome, result.nextStep) == ("NOTED", "SAY_REQUEST_NOTED")
-    assert result.appointment.expectedTime == "10:45" and result.appointment.visitDate == date
+    result = await run(h, h.ctx(operation_id="slots-session-refusal"), **args)
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "NOT_AVAILABLE", "OFFER_OTHER_SESSION_OR_TIME", "CANCELLED")
+    assert result.appointment is None and result.callback is None
     assert h.ops_paths().count("/availability/doc_garima/slots") == 1
-    assert len(sent(h, "/appointments" if action == "CREATE" else "/reschedule")) == 1
+    assert sent(h, "/appointments" if action == "CREATE" else "/reschedule") == []
+
+
+async def on_call_request(h, action, preferred, session=None):
+    """Seed a known appointment for RESCHEDULE, then test only the target schedule gate."""
+    if action == "CREATE":
+        return {**CREATE, "doctorId": "doc_vikram_desai", "preferredTime": preferred, "session": session}
+    created = await run(h, h.ctx(operation_id="seed"), **CREATE)
+    assert created.outcome == "NOTED"
+    h.ops_state.appointments[created.appointment.appointmentId]["doctorId"] = "doc_vikram_desai"
+    h.requests.clear()
+    return {"action": "RESCHEDULE", "appointmentId": created.appointment.appointmentId,
+            "newVisitDate": "2026-10-01", "newPreferredTime": preferred, "session": session, "callerConfirmed": True}
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+@pytest.mark.parametrize("preferred,want", [("10:45", "NOTED"), ("14:00", "NOT_AVAILABLE")])
+async def test_on_call_booking_uses_confirmed_window_for_both_actions(h, action, preferred, want):
+    args = await on_call_request(h, action, preferred)
+    h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_vikram_desai", "session": "Morning", "status": "IN",
+        "expectedTime": "09:00", "expectedEndTime": "12:00", "updatedMinutesAgo": 1}])
+    result = await run(h, h.ctx(operation_id="target"), **args)
+    assert result.outcome == want and result.callback is None
+    assert len(sent(h, "/appointments" if action == "CREATE" else "/reschedule")) == (1 if want == "NOTED" else 0)
+    if want == "NOT_AVAILABLE":
+        assert result.detail == "TIME_OUTSIDE_SESSION"
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+@pytest.mark.parametrize("session", [None, "Morning"])
+@pytest.mark.parametrize("bounds", [{}, {"expectedTime": "09:00", "expectedEndTime": "12:00"}])
+async def test_on_call_unlabelled_unresolved_row_blocks_both_booking_actions(h, action, session, bounds):
+    args = await on_call_request(h, action, "10:45", session)
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_vikram_desai", "session": "Morning", "status": "IN",
+         "expectedTime": "09:00", "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_vikram_desai", "session": None, "status": "UNKNOWN", "updatedMinutesAgo": 1, **bounds}])
+    result = await run(h, h.ctx(operation_id="target"), **args)
+    assert (result.outcome, result.nextStep, result.detail) == ("HANDOFF_REQUIRED", "TRANSFER_DESK", "ON_CALL_DOCTOR")
+    assert result.callback is None and not sent(h, "/appointments") and not sent(h, "/reschedule")
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+async def test_on_call_booking_read_failure_is_not_handoff(h, action):
+    args = await on_call_request(h, action, "10:45")
+    h.ops_state.fail_next.append(("/availability", 503, {}))
+    result = await run(h, h.ctx(operation_id="target"), **args)
+    assert (result.outcome, result.detail) == ("COULD_NOT_RECORD", "BOARD_UNAVAILABLE")
+    assert result.callback is None and not sent(h, "/appointments") and not sent(h, "/reschedule")
+
+
+async def test_named_evening_never_books_a_full_labelled_morning_block(h):
+    plan = harness.slot_plan()
+    plan["sessions"][0]["slots"][0]["available"] = 0
+    plan["sessions"][1] = {"session": "Evening", "status": "IN", "bookable": True, "slots": [
+        {"start": "17:00", "end": "17:30", "capacity": 3, "booked": 0, "available": 3, "bookable": True}]}
+    h.ops_state.set_slots("doc_garima", "2026-10-01", plan)
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": "doc_garima", "session": "Morning", "status": "IN",
+         "expectedTime": "09:00", "expectedEndTime": "12:00", "updatedMinutesAgo": 1},
+        {"doctorId": "doc_garima", "session": "Evening", "status": "IN",
+         "expectedTime": "17:00", "expectedEndTime": "19:00", "updatedMinutesAgo": 1}])
+    result = await run(h, **{**CREATE, "session": "Evening"})
+    assert (result.outcome, result.detail) == ("NOT_AVAILABLE", "TIME_OUTSIDE_SESSION")
+    assert sent(h, "/appointments") == []
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+@pytest.mark.parametrize("label", [None, ""])
+async def test_future_named_booking_keeps_unlabelled_one_day_unknown(h, action, label):
+    args = {**CREATE, "visitDate": "2026-10-05", "session": "Morning"}
+    if action == "RESCHEDULE":
+        created = await run(h, **CREATE)
+        assert created.outcome == "NOTED"
+        args = {"action": action, "appointmentId": created.appointment.appointmentId,
+                "newVisitDate": "2026-10-05", "newPreferredTime": "10:45",
+                "session": "Morning", "callerConfirmed": True}
+    plan = harness.slot_plan(date="2026-10-05")
+    plan["sessions"][1] = {"session": label, "status": "UNKNOWN", "bookable": False, "slots": []}
+    h.ops_state.set_slots("doc_garima", "2026-10-05", plan)
+    h.requests.clear()
+    result = await run(h, h.ctx(operation_id="future-unknown"), **args)
+    assert (result.outcome, result.detail) == ("CALLBACK_REQUIRED", "BOARD_UNKNOWN")
+    assert not sent(h, "/appointments") and not sent(h, "/reschedule")

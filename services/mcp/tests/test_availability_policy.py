@@ -102,14 +102,18 @@ def test_missing_and_stale_rows_have_distinct_reasons():
     assert decide(replace(f, entries=(stale,))).reason == "BOARD_STALE"
 
 
-@pytest.mark.parametrize("day", ["today", "2026-10-05"])
-def test_on_call_is_callback_even_when_board_says_in(day):
+@pytest.mark.parametrize("day,want", [("today", "APPOINTMENT_REQUEST"),
+                                      ("2026-10-05", "HANDOFF_REQUIRED")])
+def test_on_call_needs_a_confirmed_date_entry_not_usual_hours(day, want):
     p = policy()
     result = decide(facts(attendance="ON_CALL"), date=day)
-    assert (result.decision, result.reason) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
-    assert isinstance(p.decide_booking(result, session=None, preferred_time=None, now=NOW), p.Callback)
+    assert result.decision == want
+    assert result.reason == (None if day == "today" else "ON_CALL_DOCTOR")
+    booked = p.decide_booking(result, session=None, preferred_time=None, now=NOW)
+    assert isinstance(booked, p.Write if day == "today" else p.Handoff)
     hours = p.working_hours(facts(attendance="ON_CALL"), None)
-    assert hours.reason == "ON_CALL_DOCTOR" and not hours.sessions
+    assert (hours.decision, hours.reason) == ("HANDOFF_REQUIRED", "ON_CALL_DOCTOR")
+    assert not hours.sessions
 
 
 @pytest.mark.parametrize("attendance", ["REGULAR", "VISITING"])
@@ -153,7 +157,7 @@ def test_preferred_time_preserves_whole_scope_unavailability_reason(status, hour
 
 def test_department_rollup_and_counts_do_not_list_callback_as_bookable():
     p = policy()
-    good, callback = decide(facts()), decide(facts(attendance="ON_CALL"))
+    good, callback = decide(facts()), decide(facts(statuses=("UNKNOWN",)))
     search = p.SearchState(matches_found=1, checked=2, complete=True)
     result = p.aggregate([callback, good], search)
     assert (result.outcome, result.next_step) == ("AVAILABILITY", "ASK_WHICH_DOCTOR")
@@ -227,3 +231,301 @@ def test_booking_window_keeps_unknown_boundaries_unverifiable(start, end, sessio
     doctor = decide(replace(f, entries=(row,)), session=session, now=NOW.replace(minute=30))
     result = p.decide_booking(doctor, session=session, preferred_time=preferred, now=NOW.replace(minute=30))
     assert isinstance(result, p.Handoff) and result.reason == "TIME_NOT_VERIFIABLE"
+
+
+# Hand-authored owner facts; expectations below come from C-1 through C-8.
+def block(start="10:00", end="10:30", available=2, bookable=True):
+    return contract.SlotBlock(start=start, end=end, capacity=3, booked=0,
+                              available=available, bookable=bookable)
+
+
+def slot_session(label="Morning", status="IN", bookable=True, blocks=None):
+    return contract.SlotSession(session=label, status=status, bookable=bookable,
+                                slots=[block()] if blocks is None else blocks)
+
+
+def with_slots(f, *sessions, day="2026-10-01"):
+    from dataclasses import replace
+    return replace(f, slots=contract.SlotPlan(doctorId=f.doctor.id, date=day, enabled=True,
+                                             blockMinutes=30, sessions=list(sessions)))
+
+
+@pytest.mark.parametrize("board,expected", [
+    ("UNKNOWN", ["UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN"]),
+    ("CANCELLED", ["UNKNOWN", "CANCELLED", "CANCELLED", "CANCELLED", "CANCELLED"]),
+    ("NOT_CONFIRMED", ["UNKNOWN", "CANCELLED", "NOT_CONFIRMED", "NOT_CONFIRMED", "NOT_CONFIRMED"]),
+    ("LATE", ["UNKNOWN", "CANCELLED", "NOT_CONFIRMED", "LATE", "LATE"]),
+    ("IN", ["UNKNOWN", "CANCELLED", "NOT_CONFIRMED", "LATE", "IN"]),
+])
+@pytest.mark.parametrize("stale", [False, True])
+def test_slot_status_reconciliation_preserves_the_most_restrictive_fact(board, expected, stale):
+    from dataclasses import replace
+    f = facts(statuses=(board,))
+    f = replace(f, entries=(f.entries[0].model_copy(update={"isStale": stale}),))
+    for status, want in zip(["UNKNOWN", "CANCELLED", "NOT_CONFIRMED", "LATE", "IN"], expected, strict=True):
+        result = decide(with_slots(f, slot_session(status=status)))
+        row = result.sessions[0]
+        assert row.owner_status == want
+        if want == "UNKNOWN":
+            assert (row.decision, row.reason) == ("CALLBACK_REQUIRED",
+                "BOARD_STALE" if board == "UNKNOWN" and stale else "BOARD_UNKNOWN")
+            assert row.open_slots == ()
+        elif want == "CANCELLED":
+            assert (row.decision, row.reason, row.open_slots) == ("NOT_AVAILABLE", "CANCELLED", ())
+        else:
+            assert (row.decision, row.reason) == ("APPOINTMENT_REQUEST", None)
+            assert [b.start for b in row.open_slots] == ["10:00"]
+
+
+@pytest.mark.parametrize("status,flag,blocks,want,reason", [
+    ("UNKNOWN", False, [], "CALLBACK_REQUIRED", "BOARD_UNKNOWN"),
+    ("IN", False, [block()], "NOT_AVAILABLE", "NO_OPEN_SLOT"),
+    ("IN", True, [], "NOT_AVAILABLE", "NO_OPEN_SLOT"),
+    ("IN", True, [block(end="10:00", start="09:30")], "NOT_AVAILABLE", "SESSION_ENDED"),
+    ("IN", True, [block(bookable=False)], "NOT_AVAILABLE", "NO_OPEN_SLOT"),
+    ("IN", True, [block(available=0)], "NOT_AVAILABLE", "NO_OPEN_SLOT"),
+    ("NOT_CONFIRMED", True, [block()], "APPOINTMENT_REQUEST", None),
+])
+def test_session_slot_precedence_and_empty_offers(status, flag, blocks, want, reason):
+    result = decide(with_slots(facts(end="09:00"), slot_session(status=status, bookable=flag, blocks=blocks)))
+    assert (result.decision, result.reason) == (want, reason)
+    assert result.sessions[0].open_slots == (tuple(blocks) if want == "APPOINTMENT_REQUEST" else ())
+
+
+@pytest.mark.parametrize("b,now,want", [
+    (block(bookable=False), None, "CLOSED"), (block(available=0), None, "FULL"),
+    (block(), None, "OPEN"), (block(end="10:00", start="09:30"), NOW, "CLOSED"),
+    (block(end="10:00", start="09:30", available=0), NOW, "CLOSED"),
+    (block(), NOW.replace(second=59), "OPEN"),
+])
+def test_block_classification_uses_owner_capacity_and_minute_expiry(b, now, want):
+    assert policy().block_state(b, now) == want
+
+
+@pytest.mark.parametrize("label", ["", None])
+def test_today_joins_blank_labels_and_duplicate_board_rows_without_losing_missing_evidence(label):
+    from dataclasses import replace
+    f = facts(statuses=("IN", "IN", "IN"))
+    f = replace(f, entries=(f.entries[0].model_copy(update={"session": label}),
+                            f.entries[1].model_copy(update={"session": ""}), f.entries[2]))
+    result = decide(with_slots(f, slot_session(label=None), slot_session(label="Extra")))
+    assert len(result.sessions) == 4
+    assert result.sessions[0].evidence == result.sessions[1].evidence
+    assert result.sessions[2].reason == "NO_OPEN_SLOT" and result.sessions[2].open_slots == ()
+    extra = result.sessions[3]
+    assert (extra.basis, extra.owner_status, extra.start, extra.end) == ("LIVE_BOARD", "IN", "10:00", "10:30")
+    assert (extra.delay_minutes, extra.note, extra.is_stale) == (None, None, False)
+
+
+@pytest.mark.parametrize("capture", [1, 2])
+def test_live_capture_policy_keeps_ended_morning_and_offers_only_evening(capture):
+    from .test_contract import LIVE_SLOT_CAPTURE_1, LIVE_SLOT_CAPTURE_2
+    raw = LIVE_SLOT_CAPTURE_1 if capture == 1 else LIVE_SLOT_CAPTURE_2
+    # Board/profile context copied from the same capture; only the display name is synthetic.
+    doctor = contract.DoctorDetail(id=raw["doctorId"], name="Capture doctor", active=True, departments=[],
+        attendanceType="REGULAR", usualSchedule=[] if capture == 1 else [
+            {"label": "Morning", "daysOfWeek": ["MON", "TUE", "WED", "THU", "FRI", "SAT"],
+             "start": "10:30", "end": "12:00"},
+            {"label": "Evening", "daysOfWeek": ["MON", "TUE", "WED", "THU", "FRI", "SAT"],
+             "start": "18:30", "end": "19:30"}])
+    board = [(None, "IN", "10:30", "12:00")] if capture == 1 else [
+        ("Morning", "NOT_CONFIRMED", None, None), ("Evening", "NOT_CONFIRMED", "18:30", "19:30")]
+    entries = tuple(contract.AvailabilityEntry(doctorId=doctor.id, doctorName=doctor.name, date=raw["date"],
+        session=label, status=status, expectedTime=start, expectedEndTime=end, isStale=False)
+        for label, status, start, end in board)
+    f = policy().DoctorFacts(doctor, doctor, entries, contract.SlotPlan.model_validate(raw))
+    result = decide(f, now=NOW.replace(day=7, hour=14, minute=35))
+    assert (result.sessions[0].decision, result.sessions[0].reason, result.sessions[0].open_slots) == (
+        "NOT_AVAILABLE", "SESSION_ENDED", ())
+    assert result.sessions[0].owner_status == ("IN" if capture == 1 else "NOT_CONFIRMED")
+    if capture == 1:
+        assert result.decision == "NOT_AVAILABLE" and not result.alternatives
+    else:
+        assert result.decision == "APPOINTMENT_REQUEST"
+        assert [s.label for s in result.alternatives] == ["Evening"]
+        assert [b.start for b in result.sessions[1].open_slots] == ["18:30", "19:00"]
+
+
+@pytest.mark.parametrize("status,want,reason", [("UNKNOWN", "CALLBACK_REQUIRED", "BOARD_UNKNOWN"),
+    ("CANCELLED", "NOT_AVAILABLE", "CANCELLED"), ("NOT_CONFIRMED", "APPOINTMENT_REQUEST", None)])
+@pytest.mark.parametrize("day", ["2026-10-05", "2026-10-02"])
+def test_future_slot_facts_keep_joined_and_one_day_refusals(status, want, reason, day):
+    f = with_slots(facts(), slot_session(status=status), day=day)
+    result = decide(f, date=day, now=NOW.replace(hour=23))
+    assert (result.decision, result.reason) == (want, reason)
+    [row] = result.sessions
+    assert row.owner_status == status and row.one_day == (day == "2026-10-02")
+    assert row.open_slots == ((block(),) if want == "APPOINTMENT_REQUEST" else ())
+    assert policy().on_requested_date(row, policy().resolve_date(day, NOW, policy().Purpose.AVAILABILITY))
+
+
+@pytest.mark.parametrize("label", ["", None])
+@pytest.mark.parametrize("attendance,want", [("REGULAR", "CALLBACK_REQUIRED"), ("ON_CALL", "HANDOFF_REQUIRED")])
+def test_future_named_scope_keeps_unlabelled_unresolved_one_day_facts(label, attendance, want):
+    p = policy()
+    f = with_slots(facts(attendance=attendance), slot_session(),
+                   slot_session(label=label, status="UNKNOWN", blocks=[]), day="2026-10-05")
+    result = decide(f, date="2026-10-05", session="Morning")
+    assert result.decision == want
+    assert [s.label for s in result.sessions] == ["Morning", label]
+    unresolved = result.sessions[1]
+    assert (unresolved.one_day, unresolved.start, unresolved.end, unresolved.open_slots) == (True, None, None, ())
+    booking = p.decide_booking(result, session="Morning", preferred_time="10:15", now=NOW)
+    assert isinstance(booking, p.Callback if attendance == "REGULAR" else p.Handoff)
+
+
+def test_future_missing_join_and_weekday_rows_are_separate_from_offers():
+    from dataclasses import replace
+    f = facts()
+    profile = f.profile.model_copy(update={"usualSchedule": [*f.profile.usualSchedule,
+        contract.UsualSession(label="Evening", daysOfWeek=["TUE"], start="17:00", end="19:00")]})
+    f = with_slots(replace(f, profile=profile), slot_session(label="One day"), day="2026-10-05")
+    chosen = decide(f, date="2026-10-05", session="One day")
+    assert [s.label for s in chosen.sessions] == ["One day"]
+    result = decide(f, date="2026-10-05", session="Night")
+    assert result.reason == "SESSION_NOT_USUAL"
+    assert [(s.label, s.reason) for s in result.sessions] == [
+        ("Morning", "NO_OPEN_SLOT"), ("Evening", "NOT_USUAL_DAY"), ("One day", None)]
+    assert [s.label for s in result.alternatives] == ["One day"]
+
+
+@pytest.mark.parametrize("status,want", [("IN", "APPOINTMENT_REQUEST"), ("UNKNOWN", "CALLBACK_REQUIRED")])
+def test_future_without_usual_schedule_can_have_one_day_evidence(status, want):
+    f = with_slots(facts(schedule=False), slot_session(status=status), day="2026-10-05")
+    assert decide(f, date="2026-10-05").decision == want
+    assert decide(with_slots(facts(schedule=False), day="2026-10-05"), date="2026-10-05").reason == "NO_USUAL_SCHEDULE"
+    hours = policy().working_hours(f, None)
+    assert hours.reason == "NO_USUAL_SCHEDULE" and not hours.sessions
+
+
+@pytest.mark.parametrize("status,start,end,slots,want,reason", [
+    ("IN", "09:00", "12:00", None, "APPOINTMENT_REQUEST", None),
+    ("LATE", "09:00", "12:00", None, "APPOINTMENT_REQUEST", None),
+    ("IN", "09:00", None, None, "HANDOFF_REQUIRED", "ON_CALL_DOCTOR"),
+    ("IN", None, "12:00", None, "HANDOFF_REQUIRED", "ON_CALL_DOCTOR"),
+    ("IN", "09:00", "09:59", None, "HANDOFF_REQUIRED", "ON_CALL_DOCTOR"),
+    ("UNKNOWN", None, None, None, "HANDOFF_REQUIRED", "ON_CALL_DOCTOR"),
+    ("CANCELLED", None, None, None, "NOT_AVAILABLE", "CANCELLED"),
+    ("IN", None, None, [block()], "APPOINTMENT_REQUEST", None),
+    ("IN", "09:00", "12:00", [block(available=0)], "NOT_AVAILABLE", "NO_OPEN_SLOT"),
+    ("IN", None, None, [block(available=0)], "HANDOFF_REQUIRED", "ON_CALL_DOCTOR"),
+    ("NOT_CONFIRMED", None, None, [block()], "HANDOFF_REQUIRED", "ON_CALL_DOCTOR"),
+])
+def test_on_call_requires_confirmed_usable_facts_before_offering_blocks(status, start, end, slots, want, reason):
+    from dataclasses import replace
+    f = facts(statuses=(status,), attendance="ON_CALL")
+    f = replace(f, entries=(f.entries[0].model_copy(update={"expectedTime": start, "expectedEndTime": end}),))
+    if slots is not None:
+        f = with_slots(f, slot_session(status=status, blocks=slots))
+    result = decide(f)
+    assert (result.decision, result.reason) == (want, reason)
+    assert result.sessions[0].open_slots == (
+        None if slots is None else tuple(slots) if want == "APPOINTMENT_REQUEST" else ())
+
+
+@pytest.mark.parametrize("day", ["today", "2026-10-05"])
+@pytest.mark.parametrize("session", [None, "Absent"])
+def test_on_call_empty_scope_is_handoff_even_when_profile_is_deliberately_unread(day, session):
+    from dataclasses import replace
+    f = replace(facts(attendance="ON_CALL"), entries=(), profile=None)
+    result = decide(f, date=day, session=session)
+    assert (result.decision, result.reason) == ("HANDOFF_REQUIRED", "ON_CALL_DOCTOR")
+
+
+@pytest.mark.parametrize("status,want", [("IN", "APPOINTMENT_REQUEST"), ("LATE", "APPOINTMENT_REQUEST"),
+    ("CANCELLED", "NOT_AVAILABLE"), ("NOT_CONFIRMED", "HANDOFF_REQUIRED"), ("UNKNOWN", "HANDOFF_REQUIRED")])
+def test_future_on_call_one_day_uses_status_not_usual_hours(status, want):
+    from dataclasses import replace
+    f = with_slots(replace(facts(attendance="ON_CALL"), profile=None), slot_session(status=status), day="2026-10-05")
+    result = decide(f, date="2026-10-05")
+    assert result.decision == want and result.sessions[0].one_day
+
+
+@pytest.mark.parametrize("day", ["today", "2026-10-05"])
+@pytest.mark.parametrize("session", [None, "Morning"])
+def test_unread_department_slots_are_matches_not_capacity(day, session):
+    from dataclasses import replace
+    p = policy()
+    f = replace(facts(statuses=("NOT_CONFIRMED",)), slots=p.SlotsNotRead())
+    d = decide(f, date=day, session=session)
+    assert d.decision == "SLOT_CHECK_REQUIRED" and d.sessions[0].open_slots is None
+    result = p.aggregate([d], p.SearchState(1, 1, False))
+    assert (result.outcome, result.next_step, result.bookable_found) == ("DOCTORS_MATCHED", "ASK_WHICH_DOCTOR", 0)
+    assert p.rank(result.candidates, 1) == [d]
+
+
+@pytest.mark.parametrize("status", ["UNKNOWN", "CANCELLED"])
+@pytest.mark.parametrize("session,want", [(None, "SLOT_CHECK_REQUIRED"), ("Evening", None)])
+def test_unread_department_mixed_scope_preserves_refusals(status, session, want):
+    from dataclasses import replace
+    p = policy()
+    f = replace(facts(statuses=("IN", status)), slots=p.SlotsNotRead())
+    d = decide(f, session=session)
+    assert d.decision == (want or ("CALLBACK_REQUIRED" if status == "UNKNOWN" else "NOT_AVAILABLE"))
+    assert d.session_choice_required == (session is None)
+    assert [s.label for s in d.alternatives] == ["Morning"]
+
+
+def test_callback_outranks_handoff_under_a_cap_and_on_call_matches_need_bounds():
+    from dataclasses import replace
+    p = policy()
+    callback = decide(facts(statuses=("UNKNOWN",)))
+    handoff = decide(facts(statuses=("UNKNOWN",), attendance="ON_CALL"))
+    result = p.aggregate([handoff, callback], p.SearchState(0, 2, True))
+    assert result.outcome == "CALLBACK_REQUIRED" and p.rank(result.candidates, 1) == [callback]
+    result = p.aggregate([handoff], p.SearchState(0, 1, True))
+    assert (result.outcome, result.next_step, result.reason, result.bookable_found) == (
+        "HANDOFF_REQUIRED", "TRANSFER_DESK", "ON_CALL_DOCTOR", 0)
+    usable = decide(replace(facts(attendance="ON_CALL"), slots=p.SlotsNotRead()))
+    assert usable.decision == "SLOT_CHECK_REQUIRED"
+    unbounded = decide(replace(facts(attendance="ON_CALL", end=None), slots=p.SlotsNotRead()))
+    assert unbounded.decision == "HANDOFF_REQUIRED"
+    matches = p.aggregate([handoff, usable], p.SearchState(1, 2, True))
+    assert matches.candidates == (usable,) and matches.bookable_found == 0
+
+
+@pytest.mark.parametrize("day", ["today", "2026-10-05"])
+def test_on_call_named_scope_absent_from_existing_day_is_handoff(day):
+    f = facts(attendance="ON_CALL")
+    if day != "today":
+        f = with_slots(f, slot_session(), day=day)
+    result = decide(f, date=day, session="Absent")
+    assert (result.decision, result.reason) == ("HANDOFF_REQUIRED", "ON_CALL_DOCTOR")
+
+
+def test_future_join_uses_only_requested_weekday_and_hours_never_receive_evidence():
+    from dataclasses import replace
+    f = facts()
+    profile = f.profile.model_copy(update={"usualSchedule": [*f.profile.usualSchedule,
+        contract.UsualSession(label="Morning", daysOfWeek=["TUE"], start="17:00", end="19:00")]})
+    f = with_slots(replace(f, profile=profile), slot_session(status="NOT_CONFIRMED"), day="2026-10-05")
+    result = decide(f, date="2026-10-05")
+    [row] = result.sessions
+    assert (row.start, row.end, row.one_day, row.owner_status) == ("09:00", "12:00", False, "NOT_CONFIRMED")
+    hours = policy().working_hours(f, None)
+    assert len(hours.sessions) == 2
+    assert all(s.evidence is None and s.open_slots is None and s.owner_status is None for s in hours.sessions)
+
+
+@pytest.mark.parametrize("label", ["", None])
+def test_unread_department_named_scope_keeps_unlabelled_unknown(label):
+    from dataclasses import replace
+    p = policy()
+    f = facts(statuses=("IN", "UNKNOWN"))
+    f = replace(f, entries=(f.entries[0], f.entries[1].model_copy(update={"session": label})), slots=p.SlotsNotRead())
+    result = decide(f, session="Morning")
+    assert result.decision == "CALLBACK_REQUIRED" and result.reason == "BOARD_UNKNOWN"
+    assert all(s.open_slots is None for s in result.sessions)
+
+
+def test_future_department_wrong_weekday_and_on_call_handoff_are_not_matches():
+    from dataclasses import replace
+    p = policy()
+    wrong_day = decide(replace(facts(), slots=p.SlotsNotRead()), date="2026-10-02")
+    oncall = decide(replace(facts(attendance="ON_CALL"), profile=None, slots=p.SlotsNotRead()), date="2026-10-02")
+    assert wrong_day.reason == "NOT_USUAL_DAY" and not p.is_match(wrong_day.decision)
+    result = p.aggregate([wrong_day, oncall], p.SearchState(0, 2, True))
+    assert (result.outcome, result.bookable_found) == ("HANDOFF_REQUIRED", 0)
+    assert p.rank(result.candidates, 1) == [oncall]
+    incomplete = p.aggregate([wrong_day, oncall], p.SearchState(0, 2, False))
+    assert (incomplete.outcome, incomplete.reason) == ("HANDOFF_REQUIRED", "SEARCH_INCOMPLETE")

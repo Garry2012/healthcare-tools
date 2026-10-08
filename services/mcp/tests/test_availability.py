@@ -115,15 +115,17 @@ async def test_required_profile_failure_returns_could_not_check(h):
     assert result.detail == "PROFILE_UNAVAILABLE"
 
 
-async def test_on_call_doctor_requires_callback_regardless_of_board_status(h):
+async def test_on_call_confirmed_entry_is_actionable_and_unconfirmed_hands_off(h):
     result = await ask(h, doctorId="doc_vikram_desai")
     [doctor] = result.doctors
     assert doctor.attendanceType == "ON_CALL" and doctor.usualSessions is None
-    assert doctor.decision == "CALLBACK_REQUIRED" and doctor.reason == "ON_CALL_DOCTOR"
+    assert doctor.decision == "APPOINTMENT_REQUEST" and doctor.reason is None
+    assert result.bookableFound == 1 and result.callback is None
     h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_vikram_desai", "status": "NOT_CONFIRMED",
                                           "updatedMinutesAgo": 5}])
     unconfirmed = await ask(h, doctorId="doc_vikram_desai")
-    assert unconfirmed.doctors[0].decision == "CALLBACK_REQUIRED" and unconfirmed.nextStep == "ASK_CALLBACK_DETAILS"
+    assert unconfirmed.doctors[0].decision == "HANDOFF_REQUIRED" and unconfirmed.nextStep == "TRANSFER_DESK"
+    assert unconfirmed.detail == "ON_CALL_DOCTOR" and unconfirmed.callback is None
 
 
 async def test_any_unknown_session_in_scope_stops_the_journey(h):
@@ -263,11 +265,11 @@ async def test_availability_missing_date_is_an_in_band_request_error(h):
 
 
 @pytest.mark.parametrize("target", [{"doctorId": "doc_vikram_desai"}, {"doctorName": "Vikram"}])
-async def test_working_hours_on_call_uses_the_full_callback_result(h, target):
+async def test_working_hours_on_call_hands_off_without_callback(h, target):
     result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
-    assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+    assert result.outcome == "HANDOFF_REQUIRED" and result.nextStep == "TRANSFER_DESK"
     assert result.doctors[0].reason == "ON_CALL_DOCTOR"
-    assert result.callback.model_dump() == {"reason": "ON_CALL_DOCTOR", "summaryOutcome": "CALLBACK_NOTED"}
+    assert result.callback is None
     assert result.bookableFound == 0 and "/availability" not in h.ops_paths()
 
 
@@ -526,10 +528,11 @@ async def test_today_on_call_by_name_reports_a_board_read_failure(h):
 
 
 @pytest.mark.parametrize("date,extra", [("today", "/availability"), ("2026-10-05", "/doctors/doc_vikram_desai")])
-async def test_on_call_by_name_still_returns_callback_after_successful_slot_reads(h, date, extra):
+async def test_on_call_by_name_uses_confirmed_date_facts_after_successful_slot_reads(h, date, extra):
     result = await ask(h, doctorName="Vikram", date=date)
-    assert (result.outcome, result.detail) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
-    assert result.callback.model_dump() == {"reason": "ON_CALL_DOCTOR", "summaryOutcome": "CALLBACK_NOTED"}
+    assert (result.outcome, result.detail) == (("AVAILABILITY", None) if date == "today"
+                                               else ("HANDOFF_REQUIRED", "ON_CALL_DOCTOR"))
+    assert result.callback is None
     assert h.ops_paths() == ["/doctors", extra, "/availability/doc_vikram_desai/slots"]
 
 
@@ -609,12 +612,80 @@ async def test_legacy_availability_rejection_and_auth_details_stay_unchanged(h, 
 
 
 @pytest.mark.parametrize("date", ["2026-10-01", "2026-10-05"])
-async def test_enabled_slot_facts_do_not_change_availability_policy_yet(h, date):
+async def test_enabled_slots_reconcile_cancelled_morning_and_offer_evening(h, date):
     before = await ask(h, doctorId="doc_garima", date=date)
     from .test_contract import slot_example
 
     plan = slot_example("morningCancelled") | {"doctorId": "doc_garima", "date": date}
     h.ops_state.set_slots("doc_garima", date, plan)
     after = await ask(h, doctorId="doc_garima", date=date)
-    assert before.outcome == "AVAILABILITY" and after.model_dump() == before.model_dump()
+    assert before.outcome == "AVAILABILITY" and after.outcome == "AVAILABILITY"
+    rows = after.doctors[0].board if date == "2026-10-01" else after.doctors[0].usualSessions
+    assert [(r.decision, r.reason) for r in rows] == [
+        ("NOT_AVAILABLE", "CANCELLED"), ("NOT_AVAILABLE", "NO_OPEN_SLOT"), ("APPOINTMENT_REQUEST", None)]
+    assert rows[0].openSlots == [] and rows[1].openSlots == []
+    assert [(b.start, b.end, b.available) for b in rows[2].openSlots] == [
+        ("18:30", "19:00", 3), ("19:00", "19:30", 3)]
     assert h.ops_paths().count("/availability/doc_garima/slots") == 2
+
+
+@pytest.mark.parametrize("label", [None, ""])
+async def test_future_unknown_one_day_keeps_null_hours_and_named_scope(h, label):
+    plan = harness.slot_plan(date="2026-10-05")
+    plan["sessions"][1] = {"session": label, "status": "UNKNOWN", "bookable": False, "slots": []}
+    h.ops_state.set_slots("doc_garima", "2026-10-05", plan)
+    result = await ask(h, doctorId="doc_garima", date="2026-10-05", session="Morning")
+    assert (result.outcome, result.detail, result.sessionMatched) == ("CALLBACK_REQUIRED", "BOARD_UNKNOWN", True)
+    row = result.doctors[0].usualSessions[-1].model_dump()
+    assert (row["label"], row["start"], row["end"], row["daysOfWeek"], row["status"], row["oneDay"],
+            row["onRequestedDate"], row["openSlots"]) == (label, None, None, [], "UNKNOWN", True, True, [])
+
+
+async def test_future_named_one_day_is_matched_and_formats_owner_capacity(h):
+    plan = harness.slot_plan(date="2026-10-03")  # Saturday is not a usual day.
+    h.ops_state.set_slots("doc_garima", "2026-10-03", plan)
+    result = await ask(h, doctorId="doc_garima", date="2026-10-03", session="Later")
+    assert (result.outcome, result.sessionMatched, result.bookableFound) == ("AVAILABILITY", True, 1)
+    [row] = result.doctors[0].usualSessions
+    assert (row.oneDay, row.onRequestedDate, row.status, row.daysOfWeek) == (True, True, "IN", [])
+    assert [b.model_dump() for b in row.openSlots] == [{"start": "11:00", "end": "11:30", "available": 3}]
+    unmatched = await ask(h, doctorId="doc_garima", date="2026-10-03", session="Night")
+    assert unmatched.detail == "SESSION_NOT_USUAL" and unmatched.sessionMatched is False
+    assert len(unmatched.doctors[0].usualSessions) > 1
+
+
+async def test_today_slot_only_row_is_formatted_as_board_facts(h):
+    plan = harness.slot_plan()
+    h.ops_state.set_slots("doc_garima", "2026-10-01", plan)
+    result = await ask(h, doctorId="doc_garima", session="Later")
+    [row] = result.doctors[0].board
+    assert (row.session, row.status, row.expectedTime, row.expectedEndTime) == ("Later", "IN", "11:00", "11:30")
+    assert row.delayMinutes is None and row.note is None and row.isStale is False
+    assert [b.model_dump() for b in row.openSlots] == [{"start": "11:00", "end": "11:30", "available": 3}]
+
+
+async def test_on_call_handoff_does_not_publish_owner_open_slots(h):
+    plan = harness.slot_plan(doctor_id="doc_vikram_desai")
+    for row in plan["sessions"]:
+        row["status"] = "NOT_CONFIRMED"
+    h.ops_state.set_board("2026-10-01", [])
+    h.ops_state.set_slots("doc_vikram_desai", "2026-10-01", plan)
+    result = await ask(h, doctorId="doc_vikram_desai")
+    assert (result.outcome, result.nextStep, result.detail, result.bookableFound) == (
+        "HANDOFF_REQUIRED", "TRANSFER_DESK", "ON_CALL_DOCTOR", 0)
+    assert result.callback is None
+    assert result.doctors[0].board and all(s.openSlots == [] for s in result.doctors[0].board)
+
+
+def test_single_doctor_unread_slots_are_an_invariant_failure_not_availability():
+    from dataclasses import replace
+
+    from .test_availability_policy import NOW, decide, facts, policy
+    p = policy()
+    requested = p.resolve_date("today", NOW, p.Purpose.AVAILABILITY)
+    result = availability.AvailabilityService._single(
+        decide(replace(facts(), slots=p.SlotsNotRead())), requested,
+        availability.AvailabilityRequest(date="today", doctorId="d"), {"facilityToday": "2026-10-01"})
+    assert (result.outcome, result.nextStep, result.detail, result.bookableFound) == (
+        "COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "SLOTS_UNAVAILABLE", 0)
+    assert result.callback is None and result.doctors == []
