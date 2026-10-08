@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import re
+import socket
 from pathlib import Path
 
 import httpx
@@ -18,7 +19,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from frontdesk_mcp import cli, packs, prompt
 from frontdesk_mcp.server import JsonFormatter, create_app
 
-from . import harness
+from . import conftest, harness
 from .conftest import serving
 
 SNAPSHOT = Path(__file__).parent / "contracts/mcp-tools.snapshot.json"
@@ -27,6 +28,85 @@ FORBIDDEN = {"x-call-id", "xcallid", "callid", "x-caller-number", "xcallernumber
              "turncontext", "x-turn-context", "utterance", "tenant", "tenantid", "principal",
              "startedat", "durationseconds"}
 TOOLS = ["get_doctor_availability", "manage_booking", "record_call_summary", "search_knowledge"]
+
+
+class _LifespanApp:
+    def __init__(self, shutdown_gate):
+        self.shutdown_gate = shutdown_gate
+        self.shutdown_started = asyncio.Event()
+        self.finished = asyncio.Event()
+
+    async def __call__(self, scope, receive, send):
+        assert scope["type"] == "lifespan"
+        try:
+            assert (await receive())["type"] == "lifespan.startup"
+            await send({"type": "lifespan.startup.complete"})
+            assert (await receive())["type"] == "lifespan.shutdown"
+            self.shutdown_started.set()
+            await self.shutdown_gate.wait()
+            await send({"type": "lifespan.shutdown.complete"})
+        finally:
+            self.finished.set()
+
+
+async def test_serving_bounds_stuck_shutdown_and_cleans_up(monkeypatch):
+    app = _LifespanApp(asyncio.Event())
+    unrelated = asyncio.create_task(asyncio.Event().wait(), name="PRIVATE42-caller-secret")
+    before = asyncio.all_tasks()
+    loop = asyncio.get_running_loop()
+    try:
+        async with asyncio.timeout(3):  # Also bounds the RED run of the old helper.
+            with pytest.raises(AssertionError, match=r"shutdown exceeded 0\.5s") as failure:
+                async with serving(app, shutdown_limit=0.5) as base:
+                    owned = asyncio.all_tasks() - before
+                    assert any(t.get_coro().__qualname__ == "Server.serve" for t in owned)
+                    port = int(base.rsplit(":", 1)[1])
+                    started = loop.time()
+        elapsed = loop.time() - started
+        assert 0.5 <= elapsed < 2
+        assert app.shutdown_started.is_set() and app.finished.is_set()
+        assert all(t.done() for t in owned)
+        assert asyncio.all_tasks() <= before
+        assert not unrelated.done()
+        message = str(failure.value)
+        assert "connections=0" in message and "server_tasks=0" in message
+        assert "lifespan_shutdown_started=True" in message
+        assert "lifespan_shutdown_finished=False" in message  # Captured BEFORE cancellation.
+        assert "LifespanOn.main" in message and "Server.serve" in message
+        assert re.search(r"on\.py:\d+", message)
+        assert "PRIVATE42" not in message and len(message) < 4000
+        print(message)
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", port))
+        # Reusing the exact released port proves the next server can start and stop.
+        monkeypatch.setattr(conftest, "free_port", lambda: port)
+        gate = asyncio.Event()
+        gate.set()
+        recovered = _LifespanApp(gate)
+        async with asyncio.timeout(2):
+            async with serving(recovered) as restarted:
+                assert restarted == base
+        assert recovered.finished.is_set()
+        assert asyncio.all_tasks() <= before
+    finally:
+        unrelated.cancel()
+        await asyncio.gather(unrelated, return_exceptions=True)
+
+
+async def test_serving_normal_shutdown_stays_fast_and_quiet(capsys, caplog):
+    gate = asyncio.Event()
+    gate.set()
+    app = _LifespanApp(gate)
+    before = asyncio.all_tasks()
+    async with asyncio.timeout(2):
+        async with serving(app):
+            started = asyncio.get_running_loop().time()
+    assert asyncio.get_running_loop().time() - started < 1
+    assert app.shutdown_started.is_set() and app.finished.is_set()
+    assert asyncio.all_tasks() <= before
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
 
 
 def _names(schema) -> set[str]:
