@@ -45,8 +45,9 @@ class SlotOut(_Out):
 
 
 _OPEN_SLOTS_DESCRIPTION = (
-    "Owner's open blocks for this session and date. null means slots were not checked (disabled, WORKING_HOURS, "
-    "or a department search pending doctor selection); [] means checked with no open block. "
+    "Open blocks offered for this session and date: the owner's open blocks when the session permits a request. "
+    "null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); "
+    "[] means checked and no block is offered (none open, or the session does not permit a request). "
     "When slots apply, CREATE or RESCHEDULE times outside these blocks are refused."
 )
 
