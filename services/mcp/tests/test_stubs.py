@@ -607,3 +607,31 @@ async def test_http_write_outcomes_reject_invalid_items_without_partial_scriptin
     conforms(response.json(), "Error")
     assert state.write_outcomes == {"/appointments": [{"slotTime": "10:30"}]}
     assert state.fail_next == []
+
+
+@pytest.mark.parametrize("capabilities", [
+    {}, None, [], {"slots": None}, {"slots": {}}, {"slots": {"enabled": "false"}},
+    {"slots": {"enabled": 0}},
+    *({"slots": {"enabled": True, "blockMinutes": value}} for value in (None, "30", 0, -1, 1.5, True)),
+])
+async def test_http_capabilities_rejected_before_any_scenario_mutation(ops, capabilities):
+    state, http = ops
+    original = json.loads(json.dumps(state.capabilities))
+    response = await http.post("/__stub/scenario", json={
+        "capabilities": capabilities, "writeOutcomes": {"/appointments": [{"slotTime": "11:00"}]},
+        "failNext": [{"path": "/doctors", "status": 503}], "malformedNext": ["/availability"],
+        "commitThen": {"/appointments": 504}, "delaySeconds": 1, "delayForPrefix": {"/doctors": 1},
+        "boards": {"2026-10-01": []}, "slots": {"doc_garima": {"2026-10-01": {}}}})
+    assert response.status_code == 400 and response.json()["error"]["code"] == "VALIDATION_FAILED"
+    conforms(response.json(), "Error")
+    assert state.capabilities == original and state.write_outcomes == {} and state.fail_next == []
+    assert state.malformed_next == [] and state.commit_then == {} and state.delay_seconds == 0
+    assert state.delay_for_prefix == {} and state.boards == {} and state.slots == {}
+
+
+async def test_http_capabilities_keep_unconsumed_owner_sections(ops):
+    state, http = ops
+    capabilities = {"slots": {"enabled": True, "blockMinutes": 20},
+                    "availability": {"ownerFact": "unchanged"}, "appointments": {"ownerFact": [1, 2]}}
+    assert (await http.post("/__stub/scenario", json={"capabilities": capabilities})).status_code == 200
+    assert (await http.get("/capabilities", headers=await token(http))).json() == capabilities

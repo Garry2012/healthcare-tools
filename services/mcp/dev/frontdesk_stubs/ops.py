@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, with_config
@@ -64,6 +64,20 @@ class SuccessWriteOutcome(TypedDict):
 
 
 WRITE_OUTCOMES = TypeAdapter(dict[str, list[ErrorWriteOutcome | SuccessWriteOutcome]])
+
+
+@with_config(ConfigDict(extra="allow"))
+class SlotSettings(TypedDict):
+    enabled: Annotated[bool, Field(strict=True)]
+    blockMinutes: NotRequired[Annotated[int, Field(strict=True, ge=1)]]  # noqa: N815
+
+
+@with_config(ConfigDict(extra="allow"))
+class CapabilityFixture(TypedDict):
+    slots: SlotSettings
+
+
+CAPABILITIES = TypeAdapter(CapabilityFixture)
 
 
 @dataclass
@@ -526,8 +540,9 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         body = await request.json()
         try:
             outcomes = WRITE_OUTCOMES.validate_python(body.get("writeOutcomes", {}))
+            capabilities = CAPABILITIES.validate_python(body["capabilities"]) if "capabilities" in body else None
         except ValidationError:
-            return error(400, "VALIDATION_FAILED", "writeOutcomes must contain error or slotTime items")
+            return error(400, "VALIDATION_FAILED", "Invalid writeOutcomes or capabilities fixture")
         for item in body.get("failNext", []):
             state.fail_next.append((item["path"], int(item["status"]), dict(item.get("headers", {}))))
         for path, items in outcomes.items():
@@ -539,8 +554,8 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         state.delay_for_prefix.update({k: float(v) for k, v in body.get("delayForPrefix", {}).items()})
         for iso, entries in body.get("boards", {}).items():
             state.set_board(iso, entries)
-        if "capabilities" in body:
-            state.capabilities = body["capabilities"]
+        if capabilities is not None:
+            state.capabilities = capabilities
         for doctor_id, plans in body.get("slots", {}).items():
             for iso, plan in plans.items():
                 state.set_slots(doctor_id, iso, plan)
