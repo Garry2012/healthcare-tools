@@ -37,6 +37,10 @@ class _LifespanApp:
         self.finished = asyncio.Event()
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+            return
         assert scope["type"] == "lifespan"
         try:
             assert (await receive())["type"] == "lifespan.startup"
@@ -154,6 +158,95 @@ async def test_serving_reports_a_server_task_that_ignores_cancellation(monkeypat
         if owned:
             _, pending = await asyncio.wait(owned, timeout=1)
             assert not pending
+
+
+async def test_serving_watchdog_captures_body_without_private_values(capsys):
+    gate = asyncio.Event()
+    gate.set()
+    app = _LifespanApp(gate)
+    release = asyncio.Event()
+
+    async def hold_argument(value):
+        assert value
+        await release.wait()
+
+    before = asyncio.all_tasks()
+    private = [asyncio.create_task(hold_argument("ARGUMENT-SECRET-9000000123"),
+                                  name=f"NAME-SECRET-{i}") for i in range(45)]
+    owned = set(private)
+    try:
+        async with asyncio.timeout(3):
+            with pytest.raises(AssertionError, match=r"^HTTP test body exceeded 0\.5s") as failure:
+                async with serving(app, watchdog_limit=0.5):
+                    owned.update(asyncio.all_tasks() - before)
+                    started = asyncio.get_running_loop().time()
+                    await asyncio.Event().wait()
+        assert 0.5 <= asyncio.get_running_loop().time() - started < 2
+        message = str(failure.value)
+        assert len(message) <= 12000
+        assert "ARGUMENT-SECRET" not in message and "NAME-SECRET" not in message
+        assert "9000000123" not in message and "name=<custom>" in message
+        assert re.search(r"services/mcp/tests/test_server.py:\d+ in", message)
+        assert all(" class=" in record and " awaited=" in record for record in message.split("\ntask ")[1:])
+        body = message.split("\ntask ")[1]
+        assert "class=harness" in body and "Event.wait" in body
+        assert "awaited=" in body and len(message.split("\ntask ")) == 41
+        assert message in capsys.readouterr().out
+        assert app.finished.is_set()
+        assert all(t.done() for t in owned - set(private))
+    finally:
+        release.set()
+        if owned:
+            _, pending = await asyncio.wait(owned, timeout=1)
+            assert not pending
+    assert asyncio.all_tasks() <= before
+
+
+async def test_serving_watchdog_normal_http_round_trip_is_quiet(capsys, caplog):
+    gate = asyncio.Event()
+    gate.set()
+    before = asyncio.all_tasks()
+    async with asyncio.timeout(3):
+        async with serving(_LifespanApp(gate), watchdog_limit=0.5) as base:
+            async with httpx.AsyncClient() as http:
+                response = await http.get(base)
+                assert response.status_code == 200 and response.text == "ok"
+    assert asyncio.all_tasks() <= before
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+def test_serving_watchdog_fails_the_fixture_backed_test_call(tmp_path):
+    import subprocess
+    import sys
+    import textwrap
+
+    probe = tmp_path / "test_watchdog_probe.py"
+    probe.write_text(textwrap.dedent('''\
+        import asyncio
+        import pytest
+        from tests.conftest import serving
+        from tests.test_server import _LifespanApp
+
+        @pytest.fixture
+        async def http_server():
+            gate = asyncio.Event()
+            gate.set()
+            async with serving(_LifespanApp(gate), watchdog_limit=0.5):
+                yield
+
+        async def test_frozen_body(http_server):
+            async with asyncio.timeout(2):
+                await asyncio.Event().wait()
+        '''))
+    result = subprocess.run([sys.executable, "-m", "pytest", str(probe), "-q", "-p", "tests.conftest",
+                             "-c", "pyproject.toml", "-p", "no:cacheprovider"],
+                            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "AssertionError: HTTP test body exceeded 0.5s" in result.stdout
+    assert "FAILED" in result.stdout and "test_frozen_body" in result.stdout
+    assert "1 failed" in result.stdout and "ERROR at setup" not in result.stdout
 
 
 def _names(schema) -> set[str]:
