@@ -18,7 +18,7 @@ READ_ERRORS = (Unavailable, Malformed, Rejected, InvalidIdentifier)
 def read_failure_detail(stage: str | None, fallback: str) -> str:
     """Map the failed read; callers retain their existing AUTH precedence and fallback."""
     return {"board": "BOARD_UNAVAILABLE", "profile": "PROFILE_UNAVAILABLE",
-            "slots": "SLOTS_UNAVAILABLE", "AUTH": "AUTH"}.get(stage, fallback)
+            "slots": "SLOTS_UNAVAILABLE"}.get(stage, fallback)
 
 
 @dataclass(frozen=True)

@@ -527,7 +527,7 @@ async def test_today_on_call_by_name_reports_a_board_read_failure(h):
 async def test_on_call_by_name_still_returns_callback_after_successful_slot_reads(h, date, extra):
     result = await ask(h, doctorName="Vikram", date=date)
     assert (result.outcome, result.detail) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
-    assert result.callback.summaryOutcome == "CALLBACK_NOTED"
+    assert result.callback.model_dump() == {"reason": "ON_CALL_DOCTOR", "summaryOutcome": "CALLBACK_NOTED"}
     assert h.ops_paths() == ["/doctors", extra, "/availability/doc_vikram_desai/slots"]
 
 

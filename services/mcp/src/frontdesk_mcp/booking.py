@@ -236,8 +236,8 @@ class BookingService:
             if getattr(exc, "stage", None) != "slots" and isinstance(exc, Rejected):
                 return self._failure(exc, action)
             retry = exc.retry_after if isinstance(exc, Unavailable) else None
-            stage = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else getattr(exc, "stage", None)
-            detail = read_failure_detail(stage, "PROFILE_UNAVAILABLE")
+            detail = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else read_failure_detail(
+                getattr(exc, "stage", None), "PROFILE_UNAVAILABLE")
             return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",
                                           detail=detail, retryAfterSeconds=retry)
         decision = policy.decide_doctor(facts, requested, session=session, now=now)
