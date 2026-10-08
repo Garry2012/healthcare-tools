@@ -135,7 +135,12 @@ class DoctorDecision:
 
 @dataclass(frozen=True)
 class Write:
-    pass
+    expected_slot: str | None = None
+
+
+@dataclass(frozen=True)
+class TimeRequired:
+    alternatives: tuple[SessionDecision, ...]
 
 
 @dataclass(frozen=True)
@@ -159,7 +164,7 @@ class Handoff:
     reason: Reason
 
 
-BookingDecision = Write | SessionRequired | Callback | NotAvailable | Handoff
+BookingDecision = Write | TimeRequired | SessionRequired | Callback | NotAvailable | Handoff
 
 
 @dataclass(frozen=True)
@@ -404,7 +409,14 @@ def working_hours(facts: DoctorFacts, requested: RequestedDate | None) -> Doctor
                           tuple(_usual(s) for s in facts.profile.usualSchedule))
 
 
+def block_at(blocks: Sequence[contract.SlotBlock], t: str) -> contract.SlotBlock | None:
+    chosen = time.fromisoformat(t)
+    return next((b for b in blocks if time.fromisoformat(b.start) <= chosen < time.fromisoformat(b.end)), None)
+
+
 def _contains_time(s: SessionDecision, preferred: str, now: datetime) -> bool:
+    if isinstance(s.evidence, SessionSlots) and s.evidence.blocks:
+        return block_at(s.evidence.blocks, preferred) is not None
     if s.start is None or s.end is None:
         return False
     start = time.fromisoformat(s.start)
@@ -423,6 +435,8 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
         return Handoff(Reason.PROFILE_UNAVAILABLE)
     if decision.decision == Decision.NOT_AVAILABLE:
         return NotAvailable(decision.reason, decision.alternatives)
+    if isinstance(decision.facts.slots, contract.SlotPlan) and preferred_time is None:
+        return TimeRequired(decision.alternatives)
     sessions = decision.sessions
     alternatives = decision.alternatives
     if preferred_time and sessions and not session:
@@ -447,6 +461,22 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
         return Callback(reason)
     if value == Decision.NOT_AVAILABLE:
         return NotAvailable(reason, alternatives)
+    if isinstance(decision.facts.slots, contract.SlotPlan):
+        for s in sessions:
+            if s.decision != Decision.APPOINTMENT_REQUEST or not isinstance(s.evidence, SessionSlots):
+                continue
+            block = block_at(s.evidence.blocks, preferred_time)
+            if block is None:
+                continue
+            if session and normalised(s.label or "") != normalised(session):
+                return NotAvailable(Reason.TIME_OUTSIDE_SESSION, alternatives)
+            state = block_state(block, now if decision.facts.slots.date == now.date() else None)
+            if state == "CLOSED":
+                return NotAvailable(Reason.TIME_OUTSIDE_SESSION, alternatives)
+            if state == "FULL":
+                return NotAvailable(Reason.SLOT_FULL, alternatives)
+            return Write(expected_slot=block.start)
+        return NotAvailable(Reason.TIME_OUTSIDE_SESSION, alternatives)
     if preferred_time and sessions:
         if any(_window(s.end) == "UNKNOWN_END" or s.start is None for s in sessions):
             return Handoff(Reason.TIME_NOT_VERIFIABLE)

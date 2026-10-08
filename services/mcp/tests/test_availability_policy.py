@@ -529,3 +529,213 @@ def test_future_department_wrong_weekday_and_on_call_handoff_are_not_matches():
     assert p.rank(result.candidates, 1) == [oncall]
     incomplete = p.aggregate([wrong_day, oncall], p.SearchState(0, 2, False))
     assert (incomplete.outcome, incomplete.reason) == ("HANDOFF_REQUIRED", "SEARCH_INCOMPLETE")
+
+
+@pytest.mark.parametrize("t,want", [("09:59", None), ("10:00", "10:00"), ("10:29", "10:00"),
+                                    ("10:30", "10:30"), ("11:00", None)])
+def test_slot_block_lookup_is_half_open_and_boundary_belongs_to_next(t, want):
+    found = policy().block_at((block(), block("10:30", "11:00")), t)
+    assert (found.start if found else None) == want
+
+
+@pytest.mark.parametrize("status,want,reason", [
+    ("IN", "TimeRequired", None), ("UNKNOWN", "Callback", "BOARD_UNKNOWN"),
+    ("CANCELLED", "NotAvailable", "CANCELLED")])
+def test_slot_booking_requires_time_only_after_whole_scope_refusal(status, want, reason):
+    p = policy()
+    d = decide(with_slots(facts(), slot_session(status=status)))
+    result = p.decide_booking(d, session=None, preferred_time=None, now=NOW)
+    assert type(result).__name__ == want
+    if reason:
+        assert result.reason == reason
+    else:
+        assert result.alternatives == d.alternatives
+        assert [b.start for b in result.alternatives[0].open_slots] == ["10:00"]
+
+
+# The W-2 frozen case table, including session-before-block precedence.
+@pytest.mark.parametrize("blocks,flag,t,label,want,reason,expected", [
+    ([block(available=0)], True, "10:15", None, "NotAvailable", "NO_OPEN_SLOT", None),
+    ([block(available=0)], True, "10:15", "Morning", "NotAvailable", "NO_OPEN_SLOT", None),
+    ([block(available=0), block("10:30", "11:00")], True, "10:15", None, "NotAvailable", "SLOT_FULL", None),
+    ([block(available=0), block("10:30", "11:00")], True, "10:15", "Morning", "NotAvailable", "SLOT_FULL", None),
+    ([block(bookable=False), block("10:30", "11:00")], True, "10:15", None,
+     "NotAvailable", "TIME_OUTSIDE_SESSION", None),
+    ([block("09:00", "09:30"), block("10:30", "11:00")], True, "09:15", None,
+     "NotAvailable", "TIME_OUTSIDE_SESSION", None),
+    ([block("09:00", "09:30")], True, "09:15", None, "NotAvailable", "SESSION_ENDED", None),
+    ([block()], False, "10:15", None, "NotAvailable", "NO_OPEN_SLOT", None),
+    ([block(), block("10:30", "11:00")], True, "10:30", None, "Write", None, "10:30"),
+    ([block()], True, "10:30", None, "NotAvailable", "TIME_OUTSIDE_SESSION", None),
+    ([block()], True, "14:00", None, "NotAvailable", "TIME_OUTSIDE_SESSION", None),
+    ([block()], True, "10:15", None, "Write", None, "10:00"),
+])
+def test_slot_booking_selected_session_precedes_block_reason(blocks, flag, t, label, want, reason, expected):
+    p = policy()
+    d = decide(with_slots(facts(), slot_session(bookable=flag, blocks=blocks)), session=label)
+    result = p.decide_booking(d, session=label, preferred_time=t, now=NOW)
+    assert type(result).__name__ == want
+    if want == "Write":
+        assert result.expected_slot == expected
+    else:
+        assert result.reason == reason and result.alternatives == d.alternatives
+
+
+@pytest.mark.parametrize("other", [False, True])
+def test_slot_booking_full_named_session_does_not_depend_on_other_sessions(other):
+    p = policy()
+    sessions = [slot_session(bookable=True, blocks=[block(available=0)])]
+    if other:
+        sessions.append(slot_session(label="Evening", blocks=[block("17:00", "17:30")]))
+    d = decide(with_slots(facts(), *sessions), session="Morning")
+    result = p.decide_booking(d, session="Morning", preferred_time="10:15", now=NOW)
+    assert isinstance(result, p.NotAvailable) and result.reason == "NO_OPEN_SLOT"
+
+
+@pytest.mark.parametrize("real_morning", [False, True])
+def test_named_slot_booking_cannot_use_an_unlabelled_open_block(real_morning):
+    from dataclasses import replace
+    p = policy()
+    slots = [slot_session(label=None, blocks=[block("10:30", "11:00")])]
+    if real_morning:
+        slots.append(slot_session(blocks=[block("11:00", "11:30")]))
+    d = decide(with_slots(replace(facts(), entries=()), *slots), session="Morning")
+    result = p.decide_booking(d, session="Morning", preferred_time="10:45", now=NOW)
+    assert isinstance(result, p.NotAvailable) and result.reason == "TIME_OUTSIDE_SESSION"
+
+
+@pytest.mark.parametrize("day", ["today", "2026-10-05"])
+@pytest.mark.parametrize("bounds", [(None, "12:00"), ("09:00", None), (None, None)])
+@pytest.mark.parametrize("slots", [False, True])
+def test_booking_d7_labelled_unknown_is_ruled_out_by_matched_time(day, bounds, slots):
+    from dataclasses import replace
+    p = policy()
+    f = facts(statuses=("IN", "UNKNOWN"))
+    f = replace(f, entries=(f.entries[0], f.entries[1].model_copy(update={
+        "expectedTime": bounds[0], "expectedEndTime": bounds[1], "isStale": True})))
+    if slots:
+        f = with_slots(f, slot_session(blocks=[block("10:30", "11:00")]),
+                       slot_session(label="Evening", status="UNKNOWN", blocks=[]),
+                       day="2026-10-01" if day == "today" else day)
+    d = decide(f, date=day)
+    result = p.decide_booking(d, session=None, preferred_time="10:45", now=NOW)
+    assert isinstance(result, p.Write)
+    assert result.expected_slot == ("10:30" if slots else None)
+
+
+@pytest.mark.parametrize("label", ["Earlier", None])
+@pytest.mark.parametrize("bounds", [("08:00", "09:30"), (None, None)])
+def test_slot_booking_d6_passed_blockless_unknown_window_and_unbounded_fallback(label, bounds):
+    from dataclasses import replace
+    p = policy()
+    f = facts(statuses=("IN", "UNKNOWN"))
+    f = replace(f, entries=(f.entries[0], f.entries[1].model_copy(update={
+        "session": label, "expectedTime": bounds[0], "expectedEndTime": bounds[1]})))
+    d = decide(with_slots(f, slot_session(blocks=[block("10:30", "11:00")]),
+                           slot_session(label=label, status="UNKNOWN", blocks=[])))
+    result = p.decide_booking(d, session=None, preferred_time="09:00", now=NOW)
+    if bounds[0] is None:
+        assert isinstance(result, p.Callback) and result.reason == "BOARD_UNKNOWN"
+    else:
+        assert isinstance(result, p.NotAvailable) and result.reason == "TIME_OUTSIDE_SESSION"
+        assert [s.label for s in result.alternatives] == ["Morning"]
+
+
+@pytest.mark.parametrize("label", [None, "Afternoon"])
+def test_slot_booking_retains_blockless_unknown_that_could_contain_time(label):
+    from dataclasses import replace
+    p = policy()
+    f = facts(statuses=("IN", "UNKNOWN"), end="19:00")
+    f = replace(f, entries=(f.entries[0], f.entries[1].model_copy(update={"session": label,
+        "expectedTime": "15:00", "expectedEndTime": "17:00"})))
+    d = decide(with_slots(f, slot_session(), slot_session(label=label, status="UNKNOWN", blocks=[])))
+    result = p.decide_booking(d, session=None, preferred_time="15:30", now=NOW)
+    assert isinstance(result, p.Callback) and result.reason == "BOARD_UNKNOWN"
+
+
+@pytest.mark.parametrize("day", ["today", "2026-10-05"])
+def test_slot_booking_uses_blocks_without_requiring_board_bounds(day):
+    from dataclasses import replace
+    p = policy()
+    f = replace(facts(), entries=())
+    f = with_slots(f, slot_session(blocks=[block("09:00", "09:30"), block("10:30", "11:00")]),
+                   day="2026-10-01" if day == "today" else day)
+    d = decide(f, date=day)
+    result = p.decide_booking(d, session=None, preferred_time="09:15", now=NOW)
+    if day == "today":
+        assert isinstance(result, p.NotAvailable) and result.reason == "TIME_OUTSIDE_SESSION"
+    else:
+        assert isinstance(result, p.Write) and result.expected_slot == "09:00"
+
+
+@pytest.mark.parametrize("session", [None, "Evening"])
+def test_slot_booking_stale_labelled_morning_cannot_block_evening(session):
+    from dataclasses import replace
+    p = policy()
+    f = facts(statuses=("UNKNOWN", "IN"), end="19:00")
+    f = replace(f, entries=(f.entries[0].model_copy(update={
+        "expectedTime": None, "expectedEndTime": None, "isStale": True}), f.entries[1]))
+    f = with_slots(f, slot_session(status="UNKNOWN", blocks=[]),
+                   slot_session(label="Evening", blocks=[block("17:00", "17:30")]))
+    d = decide(f, session=session)
+    result = p.decide_booking(d, session=session, preferred_time="17:15", now=NOW)
+    assert isinstance(result, p.Write) and result.expected_slot == "17:00"
+
+
+@pytest.mark.parametrize("day", ["today", "2026-10-05"])
+@pytest.mark.parametrize("session", [None, "Morning"])
+def test_slot_booking_retains_unlabelled_unknown_beside_matching_open_block(day, session):
+    from dataclasses import replace
+    p = policy()
+    f = facts(statuses=("IN", "UNKNOWN"))
+    f = replace(f, entries=(f.entries[0], f.entries[1].model_copy(update={
+        "session": None, "expectedTime": None, "expectedEndTime": None})))
+    f = with_slots(f, slot_session(), slot_session(label=None, status="UNKNOWN", blocks=[]),
+                   day="2026-10-01" if day == "today" else day)
+    result = p.decide_booking(decide(f, date=day, session=session), session=session,
+                              preferred_time="10:15", now=NOW)
+    assert isinstance(result, p.Callback) and result.reason == "BOARD_UNKNOWN"
+
+
+@pytest.mark.parametrize("status,want", [("IN", "APPOINTMENT_REQUEST"), ("CANCELLED", "NOT_AVAILABLE")])
+@pytest.mark.parametrize("slots", [False, True])
+def test_booking_matched_time_rules_out_unbounded_labelled_non_unknown_rows(status, want, slots):
+    from dataclasses import replace
+    p = policy()
+    f = facts(statuses=("IN", status))
+    f = replace(f, entries=(f.entries[0], f.entries[1].model_copy(update={
+        "expectedTime": None, "expectedEndTime": None})))
+    if slots:
+        f = with_slots(f, slot_session(),
+                       slot_session(label="Evening", status=status, blocks=[block("17:00", "17:30")]))
+    d = decide(f)
+    assert d.sessions[1].decision == want
+    result = p.decide_booking(d, session=None, preferred_time="10:15", now=NOW)
+    assert isinstance(result, p.Write) and result.expected_slot == ("10:00" if slots else None)
+
+
+@pytest.mark.parametrize("named", [None, "Morning"])
+def test_full_session_precedes_open_sibling_when_selected_by_name_or_time(named):
+    p = policy()
+    f = with_slots(facts(), slot_session(blocks=[block(available=0)]),
+                   slot_session(label="Evening", blocks=[block("17:00", "17:30")]))
+    result = p.decide_booking(decide(f, session=named), session=named, preferred_time="10:15", now=NOW)
+    assert isinstance(result, p.NotAvailable) and result.reason == "NO_OPEN_SLOT"
+    assert [s.label for s in result.alternatives] == ["Evening"]
+
+
+@pytest.mark.parametrize("kind,reason", [("full", "NO_OPEN_SLOT"), ("ended", "SESSION_ENDED"),
+                                       ("oncall", "ON_CALL_DOCTOR"), ("profile", "PROFILE_UNAVAILABLE")])
+def test_slot_booking_missing_time_does_not_replace_whole_scope_failures(kind, reason):
+    from dataclasses import replace
+    p = policy()
+    f = with_slots(facts(attendance="ON_CALL" if kind == "oncall" else "REGULAR"), slot_session(
+        status="UNKNOWN" if kind == "oncall" else "IN",
+        blocks=[block("09:00", "09:30")] if kind == "ended" else [block(available=0)]))
+    day = "today"
+    if kind == "profile":
+        f = replace(f, profile=None)
+        day = "2026-10-05"
+    result = p.decide_booking(decide(f, date=day), session=None, preferred_time=None, now=NOW)
+    assert isinstance(result, p.Handoff if kind in ("oncall", "profile") else p.NotAvailable)
+    assert result.reason == reason

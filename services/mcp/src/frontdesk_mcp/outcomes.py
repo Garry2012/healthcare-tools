@@ -4,13 +4,20 @@ invented slots/capacity. These are MCP schema choices; the owner contracts' stat
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_serializer
 
 from . import contract
 from . import knowledge_contract as kc
 from .availability_policy import Basis, Decision, Reason, RequestedDate, SessionDecision, on_requested_date
+
+
+def _blank_session(value: str | None) -> str | None:
+    return None if isinstance(value, str) and not value.strip() else value
+
+
+SessionChoice = Annotated[str | None, AfterValidator(_blank_session)]
 
 
 class _Out(BaseModel):

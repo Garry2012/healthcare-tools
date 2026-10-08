@@ -689,3 +689,24 @@ def test_single_doctor_unread_slots_are_an_invariant_failure_not_availability():
     assert (result.outcome, result.nextStep, result.detail, result.bookableFound) == (
         "COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "SLOTS_UNAVAILABLE", 0)
     assert result.callback is None and result.doctors == []
+
+
+@pytest.mark.parametrize("value,want", [(" " * 40, None), ("", None), ("   ", None), ("  Morning  ", "  Morning  ")])
+def test_availability_session_validates_before_normalising_only_blank_text(value, want):
+    assert availability.AvailabilityRequest(session=value).session == want
+
+
+@pytest.mark.parametrize("value,error", [(" " * 41, "string_too_long"), ("x" * 41, "string_too_long"),
+                                        (12, "string_type"), (False, "string_type"), ([], "string_type")])
+def test_availability_session_rejects_overlong_and_non_string_values(value, error):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError) as exc:
+        availability.AvailabilityRequest(session=value)
+    assert [(e["loc"], e["type"]) for e in exc.value.errors()] == [(("session",), error)]
+
+
+@pytest.mark.parametrize("date", ["today", "2026-10-05"])
+async def test_blank_availability_session_behaves_as_no_session(h, date):
+    without = await ask(h, doctorId="doc_garima", date=date)
+    blank = await ask(h, doctorId="doc_garima", date=date, session=" " * 40)
+    assert blank.model_dump() == without.model_dump()

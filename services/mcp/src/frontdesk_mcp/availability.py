@@ -28,7 +28,7 @@ class AvailabilityRequest(BaseModel):
     doctorId: str | None = Field(default=None, max_length=64)  # noqa: N815
     departmentName: str | None = Field(default=None, max_length=100)  # noqa: N815
     departmentId: str | None = Field(default=None, max_length=64)  # noqa: N815
-    session: str | None = Field(default=None, max_length=40)
+    session: outcomes.SessionChoice = Field(default=None, max_length=40)
     gender: Literal["FEMALE", "MALE"] | None = None
 
 

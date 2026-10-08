@@ -522,3 +522,52 @@ async def test_summary_http_boundaries_preserve_text_and_log_privacy(served, arg
     else:
         assert result.structured_content == {"outcome": "SAVED"}
         assert len(writes) == 1 and json.loads(writes[0].content)["summaryText"] == arguments["summaryText"]
+
+
+@pytest.mark.parametrize("day", ["today", "2026-10-05"])
+@pytest.mark.parametrize("session", ["   ", " " * 40])
+async def test_mcp_blank_sessions_are_unselected_for_both_tools(served, day, session):
+    from .test_booking import CREATE
+
+    base, h = served
+    async with client(base, operation_id="blank") as c:
+        normal = (await c.call_tool("get_doctor_availability", {
+            "doctorId": "doc_garima", "date": day})).structured_content
+        blank = (await c.call_tool("get_doctor_availability", {
+            "doctorId": "doc_garima", "date": day, "session": session})).structured_content
+        assert blank == normal
+        booking = (await c.call_tool("manage_booking", {
+            **CREATE, "visitDate": day, "session": session})).structured_content
+    assert booking["outcome"] == "NOTED"
+    assert len([r for r in h.requests if r.method == "POST" and r.url.path.endswith("/appointments")]) == 1
+
+
+@pytest.mark.parametrize("session", [" " * 41, "x" * 41, 12])
+async def test_mcp_session_invalid_values_never_reach_owner_reads(served, session):
+    from .test_booking import CREATE
+
+    base, h = served
+    async with client(base, operation_id="invalid") as c:
+        for tool, args in [("get_doctor_availability", {"doctorId": "doc_garima", "date": "today"}),
+                           ("manage_booking", CREATE)]:
+            result = await c.call_tool(tool, {**args, "session": session}, raise_on_error=False)
+            assert result.is_error
+    assert h.ops_paths() == []
+
+
+async def test_mcp_slots_require_time_then_publish_owner_block(served):
+    from .test_booking import CREATE
+
+    base, h = served
+    h.ops_state.set_slots("doc_garima", "2026-10-01", harness.slot_plan())
+    h.ops_state.write_outcomes["/appointments"] = [{"slotTime": "10:30"}]
+    async with client(base, operation_id="slots") as c:
+        missing = (await c.call_tool("manage_booking", {**CREATE, "preferredTime": None,
+                                                       "session": "Morning"})).structured_content
+        assert (missing["outcome"], missing["nextStep"], missing["fields"]) == (
+            "INVALID_REQUEST", "ASK_WHICH_TIME", ["preferredTime"])
+        assert missing["sessions"][0]["openSlots"][0]["start"] == "10:30"
+        assert not any(r.method == "POST" and r.url.path.endswith("/appointments") for r in h.requests)
+        noted = (await c.call_tool("manage_booking", {**CREATE, "session": "Morning"})).structured_content
+    assert (noted["outcome"], noted["appointment"]["slotTime"], noted["appointment"]["slotMoved"]) == (
+        "NOTED", "10:30", False)
