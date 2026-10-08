@@ -33,7 +33,7 @@ Start with [TARGET-STATE.md](TARGET-STATE.md) for the ownership diagram, contrac
 1. [CURRENT-STATE.md](CURRENT-STATE.md): direct source audit, current dependency diagram and what breaks if the backend is removed now.
 2. [PLAN.md](PLAN.md): authoritative scope, four tools and REST mapping, contract mismatches, stubs, response budget, phases, removal inventory, rollback and acceptance criteria.
 3. [OPUS-REVIEW.md](OPUS-REVIEW.md): original review plus disposition; recommendations are incorporated in the plan, subject to the user's decisions. This is not a second review of the revised plan.
-4. [Contract provenance and defects](contracts/README.md) and [the exact Manoj snapshot](contracts/manoj-openapi-20260930.yaml).
+4. [Contract provenance and defects](contracts/README.md) and [the exact Manoj snapshot](contracts/manoj-openapi-20261007.yaml).
 
 Existing architecture, API specs and setup documents outside this directory describe the legacy implementation. Use them as source evidence, not as instructions to preserve backend ownership during migration. Source code and public contract examples remain in Git; local logs, CLI transcripts, virtual environments, attachments and credentials are excluded.
 

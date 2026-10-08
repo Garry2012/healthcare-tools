@@ -29,7 +29,7 @@ CallOutcome = Literal[
 ]
 ErrorCode = Literal[
     "VALIDATION_FAILED", "NOT_FOUND", "UNAUTHORIZED", "FORBIDDEN", "CONFLICT", "IDEMPOTENCY_CONFLICT",
-    "RATE_LIMITED", "INTERNAL",
+    "UNSUPPORTED_CAPABILITY", "SLOT_FULL", "RATE_LIMITED", "INTERNAL",
 ]
 SummaryLanguage = Literal["EN", "KN", "HI"]
 Weekday = Literal["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]

@@ -19,7 +19,7 @@ Caller ⇄ LiveKit voice agent (STT, LLM, TTS)
 
 - **Plan, target and evidence:** `docs/handover/mcp-only/` (read its README first; implementation
   reports under `implementation/`).
-- **Owner contract:** `docs/handover/mcp-only/contracts/manoj-openapi-20260930.yaml` (pinned, hashed).
+- **Owner contract:** `docs/handover/mcp-only/contracts/manoj-openapi-20261007.yaml` (pinned, hashed).
 - **Adapter:** `services/mcp/README.md`.
 - **Integration:** `docs/handover/VOICE-TEAM.md` (tool interface, authentication and trusted headers),
   `docs/handover/CONTEXTFORGE.md`, `docs/handover/AZURE.md`, `docs/handover/TESTING.md`.

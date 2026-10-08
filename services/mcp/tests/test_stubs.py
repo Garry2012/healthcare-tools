@@ -19,7 +19,7 @@ from frontdesk_stubs import knowledge as knowledge_stub
 from frontdesk_stubs import ops as ops_stub
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "docs/handover/mcp-only/contracts"
-OVERLAY = CONTRACTS / "manoj-openapi-20260930.test-overlay.yaml"
+OVERLAY = CONTRACTS / "manoj-openapi-20261007.test-overlay.yaml"
 SPEC = yaml.safe_load(OVERLAY.read_text(encoding="utf-8"))
 TOKEN_URL = "http://ops/auth/token"
 # Wednesday 1 Oct 2026 10:00 IST

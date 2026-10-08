@@ -14,11 +14,11 @@ import yaml
 from frontdesk_mcp import contract
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "docs/handover/mcp-only/contracts"
-PINNED = CONTRACTS / "manoj-openapi-20260930.yaml"
-OVERLAY = CONTRACTS / "manoj-openapi-20260930.test-overlay.yaml"
-PINNED_SHA256 = "b8f282718c2c45410dd0dd403369223b9cbe8dea045ee044207aa1e52ec2de78"
-OVERLAY_SHA256 = "e21869b20a6c956d12d69873b138b721fc7676ba6e6f86b5ecc0a4a7af4dd1a3"
-DEFECT_LINES = {1208, 1209, 1235, 1256, 1278}
+PINNED = CONTRACTS / "manoj-openapi-20261007.yaml"
+OVERLAY = CONTRACTS / "manoj-openapi-20261007.test-overlay.yaml"
+PINNED_SHA256 = "d3e93f45498fb86feeb5bb93c0adaba7cff47b48daa21ac810790b5483e96c80"
+OVERLAY_SHA256 = "1217015de39f137ebef159915f4fa90dfcf2fa196277ee43b6e5ce192679ff2f"
+DEFECT_LINES = {2327, 2328, 2351, 2370, 2396, 2460}
 
 
 def _sha(path: Path) -> str:
@@ -26,7 +26,7 @@ def _sha(path: Path) -> str:
 
 
 def load_overlay() -> dict:
-    """The labelled quoting-only overlay parses cleanly; the original's five defects do not."""
+    """The labelled quoting-only overlay parses cleanly; the original's six defects do not."""
     return yaml.safe_load(OVERLAY.read_text(encoding="utf-8"))
 
 
@@ -37,7 +37,7 @@ def test_pinned_snapshot_and_overlay_are_present_with_recorded_hashes():
     assert _sha(OVERLAY) == OVERLAY_SHA256
 
 
-def test_overlay_differs_from_the_original_only_on_the_five_quoting_defects():
+def test_overlay_differs_from_the_original_only_on_the_six_quoting_defects():
     original = PINNED.read_text(encoding="utf-8").split("\n")
     overlay = OVERLAY.read_text(encoding="utf-8").split("\n")
     assert len(original) == len(overlay)
@@ -81,13 +81,16 @@ def test_error_codes_and_languages_match_the_contract():
 def test_the_contracts_own_board_example_parses_and_keeps_every_session():
     spec = load_overlay()
     response = spec["paths"]["/availability"]["get"]["responses"]["200"]
-    example = response["content"]["application/json"]["schema"]["example"]
+    example = response["content"]["application/json"]["examples"]["facilityBoardMixedDay"]["value"]
     board = contract.AvailabilityBoard.model_validate(example)
-    assert board.date.isoformat() == "2026-09-29" and len(board.items) == 4
-    unknown = [e for e in board.items if e.status == "UNKNOWN"][0]
-    assert unknown.isStale is True and unknown.session is None and unknown.expectedTime is None
+    assert board.date.isoformat() == "2026-10-07" and len(board.items) == 6
+    unknown = [e for e in board.items if e.status == "UNKNOWN"]
+    assert [(e.doctorId, e.isStale, e.session, e.expectedTime, e.expectedEndTime) for e in unknown] == [
+        ("doc_006", True, "Afternoon", None, None),
+        ("doc_014", False, None, None, None),
+    ]
     late = [e for e in board.items if e.status == "LATE"][0]
-    assert late.delayMinutes == 30 and late.expectedTime == "16:00" and late.expectedEndTime == "17:00"
+    assert late.delayMinutes == 30 and late.expectedTime == "11:00" and late.expectedEndTime == "12:30"
 
 
 def test_unknown_fields_are_preserved_not_rejected():
