@@ -232,19 +232,24 @@ def block_state(block: contract.SlotBlock, now: datetime | None) -> str:
     return "FULL" if block.available == 0 else "OPEN"
 
 
+def _ended_today(facts: SessionFacts) -> bool:
+    return facts.kind == DateKind.TODAY and _window(facts.end, facts.now) == "ENDED"
+
+
 def session_decision(facts: SessionFacts) -> tuple[Decision, Reason | None]:
     if facts.status == "UNKNOWN":
         return Decision.CALLBACK_REQUIRED, Reason.BOARD_STALE if facts.is_stale else Reason.BOARD_UNKNOWN
     if facts.status == "CANCELLED":
         return Decision.NOT_AVAILABLE, Reason.CANCELLED
     if facts.evidence is None:
-        if facts.kind == DateKind.TODAY:
-            if facts.status == "NOT_CONFIRMED":
-                return Decision.CALLBACK_REQUIRED, Reason.BOARD_NOT_CONFIRMED
-            if _window(facts.end, facts.now) == "ENDED":
-                return Decision.NOT_AVAILABLE, Reason.SESSION_ENDED
+        if facts.kind == DateKind.TODAY and facts.status == "NOT_CONFIRMED":
+            return Decision.CALLBACK_REQUIRED, Reason.BOARD_NOT_CONFIRMED
+        if _ended_today(facts):
+            return Decision.NOT_AVAILABLE, Reason.SESSION_ENDED
         return Decision.APPOINTMENT_REQUEST, None
     if isinstance(facts.evidence, SlotsNotRead):
+        if _ended_today(facts):
+            return Decision.NOT_AVAILABLE, Reason.SESSION_ENDED
         return Decision.SLOT_CHECK_REQUIRED, None
     if not facts.evidence.bookable:
         return Decision.NOT_AVAILABLE, Reason.NO_OPEN_SLOT
@@ -470,7 +475,7 @@ def decide_booking(decision: DoctorDecision, *, session: str | None,
                 continue
             if session and normalised(s.label or "") != normalised(session):
                 return NotAvailable(Reason.TIME_OUTSIDE_SESSION, alternatives)
-            state = block_state(block, now if decision.facts.slots.date == now.date() else None)
+            state = block_state(block, now if decision.basis == Basis.LIVE_BOARD else None)
             if state == "CLOSED":
                 return NotAvailable(Reason.TIME_OUTSIDE_SESSION, alternatives)
             if state == "FULL":

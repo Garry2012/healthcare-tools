@@ -13,12 +13,13 @@ from .config import Settings
 from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unavailable
 
 READ_ERRORS = (Unavailable, Malformed, Rejected, InvalidIdentifier)
+READ_FAILURE_STAGES = frozenset({"slots", "capabilities"})
 
 
 def read_failure_detail(stage: str | None, fallback: str) -> str:
     """Map the failed read; callers retain their existing AUTH precedence and fallback."""
     return {"board": "BOARD_UNAVAILABLE", "profile": "PROFILE_UNAVAILABLE",
-            "slots": "SLOTS_UNAVAILABLE"}.get(stage, fallback)
+            "slots": "SLOTS_UNAVAILABLE", "capabilities": "CAPABILITIES_UNAVAILABLE"}.get(stage, fallback)
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,17 @@ class ScheduleReader:
         if cached is None:
             cached = (await self.ops.list_departments(deadline)).items
             self.cache.set(("departments",), cached)
+        return cached
+
+    async def capabilities(self, deadline: Deadline) -> contract.Capabilities:
+        cached = self.cache.get(("capabilities",))
+        if cached is None:
+            try:
+                cached = await self.ops.get_capabilities(deadline)
+            except READ_ERRORS as exc:
+                exc.stage = "capabilities"
+                raise
+            self.cache.set(("capabilities",), cached)
         return cached
 
     async def profile(self, doctor_id: str, deadline: Deadline) -> contract.DoctorDetail:
@@ -114,32 +126,38 @@ class ScheduleReader:
         entries = tuple(e for e in board.items if e.doctorId == doctor_id) if board else ()
         return policy.DoctorFacts(profile or summary, profile, entries, slots=fetched["slots"])
 
-    async def _candidate(self, doctor: contract.DoctorSummary,
-                         deadline: Deadline) -> policy.DoctorFacts | ReadFailure:
+    async def _candidate(self, doctor: contract.DoctorSummary, deadline: Deadline,
+                         slots: policy.SlotsNotRead | None) -> policy.DoctorFacts | ReadFailure:
         try:
             profile = await self.profile(doctor.id, deadline)
         except READ_ERRORS:
             return ReadFailure(doctor)
-        return policy.DoctorFacts(doctor, profile)
+        return policy.DoctorFacts(doctor, profile, slots=slots)
 
     async def department(self, department_id: str, gender: str | None, requested: policy.RequestedDate | None,
                          purpose: policy.Purpose, deadline: Deadline,
                          evaluate: Callable[[policy.DoctorFacts], policy.DoctorDecision]) -> DepartmentFacts:
-        if purpose == policy.Purpose.AVAILABILITY and requested.kind == policy.DateKind.TODAY:
-            results = await asyncio.gather(self.search(deadline, department=department_id, gender=gender),
-                                            self.board(deadline, department=department_id), return_exceptions=True)
-            for result in results:
-                if isinstance(result, BaseException):
-                    raise result
-            page, board = results
-            facts = tuple(policy.DoctorFacts(d, entries=tuple(e for e in board.items if e.doctorId == d.id))
-                          for d in page.items)
-            found = sum(evaluate(f).decision == policy.Decision.APPOINTMENT_REQUEST for f in facts)
+        reads = {"search": self.search(deadline, department=department_id, gender=gender)}
+        if purpose == policy.Purpose.AVAILABILITY:
+            if requested.kind == policy.DateKind.TODAY:
+                reads["board"] = self.board(deadline, department=department_id)
+            reads["capabilities"] = self.capabilities(deadline)
+        results = await asyncio.gather(*reads.values(), return_exceptions=True)
+        for result in results:  # preserve search, then board, then capabilities failure precedence
+            if isinstance(result, BaseException):
+                raise result
+        initial = dict(zip(reads, results, strict=True))
+        page, board, capabilities = initial["search"], initial.get("board"), initial.get("capabilities")
+        slots = policy.SlotsNotRead() if capabilities is not None and capabilities.slots.enabled else None
+        if board is not None:
+            facts = tuple(policy.DoctorFacts(d, entries=tuple(e for e in board.items if e.doctorId == d.id),
+                                            slots=slots) for d in page.items)
+            found = sum(policy.is_match(evaluate(f).decision) for f in facts)
             search = policy.SearchState(found, len(facts), page.total <= len(facts))
             return DepartmentFacts(facts, facts, page.total, search)
-        page = await self.search(deadline, department=department_id, gender=gender)
         reached: dict[str, policy.DoctorFacts | ReadFailure | Unchecked] = {
-            d.id: policy.DoctorFacts(d) if d.attendanceType == "ON_CALL" else Unchecked(d) for d in page.items}
+            d.id: policy.DoctorFacts(d, slots=slots) if d.attendanceType == "ON_CALL" else Unchecked(d)
+            for d in page.items}
         pending = [d for d in page.items if d.attendanceType != "ON_CALL"]
         found = 0
         size = self.settings.profile_batch_size
@@ -149,13 +167,13 @@ class ScheduleReader:
             batch = pending[offset:offset + size]
             try:
                 async with asyncio.timeout(max(0, deadline.remaining())):
-                    fetched = await asyncio.gather(*(self._candidate(d, deadline) for d in batch))
+                    fetched = await asyncio.gather(*(self._candidate(d, deadline, slots) for d in batch))
             except TimeoutError:
                 break  # gather cancellation is awaited; this whole batch remains unchecked
             for doctor, result in zip(batch, fetched, strict=True):
                 reached[doctor.id] = result
                 if isinstance(result, policy.DoctorFacts):
-                    found += evaluate(result).decision == policy.Decision.APPOINTMENT_REQUEST
+                    found += policy.is_match(evaluate(result).decision)
             if found >= self.settings.doctor_choice_limit:
                 break
         all_results = tuple(reached[d.id] for d in page.items)

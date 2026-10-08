@@ -739,3 +739,30 @@ def test_slot_booking_missing_time_does_not_replace_whole_scope_failures(kind, r
     result = p.decide_booking(decide(f, date=day), session=None, preferred_time=None, now=NOW)
     assert isinstance(result, p.Handoff if kind in ("oncall", "profile") else p.NotAvailable)
     assert result.reason == reason
+
+
+@pytest.mark.parametrize("evidence", [None, "unread"])
+@pytest.mark.parametrize("kind", ["TODAY", "FUTURE"])
+@pytest.mark.parametrize("status", ["IN", "LATE", "NOT_CONFIRMED", "UNKNOWN", "CANCELLED"])
+def test_department_unread_end_guard_keeps_status_and_date_precedence(evidence, kind, status):
+    p = policy()
+    facts = p.SessionFacts(status, False, p.SlotsNotRead() if evidence else None,
+                           p.DateKind(kind), NOW.replace(hour=14), "12:00")
+    result = p.session_decision(facts)
+    if status == "UNKNOWN":
+        assert result == ("CALLBACK_REQUIRED", "BOARD_UNKNOWN")
+    elif status == "CANCELLED":
+        assert result == ("NOT_AVAILABLE", "CANCELLED")
+    elif kind == "TODAY" and status == "NOT_CONFIRMED" and evidence is None:
+        assert result == ("CALLBACK_REQUIRED", "BOARD_NOT_CONFIRMED")
+    elif kind == "TODAY":
+        assert result == ("NOT_AVAILABLE", "SESSION_ENDED")
+    else:
+        assert result == ("SLOT_CHECK_REQUIRED" if evidence else "APPOINTMENT_REQUEST", None)
+
+
+@pytest.mark.parametrize("end", [None, "10:00", "10:01"])
+def test_unread_end_guard_does_not_invent_an_end_or_change_exact_boundary(end):
+    p = policy()
+    result = p.session_decision(p.SessionFacts("IN", False, p.SlotsNotRead(), p.DateKind.TODAY, NOW, end))
+    assert result == ("SLOT_CHECK_REQUIRED", None)

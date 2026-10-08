@@ -26,7 +26,7 @@ from .clock import Clock, Deadline, local_now
 from .config import Settings
 from .context import CallContext
 from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unavailable, UncertainWrite
-from .schedule_reader import READ_ERRORS, ScheduleReader, read_failure_detail
+from .schedule_reader import READ_ERRORS, READ_FAILURE_STAGES, ScheduleReader, read_failure_detail
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +237,7 @@ class BookingService:
         try:
             facts = await self.reader.doctor(doctor_id, requested, policy.Purpose.AVAILABILITY, deadline)
         except READ_ERRORS as exc:
-            if getattr(exc, "stage", None) != "slots" and isinstance(exc, Rejected):
+            if getattr(exc, "stage", None) not in READ_FAILURE_STAGES and isinstance(exc, Rejected):
                 return self._failure(exc, action)
             retry = exc.retry_after if isinstance(exc, Unavailable) else None
             detail = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else read_failure_detail(

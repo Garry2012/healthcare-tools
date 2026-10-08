@@ -14,7 +14,7 @@ from .clock import Clock, Deadline, local_now
 from .config import Settings
 from .context import CallContext
 from .ops_client import InvalidIdentifier, OpsClient, Rejected, Unavailable
-from .schedule_reader import READ_ERRORS, ScheduleReader, read_failure_detail
+from .schedule_reader import READ_ERRORS, READ_FAILURE_STAGES, ScheduleReader, read_failure_detail
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ class AvailabilityService:
         retry = exc.retry_after if isinstance(exc, Unavailable) else None
         stage = getattr(exc, "stage", None)
         detail = read_failure_detail(stage, "DIRECTORY_UNAVAILABLE")
-        if stage != "slots":
+        if stage not in READ_FAILURE_STAGES:
             if isinstance(exc, Rejected) and exc.code == "NOT_FOUND":
                 return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="ASK_TO_REPHRASE", **base)
             if isinstance(exc, (Rejected, InvalidIdentifier)):

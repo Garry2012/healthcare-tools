@@ -551,7 +551,7 @@ async def test_working_hours_never_reads_slots_or_capabilities(h, target):
 async def test_department_slot_reads_remain_deferred(h, date):
     result = await ask(h, departmentId="dept_cardio", date=date)
     assert result.doctors
-    assert "/capabilities" not in h.ops_paths() and not any(p.endswith("/slots") for p in h.ops_paths())
+    assert "/capabilities" in h.ops_paths() and not any(p.endswith("/slots") for p in h.ops_paths())
 
 
 @pytest.mark.parametrize("issue", harness.SLOT_INCONSISTENCIES)
@@ -710,3 +710,242 @@ async def test_blank_availability_session_behaves_as_no_session(h, date):
     without = await ask(h, doctorId="doc_garima", date=date)
     blank = await ask(h, doctorId="doc_garima", date=date, session=" " * 40)
     assert blank.model_dump() == without.model_dump()
+
+
+async def enable_department_slots(h):
+    import httpx
+
+    async with httpx.AsyncClient(transport=h.ops.http._transport, base_url=h.settings.ops_base_url + "/") as client:
+        response = await client.post("__stub/scenario", json={"capabilities": {"slots": {"enabled": True}}})
+        assert response.status_code == 200
+    h.requests.clear()
+
+
+def department_fixture(h, count=2):
+    from copy import deepcopy
+
+    template = h.ops_state.data["doctors"][0]
+    doctors = []
+    for i in range(count):
+        doctor = deepcopy(template)
+        doctor.update(id=f"d{i}", name=f"Doctor {i:02}", attendanceType="REGULAR",
+                      gender="FEMALE" if i == 0 else "MALE",
+                      departments=[{"id": "dept_genmed", "name": "General Medicine"}],
+                      usualSchedule=[{"label": "Morning", "daysOfWeek": ["MON", "THU"],
+                                      "start": "09:00", "end": "18:00"}])
+        doctors.append(doctor)
+    h.ops_state.data["doctors"] = doctors
+    h.ops_state.set_board("2026-10-01", [
+        {"doctorId": d["id"], "session": "Morning", "status": "IN", "updatedMinutesAgo": 1,
+         "expectedTime": "09:00", "expectedEndTime": "18:00"} for d in doctors])
+    return doctors
+
+
+@pytest.mark.parametrize("day", ["today", "2026-10-05"])
+@pytest.mark.parametrize("failure", harness.SLOT_FAILURES)
+async def test_capability_failures_are_read_failures_not_directory_answers(h, day, failure):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    async def owner(request):
+        if request.url.path.endswith("/capabilities"):
+            h.requests.append(request)
+            return harness.slot_failure(request, failure)
+        return await h.ops.http._transport.handle_async_request(request)
+
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await availability.AvailabilityService(ops, h.cache, h.settings, h.clock).get(
+            h.ctx(), availability.AvailabilityRequest(departmentId="dept_genmed", date=day))
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "CAPABILITIES_UNAVAILABLE")
+    assert result.retryAfterSeconds == (4 if failure == "upstream" else None)
+    assert result.doctors == [] and result.callback is None and "owner-only text" not in result.model_dump_json()
+    assert all(r.method == "GET" or r.url.path.endswith("/auth/token") for r in h.requests)
+    assert not any(p.endswith("/slots") for p in h.ops_paths())
+
+
+@pytest.mark.parametrize("day,path,status,code,want,detail", [
+    ("today", "/doctors", 404, "NOT_FOUND", "NOT_FOUND", None),
+    ("2026-10-05", "/doctors", 404, "NOT_FOUND", "NOT_FOUND", None),
+    ("today", "/availability", 503, "INTERNAL", "COULD_NOT_CHECK", "BOARD_UNAVAILABLE"),
+])
+async def test_department_existing_failure_precedes_capability_failure(h, day, path, status, code, want, detail):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    seen = set()
+    async def owner(request):
+        route = request.url.path.removeprefix("/api/v1")
+        if route in (path, "/capabilities"):
+            seen.add(route)
+            return httpx.Response(status if route == path else 400,
+                                  json={"error": {"code": code if route == path else "UNSUPPORTED_CAPABILITY"}})
+        return await h.ops.http._transport.handle_async_request(request)
+
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await availability.AvailabilityService(ops, h.cache, h.settings, h.clock).get(
+            h.ctx(), availability.AvailabilityRequest(departmentId="dept_genmed", date=day))
+    assert (result.outcome, result.detail) == (want, detail)
+    assert seen == {path, "/capabilities"}
+
+
+async def test_capability_failure_is_not_cached_and_other_tool_paths_do_not_depend_on_it(h):
+    from frontdesk_mcp.knowledge import KnowledgeRequest, KnowledgeService
+    from frontdesk_mcp.summary import SummaryRequest, SummaryService
+
+    from .test_booking import CREATE, run
+
+    h.ops_state.fail_next.append(("/capabilities", 503, {}))
+    assert (await ask(h, doctorId="doc_garima")).outcome == "AVAILABILITY"
+    assert (await run(h, **CREATE)).outcome == "NOTED"
+    summary = await SummaryService(h.ops, h.settings).record(h.ctx(started_at="2026-10-01T04:00:00Z"),
+        SummaryRequest(summaryText="Explained visiting hours.", intent="GENERAL_INFO", outcome="RESOLVED_BY_AGENT"))
+    assert summary.outcome == "SAVED"
+    knowledge = await KnowledgeService(h.knowledge, h.settings).search(h.ctx(),
+        KnowledgeRequest(question="parking", language="en"))
+    assert knowledge.outcome == "ANSWERED"
+    assert "/capabilities" not in h.ops_paths()
+    failed = await ask(h, departmentId="dept_genmed")
+    assert (failed.outcome, failed.detail) == ("COULD_NOT_CHECK", "CAPABILITIES_UNAVAILABLE")
+    assert (await ask(h, departmentId="dept_genmed")).outcome == "AVAILABILITY"
+    assert h.ops_paths().count("/capabilities") == 2
+
+
+@pytest.mark.parametrize("status,label,want_ids", [
+    ("CANCELLED", "Morning", ["d0"]), ("UNKNOWN", "Morning", ["d0"]),
+    ("UNKNOWN", None, ["d0"]), ("NOT_CONFIRMED", "Morning", ["d0", "d1"]),
+])
+async def test_enabled_department_returns_matches_without_claiming_capacity(h, status, label, want_ids):
+    department_fixture(h)
+    h.ops_state.boards["2026-10-01"][1].update(status=status, session=label)
+    await enable_department_slots(h)
+    result = await ask(h, departmentId="dept_genmed")
+    assert (result.outcome, result.nextStep, result.bookableFound) == ("DOCTORS_MATCHED", "ASK_WHICH_DOCTOR", 0)
+    assert [d.doctorId for d in result.doctors] == want_ids
+    assert all(d.decision == "SLOT_CHECK_REQUIRED" and all(s.openSlots is None for s in d.board)
+               for d in result.doctors)
+    assert result.complete and result.totalMatches == 2 and result.callback is None
+    assert not any(p.endswith("/slots") for p in h.ops_paths())
+
+
+@pytest.mark.parametrize("label", [None, "Evening"])
+@pytest.mark.parametrize("session", [None, "Morning", "Evening"])
+async def test_enabled_department_keeps_unknown_scope_when_session_is_selected(h, label, session):
+    department_fixture(h, 1)
+    h.ops_state.boards["2026-10-01"].append({
+        "doctorId": "d0", "session": label, "status": "UNKNOWN", "updatedMinutesAgo": 1})
+    await enable_department_slots(h)
+    result = await ask(h, departmentId="dept_genmed", session=session)
+    want = ("DOCTORS_MATCHED" if session is None or (session == "Morning" and label == "Evening")
+            else "CALLBACK_REQUIRED")
+    assert result.outcome == want and result.bookableFound == 0
+    assert result.doctors[0].decision == ("SLOT_CHECK_REQUIRED" if want == "DOCTORS_MATCHED" else "CALLBACK_REQUIRED")
+    assert all(s.openSlots is None for s in result.doctors[0].board)
+    if want == "CALLBACK_REQUIRED":
+        assert result.callback.reason == "BOARD_UNKNOWN"
+
+
+@pytest.mark.parametrize("day,ids,outcome", [
+    ("2026-10-05", ["d0"], "DOCTORS_MATCHED"),
+    ("2026-10-06", ["d1"], "DOCTORS_MATCHED"),
+    ("2026-10-07", ["d0", "d1"], "NOT_AVAILABLE"),
+])
+async def test_enabled_future_department_uses_requested_weekday(h, day, ids, outcome):
+    doctors = department_fixture(h)
+    doctors[1]["usualSchedule"][0]["daysOfWeek"] = ["TUE"]
+    await enable_department_slots(h)
+    result = await ask(h, departmentId="dept_genmed", date=day)
+    assert result.outcome == outcome and [d.doctorId for d in result.doctors] == ids
+    assert result.bookableFound == 0 and result.complete
+    assert all(s.openSlots is None for d in result.doctors for s in d.usualSessions)
+    assert "/availability" not in h.ops_paths() and not any(p.endswith("/slots") for p in h.ops_paths())
+
+
+async def test_enabled_department_does_not_match_ended_window_beside_a_match(make_settings):
+    h = harness.build(make_settings(), now=datetime(2026, 10, 1, 8, 30, tzinfo=UTC))  # 14:00 IST
+    try:
+        department_fixture(h)
+        h.ops_state.boards["2026-10-01"][0]["expectedEndTime"] = "12:00"
+        await enable_department_slots(h)
+        result = await ask(h, departmentId="dept_genmed")
+        assert (result.outcome, result.bookableFound) == ("DOCTORS_MATCHED", 0)
+        assert [d.doctorId for d in result.doctors] == ["d1"]
+        ended = await ask(h, departmentId="dept_genmed", gender="FEMALE")
+        assert ended.outcome == "NOT_AVAILABLE" and ended.bookableFound == 0
+        assert [(d.decision, d.reason) for d in ended.doctors] == [("NOT_AVAILABLE", "SESSION_ENDED")]
+        assert ended.doctors[0].board[0].openSlots is None
+    finally:
+        await h.aclose()
+
+
+@pytest.mark.parametrize("case,outcome,ids", [
+    ("usable", "DOCTORS_MATCHED", ["d0"]),
+    ("missing-bounds", "HANDOFF_REQUIRED", ["d0"]),
+    ("future", "HANDOFF_REQUIRED", ["d0"]),
+    ("mixed", "DOCTORS_MATCHED", ["d1"]),
+])
+async def test_enabled_department_on_call_requires_a_usable_confirmed_window(h, case, outcome, ids):
+    doctors = department_fixture(h, 2 if case == "mixed" else 1)
+    doctors[0]["attendanceType"] = "ON_CALL"
+    if case in ("missing-bounds", "mixed"):
+        del h.ops_state.boards["2026-10-01"][0]["expectedEndTime"]
+    await enable_department_slots(h)
+    result = await ask(h, departmentId="dept_genmed", date="2026-10-05" if case == "future" else "today")
+    assert result.outcome == outcome and [d.doctorId for d in result.doctors] == ids
+    assert result.bookableFound == 0 and result.callback is None
+    if outcome == "HANDOFF_REQUIRED":
+        assert result.nextStep == "TRANSFER_DESK" and result.doctors[0].reason == "ON_CALL_DOCTOR"
+    else:
+        assert all(d.decision == "SLOT_CHECK_REQUIRED" for d in result.doctors)
+    assert "/doctors/d0" not in h.ops_paths() and not any(p.endswith("/slots") for p in h.ops_paths())
+
+
+async def test_enabled_department_partial_matches_are_ranked_and_capped(h):
+    await enable_department_slots(h)
+    result = await ask(h, departmentId="dept_policy", date="2026-10-05")
+    assert (result.outcome, result.nextStep, result.bookableFound) == ("DOCTORS_MATCHED", "ASK_WHICH_DOCTOR", 0)
+    assert result.totalMatches == 12 and not result.complete
+    assert [d.doctorId for d in result.doctors] == ["doc_fixture_01", "doc_fixture_06", "doc_fixture_07"]
+    assert all(s.openSlots is None for d in result.doctors for s in d.usualSessions)
+    assert "/doctors/doc_fixture_09" in h.ops_paths() and "/doctors/doc_fixture_10" not in h.ops_paths()
+    assert "/doctors/doc_fixture_00" not in h.ops_paths()
+
+
+async def test_enabled_department_partial_search_without_matches_is_handoff(h):
+    department_fixture(h)
+    h.ops_state.data["doctors"][1]["usualSchedule"] = []
+    h.ops_state.fail_next.append(("/doctors/d0", 503, {}))
+    await enable_department_slots(h)
+    result = await ask(h, departmentId="dept_genmed", date="2026-10-05")
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "HANDOFF_REQUIRED", "TRANSFER_DESK", "SEARCH_INCOMPLETE")
+    assert result.bookableFound == 0 and result.complete is False and result.doctors == []
+
+
+async def test_enabled_department_callback_ranks_before_cancelled_with_a_cap(make_settings):
+    h = harness.build(make_settings(doctor_choice_limit=1))
+    try:
+        department_fixture(h)
+        h.ops_state.boards["2026-10-01"][0]["status"] = "CANCELLED"
+        h.ops_state.boards["2026-10-01"][1].update(status="UNKNOWN", session=None)
+        await enable_department_slots(h)
+        result = await ask(h, departmentId="dept_genmed")
+        assert result.outcome == "CALLBACK_REQUIRED" and result.nextStep == "ASK_CALLBACK_DETAILS"
+        assert [d.doctorId for d in result.doctors] == ["d1"]
+        assert result.bookableFound == 0 and result.totalMatches == 2 and result.complete
+    finally:
+        await h.aclose()
+
+
+async def test_department_working_hours_ignores_enabled_capabilities_and_keeps_on_call_facts(h):
+    doctors = department_fixture(h)
+    doctors[1]["attendanceType"] = "ON_CALL"
+    await enable_department_slots(h)
+    result = await ask(h, departmentId="dept_genmed", purpose="WORKING_HOURS", date=None)
+    assert (result.outcome, result.nextStep, result.bookableFound) == ("WORKING_HOURS", "ASK_WHICH_DOCTOR", 0)
+    assert [d.doctorId for d in result.doctors] == ["d0", "d1"]
+    assert result.doctors[1].reason == "ON_CALL_DOCTOR" and result.doctors[1].usualSessions == []
+    assert not any(p.startswith("/availability") or p == "/capabilities" for p in h.ops_paths())
+    assert "/doctors/d1" not in h.ops_paths()
