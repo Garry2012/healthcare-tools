@@ -150,3 +150,113 @@ async def test_warm_cache_reaches_the_remaining_batch_after_cold_headroom_stop(m
     assert all_reads == [0, 1, 2, 3, 4, 5]
     assert found.search.complete and found.search.checked == 6 and found.search.matches_found == 0
     assert peak <= 3 and elapsed < .15
+
+
+@pytest.mark.parametrize("date,with_summary,paths", [
+    ("today", False, {"/doctors/doc_garima", "/availability", "/availability/doc_garima/slots"}),
+    ("today", True, {"/availability", "/availability/doc_garima/slots"}),
+    ("2026-10-05", False, {"/doctors/doc_garima", "/availability/doc_garima/slots"}),
+    ("2026-10-05", True, {"/doctors/doc_garima", "/availability/doc_garima/slots"}),
+])
+async def test_selected_doctor_slot_reads_start_together(make_settings, date, with_summary, paths):
+    from frontdesk_mcp import contract
+    from frontdesk_mcp.schedule_reader import ScheduleReader
+
+    from . import harness
+    h = harness.build(make_settings())
+    started, released = set(), asyncio.Event()
+
+    async def owner(request):
+        path = request.url.path.removeprefix("/api/v1")
+        if path in paths:
+            started.add(path)
+            if started == paths:
+                released.set()
+            await released.wait()  # sequential reads cannot release the barrier
+        return await h.ops.http._transport.handle_async_request(request)
+
+    p = policy()
+    requested = p.resolve_date(date, NOW, p.Purpose.AVAILABILITY)
+    summary = contract.DoctorSummary.model_validate(h.ops_state.data["doctors"][0]) if with_summary else None
+    try:
+        async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+            reader = ScheduleReader(ops, h.cache, h.settings)
+            facts = await reader.doctor("doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(.3), summary)
+        assert started == paths and facts.slots is None
+        [slot] = [r for r in h.requests if r.url.path.endswith("/slots")]
+        assert slot.method == "GET" and dict(slot.url.params) == {"date": requested.value.isoformat()}
+    finally:
+        await h.aclose()
+
+
+async def test_selected_slots_are_uncached_and_enabled_plan_is_preserved(make_settings):
+    from frontdesk_mcp.schedule_reader import ScheduleReader
+
+    from . import harness
+    h = harness.build(make_settings())
+    p = policy()
+    requested = p.resolve_date("today", NOW, p.Purpose.AVAILABILITY)
+    reader = ScheduleReader(h.ops, h.cache, h.settings)
+    try:
+        first = await reader.doctor("doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(.3))
+        assert first.slots is None
+        plan = harness.slot_plan()
+        # Deliberately reverse the session list: only blocks within a session need ordered input.
+        plan["sessions"].reverse()
+        h.ops_state.set_slots("doc_garima", "2026-10-01", plan)
+        second = await reader.doctor("doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(.3))
+        assert second.slots.model_dump(mode="json") == plan
+        assert h.ops_paths().count("/availability/doc_garima/slots") == 2
+        assert h.ops_paths().count("/doctors/doc_garima") == 1
+    finally:
+        await h.aclose()
+
+
+@pytest.mark.parametrize("issue", ["doctor", "date", "duplicate", "blank", "overlap"])
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_slot_consistency_is_checked_before_disabled_plan_is_discarded(make_settings, issue, enabled):
+    from frontdesk_mcp.ops_client import Malformed
+    from frontdesk_mcp.schedule_reader import ScheduleReader
+
+    from . import harness
+    h = harness.build(make_settings())
+    p = policy()
+    requested = p.resolve_date("today", NOW, p.Purpose.AVAILABILITY)
+    h.ops_state.set_slots("doc_garima", "2026-10-01", harness.inconsistent_slot_plan(issue) | {"enabled": enabled})
+    try:
+        with pytest.raises(Malformed) as caught:
+            await ScheduleReader(h.ops, h.cache, h.settings).slots("doc_garima", requested, Deadline(.3))
+        assert caught.value.stage == "slots"
+    finally:
+        await h.aclose()
+
+
+@pytest.mark.parametrize("failed_paths,winner", [
+    (["/doctors/doc_garima", "/availability", "/availability/doc_garima/slots"], "profile"),
+    (["/availability", "/availability/doc_garima/slots"], "board"),
+])
+async def test_slot_parallel_failure_order_preserves_profile_then_board(make_settings, failed_paths, winner):
+    from frontdesk_mcp.ops_client import Unavailable
+    from frontdesk_mcp.schedule_reader import ScheduleReader
+
+    from . import harness
+    h = harness.build(make_settings())
+    seen = set()
+
+    async def owner(request):
+        path = request.url.path.removeprefix("/api/v1")
+        if path in failed_paths:
+            seen.add(path)
+            return httpx.Response(503)
+        return await h.ops.http._transport.handle_async_request(request)
+
+    p = policy()
+    requested = p.resolve_date("today", NOW, p.Purpose.AVAILABILITY)
+    try:
+        async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+            with pytest.raises(Unavailable) as caught:
+                await ScheduleReader(ops, h.cache, h.settings).doctor(
+                    "doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(.3))
+        assert caught.value.stage == winner and seen == set(failed_paths)
+    finally:
+        await h.aclose()

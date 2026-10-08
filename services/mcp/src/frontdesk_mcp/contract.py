@@ -8,6 +8,7 @@ enums; a contract change is a reviewed change here, never a silent one.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Literal
 
@@ -129,6 +130,11 @@ class SlotBlock(_Model):
         return self
 
 
+def ordered_slot_blocks(blocks: Sequence[SlotBlock]) -> bool:
+    """Validated positive-length HH:MM blocks must be ordered and may touch, but never overlap."""
+    return all(previous.end <= following.start for previous, following in zip(blocks, blocks[1:], strict=False))
+
+
 class SlotSession(_Model):
     session: str | None  # owner uses an empty string; null is also tolerated without normalising
     status: AvailabilityStatus
@@ -137,8 +143,7 @@ class SlotSession(_Model):
 
     @model_validator(mode="after")
     def _ordered(self) -> SlotSession:
-        if any(previous.end > following.start
-               for previous, following in zip(self.slots, self.slots[1:], strict=False)):
+        if not ordered_slot_blocks(self.slots):
             raise ValueError("slot blocks must be ordered and non-overlapping")
         return self
 

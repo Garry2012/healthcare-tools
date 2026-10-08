@@ -515,9 +515,104 @@ async def test_working_hours_department_keeps_on_call_facts_without_bookable_cou
     assert "/availability" not in h.ops_paths() and "/doctors/doc_vikram_desai" not in h.ops_paths()
 
 
-async def test_today_on_call_by_name_needs_no_board_read(h):
+async def test_today_on_call_by_name_reports_a_board_read_failure(h):
     h.ops_state.fail_next.append(("/availability", 500, {}))
     result = await ask(h, doctorName="Vikram", date="today")
+    assert (result.outcome, result.detail) == ("COULD_NOT_CHECK", "BOARD_UNAVAILABLE")
+    assert result.callback is None
+    assert h.ops_paths() == ["/doctors", "/availability", "/availability/doc_vikram_desai/slots"]
+
+
+@pytest.mark.parametrize("date,extra", [("today", "/availability"), ("2026-10-05", "/doctors/doc_vikram_desai")])
+async def test_on_call_by_name_still_returns_callback_after_successful_slot_reads(h, date, extra):
+    result = await ask(h, doctorName="Vikram", date=date)
     assert (result.outcome, result.detail) == ("CALLBACK_REQUIRED", "ON_CALL_DOCTOR")
-    assert result.callback.model_dump() == {"reason": "ON_CALL_DOCTOR", "summaryOutcome": "CALLBACK_NOTED"}
-    assert h.ops_paths() == ["/doctors"]
+    assert result.callback.summaryOutcome == "CALLBACK_NOTED"
+    assert h.ops_paths() == ["/doctors", extra, "/availability/doc_vikram_desai/slots"]
+
+
+@pytest.mark.parametrize("target", [{"doctorName": "Vikram"}, {"doctorId": "doc_garima"},
+                                    {"doctorId": "doc_priya_nair"}, {"departmentId": "dept_genmed"}])
+async def test_working_hours_never_reads_slots_or_capabilities(h, target):
+    await ask(h, purpose="WORKING_HOURS", date=None, **target)
+    assert not any(p.startswith("/availability") or p == "/capabilities" for p in h.ops_paths())
+    if "doctorName" in target:
+        assert h.ops_paths() == ["/doctors"]
+    if "doctorId" in target:
+        assert h.ops_paths() == [f"/doctors/{target['doctorId']}"]
+
+
+@pytest.mark.parametrize("date", ["today", "2026-10-05"])
+async def test_department_slot_reads_remain_deferred(h, date):
+    result = await ask(h, departmentId="dept_cardio", date=date)
+    assert result.doctors
+    assert "/capabilities" not in h.ops_paths() and not any(p.endswith("/slots") for p in h.ops_paths())
+
+
+@pytest.mark.parametrize("issue", harness.SLOT_INCONSISTENCIES)
+@pytest.mark.parametrize("date", ["2026-10-01", "2026-10-05"])
+async def test_inconsistent_slots_are_could_not_check(h, issue, date):
+    h.ops_state.set_slots("doc_garima", date, harness.inconsistent_slot_plan(issue, date))
+    result = await ask(h, doctorId="doc_garima", date=date)
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "SLOTS_UNAVAILABLE")
+    assert result.doctors == [] and result.callback is None
+    assert all(r.method == "GET" or r.url.path.endswith("/auth/token") for r in h.requests)
+
+
+@pytest.mark.parametrize("failure", harness.SLOT_FAILURES)
+async def test_slot_failures_are_read_failures_in_availability(h, failure):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    async def owner(request):
+        if request.url.path.endswith("/slots"):
+            h.requests.append(request)
+            return harness.slot_failure(request, failure)
+        return await h.ops.http._transport.handle_async_request(request)
+
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await availability.AvailabilityService(ops, h.cache, h.settings, h.clock).get(
+            h.ctx(), availability.AvailabilityRequest(doctorId="doc_garima", date="today"))
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "SLOTS_UNAVAILABLE")
+    assert result.retryAfterSeconds == (4 if failure == "upstream" else None)
+    assert result.doctors == [] and result.callback is None and "owner-only text" not in result.model_dump_json()
+    assert all(r.method == "GET" or r.url.path.endswith("/auth/token") for r in h.requests)
+
+
+@pytest.mark.parametrize("path,status,code,want,detail", [
+    ("/doctors", 404, "NOT_FOUND", "NOT_FOUND", None),
+    ("/doctors", 400, "VALIDATION_FAILED", "INVALID_REQUEST", "DIRECTORY_REJECTED"),
+    ("/doctors", 403, "FORBIDDEN", "COULD_NOT_CHECK", "DIRECTORY_UNAVAILABLE"),
+    ("/doctors/doc_garima", 403, "FORBIDDEN", "COULD_NOT_CHECK", "PROFILE_UNAVAILABLE"),
+    ("/availability", 403, "FORBIDDEN", "COULD_NOT_CHECK", "BOARD_UNAVAILABLE"),
+])
+async def test_legacy_availability_rejection_and_auth_details_stay_unchanged(h, path, status, code, want, detail):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    async def owner(request):
+        if request.url.path == f"/api/v1{path}":
+            return httpx.Response(status, json={"error": {"code": code}})
+        return await h.ops.http._transport.handle_async_request(request)
+
+    args = {"doctorName": "garima"} if path == "/doctors" else {"doctorId": "doc_garima"}
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await availability.AvailabilityService(ops, h.cache, h.settings, h.clock).get(
+            h.ctx(), availability.AvailabilityRequest(date="today", **args))
+    assert (result.outcome, result.detail) == (want, detail)
+
+
+@pytest.mark.parametrize("date", ["2026-10-01", "2026-10-05"])
+async def test_enabled_slot_facts_do_not_change_availability_policy_yet(h, date):
+    before = await ask(h, doctorId="doc_garima", date=date)
+    from .test_contract import slot_example
+
+    plan = slot_example("morningCancelled") | {"doctorId": "doc_garima", "date": date}
+    h.ops_state.set_slots("doc_garima", date, plan)
+    after = await ask(h, doctorId="doc_garima", date=date)
+    assert before.outcome == "AVAILABILITY" and after.model_dump() == before.model_dump()
+    assert h.ops_paths().count("/availability/doc_garima/slots") == 2

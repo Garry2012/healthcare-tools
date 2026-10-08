@@ -83,3 +83,48 @@ def build(settings, now: datetime = NOW, ops_secret: str = "ops-secret") -> Harn
     ops = OpsClient(settings, transport=Recording(ops_stub.create_app(ops_state, prefix=prefix)))
     knowledge = KnowledgeClient(settings, transport=Recording(knowledge_stub.create_app(knowledge_state)))
     return Harness(settings, clock, ops_state, knowledge_state, ops, knowledge, requests, DirectoryCache(settings))
+
+
+def slot_plan(doctor_id="doc_garima", date="2026-10-01") -> dict:
+    """Synthetic contract-shaped fixture, not a live capture; distinct adjacent sessions."""
+    return {"doctorId": doctor_id, "date": date, "enabled": True, "blockMinutes": 30, "sessions": [
+        {"session": "Morning", "status": "IN", "bookable": True, "slots": [
+            {"start": "10:30", "end": "11:00", "capacity": 3, "booked": 0, "available": 3, "bookable": True}]},
+        {"session": "Later", "status": "IN", "bookable": True, "slots": [
+            {"start": "11:00", "end": "11:30", "capacity": 3, "booked": 0, "available": 3, "bookable": True}]}]}
+
+
+SLOT_INCONSISTENCIES = ("doctor", "date", "duplicate", "blank", "overlap")
+
+
+def inconsistent_slot_plan(issue, date="2026-10-01") -> dict:
+    plan = slot_plan(date=date)
+    if issue == "doctor":
+        plan["doctorId"] = "doc_other"
+    elif issue == "date":
+        plan["date"] = "2026-10-09"
+    elif issue == "duplicate":
+        plan["sessions"][1]["session"] = "  MORNING  "
+    elif issue == "blank":
+        plan["sessions"][0]["session"], plan["sessions"][1]["session"] = "", None
+    elif issue == "overlap":
+        plan["sessions"][1]["slots"][0]["start"] = "10:45"
+    else:
+        raise AssertionError(issue)
+    return plan
+
+
+SLOT_FAILURES = ("timeout", "upstream", "400", "404", "malformed", "unsupported", "401", "403")
+
+
+def slot_failure(request: httpx.Request, failure: str) -> httpx.Response:
+    """Transport fault fixture shared by availability and booking tests."""
+    if failure == "timeout":
+        raise httpx.ReadTimeout("scripted timeout", request=request)
+    if failure == "malformed":
+        return httpx.Response(200, json={"unexpected": True})
+    status, code = {"upstream": (503, "INTERNAL"), "400": (400, "VALIDATION_FAILED"),
+                    "404": (404, "NOT_FOUND"), "unsupported": (400, "UNSUPPORTED_CAPABILITY"),
+                    "401": (401, "UNAUTHORIZED"), "403": (403, "FORBIDDEN")}[failure]
+    return httpx.Response(status, json={"error": {"code": code, "message": "owner-only text"}},
+                          headers={"Retry-After": "4"} if failure == "upstream" else {})

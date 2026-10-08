@@ -601,7 +601,7 @@ async def test_booking_journey_forwards_reason_without_knowledge_or_transcript(m
         await h.aclose()
 
 
-async def test_cancelled_create_cancels_both_owner_reads_without_writing(make_settings):
+async def test_cancelled_create_cancels_all_owner_reads_without_writing(make_settings):
     import httpx
 
     from frontdesk_mcp.context import CallContext
@@ -609,13 +609,13 @@ async def test_cancelled_create_cancels_both_owner_reads_without_writing(make_se
     from frontdesk_stubs import ops as ops_stub
 
     h = harness.build(make_settings(allow_budget_overrides=True, write_deadline_seconds=2, request_timeout_seconds=2))
-    started = {"profile": asyncio.Event(), "board": asyncio.Event()}
-    cancelled = {"profile": asyncio.Event(), "board": asyncio.Event()}
+    started = {kind: asyncio.Event() for kind in ("profile", "board", "slots")}
+    cancelled = {kind: asyncio.Event() for kind in started}
     writes = []
     inner = httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1"))
 
     async def owner(request):
-        kind = ("profile" if "/doctors/" in request.url.path
+        kind = ("slots" if request.url.path.endswith("/slots") else "profile" if "/doctors/" in request.url.path
                 else "board" if "/availability" in request.url.path else None)
         if kind:
             started[kind].set()
@@ -634,13 +634,16 @@ async def test_cancelled_create_cancels_both_owner_reads_without_writing(make_se
         async with asyncio.timeout(1):
             await started["profile"].wait()
             await started["board"].wait()
+            await started["slots"].wait()
         assert not cancelled["profile"].is_set() and not cancelled["board"].is_set()
+        assert not cancelled["slots"].is_set()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
         async with asyncio.timeout(0.1):
             await cancelled["profile"].wait()
             await cancelled["board"].wait()
+            await cancelled["slots"].wait()
         assert writes == []
     finally:
         task.cancel()
@@ -932,3 +935,93 @@ async def test_unsupported_capability_write_keeps_the_generic_rejection(h, caplo
     assert result.fields == [] and result.sessions == []
     assert len(sent(h, "/appointments")) == 1 and h.ops_state.appointments == {}
     assert "scripted owner response" not in result.model_dump_json() + caplog.text
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+@pytest.mark.parametrize("date", ["2026-10-01", "2026-10-05"])
+@pytest.mark.parametrize("issue", harness.SLOT_INCONSISTENCIES)
+async def test_inconsistent_slots_prevent_booking_writes(h, action, date, issue):
+    args = {**CREATE, "visitDate": date}
+    if action == "RESCHEDULE":
+        created = await run(h, **CREATE)
+        assert created.outcome == "NOTED"
+        args = {"action": action, "appointmentId": created.appointment.appointmentId,
+                "newVisitDate": date, "newPreferredTime": "10:45", "callerConfirmed": True}
+    before = json.loads(json.dumps(h.ops_state.appointments))
+    h.requests.clear()
+    h.ops_state.set_slots("doc_garima", date, harness.inconsistent_slot_plan(issue, date))
+    result = await run(h, h.ctx(operation_id="inconsistent"), **args)
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "COULD_NOT_RECORD", "SAY_COULD_NOT_RECORD", "SLOTS_UNAVAILABLE")
+    assert sent(h, "/appointments") == sent(h, "/reschedule") == []
+    assert h.ops_state.appointments == before
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+@pytest.mark.parametrize("failure", harness.SLOT_FAILURES)
+async def test_slot_failures_prevent_booking_writes(h, action, failure):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    args = CREATE
+    if action == "RESCHEDULE":
+        created = await run(h, **CREATE)
+        assert created.outcome == "NOTED"
+        args = {"action": action, "appointmentId": created.appointment.appointmentId,
+                "newVisitDate": "2026-10-05", "newPreferredTime": "10:45", "callerConfirmed": True}
+    before = json.loads(json.dumps(h.ops_state.appointments))
+    h.requests.clear()
+
+    async def owner(request):
+        if request.url.path.endswith("/slots"):
+            h.requests.append(request)
+            return harness.slot_failure(request, failure)
+        return await h.ops.http._transport.handle_async_request(request)
+
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await booking.BookingService(ops, h.settings, h.clock).manage(
+            h.ctx(operation_id="failed-read"), booking.BookingRequest(**args))
+    detail = "AUTH" if failure in ("401", "403") else "SLOTS_UNAVAILABLE"
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "COULD_NOT_RECORD", "SAY_COULD_NOT_RECORD", detail)
+    assert result.retryAfterSeconds == (4 if failure == "upstream" else None)
+    assert sent(h, "/appointments") == sent(h, "/reschedule") == []
+    assert h.ops_state.appointments == before and "owner-only text" not in result.model_dump_json()
+
+
+async def test_non_scheduling_actions_never_read_slots(h):
+    from frontdesk_mcp.knowledge import KnowledgeRequest, KnowledgeService
+    from frontdesk_mcp.summary import SummaryRequest, SummaryService
+
+    created = await run(h, **CREATE)
+    assert created.outcome == "NOTED"
+    h.requests.clear()
+    assert (await run(h, action="LIST")).outcome == "FOUND"
+    assert (await run(h, h.ctx(operation_id="cancel"), action="CANCEL",
+                      appointmentId=created.appointment.appointmentId, callerConfirmed=True)).outcome == "CANCELLED"
+    await KnowledgeService(h.knowledge, h.settings).search(h.ctx(), KnowledgeRequest(question="parking", language="en"))
+    await SummaryService(h.ops, h.settings).record(h.ctx(started_at="2026-10-01T04:00:00Z"), SummaryRequest(
+        summaryText="Caller asked about parking", intent="GENERAL_INFO", outcome="RESOLVED_BY_AGENT"))
+    assert not any(p.endswith("/slots") or p == "/capabilities" for p in h.ops_paths())
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+@pytest.mark.parametrize("date", ["2026-10-01", "2026-10-05"])
+async def test_enabled_slot_facts_do_not_change_booking_policy_yet(h, action, date):
+    args = {**CREATE, "visitDate": date}
+    if action == "RESCHEDULE":
+        created = await run(h, **CREATE)
+        assert created.outcome == "NOTED"
+        args = {"action": action, "appointmentId": created.appointment.appointmentId,
+                "newVisitDate": date, "newPreferredTime": "10:45", "callerConfirmed": True}
+    h.requests.clear()
+    from .test_contract import slot_example
+
+    plan = slot_example("morningCancelled") | {"doctorId": "doc_garima", "date": date}
+    h.ops_state.set_slots("doc_garima", date, plan)
+    result = await run(h, h.ctx(operation_id="slots-not-active-yet"), **args)
+    assert (result.outcome, result.nextStep) == ("NOTED", "SAY_REQUEST_NOTED")
+    assert result.appointment.expectedTime == "10:45" and result.appointment.visitDate == date
+    assert h.ops_paths().count("/availability/doc_garima/slots") == 1
+    assert len(sent(h, "/appointments" if action == "CREATE" else "/reschedule")) == 1

@@ -26,7 +26,7 @@ from .clock import Clock, Deadline, local_now
 from .config import Settings
 from .context import CallContext
 from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unavailable, UncertainWrite
-from .schedule_reader import ScheduleReader
+from .schedule_reader import READ_ERRORS, ScheduleReader, read_failure_detail
 
 logger = logging.getLogger(__name__)
 
@@ -232,14 +232,14 @@ class BookingService:
                              action: Action) -> outcomes.BookingResult | None:
         try:
             facts = await self.reader.doctor(doctor_id, requested, policy.Purpose.AVAILABILITY, deadline)
-        except (Unavailable, Malformed, InvalidIdentifier) as exc:
+        except READ_ERRORS as exc:
+            if getattr(exc, "stage", None) != "slots" and isinstance(exc, Rejected):
+                return self._failure(exc, action)
             retry = exc.retry_after if isinstance(exc, Unavailable) else None
-            detail = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else (
-                "BOARD_UNAVAILABLE" if getattr(exc, "stage", None) == "board" else "PROFILE_UNAVAILABLE")
+            stage = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else getattr(exc, "stage", None)
+            detail = read_failure_detail(stage, "PROFILE_UNAVAILABLE")
             return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",
                                           detail=detail, retryAfterSeconds=retry)
-        except Rejected as exc:
-            return self._failure(exc, action)
         decision = policy.decide_doctor(facts, requested, session=session, now=now)
         booking = policy.decide_booking(decision, session=session, preferred_time=preferred, now=now)
         if isinstance(booking, policy.Write):

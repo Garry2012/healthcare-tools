@@ -71,6 +71,7 @@ class DoctorFacts:
     doctor: contract.DoctorSummary
     profile: contract.DoctorDetail | None = None
     entries: tuple[contract.AvailabilityEntry, ...] = ()
+    slots: contract.SlotPlan | None = None
 
 
 @dataclass(frozen=True)

@@ -15,6 +15,12 @@ from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unava
 READ_ERRORS = (Unavailable, Malformed, Rejected, InvalidIdentifier)
 
 
+def read_failure_detail(stage: str | None, fallback: str) -> str:
+    """Map the failed read; callers retain their existing AUTH precedence and fallback."""
+    return {"board": "BOARD_UNAVAILABLE", "profile": "PROFILE_UNAVAILABLE",
+            "slots": "SLOTS_UNAVAILABLE", "AUTH": "AUTH"}.get(stage, fallback)
+
+
 @dataclass(frozen=True)
 class ReadFailure:
     doctor: contract.DoctorSummary
@@ -68,24 +74,45 @@ class ScheduleReader:
             exc.stage = "board"
             raise
 
+    async def slots(self, doctor_id: str, requested: policy.RequestedDate,
+                    deadline: Deadline) -> contract.SlotPlan | None:
+        try:
+            plan = await self.ops.get_slots(deadline, doctor_id=doctor_id, date=requested.value.isoformat())
+            if plan.doctorId != doctor_id or plan.date != requested.value:
+                raise Malformed("slot plan does not match the requested doctor and date")
+            labels = [policy.normalised(session.session or "") for session in plan.sessions]
+            if len(labels) != len(set(labels)):
+                raise Malformed("slot session labels are not unique")
+            blocks = sorted((block for session in plan.sessions for block in session.slots), key=lambda b: b.start)
+            if not contract.ordered_slot_blocks(blocks):
+                raise Malformed("slot sessions overlap")
+            return plan if plan.enabled else None
+        except READ_ERRORS as exc:
+            exc.stage = "slots"
+            raise
+
     async def doctor(self, doctor_id: str, requested: policy.RequestedDate | None, purpose: policy.Purpose,
                      deadline: Deadline, summary: contract.DoctorSummary | None = None) -> policy.DoctorFacts:
-        if summary is not None and summary.attendanceType == "ON_CALL":
-            return policy.DoctorFacts(summary)
-        today = purpose == policy.Purpose.AVAILABILITY and requested.kind == policy.DateKind.TODAY
+        if purpose == policy.Purpose.WORKING_HOURS:
+            if summary is not None and summary.attendanceType == "ON_CALL":
+                return policy.DoctorFacts(summary)
+            profile = await self.profile(doctor_id, deadline)
+            return policy.DoctorFacts(profile, profile)
+        today = requested.kind == policy.DateKind.TODAY
+        reads = {}
+        if summary is None or not today:
+            reads["profile"] = self.profile(doctor_id, deadline)
         if today:
-            if summary is None:
-                results = await asyncio.gather(self.profile(doctor_id, deadline),
-                                                self.board(deadline, doctor_id=doctor_id), return_exceptions=True)
-                for result in results:
-                    if isinstance(result, BaseException):
-                        raise result
-                profile, board = results
-                return policy.DoctorFacts(profile, profile, tuple(e for e in board.items if e.doctorId == doctor_id))
-            board = await self.board(deadline, doctor_id=doctor_id)
-            return policy.DoctorFacts(summary, entries=tuple(e for e in board.items if e.doctorId == doctor_id))
-        profile = await self.profile(doctor_id, deadline)
-        return policy.DoctorFacts(profile, profile)
+            reads["board"] = self.board(deadline, doctor_id=doctor_id)
+        reads["slots"] = self.slots(doctor_id, requested, deadline)
+        results = await asyncio.gather(*reads.values(), return_exceptions=True)
+        for result in results:  # preserve profile, then board, then slots failure precedence
+            if isinstance(result, BaseException):
+                raise result
+        fetched = dict(zip(reads, results, strict=True))
+        profile, board = fetched.get("profile"), fetched.get("board")
+        entries = tuple(e for e in board.items if e.doctorId == doctor_id) if board else ()
+        return policy.DoctorFacts(profile or summary, profile, entries, slots=fetched["slots"])
 
     async def _candidate(self, doctor: contract.DoctorSummary,
                          deadline: Deadline) -> policy.DoctorFacts | ReadFailure:
