@@ -1,6 +1,6 @@
 {
-  "instructions": "MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service. Availability date accepts only 'today' or YYYY-MM-DD; other relative dates are not accepted. NOTED is a recorded appointment request, not a confirmed or reserved time. CALLBACK_REQUIRED denotes an unresolved schedule or on-call doctor; UNCERTAIN denotes an unverified write result. Future answers describe usual working hours, not confirmed availability. Gateway authentication covers all four tools. Supported languages: en, kn, hi. Tool schema 2026-10-06.1.",
-  "schemaVersion": "2026-10-06.1",
+  "instructions": "MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service. Availability date: 'today' or YYYY-MM-DD; other relative dates are not accepted. NOTED records a request, not a reservation. CALLBACK_REQUIRED: ordinary unresolved schedule. On-call without a confirmed usable entry: HANDOFF_REQUIRED, not callback. Future dates: slots when enabled, usual hours otherwise; attendance not confirmed. Slots-enabled CREATE/RESCHEDULE require a time in openSlots; session is optional and validated. slotTime: owner slotTime, else expectedTime, else null. slotMoved marks a different block. UNCERTAIN: unverified write, desk handoff, not retry; a later same-operation invocation can fail a fresh schedule check. Gateway authentication covers all four tools. Supported languages: en, kn, hi. Tool schema 2026-10-08.1.",
+  "schemaVersion": "2026-10-08.1",
   "tools": [
     {
       "annotations": {
@@ -8,7 +8,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Doctor or department availability for today or an explicit future date; WORKING_HOURS returns usual hours without a board check. Today is LIVE_BOARD: status is Manoj's IN, LATE, CANCELLED, NOT_CONFIRMED or UNKNOWN; decision is the separate MCP result. IN/LATE permit a request, CANCELLED is NOT_AVAILABLE, NOT_CONFIRMED/UNKNOWN require callback. A supplied passed end time means NOT_AVAILABLE/SESSION_ENDED; a missing end time is not given, not an ended session. ON_CALL always means CALLBACK_REQUIRED. Future dates describe normal working hours or visiting attendance days, attendance not confirmed. Several sessions with the same decision require no choice; differing decisions may require a session choice. Department AVAILABILITY results list only bookable doctors when any exist; otherwise callback or unavailable facts, capped by the configured limit. totalMatches is the directory count across all types and decisions; bookableFound is the bookable count found among those checked, potentially larger than the returned list; complete means every directory candidate was evaluated. An incomplete search with no match is HANDOFF_REQUIRED/SEARCH_INCOMPLETE, not unavailability. WORKING_HOURS with hours returns PRESENT_WORKING_HOURS for one doctor and always bookableFound=0; a single on-call doctor or empty schedule returns CALLBACK_REQUIRED with reason and summaryOutcome. Department WORKING_HOURS includes on-call doctors as facts within the list limit. Callback details are stored only in record_call_summary as CALLBACK_NOTED. Ambiguous names return choices.",
+      "description": "Doctor or department availability for today or an explicit future date; WORKING_HOURS returns usual hours without board or slot checks. Today is LIVE_BOARD: status is Manoj's IN, LATE, CANCELLED, NOT_CONFIRMED or UNKNOWN; decision is the separate MCP result. With slots enabled, a selected doctor's date is checked against slots: openSlots contains the open blocks; [] means checked with no open blocks, null means not checked. For ordinary doctors, UNKNOWN always requires callback, even if another source says CANCELLED; NOT_CONFIRMED with an open bookable block permits a request, noted for desk confirmation. CANCELLED is NOT_AVAILABLE; no open slot is NOT_AVAILABLE/NO_OPEN_SLOT. A supplied passed end time means NOT_AVAILABLE/SESSION_ENDED; a missing end time is not an ended session. An ON_CALL doctor needs a confirmed IN/LATE entry with a usable window or open block; otherwise HANDOFF_REQUIRED means desk assistance, without callback metadata. A cancelled on-call session remains NOT_AVAILABLE. Future dates rely on slots when enabled, including desk-added oneDay sessions for that date only; a one-day session with null hours has no bookable time. With slots disabled, IN/LATE permit a request today, ordinary NOT_CONFIRMED/UNKNOWN require callback, and future regular/visiting hours describe usual attendance days, attendance not confirmed. Several sessions with the same decision require no session choice; differing decisions may require one. Department searches with slots enabled return DOCTORS_MATCHED and SLOT_CHECK_REQUIRED: doctors match the request, not yet available; slot availability is known after a doctor-specific check, with bookableFound=0 for these matches. With slots disabled, department AVAILABILITY lists bookable doctors when any exist; otherwise callback, handoff or unavailable facts. Results are capped by the configured limit. totalMatches is the directory count across all types and decisions; bookableFound counts bookable doctors found among those checked, potentially more than the returned list; complete means every directory candidate was evaluated, not that every doctor's slots were read. An incomplete search with no match is HANDOFF_REQUIRED/SEARCH_INCOMPLETE, not unavailability. WORKING_HOURS with hours returns PRESENT_WORKING_HOURS for one doctor and always bookableFound=0; an empty ordinary schedule returns CALLBACK_REQUIRED, while an on-call doctor requires HANDOFF_REQUIRED. Department WORKING_HOURS keeps on-call handoff facts within the list limit. Callback details are stored only in record_call_summary as CALLBACK_NOTED. Ambiguous names return choices.",
       "inputSchema": {
         "properties": {
           "date": {
@@ -112,7 +112,7 @@
               }
             ],
             "default": null,
-            "description": "Optional selected session label; limits the requested schedule or live-board sessions."
+            "description": "Optional selected session label; limits requested-date or working-hours sessions. Blank means no selection."
           }
         },
         "type": "object"
@@ -185,6 +185,22 @@
                 "default": null,
                 "title": "Note"
               },
+              "openSlots": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/SlotOut"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Owner's open blocks for this session and date. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked with no open block. When slots apply, CREATE or RESCHEDULE times outside these blocks are refused.",
+                "title": "Openslots"
+              },
               "reason": {
                 "anyOf": [
                   {
@@ -252,7 +268,9 @@
               "APPOINTMENT_REQUEST",
               "CALLBACK_REQUIRED",
               "NOT_AVAILABLE",
-              "COULD_NOT_CHECK"
+              "COULD_NOT_CHECK",
+              "SLOT_CHECK_REQUIRED",
+              "HANDOFF_REQUIRED"
             ],
             "title": "Decision",
             "type": "string"
@@ -363,7 +381,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "Usual working hours, independent of live attendance. null when the profile was not fetched.",
+                "description": "Requested-date sessions with their slot status and desk-added one-day sessions, or usual working hours for WORKING_HOURS. null when these session facts were not fetched.",
                 "title": "Usualsessions"
               }
             },
@@ -434,10 +452,41 @@
               "TIME_OUTSIDE_SESSION",
               "SESSION_REQUIRED",
               "TIME_NOT_VERIFIABLE",
-              "SEARCH_INCOMPLETE"
+              "SEARCH_INCOMPLETE",
+              "NO_OPEN_SLOT",
+              "SLOT_FULL"
             ],
             "title": "Reason",
             "type": "string"
+          },
+          "SlotOut": {
+            "properties": {
+              "available": {
+                "description": "Remaining places reported by the owner for this block; MCP does not compute capacity or reserve a place.",
+                "minimum": 0,
+                "title": "Available",
+                "type": "integer"
+              },
+              "end": {
+                "description": "Open block end in HH:MM facility local time, exclusive.",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "title": "End",
+                "type": "string"
+              },
+              "start": {
+                "description": "Open block start in HH:MM facility local time, inclusive.",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "title": "Start",
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end",
+              "available"
+            ],
+            "title": "SlotOut",
+            "type": "object"
           },
           "UsualSessionOut": {
             "properties": {
@@ -452,8 +501,16 @@
                 "$ref": "#/$defs/Decision"
               },
               "end": {
-                "title": "End",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Session end in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time.",
+                "title": "End"
               },
               "label": {
                 "anyOf": [
@@ -477,6 +534,28 @@
                 ],
                 "title": "Onrequesteddate"
               },
+              "oneDay": {
+                "default": false,
+                "description": "A session the desk added for the requested date only; not part of the regular schedule.",
+                "title": "Oneday",
+                "type": "boolean"
+              },
+              "openSlots": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/SlotOut"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Owner's open blocks for this session and date. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked with no open block. When slots apply, CREATE or RESCHEDULE times outside these blocks are refused.",
+                "title": "Openslots"
+              },
               "reason": {
                 "anyOf": [
                   {
@@ -489,8 +568,36 @@
                 "default": null
               },
               "start": {
-                "title": "Start",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Session start in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time.",
+                "title": "Start"
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "IN",
+                      "LATE",
+                      "CANCELLED",
+                      "NOT_CONFIRMED",
+                      "UNKNOWN"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Owner's slot status for this session on the requested date; null when slots were not checked.",
+                "title": "Status"
               }
             },
             "required": [
@@ -619,7 +726,8 @@
               "INVALID_REQUEST",
               "NOT_AVAILABLE",
               "WORKING_HOURS",
-              "HANDOFF_REQUIRED"
+              "HANDOFF_REQUIRED",
+              "DOCTORS_MATCHED"
             ],
             "title": "Outcome",
             "type": "string"
@@ -702,7 +810,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "CREATE, LIST, CANCEL or RESCHEDULE an appointment request. Writes require callerConfirmed=true and trusted call/operation headers. CREATE requires patientName, patientMobile, doctorId and visitDate. Department-level appointments are unsupported. LIST/CANCEL/RESCHEDULE require verified caller identity. Today is validated against the live board; future dates against usual hours, attendance not confirmed. ON_CALL requires callback. NOTED means a create or reschedule request is recorded, not a confirmed or reserved time; appointment.status preserves the owner status. UNCERTAIN means the write may have committed without a verified result. CALLBACK_REQUIRED means no write was submitted and callback facts belong in a call summary. NOT_AVAILABLE means the selected session or time is unavailable; TIME_OUTSIDE_SESSION identifies a time outside known bounds. Differing decisions without a session or time selection produce SESSION_REQUIRED and alternatives. A bookable session without an end time supports a session-only request; a specific time produces HANDOFF_REQUIRED/TIME_NOT_VERIFIABLE without a write or callback.",
+      "description": "Appointment request operations: CREATE, LIST, CANCEL and RESCHEDULE. Writes require callerConfirmed=true and trusted call/operation headers. CREATE requires patientName, patientMobile, doctorId and visitDate; department-level appointments are unsupported. LIST/CANCEL/RESCHEDULE require verified caller identity. With slots enabled, CREATE requires preferredTime and RESCHEDULE requires newPreferredTime: the time belongs within returned openSlots. Missing time returns TIME_REQUIRED/ASK_WHICH_TIME with choices. session is optional; a supplied nonblank label must match the session containing that time. Blank means no selection; session is internal MCP context, absent from the owner request. Today uses the live board and slots; future dates rely on slots when enabled. Ordinary UNKNOWN requires CALLBACK_REQUIRED and no write; NOT_CONFIRMED with an open bookable block can be NOTED: noted, the desk will confirm. ON_CALL without a confirmed IN/LATE entry and a usable window or open block requires HANDOFF_REQUIRED/TRANSFER_DESK without callback metadata; cancelled sessions are NOT_AVAILABLE. With slots disabled, today uses the board and future regular/visiting dates follow usual hours, attendance not confirmed; time is optional, differing decisions without session/time selection yield SESSION_REQUIRED/ASK_WHICH_SESSION, and a specific time without a known end yields HANDOFF_REQUIRED/TIME_NOT_VERIFIABLE. NOTED records a create or reschedule request, not a confirmed or reserved time; appointment.status preserves the owner status. slotTime is the time recorded for this request: the owner's slotTime (block start), otherwise expectedTime, otherwise null. slotMoved is true only if the owner returned a different block, such as for a late doctor or passed time; choosing 10:45 and receiving its 10:30 block start is not moved. CALLBACK_REQUIRED means no write and callback facts belong only in a call summary. NOT_AVAILABLE means the selected session/time is unavailable; NO_OPEN_SLOT means the session has no open slot, SLOT_FULL means that time is full, and TIME_OUTSIDE_SESSION means outside known bounds or, with slots, no open block contains the time or a supplied session label does not match its session. Checked alternatives are the sessions/openSlots in this result; an owner SLOT_FULL write rejection carries none and establishes no availability at other times. UNCERTAIN means a write may have committed without a verified result; desk handoff is the disposition, not retry. A later invocation with the same operation id re-runs the schedule check and can be refused; refusal does not prove the earlier write failed.",
       "inputSchema": {
         "properties": {
           "action": {
@@ -772,7 +880,7 @@
               }
             ],
             "default": null,
-            "description": "Optional RESCHEDULE preferred time in HH:MM 24-hour format."
+            "description": "RESCHEDULE time in HH:MM 24-hour format; required when slots are enabled, chosen within returned openSlots. Optional when slots are disabled."
           },
           "newVisitDate": {
             "anyOf": [
@@ -825,7 +933,7 @@
               }
             ],
             "default": null,
-            "description": "Optional CREATE preferred time in HH:MM 24-hour format; a request, not a reserved time."
+            "description": "CREATE time in HH:MM 24-hour format; required when slots are enabled, chosen within returned openSlots. Optional when slots are disabled; a request, not a reservation."
           },
           "reasonVerbatim": {
             "anyOf": [
@@ -851,7 +959,7 @@
               }
             ],
             "default": null,
-            "description": "Optional CREATE or RESCHEDULE session label; required when differing session decisions remain unresolved."
+            "description": "Optional CREATE or RESCHEDULE session label; blank means no selection. With slots enabled, a supplied label must match the session containing the chosen time; an unlabelled session cannot match it. Internal MCP context, absent from the owner request. With slots disabled, a session or time selection resolves differing decisions."
           },
           "status": {
             "anyOf": [
@@ -954,6 +1062,26 @@
                 "title": "Patientname",
                 "type": "string"
               },
+              "slotMoved": {
+                "default": false,
+                "description": "True only when the owner moved CREATE or RESCHEDULE to a different block, for example for a late doctor or a passed time. Choosing 10:45 and receiving its 10:30 block start is not moved. False for LIST and CANCEL.",
+                "title": "Slotmoved",
+                "type": "boolean"
+              },
+              "slotTime": {
+                "anyOf": [
+                  {
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Time recorded for this request in HH:MM facility local time: the owner's slotTime (block start), otherwise the request's expectedTime, otherwise null.",
+                "title": "Slottime"
+              },
               "status": {
                 "enum": [
                   "NOTED",
@@ -1035,6 +1163,22 @@
                 "default": null,
                 "title": "Note"
               },
+              "openSlots": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/SlotOut"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Owner's open blocks for this session and date. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked with no open block. When slots apply, CREATE or RESCHEDULE times outside these blocks are refused.",
+                "title": "Openslots"
+              },
               "reason": {
                 "anyOf": [
                   {
@@ -1102,7 +1246,9 @@
               "APPOINTMENT_REQUEST",
               "CALLBACK_REQUIRED",
               "NOT_AVAILABLE",
-              "COULD_NOT_CHECK"
+              "COULD_NOT_CHECK",
+              "SLOT_CHECK_REQUIRED",
+              "HANDOFF_REQUIRED"
             ],
             "title": "Decision",
             "type": "string"
@@ -1124,10 +1270,41 @@
               "TIME_OUTSIDE_SESSION",
               "SESSION_REQUIRED",
               "TIME_NOT_VERIFIABLE",
-              "SEARCH_INCOMPLETE"
+              "SEARCH_INCOMPLETE",
+              "NO_OPEN_SLOT",
+              "SLOT_FULL"
             ],
             "title": "Reason",
             "type": "string"
+          },
+          "SlotOut": {
+            "properties": {
+              "available": {
+                "description": "Remaining places reported by the owner for this block; MCP does not compute capacity or reserve a place.",
+                "minimum": 0,
+                "title": "Available",
+                "type": "integer"
+              },
+              "end": {
+                "description": "Open block end in HH:MM facility local time, exclusive.",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "title": "End",
+                "type": "string"
+              },
+              "start": {
+                "description": "Open block start in HH:MM facility local time, inclusive.",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "title": "Start",
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end",
+              "available"
+            ],
+            "title": "SlotOut",
+            "type": "object"
           },
           "UsualSessionOut": {
             "properties": {
@@ -1142,8 +1319,16 @@
                 "$ref": "#/$defs/Decision"
               },
               "end": {
-                "title": "End",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Session end in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time.",
+                "title": "End"
               },
               "label": {
                 "anyOf": [
@@ -1167,6 +1352,28 @@
                 ],
                 "title": "Onrequesteddate"
               },
+              "oneDay": {
+                "default": false,
+                "description": "A session the desk added for the requested date only; not part of the regular schedule.",
+                "title": "Oneday",
+                "type": "boolean"
+              },
+              "openSlots": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/SlotOut"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Owner's open blocks for this session and date. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked with no open block. When slots apply, CREATE or RESCHEDULE times outside these blocks are refused.",
+                "title": "Openslots"
+              },
               "reason": {
                 "anyOf": [
                   {
@@ -1179,8 +1386,36 @@
                 "default": null
               },
               "start": {
-                "title": "Start",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Session start in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time.",
+                "title": "Start"
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "IN",
+                      "LATE",
+                      "CANCELLED",
+                      "NOT_CONFIRMED",
+                      "UNKNOWN"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Owner's slot status for this session on the requested date; null when slots were not checked.",
+                "title": "Status"
               }
             },
             "required": [
@@ -1263,7 +1498,8 @@
               "SAY_COULD_NOT_CHECK",
               "ASK_WHICH_SESSION",
               "OFFER_OTHER_SESSION_OR_TIME",
-              "OFFER_OTHER_SESSION_OR_DATE"
+              "OFFER_OTHER_SESSION_OR_DATE",
+              "ASK_WHICH_TIME"
             ],
             "title": "Nextstep",
             "type": "string"
@@ -1519,7 +1755,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Store one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.",
+      "description": "Stores one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.",
       "inputSchema": {
         "properties": {
           "appointmentId": {

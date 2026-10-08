@@ -35,14 +35,39 @@ class Callback(_Out):
     summaryOutcome: Literal["CALLBACK_NOTED"] = "CALLBACK_NOTED"  # noqa: N815 - wire names
 
 
+class SlotOut(_Out):
+    start: str = Field(pattern=contract.APPROX_TIME_PATTERN,
+                       description="Open block start in HH:MM facility local time, inclusive.")
+    end: str = Field(pattern=contract.APPROX_TIME_PATTERN,
+                     description="Open block end in HH:MM facility local time, exclusive.")
+    available: int = Field(ge=0, description=(
+        "Remaining places reported by the owner for this block; MCP does not compute capacity or reserve a place."))
+
+
+_OPEN_SLOTS_DESCRIPTION = (
+    "Owner's open blocks for this session and date. null means slots were not checked (disabled, WORKING_HOURS, "
+    "or a department search pending doctor selection); [] means checked with no open block. "
+    "When slots apply, CREATE or RESCHEDULE times outside these blocks are refused."
+)
+
+
 class UsualSessionOut(_Out):
     label: str | None
     daysOfWeek: list[str]  # noqa: N815
-    start: str
-    end: str
+    start: str | None = Field(description=(
+        "Session start in facility local time. null only for a one-day session whose hours the owner did not supply. "
+        "Such a session has no bookable time."))
+    end: str | None = Field(description=(
+        "Session end in facility local time. null only for a one-day session whose hours the owner did not supply. "
+        "Such a session has no bookable time."))
     onRequestedDate: bool | None  # noqa: N815
     decision: Decision
     reason: Reason | None = None
+    openSlots: list[SlotOut] | None = Field(default=None, description=_OPEN_SLOTS_DESCRIPTION)  # noqa: N815
+    status: contract.AvailabilityStatus | None = Field(default=None,
+        description="Owner's slot status for this session on the requested date; null when slots were not checked.")
+    oneDay: bool = Field(default=False, description=(  # noqa: N815
+        "A session the desk added for the requested date only; not part of the regular schedule."))
 
 
 class BoardSessionOut(_Out):
@@ -55,6 +80,7 @@ class BoardSessionOut(_Out):
     isStale: bool  # noqa: N815
     decision: Decision
     reason: Reason | None = None
+    openSlots: list[SlotOut] | None = Field(default=None, description=_OPEN_SLOTS_DESCRIPTION)  # noqa: N815
 
 
 def session_out(s: SessionDecision, requested: RequestedDate | None):
@@ -76,7 +102,8 @@ class DoctorAvailability(_Out):
     gender: str | None = None
     dataConfirmed: bool | None = None  # noqa: N815
     usualSessions: list[UsualSessionOut] | None = Field(  # noqa: N815
-        description="Usual working hours, independent of live attendance. null when the profile was not fetched.")
+        description="Requested-date sessions with their slot status and desk-added one-day sessions, "
+                    "or usual working hours for WORKING_HOURS. null when these session facts were not fetched.")
     board: list[BoardSessionOut]
     decision: Decision
     reason: Reason | None = None
@@ -98,7 +125,7 @@ class DepartmentChoice(_Out):
 AvailabilityOutcome = Literal[
     "AVAILABILITY", "CLARIFICATION_NEEDED", "CALLBACK_REQUIRED",
     "NOT_FOUND", "COULD_NOT_CHECK", "INVALID_REQUEST",
-    "NOT_AVAILABLE", "WORKING_HOURS", "HANDOFF_REQUIRED",
+    "NOT_AVAILABLE", "WORKING_HOURS", "HANDOFF_REQUIRED", "DOCTORS_MATCHED",
 ]
 NextStep = Literal[
     "OFFER_APPOINTMENT_REQUEST", "ASK_WHICH_DOCTOR", "ASK_WHICH_DEPARTMENT", "ASK_CALLBACK_DETAILS",
@@ -144,6 +171,13 @@ class AppointmentOut(_Out):
     doctorId: str | None = None  # noqa: N815
     department: str | None = None
     patientName: str  # noqa: N815
+    slotTime: str | None = Field(default=None, pattern=contract.APPROX_TIME_PATTERN, description=(  # noqa: N815
+        "Time recorded for this request in HH:MM facility local time: the owner's slotTime (block start), "
+        "otherwise the request's expectedTime, otherwise null."))
+    slotMoved: bool = Field(default=False, description=(  # noqa: N815
+        "True only when the owner moved CREATE or RESCHEDULE to a different block, for example for a late doctor "
+        "or a passed time. Choosing 10:45 and receiving its 10:30 block start is not moved. "
+        "False for LIST and CANCEL."))
 
 
 BookingOutcome = Literal[
@@ -155,7 +189,7 @@ BookingNextStep = Literal[
     "SAY_REQUEST_NOTED", "SAY_CHANGED", "SAY_CANCELLED", "OFFER_CHOICES", "SAY_NOT_FOUND", "ASK_TO_CORRECT",
     "SAY_UNCERTAIN_AND_TRANSFER", "TRANSFER_DESK",
     "ASK_CALLBACK_DETAILS", "ASK_CONFIRMATION", "SAY_COULD_NOT_RECORD", "SAY_COULD_NOT_CHECK",
-    "ASK_WHICH_SESSION", "OFFER_OTHER_SESSION_OR_TIME", "OFFER_OTHER_SESSION_OR_DATE",
+    "ASK_WHICH_SESSION", "OFFER_OTHER_SESSION_OR_TIME", "OFFER_OTHER_SESSION_OR_DATE", "ASK_WHICH_TIME",
 ]
 
 

@@ -38,7 +38,9 @@ async def test_known_doctor_today_returns_every_window_and_every_board_session(h
     assert [(b.session, b.status, b.expectedTime, b.expectedEndTime) for b in doctor.board] == [
         ("Morning", "IN", "09:10", "12:00"), ("Afternoon", "NOT_CONFIRMED", "15:00", "17:00")]
     assert doctor.decision == "APPOINTMENT_REQUEST" and doctor.sessionChoiceRequired is True
-    assert "patientsPerHour" not in result.model_dump_json() and "slot" not in result.model_dump_json().lower()
+    assert "patientsPerHour" not in result.model_dump_json()
+    # Slots are disabled in the stub: no slot facts may appear without owner slot evidence.
+    assert all(b.openSlots is None for b in doctor.board)
 
 
 async def test_late_session_keeps_the_supplied_revised_time_without_adding_the_delay_again(h):
