@@ -876,7 +876,7 @@ async def test_definite_slot_full_returns_no_invented_alternatives_or_write(h, a
         args = {"action": action, "appointmentId": appointment_id, "newVisitDate": "2026-10-05",
                 "newPreferredTime": "11:00", "callerConfirmed": True}
     h.requests.clear()
-    h.ops_state.write_outcomes = {path: [(409, "SLOT_FULL")]}
+    h.ops_state.write_outcomes = {path: [{"status": 409, "code": "SLOT_FULL"}]}
     result = await run(h, h.ctx(operation_id="full-time"), **args)
     assert (result.outcome, result.nextStep, result.detail) == (
         "NOT_AVAILABLE", "OFFER_OTHER_SESSION_OR_TIME", "SLOT_FULL")
@@ -910,7 +910,7 @@ async def test_slot_full_after_an_unanswered_same_key_attempt_stays_uncertain(h,
                 raise httpx.ReadTimeout("response lost", request=request)
         return await h.ops.http._transport.handle_async_request(request)
 
-    h.ops_state.write_outcomes = {path: [(409, "SLOT_FULL")]}
+    h.ops_state.write_outcomes = {path: [{"status": 409, "code": "SLOT_FULL"}]}
     async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
         result = await booking.BookingService(ops, h.settings, h.clock).manage(
             h.ctx(operation_id="retry-full"), booking.BookingRequest(**args))
@@ -925,7 +925,7 @@ async def test_slot_full_after_an_unanswered_same_key_attempt_stays_uncertain(h,
 
 
 async def test_unsupported_capability_write_keeps_the_generic_rejection(h, caplog):
-    h.ops_state.write_outcomes = {"/appointments": [(400, "UNSUPPORTED_CAPABILITY")]}
+    h.ops_state.write_outcomes = {"/appointments": [{"status": 400, "code": "UNSUPPORTED_CAPABILITY"}]}
     result = await run(h, **CREATE)
     assert (result.outcome, result.nextStep, result.detail) == (
         "REJECTED", "ASK_TO_CORRECT", "UNSUPPORTED_CAPABILITY")

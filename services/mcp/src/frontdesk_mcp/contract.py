@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MOBILE_PATTERN = "^[0-9]{10}$"
 APPROX_TIME_PATTERN = "^([01][0-9]|2[0-3]):[0-5][0-9]$"
@@ -112,6 +112,54 @@ class AvailabilityBoard(_Model):
     items: list[AvailabilityEntry]
 
 
+class SlotBlock(_Model):
+    start: str = Field(pattern=APPROX_TIME_PATTERN)
+    end: str = Field(pattern=APPROX_TIME_PATTERN)
+    capacity: int = Field(ge=0)
+    booked: int = Field(ge=0)
+    available: int = Field(ge=0)
+    bookable: bool
+
+    @model_validator(mode="after")
+    def _consistent(self) -> SlotBlock:
+        if self.start >= self.end:
+            raise ValueError("slot start must precede end")
+        if self.available > self.capacity:
+            raise ValueError("available exceeds capacity")
+        return self
+
+
+class SlotSession(_Model):
+    session: str | None  # owner uses an empty string; null is also tolerated without normalising
+    status: AvailabilityStatus
+    bookable: bool
+    slots: list[SlotBlock]
+
+    @model_validator(mode="after")
+    def _ordered(self) -> SlotSession:
+        if any(previous.end > following.start
+               for previous, following in zip(self.slots, self.slots[1:], strict=False)):
+            raise ValueError("slot blocks must be ordered and non-overlapping")
+        return self
+
+
+class SlotPlan(_Model):
+    doctorId: str  # noqa: N815
+    date: date
+    enabled: bool
+    blockMinutes: int  # noqa: N815
+    sessions: list[SlotSession]
+
+
+class SlotCapabilities(_Model):
+    enabled: bool
+    blockMinutes: int | None = None  # noqa: N815
+
+
+class Capabilities(_Model):
+    slots: SlotCapabilities
+
+
 class CreatedBy(_Model):
     type: Literal["AGENT", "STAFF"]
     id: str | None = None
@@ -125,6 +173,7 @@ class Appointment(_Model):
     department: str | None = None
     visitDate: date  # noqa: N815
     expectedTime: str | None = None  # noqa: N815
+    slotTime: str | None = Field(default=None, pattern=APPROX_TIME_PATTERN)  # noqa: N815
     reasonVerbatim: str | None = None  # noqa: N815
     status: AppointmentStatus
     callId: str | None = None  # noqa: N815
@@ -165,4 +214,3 @@ class ErrorInfo(_Model):
 
 class ErrorBody(_Model):
     error: ErrorInfo
-
