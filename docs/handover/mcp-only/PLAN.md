@@ -32,7 +32,9 @@ The public interfaces are the only dependency on either owner's implementation: 
 
 **What the published contract changes**
 
-The Swagger page loads `./openapi.yaml`. The fetched snapshot is [the pinned contract](contracts/manoj-openapi-20261007.yaml), SHA-256 `d3e93f45498fb86feeb5bb93c0adaba7cff47b48daa21ac810790b5483e96c80`. It still identifies itself as `0.3.0-draft`, but has 20 paths and 23 operations versus the earlier attachment's 16 paths and 19 operations. Pin the revision/hash during development; the version string alone does not distinguish these contracts.
+Current pin: [0.4.0-draft](contracts/manoj-openapi-20261007.yaml), SHA-256 `d3e93f45498fb86feeb5bb93c0adaba7cff47b48daa21ac810790b5483e96c80` (see [contract provenance](contracts/README.md)); the contract-change discussion below describes the historical 30 September 0.3.0 snapshot.
+
+The Swagger page loads `./openapi.yaml`. The 30 September snapshot is [the historical contract](contracts/manoj-openapi-20260930.yaml), SHA-256 `b8f282718c2c45410dd0dd403369223b9cbe8dea045ee044207aa1e52ec2de78`. It identifies itself as `0.3.0-draft`, with 20 paths and 23 operations versus the earlier attachment's 16 paths and 19 operations. Pin the revision/hash during development; the version string alone does not distinguish these contracts.
 
 The additions are `issueMachineToken`, `staffLogin`, `refreshStaffSession` and `staffLogout`, plus authentication schemas and server configuration. The operational request/response schemas have not acquired natural-language date/department interpretation inputs. No slot endpoint was added. The documented `/availability` is a per-session live board, distinct from a slot inventory; its presence in the spec does not establish a running backend implementation.
 
