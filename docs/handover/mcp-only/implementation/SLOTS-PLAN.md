@@ -1,4 +1,4 @@
-# Slot-aware availability and booking: implementation plan (revision 11.1, 8 October 2026)
+# Slot-aware availability and booking: implementation plan (revision 11.2, 8 October 2026)
 
 **Status:** plan for review. Nothing is implemented. Astra implements; Opus reviews.
 
@@ -14,7 +14,8 @@
 - Revision 9: Astra's confirmation (`SLOTS-PLAN-PREFLIGHT-R8.md`, verdict ready to build) showed that revision 8's strict rule changes six deployed behaviours: Manoj drops the times of every stale entry, so a stale labelled session would block bookings in every other session each afternoon. **Garima chose D-7 (option B): a session's label is evidence.** Only an unlabelled UNKNOWN session cannot be ruled out. Deployed v0.3 behaviour and all existing tests stay unchanged; the only new retention is in `_future`'s named scope (R7-B1).
 - Revision 10: Garima's decision D-8 on on-call doctors (Manoj's `AttendanceType` rule): a confirmed, usable entry is treated like any doctor's; otherwise `HANDOFF_REQUIRED`/`TRANSFER_DESK`, no longer a callback. New section C-8.
 - **Revision 11:** Astra's on-call pre-flight (`SLOTS-PLAN-PREFLIGHT-R10.md`). C-8 now reads the session's confirmed status and its window/slot facts, not a decision that has lost them (B1); handoff is consumed after time selection too (B2); an on-call doctor's usual schedule is never a fact, so an unread on-call profile is no failure (B3); callback ranks before handoff (S1); the full test and document inventory and the 3a split are adopted.
-- **Revision 11.1:** wording aligned with C-8 as listed in `SLOTS-PLAN-PREFLIGHT-R11.md` §5 (verdict ready to build). No rule changed.
+- Revision 11.1: wording aligned with C-8 as listed in `SLOTS-PLAN-PREFLIGHT-R11.md` §5 (verdict ready to build). No rule changed.
+- **Revision 11.2:** Garima accepted (8 October) the one added read stage for an on-call doctor asked about by name (D-8 consequence raised by the 2b reviews). Recorded in D-8 and §11, with the latency rule for build briefs. No rule changed.
 
 Section 13 maps every finding to its fix.
 
@@ -38,7 +39,7 @@ Section 13 maps every finding to its fix.
 | D-5 | **No start-up or background capability process.** A selected doctor **always** gets a `/slots` read (in parallel with the existing reads), and `SlotPlan.enabled` says whether slots apply. **Department availability searches only** read `/capabilities` when needed, through the existing `DirectoryCache` |
 | **D-6** | **UNKNOWN always means callback, with no exception, for ordinary doctors** (on-call doctors: handoff, D-8/C-8). When the board and the slot session disagree and either says UNKNOWN, the result is a callback, even if the other says CANCELLED (R4-B1). At booking time it applies to every session that **could be** the one the caller's time belongs to, as defined by D-7. A time that has already passed, or lies outside every session's known hours, is refused as `TIME_OUTSIDE_SESSION` with the open alternatives, even if an UNKNOWN session exists at another time that day (R5-B1b): a callback cannot make a passed or out-of-hours time bookable |
 | **D-7** | **A session's label is evidence (option B, 8 October).** A session that **could be** the caller's target is one that contains the chosen time (blocks, else its window), **or has no label**, or, when no session contains the time, has unknown hours (the existing unbounded fallback). A **labelled** UNKNOWN session with unknown hours does not block a booking whose time or named session clearly belongs to another session: its label rules it out. Reason: Manoj erases the times of every stale entry, so the strict alternative (option A, revision 8) would turn most afternoon bookings into callbacks and change six deployed behaviours. With slots, Manoj books a time only into the session whose block contains it, so a blockless session cannot receive it |
-| **D-8** | **On-call doctors (Manoj's contract, `AttendanceType`: "resolve to the front desk unless the board has a confirmed entry").** A confirmed entry is a desk-set **IN or LATE**, and it is actionable **only** when the board or slot data gives a usable time window (both bounds, not ended) or at least one open bookable slot; then the doctor is treated exactly like any other doctor. **CANCELLED** → not available. **NOT_CONFIRMED, UNKNOWN, stale, missing entries, and IN/LATE without a usable window or open slot** → **human handoff: `HANDOFF_REQUIRED`/`TRANSFER_DESK`**, reason `ON_CALL_DOCTOR`, never a callback. An on-call doctor has no usual schedule, so nothing else can make a date actionable. D-8 replaces D-6's callback for on-call doctors only (C-8) |
+| **D-8** | **On-call doctors (Manoj's contract, `AttendanceType`: "resolve to the front desk unless the board has a confirmed entry").** A confirmed entry is a desk-set **IN or LATE**, and it is actionable **only** when the board or slot data gives a usable time window (both bounds, not ended) or at least one open bookable slot; then the doctor is treated exactly like any other doctor. **CANCELLED** → not available. **NOT_CONFIRMED, UNKNOWN, stale, missing entries, and IN/LATE without a usable window or open slot** → **human handoff: `HANDOFF_REQUIRED`/`TRANSFER_DESK`**, reason `ON_CALL_DOCTOR`, never a callback. An on-call doctor has no usual schedule, so nothing else can make a date actionable. D-8 replaces D-6's callback for on-call doctors only (C-8). **Accepted latency consequence (Garima, 8 October):** an on-call doctor asked about by name for AVAILABILITY no longer stops after the directory search; it gets one added read group (today board ∥ slots, future profile ∥ slots), because only those reads can show a confirmed entry (§11) |
 | Earlier | UNKNOWN → callback via a `CALLBACK_NOTED` summary. CANCELLED → not available. ON_CALL → always callback (**superseded by D-8**). No slot reads in department searches. B-1 (reschedule bypass when the appointment is absent from the lookup) stays as accepted |
 
 **Manoj's answers:**
@@ -371,8 +372,11 @@ Doctor-level exits with no session use the same result: today with no board row,
 | RESCHEDULE | lookup → schedule reads → write | lookup → (schedule reads ∥ `/slots`) → write |
 | Department | search ∥ board, or batched profiles | + cached `/capabilities` in the first parallel step (AVAILABILITY only); **no** `/slots` |
 | Name lookup | directory search, then reads | unchanged order |
+| On-call doctor by name, AVAILABILITY | directory search only (the old shortcut) | directory search, then **one added read group** (today board ∥ slots, future profile ∥ slots). Accepted exception (D-8, Garima 8 October); WORKING_HOURS keeps the shortcut |
 
-Parallel does not mean free: connection-pool contention and the 0.30 s budget need the bench (section 8).
+Parallel does not mean free: connection-pool contention and the 0.30 s budget need the bench (section 8), including the on-call by-name path above.
+
+**Latency rule for build briefs:** once the doctor is known, the slot read runs in the same parallel group as the other required doctor reads; no step exists only for slots. The on-call by-name group above is the only accepted added stage.
 
 ## 12. Alternatives considered and rejected
 

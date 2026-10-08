@@ -159,3 +159,14 @@ Phase 2b is correct and approved. **Phase 3a-1 can start.**
 - simplify how the "AUTH" error detail is chosen.
 
 **Checks:** 794 fast tests, the process tests, the package build and both Docker images all passed. Commit A also passes on its own.
+
+## 8. Addendum: the latency conflict, resolved in writing
+
+GPT Sol's independent review reached the same finding: the 2b brief's "no new sequential round trip on any path" cannot hold for an on-call doctor asked about by name once D-8 removes the shortcut. Sol asked for it to be settled in writing before 3a-1.
+
+**Resolution (8 October):**
+- **Garima accepted the exception.**
+- **Recorded in `SLOTS-PLAN.md` revision 11.2:** in the D-8 row, as a row in the §11 latency table, and as the latency rule for future build briefs: "once the doctor is known, the slot read runs in the same parallel group as the other required doctor reads; no step exists only for slots".
+- **Code:** no change required.
+
+The conflict is closed; the verdict (**APPROVED**) and "phase 3a-1 may begin" stand.
