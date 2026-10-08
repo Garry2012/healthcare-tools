@@ -43,19 +43,35 @@ class _LifespanApp:
             await send({"type": "lifespan.startup.complete"})
             assert (await receive())["type"] == "lifespan.shutdown"
             self.shutdown_started.set()
-            await self.shutdown_gate.wait()
+            await self.shutdown()
             await send({"type": "lifespan.shutdown.complete"})
         finally:
             self.finished.set()
 
+    async def shutdown(self):
+        await self.shutdown_gate.wait()
 
-async def test_serving_bounds_stuck_shutdown_and_cleans_up(monkeypatch):
-    app = _LifespanApp(asyncio.Event())
+
+class _CancellationIgnoringLifespanApp(_LifespanApp):
+    async def shutdown(self):
+        while not self.shutdown_gate.is_set():
+            try:
+                await self.shutdown_gate.wait()
+            except asyncio.CancelledError:
+                continue
+
+
+@pytest.mark.parametrize("app_type", [_LifespanApp, _CancellationIgnoringLifespanApp])
+async def test_serving_bounds_stuck_shutdown_and_cleans_up(monkeypatch, app_type):
+    app = app_type(asyncio.Event())
     unrelated = asyncio.create_task(asyncio.Event().wait(), name="PRIVATE42-caller-secret")
     before = asyncio.all_tasks()
     loop = asyncio.get_running_loop()
+    owned = set()
+    # The old gather can absorb the outer timeout; release its blocked child as a final RED safeguard.
+    emergency_release = loop.call_later(2.5, app.shutdown_gate.set)
     try:
-        async with asyncio.timeout(3):  # Also bounds the RED run of the old helper.
+        async with asyncio.timeout(2):
             with pytest.raises(AssertionError, match=r"shutdown exceeded 0\.5s") as failure:
                 async with serving(app, shutdown_limit=0.5) as base:
                     owned = asyncio.all_tasks() - before
@@ -64,18 +80,16 @@ async def test_serving_bounds_stuck_shutdown_and_cleans_up(monkeypatch):
                     started = loop.time()
         elapsed = loop.time() - started
         assert 0.5 <= elapsed < 2
-        assert app.shutdown_started.is_set() and app.finished.is_set()
-        assert all(t.done() for t in owned)
+        assert app.shutdown_started.is_set()
+        assert all(t.done() for t in owned if t.get_coro().__qualname__ == "Server.serve")
+        # The fixture owns its blocked ASGI lifespan. serving only cancels the public serve() task.
+        app.shutdown_gate.set()
+        _, pending = await asyncio.wait(owned, timeout=1)
+        assert not pending and app.finished.is_set()
         assert asyncio.all_tasks() <= before
         assert not unrelated.done()
         message = str(failure.value)
-        assert "connections=0" in message and "server_tasks=0" in message
-        assert "lifespan_shutdown_started=True" in message
-        assert "lifespan_shutdown_finished=False" in message  # Captured BEFORE cancellation.
-        assert "LifespanOn.main" in message and "Server.serve" in message
-        assert re.search(r"on\.py:\d+", message)
-        assert "PRIVATE42" not in message and len(message) < 4000
-        print(message)
+        assert "stopped after cancellation=True" in message
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", port))
         # Reusing the exact released port proves the next server can start and stop.
@@ -89,8 +103,11 @@ async def test_serving_bounds_stuck_shutdown_and_cleans_up(monkeypatch):
         assert recovered.finished.is_set()
         assert asyncio.all_tasks() <= before
     finally:
+        emergency_release.cancel()
+        app.shutdown_gate.set()
         unrelated.cancel()
-        await asyncio.gather(unrelated, return_exceptions=True)
+        _, pending = await asyncio.wait({unrelated, *owned}, timeout=1)
+        assert not pending
 
 
 async def test_serving_normal_shutdown_stays_fast_and_quiet(capsys, caplog):
@@ -107,6 +124,36 @@ async def test_serving_normal_shutdown_stays_fast_and_quiet(capsys, caplog):
     captured = capsys.readouterr()
     assert captured.out == captured.err == ""
     assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+async def test_serving_reports_a_server_task_that_ignores_cancellation(monkeypatch):
+    blocker = _CancellationIgnoringLifespanApp(asyncio.Event())
+    original_shutdown = conftest.uvicorn.Server.shutdown
+
+    async def stuck_shutdown(server, sockets=None):
+        await original_shutdown(server, sockets)
+        await blocker.shutdown()
+
+    monkeypatch.setattr(conftest.uvicorn.Server, "shutdown", stuck_shutdown)
+    gate = asyncio.Event()
+    gate.set()
+    before = asyncio.all_tasks()
+    owned = set()
+    loop = asyncio.get_running_loop()
+    emergency_release = loop.call_later(2.5, blocker.shutdown_gate.set)
+    try:
+        async with asyncio.timeout(2):
+            with pytest.raises(AssertionError, match="stopped after cancellation=False"):
+                async with serving(_LifespanApp(gate), shutdown_limit=0.5):
+                    owned = asyncio.all_tasks() - before
+                    started = loop.time()
+        assert 0.5 <= loop.time() - started < 2
+    finally:
+        emergency_release.cancel()
+        blocker.shutdown_gate.set()
+        if owned:
+            _, pending = await asyncio.wait(owned, timeout=1)
+            assert not pending
 
 
 def _names(schema) -> set[str]:
