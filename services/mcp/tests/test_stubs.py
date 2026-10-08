@@ -552,3 +552,58 @@ async def test_success_fixture_does_not_turn_a_handler_rejection_into_success(op
     assert rejected.status_code == 400 and "slotTime" not in rejected.json()
     conforms(rejected.json(), "Error")
     assert state.appointments == {} and state.idempotency == {}
+    assert state.write_outcomes == {"/appointments": []}
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    next_write = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "valid"})
+    assert next_write.status_code == 201 and "slotTime" not in next_write.json()
+    conforms(next_write.json(), "Appointment")
+
+
+async def test_unscripted_slots_default_minutes_when_capabilities_omit_them(ops):
+    state, http = ops
+    capabilities = {"availability": {}, "slots": {"enabled": False}, "appointments": {}}
+    conforms(capabilities, "Capabilities")
+    configured = await http.post("/__stub/scenario", json={"capabilities": capabilities})
+    assert configured.status_code == 200
+    response = await http.get("/availability/doc_garima/slots", headers=await token(http))
+    assert response.status_code == 200
+    assert response.json() == {"doctorId": "doc_garima", "date": "2026-10-01", "enabled": False,
+                               "blockMinutes": 30, "sessions": []}
+    conforms(response.json(), "SlotPlan")
+
+
+async def test_http_write_outcomes_normalise_string_status_before_consumption(ops):
+    state, http = ops
+    configured = await http.post("/__stub/scenario", json={"writeOutcomes": {
+        "/appointments": [{"status": "409", "code": "SLOT_FULL"}, {"slotTime": "11:00"}]}})
+    assert configured.status_code == 200
+    auth = await token(http)
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    full = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "full"})
+    assert full.status_code == 409 and full.json()["error"]["code"] == "SLOT_FULL"
+    conforms(full.json(), "Error")
+    saved = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "saved"})
+    assert saved.status_code == 201 and saved.json()["slotTime"] == "11:00"
+    conforms(saved.json(), "Appointment")
+
+
+@pytest.mark.parametrize("item", [
+    {}, {"status": 409}, {"code": "SLOT_FULL"},
+    {"status": "bad", "code": "SLOT_FULL"}, {"status": None, "code": "SLOT_FULL"},
+    {"status": 200, "code": "SLOT_FULL"}, {"status": 600, "code": "SLOT_FULL"},
+    {"status": 409, "code": "NOT_A_CONTRACT_CODE"},
+    {"status": 409, "code": "SLOT_FULL", "slotTime": "11:00"},
+    {"slotTime": None}, {"slotTime": "25:00"}, {"slotTime": "11:00", "extra": True},
+    None, "invalid", [],
+])
+async def test_http_write_outcomes_reject_invalid_items_without_partial_scripting(ops, item):
+    state, http = ops
+    state.write_outcomes = {"/appointments": [{"slotTime": "10:30"}]}
+    response = await http.post("/__stub/scenario", json={
+        "failNext": [{"path": "/appointments", "status": 503}],
+        "writeOutcomes": {"/appointments": [{"status": 409, "code": "SLOT_FULL"}],
+                          "/appointments/other/reschedule": [item]}})
+    assert response.status_code == 400 and response.json()["error"]["code"] == "VALIDATION_FAILED"
+    conforms(response.json(), "Error")
+    assert state.write_outcomes == {"/appointments": [{"slotTime": "10:30"}]}
+    assert state.fail_next == []

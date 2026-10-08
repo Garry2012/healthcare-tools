@@ -216,9 +216,10 @@ def test_appointment_slot_time_is_optional_and_validated():
             contract.Appointment.model_validate(APPT | {"slotTime": value})
 
 
-@pytest.mark.parametrize("name", ["SlotPlan", "SlotBlock"])
+@pytest.mark.parametrize("name", ["SlotPlan", "SlotBlock", "SlotSession"])
 def test_slot_model_fields_match_the_contract_required_properties(name):
-    schema = load_overlay()["components"]["schemas"][name]
+    schemas = load_overlay()["components"]["schemas"]
+    schema = schemas["SlotPlan"]["properties"]["sessions"]["items"] if name == "SlotSession" else schemas[name]
     model = getattr(contract, name)
     assert set(model.model_fields) == set(schema["required"]) == set(schema["properties"])
     assert all(f.is_required() for f in model.model_fields.values())

@@ -17,9 +17,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Annotated, Any, TypedDict
 from zoneinfo import ZoneInfo
 
+from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, with_config
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -51,13 +52,18 @@ def default_capabilities() -> dict[str, Any]:
     }
 
 
+@with_config(ConfigDict(extra="forbid"))
 class ErrorWriteOutcome(TypedDict):
-    status: int
+    status: Annotated[int, Field(ge=400, le=599)]
     code: ErrorCode
 
 
+@with_config(ConfigDict(extra="forbid"))
 class SuccessWriteOutcome(TypedDict):
-    slotTime: str  # noqa: N815
+    slotTime: Annotated[str, Field(pattern=APPROX_TIME.pattern)]  # noqa: N815
+
+
+WRITE_OUTCOMES = TypeAdapter(dict[str, list[ErrorWriteOutcome | SuccessWriteOutcome]])
 
 
 @dataclass
@@ -303,7 +309,8 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         plan = state.slots.get(doctor_id, {}).get(iso)
         if plan is None:
             plan = {"doctorId": doctor_id, "date": iso, "enabled": False,
-                    "blockMinutes": state.capabilities["slots"]["blockMinutes"], "sessions": []}
+                    "blockMinutes": state.capabilities["slots"].get(
+                        "blockMinutes", default_capabilities()["slots"]["blockMinutes"]), "sessions": []}
         return JSONResponse(plan)
 
     async def availability(request: Request) -> Response:
@@ -356,6 +363,7 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
                 return error(409, "IDEMPOTENCY_CONFLICT", "Same key, different body")
             return JSONResponse(stored, status_code=status)
         scripted = state.write_outcomes.get(relative_path(request))
+        # One item per write reaching the owner decision, including a handler rejection; replay consumes none.
         outcome = scripted.pop(0) if scripted else None
         if outcome is not None and "code" in outcome:
             return error(outcome["status"], outcome["code"], "scripted owner response")
@@ -516,9 +524,13 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
 
     async def stub_scenario(request: Request) -> Response:
         body = await request.json()
+        try:
+            outcomes = WRITE_OUTCOMES.validate_python(body.get("writeOutcomes", {}))
+        except ValidationError:
+            return error(400, "VALIDATION_FAILED", "writeOutcomes must contain error or slotTime items")
         for item in body.get("failNext", []):
             state.fail_next.append((item["path"], int(item["status"]), dict(item.get("headers", {}))))
-        for path, items in body.get("writeOutcomes", {}).items():
+        for path, items in outcomes.items():
             state.write_outcomes.setdefault(path, []).extend(items)
         state.malformed_next.extend(body.get("malformedNext", []))
         state.commit_then.update({k: int(v) for k, v in body.get("commitThen", {}).items()})
