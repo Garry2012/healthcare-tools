@@ -414,19 +414,6 @@ async def test_serving_recorder_preserves_ordinary_cancellation():
                 await asyncio.Event().wait()
 
 
-async def test_serving_recorder_unmatched_error_preserves_candidates():
-    gate = asyncio.Event()
-    gate.set()
-    async with asyncio.timeout(3):
-        with pytest.raises(AssertionError, match="exact request not established"):
-            async with serving(_LifespanApp(gate)):
-                recorder = conftest._HTTP_RECORDER.get()
-                logging.getLogger("uvicorn.error").error("ASGI callable returned without completing response.")
-    assert recorder.incidents[0]["request"] is None
-    assert recorder.incidents[0]["candidates"] == []
-    assert "pending=" in recorder.incidents[0]["tasks"]
-
-
 async def test_serving_recorder_prioritizes_classified_chains():
     import contextlib
 
@@ -471,7 +458,6 @@ async def test_serving_recorder_keeps_concurrent_servers_separate():
                         assert (await http.get(healthy + "/health")).status_code == 200
                         with pytest.raises(httpx.RemoteProtocolError):
                             await http.get(broken + "/mcp/")
-                    assert not second.incidents and not second.confirmations
     assert len(first.incidents) == len(first.confirmations) == 1
     assert not second.incidents and not second.confirmations
 
@@ -485,6 +471,262 @@ async def test_serving_recorder_preserves_safe_library_message_and_logger():
             logging.getLogger("mcp.server.streamable_http").error("No response message received before stream closed")
     assert recorder.warnings[0]["logger"] == "mcp.server.streamable_http"
     assert recorder.warnings[0]["message"] == "No response message received before stream closed"
+
+
+class _ShutdownResponseApp(_LifespanApp):
+    def __init__(self):
+        gate = asyncio.Event()
+        gate.set()
+        super().__init__(gate)
+        self.request_started = asyncio.Event()
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await super().__call__(scope, receive, send)
+        import signal
+
+        server = signal.getsignal(signal.SIGTERM).__self__
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        self.request_started.set()
+        if scope["method"] == "POST":
+            return
+        while not server.should_exit:
+            await asyncio.sleep(0.01)
+        await send({"type": "http.response.body", "body": b"probe", "more_body": True})
+
+
+@pytest.mark.parametrize("body_error", [None, "body failure"])
+async def test_recorder_t4_reports_shutdown_incident_once(body_error):
+    app = _ShutdownResponseApp()
+    async with asyncio.timeout(3):
+        async with httpx.AsyncClient() as http:
+            request = None
+            try:
+                with pytest.raises(AssertionError) as failure:
+                    async with serving(app) as base:
+                        request = asyncio.create_task(http.get(base + "/mcp/"))
+                        await app.request_started.wait()
+                        if body_error:
+                            raise AssertionError(body_error)
+                if body_error:
+                    assert str(failure.value) == body_error
+                    report = "\n".join(failure.value.__notes__)
+                else:
+                    report = str(failure.value)
+                assert report.count("Incomplete HTTP response:") == 1
+                assert "POST" not in report and "GET /mcp/ #1" in report
+            finally:
+                if request:
+                    with pytest.raises(httpx.RemoteProtocolError):
+                        await request
+
+
+@pytest.mark.parametrize("style", ["direct", "fixture"])
+@pytest.mark.parametrize("behavior", ["cancel", "own_failure", "interrupt", "late"])
+def test_recorder_t4_exception_and_teardown_ownership(tmp_path, style, behavior):
+    import subprocess
+    import sys
+
+    source = '''
+import asyncio
+import contextlib
+import httpx
+import pytest
+from tests.conftest import serving
+from tests.test_server import _IncompleteResponseApp, _ShutdownResponseApp
+
+@contextlib.asynccontextmanager
+async def host():
+    gate = asyncio.Event()
+    gate.set()
+    app = APP
+    async with httpx.AsyncClient() as http:
+        try:
+            async with serving(app) as base:
+                yield app, http, base
+        finally:
+            if hasattr(app, "request_task"):
+                with pytest.raises(httpx.RemoteProtocolError):
+                    await app.request_task
+
+@pytest.fixture
+async def server():
+    async with host() as values:
+        yield values
+
+async def exercise(app, http, base):
+    ACTION
+'''
+    if behavior == "late":
+        action = '''app.request_task = asyncio.create_task(http.get(base + "/mcp/"))
+    await app.request_started.wait()'''
+    else:
+        action = '''with pytest.raises(httpx.RemoteProtocolError):
+        await http.get(base + "/mcp/")
+    ''' + {
+            "cancel": "asyncio.current_task().cancel()\n    await asyncio.Event().wait()",
+            "own_failure": 'raise AssertionError("ORIGINAL_BODY_FAILURE")',
+            "interrupt": 'raise KeyboardInterrupt("PROBE_INTERRUPT")',
+        }[behavior]
+    source = source.replace("APP", "_ShutdownResponseApp()" if behavior == "late" else "_IncompleteResponseApp(gate)")
+    source = source.replace("ACTION", action)
+    source += '''
+async def test_owner(server):
+    async with asyncio.timeout(3):
+        await exercise(*server)
+''' if style == "fixture" else '''
+async def test_owner():
+    async with asyncio.timeout(3):
+        async with host() as values:
+            await exercise(*values)
+'''
+    probe = tmp_path / "test_t4_owner.py"
+    probe.write_text(source)
+    result = subprocess.run([sys.executable, "-m", "pytest", str(probe), "-q", "-p", "tests.conftest",
+                             "-c", "pyproject.toml", "-p", "no:cacheprovider"],
+                            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=10)
+    output = result.stdout + result.stderr
+    assert "Incomplete HTTP response:" in output, output
+    if behavior == "interrupt":
+        assert result.returncode == 2 and "KeyboardInterrupt: PROBE_INTERRUPT" in output, output
+        assert "1 failed" not in output
+    elif behavior == "late" and style == "fixture":
+        assert result.returncode == 1 and "ERROR at teardown of test_owner" in output, output
+        assert "1 passed" in output and "1 error" in output and "FAILED" not in output
+    elif behavior == "cancel":
+        assert result.returncode == 1 and " - asyncio.exceptions.CancelledError" in output, output
+    else:
+        assert result.returncode == 1 and "FAILED" in output, output
+        if behavior == "own_failure":
+            assert "ORIGINAL_BODY_FAILURE" in output and "direct cause" in output
+
+
+async def test_recorder_t4_outer_timeout_keeps_cancellation():
+    gate = asyncio.Event()
+    gate.set()
+    with pytest.raises(TimeoutError) as failure:
+        async with asyncio.timeout(0.15):
+            async with serving(_IncompleteResponseApp(gate)) as base:
+                async with httpx.AsyncClient() as http:
+                    with pytest.raises(httpx.RemoteProtocolError):
+                        await http.get(base + "/mcp/")
+                await asyncio.Event().wait()
+    assert isinstance(failure.value.__cause__, asyncio.CancelledError)
+    assert "Incomplete HTTP response:" in "\n".join(failure.value.__cause__.__notes__)
+
+
+async def test_recorder_t4_reports_body_and_shutdown_incidents_separately():
+    app = _ShutdownResponseApp()
+    async with asyncio.timeout(3):
+        async with httpx.AsyncClient() as http:
+            request = None
+            try:
+                with pytest.raises(AssertionError) as failure:
+                    async with serving(app) as base:
+                        with pytest.raises(httpx.RemoteProtocolError):
+                            await http.post(base + "/mcp/")
+                        app.request_started.clear()
+                        request = asyncio.create_task(http.get(base + "/mcp/"))
+                        await app.request_started.wait()
+                assert str(failure.value).splitlines()[0].startswith("Incomplete HTTP response: POST /mcp/ #1")
+                assert len(failure.value.__notes__) == 1
+                assert failure.value.__notes__[0].splitlines()[0].startswith("Incomplete HTTP response: GET /mcp/ #2")
+                assert len(json.loads(str(failure.value).split("\n", 1)[1])["incidents"]) == 1
+                assert len(json.loads(failure.value.__notes__[0].split("\n", 1)[1])["incidents"]) == 1
+            finally:
+                if request:
+                    with pytest.raises(httpx.RemoteProtocolError):
+                        await request
+
+
+async def test_recorder_t4_late_incident_does_not_replace_shutdown_limit():
+    app = _ShutdownResponseApp()
+    app.shutdown_gate.clear()
+    before = asyncio.all_tasks()
+    async with asyncio.timeout(3):
+        async with httpx.AsyncClient() as http:
+            request = None
+            try:
+                with pytest.raises(AssertionError, match="test server shutdown exceeded") as failure:
+                    async with serving(app, shutdown_limit=0.3) as base:
+                        request = asyncio.create_task(http.get(base + "/mcp/"))
+                        await app.request_started.wait()
+                assert len(failure.value.__notes__) == 1
+                assert "Incomplete HTTP response: GET /mcp/ #1" in failure.value.__notes__[0]
+            finally:
+                app.shutdown_gate.set()
+                if request:
+                    with pytest.raises(httpx.RemoteProtocolError):
+                        await request
+                remaining = asyncio.all_tasks() - before
+                if remaining:
+                    _, pending = await asyncio.wait(remaining, timeout=1)
+                    assert not pending
+
+
+async def test_recorder_t4_reverse_correlation_uses_real_uvicorn():
+    class InvalidHeader(_LifespanApp):
+        async def __call__(self, scope, receive, send):
+            if scope["type"] != "http":
+                return await super().__call__(scope, receive, send)
+            try:
+                await send({"type": "http.response.start", "status": 200,
+                            "headers": [(b"x-probe", b"invalid\nheader")]})
+            except RuntimeError:
+                return
+
+    gate = asyncio.Event()
+    gate.set()
+    async with asyncio.timeout(3):
+        with pytest.raises(AssertionError) as failure:
+            async with serving(InvalidHeader(gate)) as base:
+                recorder = conftest._HTTP_RECORDER.get()
+                async with httpx.AsyncClient() as http:
+                    with pytest.raises(httpx.RemoteProtocolError):
+                        await http.post(base + "/mcp/")
+    assert len(recorder.incidents) == 1
+    incident = recorder.incidents[0]
+    assert incident["request"]["sequence"] == 1 and incident["request"]["method"] == "POST"
+    assert incident["request"]["path"] == "/mcp/" and incident["flags_disagree"] is True
+    assert incident["confirmed"] is True and "confirmed=true" in str(failure.value)
+    assert recorder.confirmations[0]["incident"] == 1
+
+
+async def test_recorder_t4_unconfirmed_candidates_and_flag(monkeypatch):
+    import sys
+    import types
+
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200})
+
+    async def receive():
+        return {"type": "http.request"}
+
+    async def send(message):
+        pass
+
+    scope = {"type": "http", "method": "POST", "path": "/mcp/", "headers": []}
+    async with asyncio.timeout(1):
+        for flag in (None, False, True):
+            if flag is None:
+                monkeypatch.delitem(sys.modules, "sse_starlette.sse", raising=False)
+            else:
+                monkeypatch.setitem(sys.modules, "sse_starlette.sse",
+                                    types.SimpleNamespace(AppStatus=types.SimpleNamespace(should_exit=flag)))
+            recorder = conftest._HTTPRecorder(app, asyncio.current_task)
+            await recorder(scope, receive, send)
+            assert "confirmed=false" in recorder.failure()
+            assert recorder.incidents[0]["sse_should_exit"] is flag
+            token = conftest._HTTP_RECORDER.set(recorder)
+            request_token = recorder._request.set(None)
+            try:
+                recorder.emit(logging.LogRecord("uvicorn.error", logging.ERROR, "", 0,
+                                                "ASGI callable returned without completing response.", (), None))
+            finally:
+                recorder._request.reset(request_token)
+                conftest._HTTP_RECORDER.reset(token)
+            assert recorder.incidents[-1]["request"] is None
+            assert [r["sequence"] for r in recorder.incidents[-1]["candidates"]] == [1]
 
 
 def _names(schema) -> set[str]:

@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import socket
+import sys
 import sysconfig
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,22 +47,8 @@ def http_test_body(request):
     @functools.wraps(original)
     async def tracked(*args, **kwargs):
         state.task = asyncio.current_task()
-        try:
-            result = await original(*args, **kwargs)
-        except BaseException:
-            incident = next((r.failure() for r in state.recorders if r.incidents), None)
-            if incident is not None:
-                state.task.uncancel()
-                raise AssertionError(incident) from None
-            if state.failure is None:
-                raise
-        incident = next((r.failure() for r in state.recorders if r.incidents), None)
-        if incident is not None:
-            raise AssertionError(incident)
-        if state.failure is not None:
-            state.task.uncancel()
-            raise AssertionError(state.failure) from None
-        return result
+        with _http_failure_boundary(state.recorders, lambda: state.failure):
+            return await original(*args, **kwargs)
 
     request.node.obj = tracked
     try:
@@ -69,6 +56,36 @@ def http_test_body(request):
     finally:
         request.node.obj = original
         _HTTP_TEST_BODY.reset(token)
+
+
+def _pending_incident_failure(recorders):
+    reports = [report for recorder in recorders if (report := recorder.failure()) is not None]
+    return "\n".join(reports) or None
+
+
+@contextlib.contextmanager
+def _http_failure_boundary(recorders, watchdog_failure):
+    """Only our watchdog may consume cancellation; incident failures retain their cause."""
+    try:
+        yield
+    except BaseException as exc:
+        incident = _pending_incident_failure(recorders)
+        watchdog = watchdog_failure()
+        if isinstance(exc, asyncio.CancelledError) and watchdog is not None:
+            asyncio.current_task().uncancel()
+            raise AssertionError(incident or watchdog) from exc
+        if incident is not None:
+            if isinstance(exc, Exception):
+                raise AssertionError(incident) from exc
+            exc.add_note(incident)
+        raise
+    else:
+        incident = _pending_incident_failure(recorders)
+        watchdog = watchdog_failure()
+        if watchdog is not None:
+            asyncio.current_task().uncancel()
+        if incident is not None or watchdog is not None:
+            raise AssertionError(incident or watchdog)
 
 
 def _frame_location(frame):
@@ -120,8 +137,8 @@ def _task_chain(task):
     return chain, category, terminal, transport
 
 
-def _task_evidence(task, limit, chain_info=None):
-    chain, category, terminal, _ = chain_info or _task_chain(task)
+def _task_evidence(task, limit, chain_info):
+    chain, category, terminal, _ = chain_info
     coro = task.get_coro()
     name = task.get_name()
     if not re.fullmatch(r"Task-[0-9]+", name):
@@ -163,6 +180,7 @@ class _HTTPRecorder(logging.Handler):
         self.started = asyncio.get_running_loop().time()
         self.requests = []
         self.incidents = []
+        self._reported = 0
         self.confirmations = []
         self.warnings = []
         self._request = contextvars.ContextVar("recorded_request", default=None)
@@ -227,16 +245,19 @@ class _HTTPRecorder(logging.Handler):
                 self.capture(record)
 
     def capture(self, request):
+        module = sys.modules.get("sse_starlette.sse")
+        flag = getattr(getattr(module, "AppStatus", None), "should_exit", None)
+        metadata = {"confirmed": False, "flags_disagree": False, "sse_should_exit": flag}
         try:
-            self.incidents.append({"time": self.elapsed(), "request": dict(request) if request else None,
+            self.incidents.append({**metadata, "time": self.elapsed(), "request": dict(request) if request else None,
                                    "candidates": [dict(r) for r in self.requests
-                                                  if not r["returned"] and r["raised"] is None]
+                                                  if not r["complete"]]
                                    if request is None else [],
                                    "requests": [dict(r) for r in self.requests[-20:]],
                                    "tasks": _pending_task_dump(self.body())})
         except Exception as exc:  # noqa: BLE001 — recorder must not alter ASGI semantics
             # Diagnostics must not change the ASGI return/raise semantics.
-            self.incidents.append({"request": dict(request) if request else None,
+            self.incidents.append({**metadata, "request": dict(request) if request else None,
                                    "capture_error": type(exc).__name__[:80]})
 
     def emit(self, record):
@@ -249,9 +270,13 @@ class _HTTPRecorder(logging.Handler):
                 sequence = self._request.get()
                 match = next((i for i in self.incidents if i["request"] and
                               i["request"]["sequence"] == sequence), None)
-                self.confirmations.append({"time": self.elapsed(), "incident": sequence if match else None})
                 if match is None:
-                    self.capture(None)
+                    request = next((r for r in self.requests if r["sequence"] == sequence), None)
+                    self.capture(request)
+                    match = self.incidents[-1]
+                    match["flags_disagree"] = request is not None
+                match["confirmed"] = True
+                self.confirmations.append({"time": self.elapsed(), "incident": sequence})
             else:
                 # Fixed messages only. Arbitrary record.msg may already contain private values.
                 root = record.name.split(".", 1)[0]
@@ -268,16 +293,24 @@ class _HTTPRecorder(logging.Handler):
             # Logging must never raise into the server or inspect arbitrary values to diagnose itself.
             return
 
-    def report(self):
-        return json.dumps({"incidents": self.incidents, "confirmations": self.confirmations,
+    def report(self, incidents=None):
+        return json.dumps({"incidents": self.incidents if incidents is None else incidents,
+                           "confirmations": self.confirmations,
                            "warnings": self.warnings, "last_requests": self.requests[-20:]}, indent=2)
 
     def failure(self):
-        if not self.incidents:
+        incidents = self.incidents[self._reported:]
+        if not incidents:
             return None
-        labels = [f"{i['request']['method']} {i['request']['path']} #{i['request']['sequence']}"
-                  if i["request"] else "exact request not established (see candidates)" for i in self.incidents]
-        return "Incomplete HTTP response: " + ", ".join(labels) + "\n" + self.report()
+        labels = []
+        for incident in incidents:
+            request = incident["request"]
+            label = (f"{request['method']} {request['path']} #{request['sequence']}" if request
+                     else "exact request not established (see candidates)")
+            labels.append(f"{label} confirmed={str(incident['confirmed']).lower()}")
+        report = "Incomplete HTTP response: " + ", ".join(labels) + "\n" + self.report(incidents)
+        self._reported = len(self.incidents)
+        return report
 
 
 for _field in Settings.model_fields:
@@ -353,21 +386,8 @@ async def serving(app, *, shutdown_limit=SERVER_SHUTDOWN_LIMIT, watchdog_limit=H
 
         watchdog = asyncio.create_task(watch_body())
         try:
-            try:
+            with _http_failure_boundary([recorder], lambda: failure if owner is asyncio.current_task() else None):
                 yield f"http://127.0.0.1:{port}"
-            except BaseException:
-                if recorder.incidents:
-                    owner.uncancel()
-                    raise AssertionError(recorder.failure()) from None
-                if failure is None:
-                    raise
-                owner.uncancel()
-                raise AssertionError(failure) from None
-            if recorder.incidents and owner is asyncio.current_task():
-                raise AssertionError(recorder.failure())
-            if failure is not None and owner is asyncio.current_task():
-                owner.uncancel()
-                raise AssertionError(failure)
         finally:
             watchdog.cancel()
             try:
@@ -387,9 +407,17 @@ async def serving(app, *, shutdown_limit=SERVER_SHUTDOWN_LIMIT, watchdog_limit=H
                         f"test server shutdown exceeded {shutdown_limit:g}s; "
                         f"stopped after cancellation={bool(stopped)}")
     finally:
-        for logger in loggers:
-            logger.removeHandler(recorder)
-        recorder.close()
-        if test_body:
-            test_body.recorders.remove(recorder)
-        _HTTP_RECORDER.reset(token)
+        try:
+            incident = _pending_incident_failure([recorder])
+            if incident is not None:
+                if (exc := sys.exception()) is not None:
+                    exc.add_note(incident)
+                else:
+                    raise AssertionError(incident)
+        finally:
+            for logger in loggers:
+                logger.removeHandler(recorder)
+            recorder.close()
+            if test_body:
+                test_body.recorders.remove(recorder)
+            _HTTP_RECORDER.reset(token)
