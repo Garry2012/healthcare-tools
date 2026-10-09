@@ -249,6 +249,50 @@ def test_serving_watchdog_fails_the_fixture_backed_test_call(tmp_path):
     assert "1 failed" in result.stdout and "ERROR at setup" not in result.stdout
 
 
+def test_serving_resets_previous_server_sse_drain_flag(tmp_path):
+    import subprocess
+    import sys
+    import textwrap
+
+    probe = tmp_path / "test_sse_drain_probe.py"
+    probe.write_text(textwrap.dedent('''\
+        import asyncio
+        import sys
+        from fastmcp import Client
+        from fastmcp.client.transports import StreamableHttpTransport
+        from frontdesk_mcp.config import Settings
+        from frontdesk_mcp.server import create_app
+        from tests import conftest, harness
+
+        async def test_fresh_server_completes_session_after_previous_drain():
+            h = harness.build(Settings(**conftest.ROLLOUT, **conftest.ENDPOINTS, env="test"))
+            try:
+                app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                                 knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+                module = sys.modules["sse_starlette.sse"]
+                module.AppStatus.should_exit = True
+                async with conftest.serving(app) as base:
+                    flag_at_start = module.AppStatus.should_exit
+                    recorder = conftest._HTTP_RECORDER.get()
+                    async with asyncio.timeout(10):
+                        async with Client(StreamableHttpTransport(base + "/mcp/", headers={
+                                "Authorization": "Bearer mcp-token"})) as client:
+                            result = await client.call_tool("get_doctor_availability", {
+                                "doctorId": "doc_garima", "date": "2099-01-05"})
+                    assert result.structured_content["outcome"] == "AVAILABILITY"
+                    assert recorder.incidents == []
+                    assert flag_at_start is False
+                print("SSE_DRAIN_RESET_OK")
+            finally:
+                await h.aclose()
+        '''))
+    result = subprocess.run([sys.executable, "-m", "pytest", str(probe), "-q", "-s", "--tb=short",
+                             "-p", "tests.conftest", "-c", "pyproject.toml", "-p", "no:cacheprovider"],
+                            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "SSE_DRAIN_RESET_OK" in result.stdout
+
+
 class _IncompleteResponseApp(_LifespanApp):
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":

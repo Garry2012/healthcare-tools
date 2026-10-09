@@ -346,6 +346,12 @@ def free_port() -> int:
 @contextlib.asynccontextmanager
 async def serving(app, *, shutdown_limit=SERVER_SHUTDOWN_LIMIT, watchdog_limit=HTTP_TEST_BODY_LIMIT):
     """Run an ASGI app on a real local port for the duration of the block."""
+    # sse-starlette keeps one process-wide drain flag; a previous test server's shutdown can
+    # leave it set and cut off later event streams (T-4). Production has one server per process,
+    # so each test server starts with that same fresh-process flag state.
+    module = sys.modules.get("sse_starlette.sse")
+    if module is not None:
+        module.AppStatus.should_exit = False
     owner = asyncio.current_task()
     test_body = _HTTP_TEST_BODY.get()
 
