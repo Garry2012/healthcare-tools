@@ -1,7 +1,8 @@
 """One whole-call summary, stored unchanged by Manoj under the trusted call ID.
 
-The first accepted summary is final. Call identity/start time come from headers; the callback
-number is caller-provided contact data, never caller-ID authorization. Retries use the same body.
+The first accepted summary is final. Call identity/start time come from headers. An explicit contact
+number wins; otherwise the converted caller header supplies contact, never appointment authority.
+Retries use the same body.
 """
 
 from __future__ import annotations
@@ -99,6 +100,9 @@ class SummaryService:
     async def record(self, ctx: CallContext, request: SummaryRequest) -> outcomes.SummaryResult:
         if not ctx.call_id or ctx.call_started_at is None:
             return self._failure(ctx, "NOT_SAVED", "CALL_ID_MISSING" if not ctx.call_id else "STARTED_AT_MISSING")
+        if request.callerMobile is None and ctx.caller_number:
+            mobile = identity.contract_mobile(ctx.caller_number, self.settings.tenant_country_calling_code)
+            request = request.model_copy(update={"callerMobile": mobile})
         if fields := self._validate(request):
             return outcomes.SummaryResult(outcome="INVALID_REQUEST", fields=fields)
         body = self.build_body(ctx, request)

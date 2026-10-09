@@ -110,6 +110,7 @@ async def test_journey_and_summary_through_real_transport(processes):
     assert not any(r["path"] == "/availability" and r["method"] == "GET"
                    for r in state["requests"][before_future:])
     assert len(state["appointments"]) == 1 and len(state["summaries"]) == 1
+    assert state["summaries"][0]["callerMobile"] == "9000000101"
 
 
 async def test_slot_journey_and_release_smoke_through_real_processes(processes):

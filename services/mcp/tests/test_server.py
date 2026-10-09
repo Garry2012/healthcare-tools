@@ -957,7 +957,8 @@ async def test_concurrent_summaries_keep_their_own_call_and_start_time(served):
     base, h = served
 
     async def one(i):
-        async with client(base, call_id=f"call-{i}", started_at=f"2026-10-01T09:0{i}:00+05:30") as c:
+        async with client(base, call_id=f"call-{i}", caller=f"+91900000010{i}",
+                          started_at=f"2026-10-01T09:0{i}:00+05:30") as c:
             return (await c.call_tool("record_call_summary", {
                 "intent": "OTHER", "outcome": "ABANDONED", "summaryText": f"Conversation {i}."},
                 raise_on_error=False)).structured_content
@@ -967,6 +968,7 @@ async def test_concurrent_summaries_keep_their_own_call_and_start_time(served):
         stored = h.ops_state.summaries[f"call-{i}"]
         assert stored["startedAt"] == f"2026-10-01T09:0{i}:00+05:30"
         assert stored["summaryText"] == f"Conversation {i}."
+        assert stored["callerMobile"] == f"900000010{i}"
 
 
 async def test_concurrent_calls_keep_their_own_identity(served):
@@ -1315,3 +1317,33 @@ async def test_mcp_slots_require_time_then_publish_owner_block(served):
         noted = (await c.call_tool("manage_booking", {**CREATE, "session": "Morning"})).structured_content
     assert (noted["outcome"], noted["appointment"]["slotTime"], noted["appointment"]["slotMoved"]) == (
         "NOTED", "10:30", False)
+
+
+@pytest.mark.parametrize("contact,expected", [({}, "9000000101"), ({"callerMobile": "9000000999"}, "9000000999")])
+async def test_summary_http_contact_is_private_and_never_grants_authority(served, contact, expected, caplog, capsys):
+    base, h = served
+    caplog.set_level(logging.INFO, logger="frontdesk_mcp.summary")
+    async with client(base, verification=None, operation_id="contact-authority",
+                      started_at="2026-10-01T09:58:00+05:30") as c:
+        result = await c.call_tool("record_call_summary", {
+            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Synthetic call.", **contact})
+        assert result.structured_content == {"outcome": "SAVED"}
+        assert h.ops_state.summaries["call-1"]["callerMobile"] == expected
+        for arguments in ({"action": "LIST"},
+                          {"action": "CANCEL", "appointmentId": "appt_1", "callerConfirmed": True},
+                          {"action": "RESCHEDULE", "appointmentId": "appt_1", "newVisitDate": "2099-01-05",
+                           "callerConfirmed": True}):
+            refused = await c.call_tool("manage_booking", arguments)
+            assert refused.structured_content["outcome"] == "IDENTITY_UNAVAILABLE"
+        invalid = await c.call_tool("record_call_summary", {
+            "intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": {},
+        }, raise_on_error=False)
+        assert invalid.is_error and invalid.structured_content is None
+    captured = capsys.readouterr()
+    output = json.dumps([block.model_dump(mode="json") for r in (result, invalid) for block in r.content])
+    output += json.dumps([result.structured_content, invalid.structured_content, result.meta, invalid.meta])
+    logs = "\n".join(JsonFormatter().format(record) for record in caplog.records)
+    for number in ("9000000101", "9000000999"):
+        assert number not in output + logs + caplog.text + captured.out + captured.err
+    assert not [r for r in h.requests if "/appointments" in r.url.path]
+    assert len([r for r in h.requests if r.url.path.endswith("/call-summaries")]) == 1
