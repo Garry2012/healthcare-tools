@@ -166,3 +166,76 @@ should force a choice) remains pending; the approved mixed-decision rule is unch
 Today's booking window starts at the later of the session start and facility now (strict, minute precision); future usual schedules and unknown-boundary handoffs are unchanged.
 
 Booking rejection fields are tool argument names only: owner names are translated using the originating action's owner-field mapping (also used for write bodies), and names without a tool argument for that action are dropped.
+
+## SL1 — Slot-aware availability and booking (9 October 2026)
+
+Context: Manoj's 0.4.0-draft contract supplies per-doctor/date slot blocks and capacity facts.
+The [pinned contract](handover/mcp-only/contracts/manoj-openapi-20261007.yaml) has SHA-256
+`d3e93f45498fb86feeb5bb93c0adaba7cff47b48daa21ac810790b5483e96c80` (K-4).
+The adapter consumes those facts; it does not implement the owner's scheduling engine.
+The [slots plan](handover/mcp-only/implementation/SLOTS-PLAN.md) records the approved rules and reviews.
+
+Decision:
+
+- **K-1:** consume owner capacity, never compute it. NOT_CONFIRMED can permit a request with an open bookable block; future AVAILABILITY also reads slots.
+- **K-2:** today's block is bookable only until its end; a block that has started but not ended can remain open.
+- **K-3:** slot-enabled department searches report matching doctors (`DOCTORS_MATCHED`, `bookableFound=0`), not verified slot availability. Slots are checked after a doctor is selected.
+- **K-4:** pin the served contract by hash, with the separately hashed quoting-only overlay; a version label alone is insufficient.
+- **K-5:** owner blocks already reflect TIME_WINDOW (G-9); do not intersect them with a locally reconstructed board window.
+- **K-6 / D-2:** slot-enabled CREATE/RESCHEDULE require `preferredTime`/`newPreferredTime`; absence gives `INVALID_REQUEST/ASK_WHICH_TIME`, no write. Optional nonblank `session` must match the containing session's normalized label; an unlabelled session cannot satisfy a name. Never forward `session` to Manoj.
+- **K-7 / D-3:** accept the owner's returned block start in `slotTime`. `slotMoved` is true only when that returned time differs from the start of the block containing the chosen time. Choosing 10:45 and receiving 10:30 is not a move. Every appointment object exposes nullable `slotTime` and `slotMoved=false` by default; LIST/CANCEL keep false.
+- **K-8:** unreadable slots/capabilities refuse booking and mean `COULD_NOT_CHECK`/`COULD_NOT_RECORD`, never unavailability. Existing authentication failure precedence remains.
+- **D-1:** publish the complete schema once (3a-1); freeze `2026-10-08.1` for the rest of the series. Completing the series does not authorise deployment.
+- **D-4:** a slot-only session can be offered when it has an open bookable block; future usual-session output marks it `oneDay`, not regular hours (today uses live-board facts). Keep refusal facts even when it cannot be offered.
+- **D-5:** selected-doctor AVAILABILITY always reads slots alongside existing reads; `SlotPlan.enabled` decides applicability. Only department AVAILABILITY uses cached capabilities, with no slots fan-out or capability startup/background process. WORKING_HOURS reads neither board nor slots.
+- **D-6:** ordinary UNKNOWN in a session that could be the caller's target always means callback, even against CANCELLED. Passed or out-of-hours times remain refused; callback cannot make them bookable.
+- **D-7:** a session's label is evidence. Time-matched sessions and unlabelled unresolved rows remain in scope; if none matches, unknown-hour rows remain as the existing fallback. A labelled UNKNOWN for a different selected session does not block it.
+- **D-8, on-call AVAILABILITY:** confirmed IN/LATE plus either a usable window (both bounds, not ended) or an open bookable block follows ordinary policy. CANCELLED is unavailable; otherwise `HANDOFF_REQUIRED/TRANSFER_DESK`, reason `ON_CALL_DOCTOR`, never callback. Usual schedules cannot establish an on-call doctor's availability.
+- **D-8, single-doctor on-call WORKING_HOURS:** always `HANDOFF_REQUIRED/TRANSFER_DESK`, reason `ON_CALL_DOCTOR`, because no confirmation data is read. Empty regular schedules retain callback; normal hours use `PRESENT_WORKING_HOURS` and hours-only queries have `bookableFound=0`.
+
+This entry supersedes A12's and A13's 'ON_CALL is always callback', including single-doctor WORKING_HOURS (D-8).
+Garima accepted the latency consequence on 8 October: an on-call doctor resolved by name needs one
+extra read group for AVAILABILITY (today board ∥ slots; future profile ∥ slots).
+
+Garima's 9 October decisions:
+
+- Release smoke accepts `HANDOFF_REQUIRED` only for a valid availability response with `detail=ON_CALL_DOCTOR`, `complete` exactly true and `nextStep=TRANSFER_DESK`. Other handoffs, including `SEARCH_INCOMPLETE`, and unexpected failures fail; the other approved smoke outcomes remain unchanged.
+- Hermetic process and journey tests (in-process/local stubs) use fixed future dates and normal daytime slots, never wall-clock, overnight or all-day windows. Overnight appointments remain unsupported (A13). Read-only smoke may query today; authorised live external journeys use owner-designated dates.
+
+Test infrastructure: T-1 to T-4 isolated sse-starlette's process-wide shutdown flag: a first test
+server can leave it set and cut off the second server's event-stream replies. The mechanism was
+confirmed in 20/20 runs, with a clean comparison in 20/20. Use one `serving()` server per process
+or separate processes. Source analysis found no single-server production risk **for this mechanism
+and execution model only**; the cause of the old intermittent freeze remains unproven.
+The recorder fails incomplete HTTP responses; whether this strictness stays permanently is open
+for Garima. An optional test-setup remedy remains separate.
+
+Rejected: startup/background capabilities and flag parameters (unnecessary lifecycle or duplicate
+facts); a separate booking matrix (duplicates policy and loses scope protections); department slot
+fan-out (voice latency); relying only on owner write rejection (no offerable facts or local guards);
+board-window/block intersection (G-9); CANCELLED over UNKNOWN or dropping one-day refusal rows
+(loses refusal evidence); callbacks for every out-of-hours time or every other labelled stale session
+(ignores the selected scope, D-6/D-7); policy-level malformed-data failures (reader responsibility);
+a new blank-session module (existing shared module suffices); multiple schema publications and
+forwarding `session` (D-1/D-2).
+
+Consequences: the voice team must handle `DOCTORS_MATCHED`, `ASK_WHICH_TIME`, `openSlots`, `oneDay`,
+`slotTime`, `slotMoved` and `HANDOFF_REQUIRED/ON_CALL_DOCTOR`, and use the returned appointment time.
+The gateway/ContextForge and voice consumer need schema refresh. Owner write APIs and their scopes
+are unchanged; new reads consume the pinned contract rather than revising the owner's API.
+Phases 1a–4b are built and reviewed. Phase 5 completes the documentation only once approved;
+**nothing in the slots series has been merged or deployed**. Deployment readiness is separate:
+all [pre-deployment gates](handover/mcp-only/PLAN.md#slots-series-status-and-pre-deployment-gates-9-october-2026)
+remain pending, including LOG-1 (fastmcp's own console handler bypasses JSON logging/privacy;
+Garima's handling decision is open).
+
+Open with Manoj, already designed around:
+
+- **G-13:** a time exactly at session end belongs to no block and is refused.
+- **G-14:** overlapping blocks across sessions or duplicate normalized session labels are malformed data: could not check/record.
+- **G-15:** mixed labelled/unlabelled rows retain unlabelled refusals in booking scope under D-7; revisit only if owner clarification requires it.
+
+Optional, not a blocker: 4b-M1 review O-1 notes that the process test does not assert a distinct
+RESCHEDULE operation ID; its stub does not record idempotency keys. No change is required here.
+Owner questions, recorder permanence, the optional T-4 setup remedy and O-1 are not deployment
+gates unless Garima decides otherwise.
