@@ -249,6 +249,244 @@ def test_serving_watchdog_fails_the_fixture_backed_test_call(tmp_path):
     assert "1 failed" in result.stdout and "ERROR at setup" not in result.stdout
 
 
+class _IncompleteResponseApp(_LifespanApp):
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await super().__call__(scope, receive, send)
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": [(b"content-type", b"text/event-stream")]})
+        await send({"type": "http.response.body", "body": b"PRIVATE-BODY", "more_body": True})
+
+
+async def test_serving_recorder_identifies_incomplete_request_and_confirmation(capsys):
+    gate = asyncio.Event()
+    gate.set()
+    async with asyncio.timeout(3):
+        with pytest.raises(AssertionError, match="Incomplete HTTP response") as failure:
+            async with serving(_IncompleteResponseApp(gate)) as base:
+                recorder = conftest._HTTP_RECORDER.get()
+                async with httpx.AsyncClient() as http:
+                    with pytest.raises(httpx.RemoteProtocolError):
+                        await http.post(base + "/mcp/?secret=PRIVATE-QUERY", content=b"PRIVATE-REQUEST",
+                                        headers={"Authorization": "Bearer PRIVATE-TOKEN",
+                                                 "mcp-session-id": "PRIVATE-SESSION",
+                                                 "content-type": "application/json; secret=PRIVATE-PARAM"})
+    incident = recorder.incidents[0]
+    request = incident["request"]
+    assert request["method"] == "POST" and request["path"] == "/mcp/"
+    assert request["authorization"] is True and request["session_id"] is True
+    assert request["request_content_type"] == "application/json"
+    assert request["response_content_type"] == "text/event-stream" and request["status"] == 200
+    assert request["started"] and not request["complete"] and not request["disconnected"]
+    assert request["returned"] and request["raised"] is None
+    assert 0 <= request["start"] <= request["start"] + request["duration"]
+    assert "pending=" in incident["tasks"] and len(incident["tasks"]) <= 12000
+    assert recorder.confirmations[0]["incident"] == request["sequence"]
+    assert "PRIVATE" not in str(failure.value)
+    assert "last_requests" in str(failure.value) and "warnings" in str(failure.value)
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("style", ["direct", "fixture", "direct-error", "fixture-error"])
+def test_serving_recorder_fails_only_owning_test_call(tmp_path, style):
+    import subprocess
+    import sys
+    import textwrap
+
+    fixture = '''
+@pytest.fixture
+async def served():
+    gate = asyncio.Event()
+    gate.set()
+    async with serving(_IncompleteResponseApp(gate)) as base:
+        yield base
+'''
+    call = '''
+async def request(base):
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(httpx.RemoteProtocolError):
+            await http.get(base + "/mcp/")
+'''
+    body = '''
+async def test_incident(served):
+    async with asyncio.timeout(3):
+        await request(served)
+''' if style.startswith("fixture") else '''
+async def test_incident():
+    gate = asyncio.Event()
+    gate.set()
+    async with asyncio.timeout(3):
+        async with serving(_IncompleteResponseApp(gate)) as base:
+            await request(base)
+'''
+    if style.endswith("error"):
+        call = call.replace("with pytest.raises(httpx.RemoteProtocolError):", "if True:")
+    probe = tmp_path / "test_incident_probe.py"
+    probe.write_text(textwrap.dedent('''\
+import asyncio
+import httpx
+import pytest
+from tests.conftest import serving
+from tests.test_server import _IncompleteResponseApp
+
+async def test_unrelated():
+    assert True
+''') + fixture + call + body)
+    result = subprocess.run([sys.executable, "-m", "pytest", str(probe), "-q", "-p", "tests.conftest",
+                             "-c", "pyproject.toml", "-p", "no:cacheprovider"],
+                            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "AssertionError: Incomplete HTTP response" in result.stdout
+    assert "FAILED" in result.stdout and "::test_incident" in result.stdout
+    assert "1 failed, 1 passed" in result.stdout
+    assert "ERROR at setup" not in result.stdout and "ERROR at teardown" not in result.stdout
+
+
+async def test_serving_recorder_library_log_privacy():
+    gate = asyncio.Event()
+    gate.set()
+    secrets = ["abcdef0123456789abcdef0123456789", "9000000123", "BearerSecretAlphaToken"]
+    async with asyncio.timeout(3):
+        with pytest.raises(AssertionError, match="Incomplete HTTP response") as failure:
+            async with serving(_IncompleteResponseApp(gate)) as base:
+                recorder = conftest._HTTP_RECORDER.get()
+                logging.getLogger("mcp").warning(
+                    "session=" + secrets[0] + " phone=" + secrets[1] + " bearer=" + secrets[2])
+                logging.getLogger("fastmcp").warning("payload %s", {"patient": "PRIVATE-PATIENT"})
+                async with httpx.AsyncClient() as http:
+                    with pytest.raises(httpx.RemoteProtocolError):
+                        await http.get(base + "/mcp/")
+    assert len(recorder.warnings) == 2
+    assert {r["logger"] for r in recorder.warnings} == {"mcp", "fastmcp"}
+    assert all(r["level"] == "WARNING" for r in recorder.warnings)
+    for secret in [*secrets, "PRIVATE-PATIENT"]:
+        assert secret not in json.dumps(recorder.warnings) and secret not in str(failure.value)
+
+
+async def test_serving_recorder_distinguishes_raise_complete_and_disconnect(capsys):
+    class Probe(_LifespanApp):
+        async def __call__(self, scope, receive, send):
+            if scope["type"] == "http" and scope["method"] == "POST":
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                raise ValueError("PRIVATE-EXCEPTION")
+            return await super().__call__(scope, receive, send)
+
+    gate = asyncio.Event()
+    gate.set()
+    loggers = [logging.getLogger(name) for name in ("uvicorn.error", "mcp", "fastmcp", "starlette", "docket")]
+    handlers = [list(logger.handlers) for logger in loggers]
+    async with asyncio.timeout(3):
+        async with serving(Probe(gate)) as base:
+            recorder = conftest._HTTP_RECORDER.get()
+            async with httpx.AsyncClient() as http:
+                assert (await http.get(base + "/health")).status_code == 200
+                with pytest.raises(httpx.RemoteProtocolError):
+                    await http.post(base + "/mcp/")
+    assert not recorder.incidents
+    assert recorder.requests[0]["complete"] and recorder.requests[0]["returned"]
+    assert recorder.requests[1]["raised"] == "ValueError" and not recorder.requests[1]["returned"]
+    assert "PRIVATE-EXCEPTION" not in recorder.report()
+    assert [logger.handlers for logger in loggers] == handlers
+    assert capsys.readouterr().out == ""
+
+    async def disconnect_app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200})
+        assert (await receive())["type"] == "http.disconnect"
+
+    async def receive():
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        pass
+
+    recorder = conftest._HTTPRecorder(disconnect_app, asyncio.current_task)
+    async with asyncio.timeout(1):
+        await recorder({"type": "http", "method": "GET", "path": "/mcp/", "headers": []}, receive, send)
+    assert recorder.requests[0]["disconnected"] and not recorder.incidents
+
+
+async def test_serving_recorder_preserves_ordinary_cancellation():
+    gate = asyncio.Event()
+    gate.set()
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.1):
+            async with serving(_LifespanApp(gate)):
+                await asyncio.Event().wait()
+
+
+async def test_serving_recorder_unmatched_error_preserves_candidates():
+    gate = asyncio.Event()
+    gate.set()
+    async with asyncio.timeout(3):
+        with pytest.raises(AssertionError, match="exact request not established"):
+            async with serving(_LifespanApp(gate)):
+                recorder = conftest._HTTP_RECORDER.get()
+                logging.getLogger("uvicorn.error").error("ASGI callable returned without completing response.")
+    assert recorder.incidents[0]["request"] is None
+    assert recorder.incidents[0]["candidates"] == []
+    assert "pending=" in recorder.incidents[0]["tasks"]
+
+
+async def test_serving_recorder_prioritizes_classified_chains():
+    import contextlib
+
+    @contextlib.asynccontextmanager
+    async def blocked_context():
+        await asyncio.Event().wait()
+        yield
+
+    # A real wait chain with the library's filename exercises classification through contextlib.
+    async def connection_wait():
+        async with blocked_context():
+            pass
+
+    import inspect
+
+    connection_wait.__code__ = connection_wait.__code__.replace(co_filename=inspect.getfile(Client))
+    ordinary = [asyncio.create_task(asyncio.Event().wait()) for _ in range(45)]
+    connection = asyncio.create_task(connection_wait())
+    try:
+        async with asyncio.timeout(1):
+            await asyncio.sleep(0)
+            dump = conftest._pending_task_dump(asyncio.current_task())
+        assert "class=client" in dump.split("\ntask ")[2]
+        assert f"name={connection.get_name()} " in dump.split("\ntask ")[2]
+        assert len(dump) <= 12000
+    finally:
+        for task in [*ordinary, connection]:
+            task.cancel()
+        await asyncio.gather(*ordinary, connection, return_exceptions=True)
+
+
+async def test_serving_recorder_keeps_concurrent_servers_separate():
+    gate = asyncio.Event()
+    gate.set()
+    async with asyncio.timeout(3):
+        with pytest.raises(AssertionError, match="Incomplete HTTP response"):
+            async with serving(_IncompleteResponseApp(gate)) as broken:
+                first = conftest._HTTP_RECORDER.get()
+                async with serving(_LifespanApp(gate)) as healthy:
+                    second = conftest._HTTP_RECORDER.get()
+                    async with httpx.AsyncClient() as http:
+                        assert (await http.get(healthy + "/health")).status_code == 200
+                        with pytest.raises(httpx.RemoteProtocolError):
+                            await http.get(broken + "/mcp/")
+                    assert not second.incidents and not second.confirmations
+    assert len(first.incidents) == len(first.confirmations) == 1
+    assert not second.incidents and not second.confirmations
+
+
+async def test_serving_recorder_preserves_safe_library_message_and_logger():
+    gate = asyncio.Event()
+    gate.set()
+    async with asyncio.timeout(3):
+        async with serving(_LifespanApp(gate)):
+            recorder = conftest._HTTP_RECORDER.get()
+            logging.getLogger("mcp.server.streamable_http").error("No response message received before stream closed")
+    assert recorder.warnings[0]["logger"] == "mcp.server.streamable_http"
+    assert recorder.warnings[0]["message"] == "No response message received before stream closed"
+
+
 def _names(schema) -> set[str]:
     found: set[str] = set()
     if isinstance(schema, dict):
