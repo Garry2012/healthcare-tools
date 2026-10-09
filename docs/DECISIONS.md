@@ -253,3 +253,8 @@ gates unless Garima decides otherwise.
 slots/contact-fallback release because summary descriptions changed. The original SL1/D-1 record
 above remains historical. One gateway/ContextForge and voice schema refresh is required after an
 approved release; field structure and all other tool descriptions are unchanged.
+
+**SL1 supplement — 10 October 2026 (T-5).** The test-setup remedy for the T-4 mechanism is implemented
+(`151ea61`): `serving()` resets sse-starlette's process-wide drain flag at the start of every test server,
+proven by a subprocess regression test. It is no longer an open item. The SL1 lines above that call it
+optional or separate are historical. Recorder strictness permanence remains open for Garima.

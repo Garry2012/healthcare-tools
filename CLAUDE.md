@@ -43,5 +43,5 @@ Implementation evidence: `docs/handover/mcp-only/implementation/`.
 - Don't `source` rollout.env; use `scripts/rollout-env.sh`.
 - Test conftest strips every `Settings` field from the environment; pass overrides via `make_settings(...)`.
 - The clients cap every exchange with `asyncio.timeout` (httpx timeouts are per phase); in-process stub tests rely on that, and `test_ops_client.py` has a real-TCP dribbling-server test.
-- Never run two `serving()` blocks sequentially in one test process: sse-starlette's process-wide shutdown flag cuts off the second server's event-stream replies (T-4). Use one server per process, or separate processes.
+- `serving()` resets sse-starlette's process-wide drain flag at start (T-5); keep that reset. Without it, a previous test server's shutdown cuts off later event-stream replies in the same process (T-4).
 - Hermetic process and journey tests (in-process/local stubs) use fixed future dates and normal daytime slots, never wall-clock, overnight or all-day windows. Read-only smoke may query today; authorised live external journeys use owner-designated dates.

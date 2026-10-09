@@ -49,8 +49,8 @@ Every release gate below remains pending for this slots release:
 9. **Pending:** the voice platform and ContextForge owners confirm that `X-Caller-Number` is always the end caller's own number, never a trunk number or a placeholder for a withheld ID.
 
 Open but **not deployment gates unless Garima says so**: Manoj G-13–G-15 (already designed around),
-recorder strictness permanence, an optional test-setup remedy for the T-4 mechanism, and optional
-4b-M1 review O-1. These are documented in SL1; none reopens the accepted phase 4b.
+recorder strictness permanence, and optional 4b-M1 review O-1. The T-4 test-setup remedy is implemented
+(T-5, `151ea61`). These are documented in SL1; none reopens the accepted phase 4b.
 
 **What the published contract changes**
 
