@@ -110,6 +110,15 @@ Schema bumps: 2026-10-03.3 → 2026-10-04.1 for summary request/result, then →
 access metadata. Live verification still requires calls.write and an owner-designated synthetic tenant.
 The old deployment secret remains untouched until separately authorized retirement.
 
+**S1 supplement — 10 October 2026 (contact fallback).** From this release, a summary stores the calling number as `callerMobile` when no number is given and the header converts; Garima approved this on 10 October 2026. It is contact data only.
+
+A valid explicit 10-digit contact wins. Only omitted/null contact falls back, using the existing strict
+configured-country conversion; invalid explicit input is rejected. Ordinary summaries may omit an
+unusable contact, but CALLBACK_NOTED requires one. No caller verification is required for contact, and
+appointment authorization is unchanged. First accepted summary remains final. Release requires Manoj
+to accept caller-ID provenance and update his contract wording, and voice/ContextForge owners to
+confirm the header carries the end caller's own number (PLAN gates 8–9). The pinned contract is unchanged.
+
 ## A12 — Date-aware schedule facts and bounded profile reads (5 October 2026)
 
 Context: applying an UNKNOWN future board blocked requests even when a doctor had a usual schedule.
@@ -239,3 +248,8 @@ Optional, not a blocker: 4b-M1 review O-1 notes that the process test does not a
 RESCHEDULE operation ID; its stub does not record idempotency keys. No change is required here.
 Owner questions, recorder permanence, the optional T-4 setup remedy and O-1 are not deployment
 gates unless Garima decides otherwise.
+
+**SL1 supplement — 10 October 2026.** Schema `2026-10-10.1` replaces `2026-10-08.1` for the combined
+slots/contact-fallback release because summary descriptions changed. The original SL1/D-1 record
+above remains historical. One gateway/ContextForge and voice schema refresh is required after an
+approved release; field structure and all other tool descriptions are unchanged.
