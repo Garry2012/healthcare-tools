@@ -63,7 +63,7 @@ async def check_tools(client: Client, language: str, department: str, *, knowled
     cases = (
         ("get_doctor_availability", {"date": "today", "departmentName": department}, AVAILABILITY_OK),
         ("get_doctor_availability", {"purpose": "WORKING_HOURS", "departmentName": department},
-         {"WORKING_HOURS", "CLARIFICATION_NEEDED", "NOT_FOUND", "HANDOFF_REQUIRED"}),
+         {"WORKING_HOURS", "CLARIFICATION_NEEDED", "NOT_FOUND"}),
         ("search_knowledge", {"question": "deployment connectivity check", "language": language}, KNOWLEDGE_OK),
     )
     for name, arguments, outcomes in cases:
@@ -76,8 +76,12 @@ async def check_tools(client: Client, language: str, department: str, *, knowled
             print("knowledge: NOT_CONFIGURED; scheduling verified, knowledge integration remains pending")
             continue
         # MCP can return HTTP 200 with a tool failure envelope. That is not a pass.
-        if (result.is_error or not isinstance(body, dict) or body.get("error")
-                or body.get("outcome") not in outcomes):
+        if result.is_error or not isinstance(body, dict) or body.get("error"):
+            raise RuntimeError(f"{name} failed its read-only smoke check")
+        oncall_handoff = (name == "get_doctor_availability" and body.get("outcome") == "HANDOFF_REQUIRED"
+                          and body.get("detail") == "ON_CALL_DOCTOR" and body.get("complete") is True
+                          and body.get("nextStep") == "TRANSFER_DESK")
+        if body.get("outcome") not in outcomes and not oncall_handoff:
             raise RuntimeError(f"{name} failed its read-only smoke check")
 
 

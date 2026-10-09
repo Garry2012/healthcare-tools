@@ -66,8 +66,11 @@ async def test_smoke_requires_all_four_tools(missing):
             await SMOKE["check_tools"](client, "en", "General Medicine")
 
 
-@pytest.mark.parametrize("hours_outcome", ["WORKING_HOURS", "HANDOFF_REQUIRED"])
-async def test_smoke_probes_working_hours_and_accepts_a_closed_session(hours_outcome):
+@pytest.mark.parametrize("hours_body", [
+    {"outcome": "WORKING_HOURS"},
+    {"outcome": "HANDOFF_REQUIRED", "detail": "ON_CALL_DOCTOR", "complete": True, "nextStep": "TRANSFER_DESK"},
+])
+async def test_smoke_probes_working_hours_and_accepts_a_closed_session(hours_body):
     from fastmcp import Client, FastMCP
     remote = FastMCP("read-only-policy-probe")
     purposes = []
@@ -76,7 +79,7 @@ async def test_smoke_probes_working_hours_and_accepts_a_closed_session(hours_out
     def get_doctor_availability(departmentName: str, date: str | None = None,  # noqa: N803
                                 purpose: str = "AVAILABILITY") -> dict:
         purposes.append(purpose)
-        return {"outcome": hours_outcome if purpose == "WORKING_HOURS" else "NOT_AVAILABLE"}
+        return hours_body if purpose == "WORKING_HOURS" else {"outcome": "NOT_AVAILABLE"}
 
     @remote.tool()
     def search_knowledge(question: str, language: str) -> dict:
@@ -456,3 +459,72 @@ def test_profile_exports_knowledge_expectation(tmp_path, knowledge, expected):
                             text=True, env={**os.environ, "DEPLOY_PROFILE_DIR": str(tmp_path)})
     assert result.returncode == 0
     assert f"export SMOKE_EXPECT_KNOWLEDGE={expected}" in result.stdout.splitlines()
+
+
+@pytest.mark.parametrize("probe", ["AVAILABILITY", "WORKING_HOURS"])
+@pytest.mark.parametrize("case", ["valid", "incomplete", "missing_detail", "other_detail", "false_complete",
+                                  "missing_complete", "numeric_complete", "string_complete", "wrong_step",
+                                  "unknown", "tool_error", "error_envelope", "not_dict"])
+async def test_smoke_handoff_requires_complete_oncall_result(probe, case):
+    from fastmcp import Client, FastMCP
+    from fastmcp.exceptions import ToolError
+
+    remote = FastMCP("handoff-smoke")
+    body = {"outcome": "HANDOFF_REQUIRED", "detail": "ON_CALL_DOCTOR",
+            "complete": True, "nextStep": "TRANSFER_DESK"}
+    changes = {"incomplete": {"detail": "SEARCH_INCOMPLETE"}, "other_detail": {"detail": "OTHER"},
+               "false_complete": {"complete": False}, "numeric_complete": {"complete": 1},
+               "string_complete": {"complete": "true"}, "wrong_step": {"nextStep": "ASK_TO_REPHRASE"},
+               "unknown": {"outcome": "UNKNOWN_OUTCOME"}, "error_envelope": {"error": {"code": "API_ERROR"}}}
+    body.update(changes.get(case, {}))
+    if case.startswith("missing_"):
+        del body[case.removeprefix("missing_")]
+
+    @remote.tool()
+    def get_doctor_availability(departmentName: str, date: str | None = None,  # noqa: N803
+                                purpose: str = "AVAILABILITY"):
+        assert departmentName == "General Medicine"
+        if purpose != probe:
+            return {"outcome": "WORKING_HOURS" if purpose == "WORKING_HOURS" else "DOCTORS_MATCHED"}
+        if case == "tool_error":
+            raise ToolError("fixture error")
+        return "malformed" if case == "not_dict" else body
+
+    @remote.tool()
+    def search_knowledge(question: str, language: str) -> dict:
+        return {"outcome": "ANSWERED"}
+
+    for name in ("manage_booking", "record_call_summary"):
+        remote.tool(name=name)(lambda: pytest.fail("smoke must not write"))
+    async with Client(remote) as client:
+        if case == "valid":
+            await SMOKE["check_tools"](client, "en", "General Medicine")
+        else:
+            with pytest.raises(RuntimeError, match="read-only smoke"):
+                await SMOKE["check_tools"](client, "en", "General Medicine")
+
+
+@pytest.mark.parametrize("failure", ["timeout", "auth", "server"])
+def test_smoke_cli_refuses_transport_failures(monkeypatch, capsys, failure):
+    monkeypatch.setenv("MCP_URL", "https://adapter.example/mcp/")
+    monkeypatch.setenv("MCP_BEARER_TOKEN", "secret-not-printed")
+    monkeypatch.setenv("SMOKE_LANGUAGE", "en")
+    monkeypatch.setenv("SMOKE_EXPECT_KNOWLEDGE", "required")
+
+    async def transport(_self, request):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("secret-not-printed", request=request)
+        if request.url.path == "/mcp/":
+            return httpx.Response(401 if failure == "auth" or "authorization" not in request.headers else 503,
+                                  request=request)
+        if request.url.path == "/dependencies":
+            return httpx.Response(200, json={"operational": {"status": "ok"},
+                                             "knowledge": {"status": "configured"}}, request=request)
+        return httpx.Response(200, json={"status": "ready" if request.url.path == "/ready" else "ok"},
+                              request=request)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", transport)
+    assert SMOKE["main"]() == 1
+    output = capsys.readouterr()
+    assert "smoke test failed" in output.err and "Deployment smoke passed" not in output.out
+    assert "secret-not-printed" not in output.err + output.out

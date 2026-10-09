@@ -193,11 +193,17 @@ def summarise(results: list[float | str], expected: set[str], paths: tuple[str, 
                     "over_budget_ms": BUDGET_MS, "over_budget": sum(1 for t in timings if t > BUDGET_MS),
                     "expected_outcomes": sorted(expected), "required_owner_calls": list(paths),
                     "outcomes": outcomes,
-                    "first_call_ms": round(results[0], 1) if isinstance(results[0], float) else results[0],
+                    "first_call_ms": (round(results[0], 1) if isinstance(results[0], float) else results[0])
+                                     if results else None,
                     "p50_ms": round(percentile(timings, 50), 1) if timings else None,
                     "p95_ms": round(percentile(timings, 95), 1) if timings else None,
                     "p99_ms": round(percentile(timings, 99), 1) if timings else None,
                     "mean_ms": round(statistics.fmean(timings), 1) if timings else None}
+
+
+def preparation_failure(evidence: dict, paths: tuple[str, ...]) -> dict:
+    return {**summarise([], {"NOTED"}, paths), "preparation_failure": evidence["failure"]}
+
 
 async def department_cache_modes(app, base: str, samples: int, *, query: dict, name: str,
                                  expected: set[str]) -> dict:
@@ -224,7 +230,7 @@ async def department_cache_modes(app, base: str, samples: int, *, query: dict, n
     return report
 
 
-async def main() -> None:
+async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--samples", type=int, default=50)
     parser.add_argument("--concurrency", type=int, default=1)
@@ -312,7 +318,8 @@ async def main() -> None:
             tool, values, _, paths = scenarios["availability_department"]
             scenarios["availability_department"] = (tool, values, {"DOCTORS_MATCHED", "CALLBACK_REQUIRED"}, paths)
             for name in ("availability_known_doctor", "availability_name_search"):
-                scenarios[name] = (*scenarios[name], open_blocks)
+                tool, values, _, paths = scenarios[name]
+                scenarios[name] = (tool, values, {"AVAILABILITY"}, paths, open_blocks)
         if "booking_create" in scenarios:
             selected, preparation[mode] = await prepare_booking(base, scenarios["booking_create"], mode)
             if selected is not None:
@@ -321,8 +328,7 @@ async def main() -> None:
                 del scenarios["booking_create"]
         report = await run(base, args.samples, args.concurrency, scenarios)
         if preparation.get(mode, {}).get("failure"):
-            report["booking_create"] = summarise([preparation[mode]["failure"]] * args.samples,
-                                                 {"NOTED"}, ("POST /appointments",))
+            report["booking_create"] = preparation_failure(preparation[mode], ("POST /appointments",))
         if future_date:
             query = {"date": future_date, "departmentName": DEPARTMENT} if real_ops else {
                 "date": future_date, "departmentId": "dept_policy"}
@@ -357,8 +363,7 @@ async def main() -> None:
                       ("GET /availability/doc_garima/slots", "POST /appointments"))
             selected, preparation["enabled"] = await prepare_booking(base, create, "enabled")
             if selected is None:
-                slot_report["slots_booking_create"] = summarise(
-                    [preparation["enabled"]["failure"]] * args.samples, {"NOTED"}, create[3])
+                slot_report["slots_booking_create"] = preparation_failure(preparation["enabled"], create[3])
             else:
                 slot_report.update(await run(base, args.samples, args.concurrency, {
                     "slots_booking_create": (*selected, lambda b: bool(b.get("appointment", {}).get("slotTime")))}))
@@ -385,7 +390,8 @@ async def main() -> None:
                               "including client schema checking; "
                               "a sample counts only when the intended outcome and owner call were observed",
                       "scenarios": report}, indent=2))
+    return 1 if any(item.get("failure") for item in preparation.values()) else 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.exit(asyncio.run(main()))

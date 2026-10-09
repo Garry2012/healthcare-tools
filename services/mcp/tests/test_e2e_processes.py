@@ -35,6 +35,17 @@ def _wait(url: str, proc: subprocess.Popen, seconds: float = 15) -> None:
     raise RuntimeError(f"{url} did not come up")
 
 
+def _stop_processes(children, timeout=10):
+    for proc in children:
+        proc.terminate()
+    for proc in children:
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+
 @pytest.fixture
 def processes():
     ops_port, kb_port, mcp_port = free_port(), free_port(), free_port()
@@ -58,9 +69,7 @@ def processes():
         _wait(f"http://127.0.0.1:{mcp_port}/health", mcp)
         yield {"mcp": f"http://127.0.0.1:{mcp_port}", "ops": f"http://127.0.0.1:{ops_port}/api/v1"}
     finally:
-        for proc in (mcp, stubs):
-            proc.terminate()
-            proc.wait(timeout=10)
+        _stop_processes((mcp, stubs))
 
 
 async def test_release_smoke_passes_against_real_processes(processes):
@@ -105,26 +114,33 @@ async def test_journey_and_summary_through_real_transport(processes):
 
 async def test_slot_journey_and_release_smoke_through_real_processes(processes):
     state_url = f"{processes['ops']}/__stub/state"
-    today = httpx.get(state_url).json()["today"]
-    plan = harness.slot_plan(date=today)
-    # A desk-added block spanning the test day: no dependence on the wall-clock clinic session.
-    plan["sessions"] = [{**plan["sessions"][0], "slots": [
-        {**plan["sessions"][0]["slots"][0], "start": "00:00", "end": "23:59"}]}]
+    plan = harness.slot_plan(date="2099-01-05")
+    afternoon = plan["sessions"][1]
+    afternoon["session"] = "Afternoon"
+    afternoon["slots"][0].update(start="15:00", end="15:30")
     response = httpx.post(f"{processes['ops']}/__stub/scenario", json={
         "capabilities": {"slots": {"enabled": True}},
-        "slots": {"doc_garima": {today: plan}},
-        "boards": {today: [{"doctorId": "doc_garima", "session": "Morning", "status": "IN",
-                            "expectedTime": "00:00", "expectedEndTime": "23:59"}]}})
+        "slots": {"doc_garima": {"2099-01-05": plan}}})
     response.raise_for_status()
     headers = {"Authorization": "Bearer gateway-e2e", **harness.headers(
         call_id="e2e-slots", operation_id="e2e-slots-create")}
-    async with Client(StreamableHttpTransport(f"{processes['mcp']}/mcp/", headers=headers)) as c:
+    async def operation_header(request):
+        request.headers["X-Operation-Id"] = headers["X-Operation-Id"]
+
+    def http_client(**kwargs):
+        return httpx.AsyncClient(**kwargs, event_hooks={"request": [operation_header]})
+
+    async with Client(StreamableHttpTransport(f"{processes['mcp']}/mcp/", headers=headers,
+                                             httpx_client_factory=http_client)) as c:
         available = (await c.call_tool("get_doctor_availability", {
-            "doctorId": "doc_garima", "date": "today"})).structured_content
+            "doctorId": "doc_garima", "date": "2099-01-05"})).structured_content
         assert available["outcome"] == "AVAILABILITY"
-        offered = available["doctors"][0]["board"][0]["openSlots"]
-        assert offered
-        create = {"action": "CREATE", "doctorId": "doc_garima", "visitDate": today,
+        offered = {session["label"]: session["openSlots"]
+                   for session in available["doctors"][0]["usualSessions"]}
+        assert offered["Morning"], "future Morning must offer its scripted slot"
+        assert offered["Morning"][0]["start"] == "10:30"
+        assert offered["Afternoon"][0]["start"] == "15:00"
+        create = {"action": "CREATE", "doctorId": "doc_garima", "visitDate": "2099-01-05",
                   "patientName": "Slots E2E", "patientMobile": "9000000101", "callerConfirmed": True}
         refused = (await c.call_tool("manage_booking", create)).structured_content
         assert (refused["outcome"], refused["nextStep"]) == ("INVALID_REQUEST", "ASK_WHICH_TIME")
@@ -132,8 +148,53 @@ async def test_slot_journey_and_release_smoke_through_real_processes(processes):
         assert state["appointments"] == []
         assert not any(r["method"] == "POST" and r["path"] == "/appointments" for r in state["requests"])
         noted = (await c.call_tool("manage_booking", {
-            **create, "preferredTime": offered[0]["start"]})).structured_content
+            **create, "preferredTime": offered["Morning"][0]["start"]})).structured_content
         assert noted["outcome"] == "NOTED"
-        assert noted["appointment"]["slotTime"] == offered[0]["start"]
+        assert noted["appointment"]["slotTime"] == "10:30"
+        headers["X-Operation-Id"] = "e2e-slots-reschedule"
+        moved = (await c.call_tool("manage_booking", {
+            "action": "RESCHEDULE", "appointmentId": noted["appointment"]["appointmentId"],
+            "newVisitDate": "2099-01-05", "newPreferredTime": offered["Afternoon"][0]["start"],
+            "callerConfirmed": True})).structured_content
+        assert moved["outcome"] == "NOTED"
+        assert moved["appointment"]["status"] == "CHANGED"
+        assert moved["appointment"]["slotTime"] == "15:00"
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
     await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "en", "General Medicine", "required")
+
+
+def test_process_cleanup_reaps_stuck_and_cooperative_children():
+    children = []
+    try:
+        for handler in ("signal.SIG_IGN", "signal.SIG_DFL"):
+            proc = subprocess.Popen([sys.executable, "-u", "-c",
+                f"import signal,time; signal.signal(signal.SIGTERM, {handler}); print('ready'); time.sleep(60)"],
+                stdout=subprocess.PIPE)
+            children.append(proc)
+            assert proc.stdout.readline() == b"ready\n"
+        _stop_processes(children, timeout=.1)
+        assert all(proc.poll() is not None for proc in children)
+        assert all(proc.returncode < 0 for proc in children)
+    finally:
+        for proc in children:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+            proc.stdout.close()
+
+
+def test_process_cleanup_terminates_every_child_before_waiting():
+    events = []
+
+    class Child:
+        def __init__(self, name):
+            self.name = name
+
+        def terminate(self):
+            events.append((self.name, "terminate"))
+
+        def wait(self, timeout):
+            events.append((self.name, "wait"))
+
+    _stop_processes([Child("mcp"), Child("stubs")])
+    assert events == [("mcp", "terminate"), ("stubs", "terminate"), ("mcp", "wait"), ("stubs", "wait")]

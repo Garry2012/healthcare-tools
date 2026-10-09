@@ -1,13 +1,28 @@
 """External latency measurement cannot quietly write into an arbitrary tenant."""
 from __future__ import annotations
 
+import asyncio
 import runpy
+import sys
 from pathlib import Path
 
 import pytest
 
 BENCH = runpy.run_path(str(Path(__file__).resolve().parents[1] / "dev" / "bench.py"))
 SELECT = BENCH["selected_scenarios"]
+
+
+async def _run_python(*arguments, env=None, timeout=30):
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, *arguments, cwd=Path(__file__).resolve().parents[1], env=env,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+        raise
+    return process.returncode, stdout, stderr
 
 
 async def test_external_benchmark_defaults_to_reads_without_authenticating(monkeypatch, make_settings):
@@ -62,18 +77,14 @@ async def test_write_benchmark_checks_tenant_before_selecting_writes(monkeypatch
 
 @pytest.mark.parametrize("doctor,ok", [("doc_garima", 1), ("doc_rohan_shetty", 0)])
 async def test_stub_benchmark_measures_a_real_create_at_the_fixture_date(doctor, ok):
-    import asyncio
     import json
     import os
 
     env = {key: value for key, value in os.environ.items() if not key.startswith(("BENCH_", "OPS_E2E_"))}
     env["BENCH_DOCTOR_ID"] = doctor
-    process = await asyncio.create_subprocess_exec(
-        "uv", "run", "python", "dev/bench.py", "--samples", "1", "--concurrency", "1",
-        cwd=Path(__file__).resolve().parents[1], env=env,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
-    assert process.returncode == 0, stderr.decode()[-2000:]
+    code, stdout, stderr = await _run_python(
+        "dev/bench.py", "--samples", "1", "--concurrency", "1", env=env)
+    assert code == 0, stderr.decode()[-2000:]
     report = json.loads(stdout)
     create = report["scenarios"]["booking_create"]
     assert create["expected_outcomes"] == ["NOTED"]
@@ -90,17 +101,13 @@ async def test_stub_benchmark_measures_a_real_create_at_the_fixture_date(doctor,
 
 @pytest.mark.parametrize("samples", [1, 2])
 async def test_benchmark_slot_modes_verify_paths_times_and_workload_bound(samples):
-    import asyncio
     import json
     import os
 
     env = {key: value for key, value in os.environ.items() if not key.startswith(("BENCH_", "OPS_E2E_"))}
-    process = await asyncio.create_subprocess_exec(
-        "uv", "run", "python", "dev/bench.py", "--samples", str(samples), "--concurrency", "1",
-        cwd=Path(__file__).resolve().parents[1], env=env,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
-    assert process.returncode == 0, stderr.decode()[-2000:]
+    code, stdout, stderr = await _run_python(
+        "dev/bench.py", "--samples", str(samples), "--concurrency", "1", env=env)
+    assert code == 0, stderr.decode()[-2000:]
     report = json.loads(stdout)
     scenarios = report["scenarios"]
     expected = {
@@ -134,14 +141,10 @@ async def test_benchmark_slot_modes_verify_paths_times_and_workload_bound(sample
 
 
 async def test_demo_shows_slots_missing_time_and_selected_time():
-    import asyncio
     import json
 
-    process = await asyncio.create_subprocess_exec(
-        "uv", "run", "python", "dev/demo.py", cwd=Path(__file__).resolve().parents[1],
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
-    assert process.returncode == 0, stderr.decode()[-2000:]
+    code, stdout, stderr = await _run_python("dev/demo.py")
+    assert code == 0, stderr.decode()[-2000:]
     sections = {}
     for section in stdout.decode().split("\n== ")[1:]:
         title, body = section.split("\n", 1)
@@ -157,8 +160,6 @@ async def test_demo_shows_slots_missing_time_and_selected_time():
 
 @pytest.mark.parametrize("offered", [[], [{"start": "10:50", "end": "11:00", "available": 2}]])
 async def test_bench_requires_offered_blocks_and_prepares_the_returned_time(monkeypatch, offered):
-    import asyncio
-
     from fastmcp import FastMCP
 
     remote = FastMCP("offered-blocks")
@@ -186,3 +187,80 @@ async def test_bench_requires_offered_blocks_and_prepares_the_returned_time(monk
         assert evidence["selected_time"] == "10:50"
     else:
         assert selected is None and evidence["failure"] == "NO_OPEN_BLOCK"
+
+
+async def test_subprocess_timeout_kills_and_reaps_child(monkeypatch):
+    children = []
+    launch = asyncio.create_subprocess_exec
+
+    async def record_child(*args, **kwargs):
+        child = await launch(*args, **kwargs)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", record_child)
+    try:
+        with pytest.raises(TimeoutError):
+            await _run_python("-c", "import time; time.sleep(60)", timeout=.1)
+        assert children[0].returncode is not None, "timed-out child is still running"
+        assert await children[0].wait() != 0
+    finally:
+        for child in children:
+            if child.returncode is None:
+                child.kill()
+            await child.wait()
+
+
+@pytest.mark.parametrize("initial_enabled", [False, True])
+async def test_bench_failed_preparation_attempts_no_booking_and_exits_failure(initial_enabled):
+    import json
+    import os
+
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("BENCH_", "OPS_E2E_"))}
+    # Change only owner fixtures in a child process: real HTTP MCP, preparation and report code execute.
+    script = f"""
+import atexit, json, runpy, sys
+sys.path[:0] = ['dev', 'tests']
+import harness
+from frontdesk_stubs import ops
+original_state = ops.OpsStubState
+states = []
+def state(**kwargs):
+    capabilities = ops.default_capabilities()
+    capabilities['slots']['enabled'] = {initial_enabled!r}
+    instance = original_state(**kwargs, capabilities=capabilities)
+    states.append(instance)
+    return instance
+ops.OpsStubState = state
+original_plan = harness.slot_plan
+def empty_plan(*args, **kwargs):
+    plan = original_plan(*args, **kwargs)
+    for session in plan['sessions']:
+        session['slots'] = []
+    return plan
+harness.slot_plan = empty_plan
+@atexit.register
+def evidence():
+    print('OWNER_WRITES=' + json.dumps([r for state in states for r in state.requests
+        if r['method'] == 'POST' and r['path'] == '/appointments']), file=sys.stderr)
+sys.argv = ['bench.py', '--samples', '2', '--concurrency', '1']
+runpy.run_path('dev/bench.py', run_name='__main__')
+"""
+    code, stdout, stderr = await _run_python("-c", script, env=env)
+    assert stdout, stderr.decode()
+    report = json.loads(stdout)
+    names = ["slots_booking_create"] + (["booking_create"] if initial_enabled else [])
+    for name in names:
+        result = report["scenarios"][name]
+        assert result["samples"] == 0, result
+        assert result["ok"] == 0 and result["rejected_or_failed"] == 0
+        assert result["preparation_failure"] == "NO_OPEN_BLOCK"
+        assert result["first_call_ms"] is None and result["p50_ms"] is None
+        assert name not in report["omitted_scenarios"]
+    writes = json.loads(stderr.decode().split("OWNER_WRITES=", 1)[1])
+    # Only the two disabled-mode samples may write; every failed-preparation scenario writes nothing.
+    assert len(writes) == (0 if initial_enabled else 2)
+    assert code == 1, stderr.decode()
+    if initial_enabled:
+        for name in ("availability_known_doctor", "availability_name_search"):
+            assert report["scenarios"][name]["expected_outcomes"] == ["AVAILABILITY"]

@@ -160,7 +160,8 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
                           for session in [*doctor.board, *(doctor.usualSessions or [])]
                           for b in session.openSlots or []), None)
             if block is None:
-                pytest.fail("BLOCKED: the owner-designated date has no open block")
+                pytest.fail("BLOCKED: the owner-designated date has no open block; "
+                            f"outcome={result.outcome}, detail={result.detail}")
             return block.start
 
         create = booking.BookingRequest(
