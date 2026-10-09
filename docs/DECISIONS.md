@@ -199,7 +199,7 @@ extra read group for AVAILABILITY (today board ∥ slots; future profile ∥ slo
 
 Garima's 9 October decisions:
 
-- Release smoke accepts `HANDOFF_REQUIRED` only for a valid availability response with `detail=ON_CALL_DOCTOR`, `complete` exactly true and `nextStep=TRANSFER_DESK`. Other handoffs, including `SEARCH_INCOMPLETE`, and unexpected failures fail; the other approved smoke outcomes remain unchanged.
+- Release smoke accepts `HANDOFF_REQUIRED` from either department probe of `get_doctor_availability` (AVAILABILITY and WORKING_HOURS) only for a valid response with `detail=ON_CALL_DOCTOR`, `complete` exactly true and `nextStep=TRANSFER_DESK`. Other handoffs, including `SEARCH_INCOMPLETE`, and unexpected failures fail; the other approved smoke outcomes remain unchanged.
 - Hermetic process and journey tests (in-process/local stubs) use fixed future dates and normal daytime slots, never wall-clock, overnight or all-day windows. Overnight appointments remain unsupported (A13). Read-only smoke may query today; authorised live external journeys use owner-designated dates.
 
 Test infrastructure: T-1 to T-4 isolated sse-starlette's process-wide shutdown flag: a first test
