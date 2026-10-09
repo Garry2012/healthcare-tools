@@ -35,7 +35,7 @@ def _wait(url: str, proc: subprocess.Popen, seconds: float = 15) -> None:
     raise RuntimeError(f"{url} did not come up")
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def processes():
     ops_port, kb_port, mcp_port = free_port(), free_port(), free_port()
     env = {k: v for k, v in os.environ.items() if not k.startswith(("OPS_", "KNOWLEDGE_", "MCP_", "TENANT_"))}
@@ -101,3 +101,39 @@ async def test_journey_and_summary_through_real_transport(processes):
     assert not any(r["path"] == "/availability" and r["method"] == "GET"
                    for r in state["requests"][before_future:])
     assert len(state["appointments"]) == 1 and len(state["summaries"]) == 1
+
+
+async def test_slot_journey_and_release_smoke_through_real_processes(processes):
+    state_url = f"{processes['ops']}/__stub/state"
+    today = httpx.get(state_url).json()["today"]
+    plan = harness.slot_plan(date=today)
+    # A desk-added block spanning the test day: no dependence on the wall-clock clinic session.
+    plan["sessions"] = [{**plan["sessions"][0], "slots": [
+        {**plan["sessions"][0]["slots"][0], "start": "00:00", "end": "23:59"}]}]
+    response = httpx.post(f"{processes['ops']}/__stub/scenario", json={
+        "capabilities": {"slots": {"enabled": True}},
+        "slots": {"doc_garima": {today: plan}},
+        "boards": {today: [{"doctorId": "doc_garima", "session": "Morning", "status": "IN",
+                            "expectedTime": "00:00", "expectedEndTime": "23:59"}]}})
+    response.raise_for_status()
+    headers = {"Authorization": "Bearer gateway-e2e", **harness.headers(
+        call_id="e2e-slots", operation_id="e2e-slots-create")}
+    async with Client(StreamableHttpTransport(f"{processes['mcp']}/mcp/", headers=headers)) as c:
+        available = (await c.call_tool("get_doctor_availability", {
+            "doctorId": "doc_garima", "date": "today"})).structured_content
+        assert available["outcome"] == "AVAILABILITY"
+        offered = available["doctors"][0]["board"][0]["openSlots"]
+        assert offered
+        create = {"action": "CREATE", "doctorId": "doc_garima", "visitDate": today,
+                  "patientName": "Slots E2E", "patientMobile": "9000000101", "callerConfirmed": True}
+        refused = (await c.call_tool("manage_booking", create)).structured_content
+        assert (refused["outcome"], refused["nextStep"]) == ("INVALID_REQUEST", "ASK_WHICH_TIME")
+        state = httpx.get(state_url).json()
+        assert state["appointments"] == []
+        assert not any(r["method"] == "POST" and r["path"] == "/appointments" for r in state["requests"])
+        noted = (await c.call_tool("manage_booking", {
+            **create, "preferredTime": offered[0]["start"]})).structured_content
+        assert noted["outcome"] == "NOTED"
+        assert noted["appointment"]["slotTime"] == offered[0]["start"]
+    smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
+    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "en", "General Medicine", "required")

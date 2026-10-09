@@ -89,6 +89,33 @@ async def test_smoke_probes_working_hours_and_accepts_a_closed_session(hours_out
     assert purposes == ["AVAILABILITY", "WORKING_HOURS"]
 
 
+@pytest.mark.parametrize("outcome", ["DOCTORS_MATCHED", "UNKNOWN_OUTCOME"])
+async def test_smoke_accepts_slot_matches_but_not_unknown_outcomes(outcome):
+    from fastmcp import Client, FastMCP
+
+    remote = FastMCP("slot-department-smoke")
+
+    @remote.tool()
+    def get_doctor_availability(departmentName: str, date: str | None = None,  # noqa: N803
+                                purpose: str = "AVAILABILITY") -> dict:
+        assert departmentName == "General Medicine"
+        return {"outcome": "WORKING_HOURS" if purpose == "WORKING_HOURS" else outcome}
+
+    @remote.tool()
+    def search_knowledge(question: str, language: str) -> dict:
+        assert question == "deployment connectivity check"
+        return {"outcome": "ANSWERED"}
+
+    for name in ("manage_booking", "record_call_summary"):
+        remote.tool(name=name)(lambda: pytest.fail("smoke wrote data"))
+    async with Client(remote) as client:
+        if outcome == "DOCTORS_MATCHED":
+            await SMOKE["check_tools"](client, "en", "General Medicine")
+        else:
+            with pytest.raises(RuntimeError, match="read-only smoke"):
+                await SMOKE["check_tools"](client, "en", "General Medicine")
+
+
 @pytest.mark.parametrize("body", [
     {"outcome": "COULD_NOT_CHECK"}, {"outcome": "UNKNOWN_OUTCOME"}, {"outcome": "INVALID_REQUEST"},
     {"error": {"code": "UNAUTHORIZED"}}, None,

@@ -20,7 +20,8 @@ from fastmcp.exceptions import ClientError, FastMCPError
 from mcp import McpError
 
 TOOL_NAMES = {"get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary"}
-AVAILABILITY_OK = {"AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND", "NOT_AVAILABLE"}
+AVAILABILITY_OK = {"AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND", "NOT_AVAILABLE",
+                   "DOCTORS_MATCHED"}
 KNOWLEDGE_OK = {"ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED"}
 
 

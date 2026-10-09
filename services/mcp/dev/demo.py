@@ -21,6 +21,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))  # the shared serving() helper
 
 from conftest import serving  # noqa: E402
+from harness import slot_plan  # noqa: E402
 
 from frontdesk_mcp.clock import FixedClock  # noqa: E402
 from frontdesk_mcp.config import Settings  # noqa: E402
@@ -41,8 +42,10 @@ def show(title: str, result: dict) -> None:
     print(f"\n== {title}\n{json.dumps(result, indent=2, ensure_ascii=False)}")
 
 
-async def call(c: Client, title: str, tool: str, args: dict) -> None:
-    show(title, (await c.call_tool(tool, args)).structured_content)
+async def call(c: Client, title: str, tool: str, args: dict) -> dict:
+    result = (await c.call_tool(tool, args)).structured_content
+    show(title, result)
+    return result
 
 
 async def main() -> None:
@@ -91,6 +94,22 @@ async def main() -> None:
                 "callerMobile": "9000000101", "doctorId": "doc_kiran_hegde", "language": "kn",
                 "summaryText": "Lakshmi Rao, 9000000101, asked for Dr. Kiran Hegde this evening; "
                                "board UNKNOWN; callback promised."})
+
+        ops_state.capabilities["slots"]["enabled"] = True
+        ops_state.set_slots("doc_garima", "2026-10-01", slot_plan())
+        async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={
+                **gateway, "X-Operation-Id": "demo-slots-create"})) as c:
+            available = await call(c, "slots: availability today", "get_doctor_availability", {
+                "doctorId": "doc_garima", "date": "today"})
+            offered = next((block for doctor in available["doctors"] for session in doctor["board"]
+                            for block in session["openSlots"] or []), None)
+            if offered is None:
+                raise RuntimeError("slots demo: availability offered no open block")
+            create = {"action": "CREATE", "doctorId": "doc_garima", "visitDate": "2026-10-01",
+                      "patientName": "Demo Patient", "patientMobile": "9000000101", "callerConfirmed": True}
+            await call(c, "slots: CREATE without a time", "manage_booking", create)
+            await call(c, "slots: CREATE with an offered time", "manage_booking", {
+                **create, "preferredTime": offered["start"]})
 
 
 if __name__ == "__main__":
