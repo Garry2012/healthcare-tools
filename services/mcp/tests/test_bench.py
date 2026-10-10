@@ -264,3 +264,60 @@ runpy.run_path('dev/bench.py', run_name='__main__')
     if initial_enabled:
         for name in ("availability_known_doctor", "availability_name_search"):
             assert report["scenarios"][name]["expected_outcomes"] == ["AVAILABILITY"]
+
+
+@pytest.mark.parametrize("level", [None, "INFO"])
+async def test_benchmark_log_level_keeps_report_separate_from_logs(tmp_path, level):
+    import json
+    import os
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("BENCH_", "OPS_E2E_"))}
+    log = tmp_path / "bench.log"
+    arguments = ["dev/bench.py", "--samples", "1", "--concurrency", "1", "--log-file", str(log)]
+    if level:
+        arguments += ["--log-level", level]
+    code, stdout, stderr = await _run_python(*arguments, env=env)
+    assert code == 0, stderr.decode()
+    report = json.loads(stdout)
+    assert set(report) == {"measured_at", "boundary", "samples_per_scenario", "concurrency",
+        "read_deadline_seconds", "profile_batch_size", "min_batch_headroom_seconds", "warm",
+        "owner_calls_verified", "slots_observed", "booking_preparation", "workload_scenarios",
+        "watchdog_limit_seconds", "fixture_mode_transition", "omitted_scenarios", "note", "scenarios"}
+    assert all(item["ok"] == 1 for item in report["scenarios"].values())
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    if level == "INFO":
+        assert any(r["msg"] == "tool_result" and r["level"] == "INFO" for r in records)
+    else:
+        assert all(r["level"] in {"WARNING", "ERROR", "CRITICAL"} for r in records)
+
+
+@pytest.mark.parametrize("level", ["DEBUG", "INFO"])
+async def test_benchmark_requires_file_before_verbose_measurement(level):
+    import os
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("BENCH_", "OPS_E2E_"))}
+    code, stdout, stderr = await _run_python(
+        "dev/bench.py", "--samples", "1", "--log-level", level, env=env)
+    assert code == 2, stderr.decode()
+    assert "--log-level below WARNING requires --log-file" in stderr.decode()
+    assert stdout == b"", "invalid CLI must not start the benchmark"
+
+
+async def test_benchmark_refuses_ambiguous_log_ownership(tmp_path):
+    script = '''
+import logging, runpy, sys
+sys.path.insert(0, "dev")
+from frontdesk_mcp import server
+original = server.create_app
+def build(*args, **kwargs):
+    app = original(*args, **kwargs)
+    logging.getLogger().addHandler(logging.NullHandler())
+    return app
+server.create_app = build
+sys.argv = ['bench.py', '--samples', '1', '--log-file', sys.argv[1]]
+runpy.run_path('dev/bench.py', run_name='__main__')
+'''
+    code, stdout, stderr = await _run_python("-c", script, str(tmp_path / "bench.log"))
+    assert code != 0
+    assert "benchmark requires exactly one root log handler" in stderr.decode()
+    assert stdout == b"", "ambiguous ownership must fail before measurement"

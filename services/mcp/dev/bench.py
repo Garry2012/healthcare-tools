@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
+import logging
 import os
 import statistics
 import sys
@@ -234,15 +236,19 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--samples", type=int, default=50)
     parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"), default="WARNING")
+    parser.add_argument("--log-file", type=Path)
     args = parser.parse_args()
     if args.samples < 1 or args.concurrency < 1:
         parser.error("samples and concurrency must be positive")
+    if args.log_level in {"DEBUG", "INFO"} and not args.log_file:
+        parser.error("--log-level below WARNING requires --log-file")
     real_ops = os.environ.get("BENCH_OPS_BASE_URL")
     # With real operational hosts but no knowledge host yet, keep the in-process knowledge stub so knowledge
     # answer samples remain labelled fixtures. Scheduling never uses that stub.
     knowledge_stub_with_real_ops = bool(real_ops) and not os.environ.get("BENCH_KNOWLEDGE_BASE_URL")
     settings = Settings(
-        env="development", log_level="WARNING", provider_id="demo-hospital", domain_pack="healthcare",
+        env="development", log_level=args.log_level, provider_id="demo-hospital", domain_pack="healthcare",
         tenant_supported_languages="en,kn,hi",
         tenant_timezone="Asia/Kolkata", tenant_country_calling_code="91",
         ops_base_url=real_ops or "http://ops-stub.local/api/v1",
@@ -302,95 +308,106 @@ async def main() -> int:
         for name, (tool, values, expected, paths) in scenarios.items()
     }
     app = create_app(settings, ops_transport=ops_transport, knowledge_transport=knowledge_transport, clock=clock)
-    future_date = os.environ.get("BENCH_FUTURE_DATE") if real_ops else "2026-10-05"
-    workload_scenarios = len(scenarios) + (2 if future_date else 0) + (0 if real_ops else 6)
-    watchdog_limit = args.samples * workload_scenarios * max(
-        settings.read_deadline_seconds, settings.write_deadline_seconds) + 30
-    preparation = {}
-    async with serving(app, watchdog_limit=watchdog_limit) as base:
-        # warm: first call pays token + pool + schema
-        async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={"Authorization": "Bearer gateway"})) as c:
-            await c.list_tools()
-        capabilities = await app.state.services.ops.get_capabilities(Deadline(settings.read_deadline_seconds))
-        enabled = capabilities.slots.enabled
-        mode = "enabled" if enabled else "disabled"
-        if enabled:
-            tool, values, _, paths = scenarios["availability_department"]
-            scenarios["availability_department"] = (tool, values, {"DOCTORS_MATCHED", "CALLBACK_REQUIRED"}, paths)
-            for name in ("availability_known_doctor", "availability_name_search"):
-                tool, values, _, paths = scenarios[name]
-                scenarios[name] = (tool, values, {"AVAILABILITY"}, paths, open_blocks)
-        if "booking_create" in scenarios:
-            selected, preparation[mode] = await prepare_booking(base, scenarios["booking_create"], mode)
-            if selected is not None:
-                scenarios["booking_create"] = selected
-            else:
-                del scenarios["booking_create"]
-        report = await run(base, args.samples, args.concurrency, scenarios)
-        if preparation.get(mode, {}).get("failure"):
-            report["booking_create"] = preparation_failure(preparation[mode], ("POST /appointments",))
-        if future_date:
-            query = {"date": future_date, "departmentName": DEPARTMENT} if real_ops else {
-                "date": future_date, "departmentId": "dept_policy"}
-            report.update(await department_cache_modes(app, base, args.samples, query=query,
-                name="availability_department_future", expected={"DOCTORS_MATCHED"} if enabled else {"AVAILABILITY"}))
-        for result in report.values():
-            result["slots_observed"] = mode
+    with contextlib.ExitStack() as log_files:
+        if args.log_file:
+            stream = log_files.enter_context(args.log_file.open("w", encoding="utf-8"))
+            handlers = logging.getLogger().handlers
+            assert len(handlers) == 1, "benchmark requires exactly one root log handler"
+            handler = handlers[0]  # create_app owns the root JSON handler
+            previous = handler.setStream(stream)
+            log_files.callback(handler.setStream, previous)
+        future_date = os.environ.get("BENCH_FUTURE_DATE") if real_ops else "2026-10-05"
+        workload_scenarios = len(scenarios) + (2 if future_date else 0) + (0 if real_ops else 6)
+        watchdog_limit = args.samples * workload_scenarios * max(
+            settings.read_deadline_seconds, settings.write_deadline_seconds) + 30
+        preparation = {}
+        async with serving(app, watchdog_limit=watchdog_limit) as base:
+            # warm: first call pays token + pool + schema
+            async with Client(StreamableHttpTransport(
+                    f"{base}/mcp/", headers={"Authorization": "Bearer gateway"})) as c:
+                await c.list_tools()
+            capabilities = await app.state.services.ops.get_capabilities(Deadline(settings.read_deadline_seconds))
+            enabled = capabilities.slots.enabled
+            mode = "enabled" if enabled else "disabled"
+            if enabled:
+                tool, values, _, paths = scenarios["availability_department"]
+                scenarios["availability_department"] = (tool, values, {"DOCTORS_MATCHED", "CALLBACK_REQUIRED"}, paths)
+                for name in ("availability_known_doctor", "availability_name_search"):
+                    tool, values, _, paths = scenarios[name]
+                    scenarios[name] = (tool, values, {"AVAILABILITY"}, paths, open_blocks)
+            if "booking_create" in scenarios:
+                selected, preparation[mode] = await prepare_booking(base, scenarios["booking_create"], mode)
+                if selected is not None:
+                    scenarios["booking_create"] = selected
+                else:
+                    del scenarios["booking_create"]
+            report = await run(base, args.samples, args.concurrency, scenarios)
+            if preparation.get(mode, {}).get("failure"):
+                report["booking_create"] = preparation_failure(preparation[mode], ("POST /appointments",))
+            if future_date:
+                query = {"date": future_date, "departmentName": DEPARTMENT} if real_ops else {
+                    "date": future_date, "departmentId": "dept_policy"}
+                report.update(await department_cache_modes(app, base, args.samples, query=query,
+                    name="availability_department_future",
+                    expected={"DOCTORS_MATCHED"} if enabled else {"AVAILABILITY"}))
+            for result in report.values():
+                result["slots_observed"] = mode
 
-        if not real_ops:
-            ops_state.capabilities["slots"]["enabled"] = True
-            for day in ("2026-10-01", "2026-10-05"):
-                ops_state.set_slots("doc_garima", day, slot_plan(date=day))
-            oncall = slot_plan("doc_vikram_desai")
-            oncall["sessions"] = [{**oncall["sessions"][1], "session": None}]
-            ops_state.set_slots("doc_vikram_desai", "2026-10-01", oncall)
-            # Explicit cold start for the new fixture mode; no service or global SSE flag is restarted/reset.
-            app.state.services.cache.clear()
-            enabled_scenarios = {
-                "slots_availability_future": ("get_doctor_availability", {
-                    "doctorId": "doc_garima", "date": "2026-10-05"}, {"AVAILABILITY"},
-                    ("GET /availability/doc_garima/slots",), open_blocks),
-                "slots_availability_today": ("get_doctor_availability", {
-                    "doctorId": "doc_garima", "date": "today"}, {"AVAILABILITY"},
-                    ("GET /availability", "GET /availability/doc_garima/slots"), open_blocks),
-                "slots_availability_oncall": ("get_doctor_availability", {
-                    "doctorName": "vikram desai", "date": "today"}, {"AVAILABILITY"},
-                    ("GET /doctors", "GET /availability", "GET /availability/doc_vikram_desai/slots"), open_blocks),
-            }
-            slot_report = await run(base, args.samples, args.concurrency, enabled_scenarios)
-            create = ("manage_booking", {**SCENARIOS["booking_create"][1], "doctorId": "doc_garima",
-                                        "visitDate": "2026-10-01"}, {"NOTED"},
-                      ("GET /availability/doc_garima/slots", "POST /appointments"))
-            selected, preparation["enabled"] = await prepare_booking(base, create, "enabled")
-            if selected is None:
-                slot_report["slots_booking_create"] = preparation_failure(preparation["enabled"], create[3])
-            else:
-                slot_report.update(await run(base, args.samples, args.concurrency, {
-                    "slots_booking_create": (*selected, lambda b: bool(b.get("appointment", {}).get("slotTime")))}))
-            slot_report.update(await department_cache_modes(app, base, args.samples,
-                query={"date": "today", "departmentName": "General Medicine"},
-                name="slots_department", expected={"DOCTORS_MATCHED"}))
-            for result in slot_report.values():
-                result["slots_observed"] = "enabled"
-            report.update(slot_report)
-    print(json.dumps({"measured_at": datetime.now(UTC).isoformat(timespec="seconds"), "boundary": boundary,
-                      "samples_per_scenario": args.samples, "concurrency": args.concurrency,
-                      "read_deadline_seconds": settings.read_deadline_seconds,
-                      "profile_batch_size": settings.profile_batch_size,
-                      "min_batch_headroom_seconds": settings.min_batch_headroom_seconds,
-                      "warm": "token warmed at start-up; one tools/list before sampling; a new MCP session per sample",
-                      "owner_calls_verified": RECORDING_OWNER_CALLS,
-                      "slots_observed": mode if real_ops else ["disabled", "enabled"],
-                      "booking_preparation": preparation,
-                      "workload_scenarios": workload_scenarios,
-                      "watchdog_limit_seconds": watchdog_limit,
-                      "fixture_mode_transition": None if real_ops else "same server; local directory cache cleared",
-                      "omitted_scenarios": omitted,
-                      "note": "timings cover tools/call after MCP session initialization, "
-                              "including client schema checking; "
-                              "a sample counts only when the intended outcome and owner call were observed",
-                      "scenarios": report}, indent=2))
-    return 1 if any(item.get("failure") for item in preparation.values()) else 0
+            if not real_ops:
+                ops_state.capabilities["slots"]["enabled"] = True
+                for day in ("2026-10-01", "2026-10-05"):
+                    ops_state.set_slots("doc_garima", day, slot_plan(date=day))
+                oncall = slot_plan("doc_vikram_desai")
+                oncall["sessions"] = [{**oncall["sessions"][1], "session": None}]
+                ops_state.set_slots("doc_vikram_desai", "2026-10-01", oncall)
+                # Explicit cold start for the new fixture mode; no service or global SSE flag is restarted/reset.
+                app.state.services.cache.clear()
+                enabled_scenarios = {
+                    "slots_availability_future": ("get_doctor_availability", {
+                        "doctorId": "doc_garima", "date": "2026-10-05"}, {"AVAILABILITY"},
+                        ("GET /availability/doc_garima/slots",), open_blocks),
+                    "slots_availability_today": ("get_doctor_availability", {
+                        "doctorId": "doc_garima", "date": "today"}, {"AVAILABILITY"},
+                        ("GET /availability", "GET /availability/doc_garima/slots"), open_blocks),
+                    "slots_availability_oncall": ("get_doctor_availability", {
+                        "doctorName": "vikram desai", "date": "today"}, {"AVAILABILITY"},
+                        ("GET /doctors", "GET /availability", "GET /availability/doc_vikram_desai/slots"), open_blocks),
+                }
+                slot_report = await run(base, args.samples, args.concurrency, enabled_scenarios)
+                create = ("manage_booking", {**SCENARIOS["booking_create"][1], "doctorId": "doc_garima",
+                                            "visitDate": "2026-10-01"}, {"NOTED"},
+                          ("GET /availability/doc_garima/slots", "POST /appointments"))
+                selected, preparation["enabled"] = await prepare_booking(base, create, "enabled")
+                if selected is None:
+                    slot_report["slots_booking_create"] = preparation_failure(preparation["enabled"], create[3])
+                else:
+                    slot_report.update(await run(base, args.samples, args.concurrency, {
+                        "slots_booking_create": (*selected, lambda b: bool(b.get("appointment", {}).get("slotTime")))}))
+                slot_report.update(await department_cache_modes(app, base, args.samples,
+                    query={"date": "today", "departmentName": "General Medicine"},
+                    name="slots_department", expected={"DOCTORS_MATCHED"}))
+                for result in slot_report.values():
+                    result["slots_observed"] = "enabled"
+                report.update(slot_report)
+        print(json.dumps({"measured_at": datetime.now(UTC).isoformat(timespec="seconds"), "boundary": boundary,
+                          "samples_per_scenario": args.samples, "concurrency": args.concurrency,
+                          "read_deadline_seconds": settings.read_deadline_seconds,
+                          "profile_batch_size": settings.profile_batch_size,
+                          "min_batch_headroom_seconds": settings.min_batch_headroom_seconds,
+                          "warm": "token warmed at start-up; one tools/list before sampling; "
+                                  "a new MCP session per sample",
+                          "owner_calls_verified": RECORDING_OWNER_CALLS,
+                          "slots_observed": mode if real_ops else ["disabled", "enabled"],
+                          "booking_preparation": preparation,
+                          "workload_scenarios": workload_scenarios,
+                          "watchdog_limit_seconds": watchdog_limit,
+                          "fixture_mode_transition": None if real_ops else "same server; local directory cache cleared",
+                          "omitted_scenarios": omitted,
+                          "note": "timings cover tools/call after MCP session initialization, "
+                                  "including client schema checking; "
+                                  "a sample counts only when the intended outcome and owner call were observed",
+                          "scenarios": report}, indent=2))
+        return 1 if any(item.get("failure") for item in preparation.values()) else 0
 
 
 if __name__ == "__main__":
