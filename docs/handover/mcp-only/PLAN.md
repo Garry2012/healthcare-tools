@@ -2,7 +2,7 @@
 
 Status: source migration implemented; slots rules updated 9 October 2026. Slots documentation approval and deployment readiness are separate (gates below). Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
 
-Current availability and booking rules are recorded in [DECISIONS.md SL1](../../DECISIONS.md#sl1--slot-aware-availability-and-booking-9-october-2026) and the [slots plan](implementation/SLOTS-PLAN.md). SL1 supersedes the earlier on-call callback rules in A12/A13; schema `2026-10-10.1` supersedes the slots-only version for the combined slots/contact-fallback release. Earlier migration history below is not release evidence.
+Current availability and booking rules are recorded in [DECISIONS.md SL1](../../DECISIONS.md#sl1--slot-aware-availability-and-booking-9-october-2026) and the [slots plan](implementation/SLOTS-PLAN.md). SL1 supersedes the earlier on-call callback rules in A12/A13; schema `2026-10-08.1` is frozen. Earlier migration history below is not release evidence.
 
 Updated 30 September 2026 from the user's decisions, the [published Manoj contract](https://healthcare-contract-docs.icytree-6543aaa9.centralindia.azurecontainerapps.io/openapi.yaml), and the [Opus review](OPUS-REVIEW.md). This is the migration plan, including the actionable review recommendations and the user's callback-only UNKNOWN policy. It supersedes earlier ownership proposals, slot requirements and the direct platform-to-REST summary path. Retirement, rollback and acceptance requirements are included here; the historical investigation is source evidence, not an additional implementation checklist. This is an implementation plan, not a claim of verified production readiness.
 
@@ -33,7 +33,7 @@ The public interfaces are the only dependency on either owner's implementation: 
 ## Slots series status and pre-deployment gates (9 October 2026)
 
 Phases 1a–4b were built and reviewed; phase 4b is accepted. Phase 5 updates these documents and
-is complete only when their review is approved. The combined slots/contact-fallback release publishes schema `2026-10-10.1` (10 October supplement to SL1).
+is complete only when their review is approved. The schema is frozen at `2026-10-08.1`.
 **Nothing in the slots series has been merged or deployed. Documentation completion is not deployment readiness.**
 
 Every release gate below remains pending for this slots release:
@@ -42,11 +42,9 @@ Every release gate below remains pending for this slots release:
 2. Authorised live verification on Manoj's HTTPS synthetic tenant: the external write journey recording `slots_path`, open blocks on both journey dates, the negative UNKNOWN-today test and read gates.
 3. Authorised live bench against the 0.30 s tool budget, including the extra on-call by-name read group.
 4. Knowledge host and deployed-adapter credentials, followed by deployed-transport gates and release smoke against the canary.
-5. ContextForge schema refresh to `2026-10-10.1` after the approved release.
+5. ContextForge schema refresh to `2026-10-08.1` after the approved release.
 6. Voice-team readiness for SL1's new fields and outcomes.
 7. **LOG-1: implemented (LOG-1); awaiting review and Garima's closure.** Library messages and adapter fields pass through one JSON logging boundary; unexpected tool errors are masked. Local privacy, regression and latency evidence is in [LOG-1-HAND-BACK.md](implementation/LOG-1-HAND-BACK.md). This gate is not closed; production logs still require verification after an approved deployment.
-8. **Pending:** Manoj confirms that a converted caller-ID number is acceptable as `callerMobile` and updates the contract wording "Only when the caller gave it during the call".
-9. **Pending:** the voice platform and ContextForge owners confirm that `X-Caller-Number` is always the end caller's own number, never a trunk number or a placeholder for a withheld ID.
 
 Open but **not deployment gates unless Garima says so**: Manoj G-13–G-15 (already designed around),
 recorder strictness permanence, and optional 4b-M1 review O-1. The T-4 test-setup remedy is implemented
@@ -120,7 +118,7 @@ plan for exact precedence; earlier board-overlay and department-write proposals 
 | `search_knowledge` | Shobhit interface, pending | Explicit symptom routing, emergency/desk escalation and hospital answers; provisional downstream contract still needs owner acceptance. |
 | `record_call_summary` | `createCallSummary`, `POST /call-summaries` | LLM-callable through the same gateway bearer; no summary listing or staff tools. |
 
-There are four MCP tools. Schema `2026-10-10.1` is published in the repository; gateway/voice discovery
+There are four MCP tools. Schema `2026-10-08.1` is published in the repository; gateway/voice discovery
 refresh remains a release gate, not proof of deployment. Each appointment output includes nullable
 slotTime and default-false slotMoved; LIST and CANCEL keep slotMoved false.
 
@@ -130,7 +128,7 @@ Keep patient contact separate from caller authorization. Create accepts the supp
 
 Normalize verified phone context using an explicitly configured supported country rule and validate the contract's ten-digit Mobile field. Do not strip arbitrary prefixes or take the last ten digits. A trusted SIP caller-number header alone is not universal proof of ownership; the platform and Manoj must agree what verification the authenticated MCP consumer is asserting. Web/WhatsApp integrations must supply their own authenticated channel context under that same policy.
 
-For the initial release, absent verification, unsupported numbers and requests to manage an appointment under another person's number cannot trigger a lookup or mutation using a dictated substitute. Return a neutral identity-unavailable/not-found result as appropriate and use the established assistance flow; do not implement delegated-family authorization locally. This restriction does not prevent creating a request with an authorized patient's dictated contact information. Define broader family access with Manoj/platform separately. Minimize returned appointment details and never expose symptom text, other contacts or raw upstream errors merely to select an appointment. The UNKNOWN callback flow remains summary-only; its resolved callback contact (explicit number, otherwise converted caller header) is contact data, not authorization.
+For the initial release, absent verification, unsupported numbers and requests to manage an appointment under another person's number cannot trigger a lookup or mutation using a dictated substitute. Return a neutral identity-unavailable/not-found result as appropriate and use the established assistance flow; do not implement delegated-family authorization locally. This restriction does not prevent creating a request with an authorized patient's dictated contact information. Define broader family access with Manoj/platform separately. Minimize returned appointment details and never expose symptom text, other contacts or raw upstream errors merely to select an appointment. The UNKNOWN callback flow remains summary-only; its caller-provided callback number is contact data, not authorization.
 
 **Mutation identity, retries and response validation**
 
@@ -173,11 +171,7 @@ Whole-call summaryText is required, nonblank and at most 500 characters, sent un
 schema cap is 500; the existing outer 2000 cap allows service-level INVALID_REQUEST for 501–2000.
 There is no separate caller-name/date argument, text prefix, composition or truncation. Names, callback
 details, symptoms and requested timing can be recorded in summaryText, which is never logged.
-Resolved callback contact is the explicit callerMobile when supplied, otherwise the caller-header number
-strictly converted to the configured 10-digit national format. Invalid explicit contact is rejected.
-CALLBACK_NOTED requires a usable resolved contact and forbids appointment/transfer fields; ordinary
-summaries may omit unusable contact. Summary contact never grants appointment authority and does not
-require X-Caller-Verification.
+CALLBACK_NOTED requires a valid 10-digit callback mobile and forbids appointment/transfer fields.
 
 Trusted X-Call-Id and timezone-aware X-Call-Started-At supply identity/timing; no duration is sent.
 The owner deduplicates by call ID: verified 201 → SAVED; verified 200 for our call ID → ALREADY_SAVED,
@@ -264,7 +258,7 @@ Keep any temporary legacy test profile explicitly named during migration. The ne
 
 Maintain `prompt.py` and the healthcare pack around date-aware facts, clarification, CALLBACK_NOTED and truthful appointment states. Remove slotId/newSlotId, capacity/confirmation-code promises and obsolete timingCertainty/outcome branches. CONFIRMED_BY_DESK can be described as desk acknowledgement; it still does not mean a guaranteed time under Manoj's contract. Include explicit instructions for missing identity, routing failures and uncertain mutations.
 
-Keep the four-tool discovery set and refresh gateway/voice schemas to `2026-10-10.1` after an approved release; handle SL1's new fields/outcomes. The implemented registration script checks names/input schemas only; output schemas require manual comparison through the voice virtual server against `make schema` after separately approved deployment. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
+Keep the four-tool discovery set and refresh gateway/voice schemas to `2026-10-08.1` after an approved release; handle SL1's new fields/outcomes. The implemented registration script checks names/input schemas only; output schemas require manual comparison through the voice virtual server against `make schema` after separately approved deployment. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
 
 **Active repository retirement inventory**
 

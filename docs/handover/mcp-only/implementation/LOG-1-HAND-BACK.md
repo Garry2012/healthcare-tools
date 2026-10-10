@@ -209,7 +209,7 @@ Independent read-only review (`/root/log1_review`) found no actionable findings 
 | `header` | 5 | `context.FIELD_OF_HEADER` keys |
 | `env` | 4 | `Settings.env` Literal |
 | `pack` | 1 | Shipped JSON file names in `frontdesk_mcp/packs/` |
-| `schemaVersion` | 1 | `prompt.SCHEMA_VERSION` (`2026-10-10.1`) |
+| `schemaVersion` | 1 | `prompt.SCHEMA_VERSION` |
 | `path` | 12 route templates | One compiled route table; dynamic IDs discarded |
 | `callId` | Syntax-limited, not enumerable | Existing `context._ID` for both context and field |
 | `summaryId` | Syntax-limited, not enumerable | Existing `summary._LOG_ID` |
@@ -390,7 +390,7 @@ make schema > .context/log1/schema-A.json 2> .context/log1/schema-A.stderr
 cmp .context/log1/schema-A.json services/mcp/tests/contracts/mcp-tools.snapshot.json
 ```
 
-Exit 0, byte-identical: **64,603 bytes**, SHA-256 **`d666020548a83315c47ac2529a1972efa89f5bbe722786d18de7316f55454fdf`**, schema version **`2026-10-10.1`**. No version bump and no generated schema or VOICE-TEAM change.
+Exit 0, byte-identical to the committed snapshot. No version bump and no generated schema or VOICE-TEAM change.
 
 Lint:
 
@@ -536,6 +536,6 @@ PYTHONPATH=.:src:dev timeout -k 5 180 uv run python ../../.context/log1/probe.py
 
 Exit 0; `=== PROBE DONE` present. `Zelda Fakename`, `9876501234`, `+919876501234`, `SECRETREASONPAIN`, `SECRETTOKENXYZ` and `BearerSecretAlphaToken` each have **0 occurrences in stdout and 0 in stderr**. As in the original report, the last marker is exercised by the regression tests, not the original probe. The original probe does not cover M-1's trigger; the new subprocess regression test does.
 
-`make schema` plus `cmp` passed: byte-identical, 64,603 bytes, SHA-256 `d666020548a83315c47ac2529a1972efa89f5bbe722786d18de7316f55454fdf`, still `2026-10-10.1`. `git diff --check` passed. All 386 files captured outside the three correction files retain their SHA-256 hashes, including the user's modified deployment files, untracked review/plan files and `temp/` (`.context/log1-m1/protected-before.json` / `protected-after.json`). No failing command was retried for a favorable result; the red test is retained and followed by the implementation/green test.
+`make schema` plus `cmp` passed: byte-identical to the committed snapshot. `git diff --check` passed. All 386 files captured outside the three correction files retain their SHA-256 hashes, including the user's modified deployment files, untracked review/plan files and `temp/` (`.context/log1-m1/protected-before.json` / `protected-after.json`). No failing command was retried for a favorable result; the red test is retained and followed by the implementation/green test.
 
 No benchmark rerun: records without `exc_info` still short-circuit at the same first check, and the added guard handles exception metadata only. The original benchmark evidence remains historical, not a fresh measurement of this commit. The full `scripts/test.sh`, process e2e and Docker builds were not rerun for this one-line correction; their earlier P/A/B results above are not presented as fresh M-1 results. No external services were called, no schema/configuration/dependency changes were made, and nothing was pushed, merged or deployed. **Ready for Opus's focused re-review; gate 7 remains open for Garima.**
