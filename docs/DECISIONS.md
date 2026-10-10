@@ -258,3 +258,48 @@ approved release; field structure and all other tool descriptions are unchanged.
 (`151ea61`): `serving()` resets sse-starlette's process-wide drain flag at the start of every test server,
 proven by a subprocess regression test. It is no longer an open item. The SL1 lines above that call it
 optional or separate are historical. Recorder strictness permanence remains open for Garima.
+
+## L1 — 10 October 2026: one logging boundary for private data (LOG-1)
+
+Garima approved LOG-1 revision 4 and retained `callId` and `summaryId` for correlation.
+The local probe demonstrated two leaks: malformed MCP JSON-RPC validation echoed fake input into
+root JSON logs, and an unexpected tool exception exposed fake private values through FastMCP's
+independent Rich traceback on stderr. Unexpected exception messages also reached tool results.
+Raising levels would not fix either log leak because both occur at WARNING or ERROR.
+
+Implemented: `configure_logging` removes FastMCP's own handlers and propagates through the single
+root JSON handler. `JsonFormatter` never interpolates arguments. Libraries/root keep only exact
+approved unfilled templates, otherwise `library_message_omitted`; their extra fields are ignored.
+Adapter fields use one 19-name table, with exact internal code/class sets built once from their
+producers, primitive bounds and existing ID syntax checks. Unknown names or rejected values are
+omitted, with names only in `omittedFields`. Dynamic owner path IDs become route templates; unknown
+or query-bearing paths are omitted. Error records with `exc_info` keep only exception type and up to
+10 file/line/function frames, never messages, locals, arguments or source lines. `mask_error_details=True`
+hides unexpected tool-error text; deliberate ToolError and summary-validation responses are preserved.
+Provider remains configuration data; syntax-checked `callId`/`summaryId` remain visible by design.
+
+Rejected: a field-name denylist (new fields would escape); regex redaction of free text (unreliable);
+higher logger levels (the demonstrated leaks survive); environment-only FastMCP suppression (leaves
+root validation leakage); per-logger filters (scattered coverage); patching libraries (not this adapter's
+boundary). No new calls, waits, locks, background work or success-path log events were introduced.
+
+Evidence: 1,297 hermetic tests and five process e2e tests passed; wheel/source distribution and both
+Docker images built. The original probe now contains zero fake private values on stdout and stderr.
+The published schema remains byte-identical at `2026-10-10.1`. WARNING and INFO fixture benchmarks
+ran once before and once after, 50 samples per scenario, concurrency 1, both slot modes: 750/750
+verified outcomes in each run, no material p50 regression (>10% and >1 ms). WARNING p50 deltas were
+−0.1 to −1.2 ms; INFO −0.5 to −1.3 ms. Different host load means these small improvements are not
+attributed to the change. INFO produced 752 `tool_result` entries before and after; `summary_saved`
+was zero in both (not in that workload). Lifecycle strings now retain placeholders, with identical
+event counts. These are local fixture timings, not real-service or voice latency evidence.
+
+Remaining risks: lost library prose; template changes on dependency upgrades; future fields/codes/routes
+requiring source-set updates; retained correlation IDs can carry syntax-valid sensitive content;
+trusted adapter event names/logger names/provider remain code or configuration responsibility.
+FastMCP's import-time handlers exist until application logging is configured, before serving requests.
+Production container logs, live services, ContextForge and end-to-end voice latency remain unverified.
+
+This entry supersedes the historical SL1 statement that LOG-1 handling is undecided. Gate 7 is
+**implemented (LOG-1); awaiting review and Garima's closure**, not closed. Nothing is pushed, merged
+or deployed by this work. Full commands, failures, test-scaffolding correction, benchmark tables and
+protected-file hashes: [LOG-1 hand-back](handover/mcp-only/implementation/LOG-1-HAND-BACK.md).

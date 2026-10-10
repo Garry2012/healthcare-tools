@@ -44,7 +44,7 @@ Every release gate below remains pending for this slots release:
 4. Knowledge host and deployed-adapter credentials, followed by deployed-transport gates and release smoke against the canary.
 5. ContextForge schema refresh to `2026-10-10.1` after the approved release.
 6. Voice-team readiness for SL1's new fields and outcomes.
-7. **LOG-1:** fastmcp installs its own console handler, bypassing the adapter's JSON logging and privacy rule. Handling is undecided and requires Garima's decision; this remains a separate pre-deployment gate. No resolution is proposed here.
+7. **LOG-1: implemented (LOG-1); awaiting review and Garima's closure.** Library messages and adapter fields pass through one JSON logging boundary; unexpected tool errors are masked. Local privacy, regression and latency evidence is in [LOG-1-HAND-BACK.md](implementation/LOG-1-HAND-BACK.md). This gate is not closed; production logs still require verification after an approved deployment.
 8. **Pending:** Manoj confirms that a converted caller-ID number is acceptable as `callerMobile` and updates the contract wording "Only when the caller gave it during the call".
 9. **Pending:** the voice platform and ContextForge owners confirm that `X-Caller-Number` is always the end caller's own number, never a trunk number or a placeholder for a withheld ID.
 
