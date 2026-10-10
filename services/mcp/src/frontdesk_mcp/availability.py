@@ -17,6 +17,7 @@ from .ops_client import InvalidIdentifier, OpsClient, Rejected, Unavailable
 from .schedule_reader import READ_ERRORS, READ_FAILURE_STAGES, ScheduleReader, read_failure_detail
 
 logger = logging.getLogger(__name__)
+DIRECTORY_FAILURE_DETAIL = "DIRECTORY_UNAVAILABLE"
 
 
 class AvailabilityRequest(BaseModel):
@@ -72,7 +73,7 @@ class AvailabilityService:
     def _service_error(self, exc: BaseException, base: dict) -> outcomes.AvailabilityResult:
         retry = exc.retry_after if isinstance(exc, Unavailable) else None
         stage = getattr(exc, "stage", None)
-        detail = read_failure_detail(stage, "DIRECTORY_UNAVAILABLE")
+        detail = read_failure_detail(stage, DIRECTORY_FAILURE_DETAIL)
         if stage not in READ_FAILURE_STAGES:
             if isinstance(exc, Rejected) and exc.code == "NOT_FOUND":
                 return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="ASK_TO_REPHRASE", **base)

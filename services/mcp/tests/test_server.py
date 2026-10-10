@@ -1347,3 +1347,361 @@ async def test_summary_http_contact_is_private_and_never_grants_authority(served
         assert number not in output + logs + caplog.text + captured.out + captured.err
     assert not [r for r in h.requests if "/appointments" in r.url.path]
     assert len([r for r in h.requests if r.url.path.endswith("/call-summaries")]) == 1
+
+
+# LOG-1 tests exercise formatted output, rather than the implementation's allowlist tables.
+LOG1_PRIVATE = ("Zelda Fakename", "9876501234", "+919876501234", "SECRETREASONPAIN",
+                "SECRETTOKENXYZ", "BearerSecretAlphaToken")
+
+
+def _log1_record(name="frontdesk_mcp.tools", msg="tool_result", args=(), fields=None, exc_info=None):
+    record = logging.LogRecord(name, logging.ERROR if exc_info else logging.INFO, __file__, 1, msg, args, exc_info)
+    if fields is not None:
+        record.fields = fields
+    return record
+
+
+@pytest.mark.parametrize("name,msg,args,want", [
+    ("some.library", "Zelda Fakename 9876501234 SECRETTOKENXYZ", (), "library_message_omitted"),
+    ("mcp.shared.session", "Invalid request %s", ({"secret": "SECRETTOKENXYZ"},), "library_message_omitted"),
+    ("root", "SECRETREASONPAIN", (), "library_message_omitted"),
+    ("fastmcp.tools.tool_manager", "Error calling tool 'record_call_summary'", (), "library_message_omitted"),
+    ("uvicorn.error", "Started server process [%d]", (9876501234,), "Started server process [%d]"),
+    ("uvicorn.error", "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)",
+     ("https", "SECRETTOKENXYZ", 9876501234), "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)"),
+    ("some.library", {"secret": "SECRETTOKENXYZ"}, (), "library_message_omitted"),
+    ("frontdesk_mcp.tools", "tool_result", ("SECRETTOKENXYZ",), "tool_result"),
+])
+def test_log1_never_interpolates_values(name, msg, args, want):
+    line = JsonFormatter().format(_log1_record(name, msg, args))
+    assert json.loads(line)["msg"] == want
+    assert all(value not in line for value in LOG1_PRIVATE)
+
+
+def test_log1_libraries_cannot_inject_adapter_fields():
+    line = JsonFormatter().format(_log1_record("root", "Shutting down", fields={
+        "tool": "manage_booking", "token": "SECRETTOKENXYZ"}))
+    assert "tool" not in json.loads(line) and "token" not in json.loads(line)
+    assert "SECRETTOKENXYZ" not in line
+
+
+def test_log1_only_bounded_error_frames_are_kept():
+    import sys
+
+    def nested(depth):
+        if depth:
+            return nested(depth - 1)
+        raise RuntimeError(" ".join(LOG1_PRIVATE))
+
+    try:
+        nested(14)
+    except RuntimeError:
+        record = _log1_record("fastmcp.tools.tool_manager", "failure", exc_info=sys.exc_info())
+    line = JsonFormatter().format(record)
+    body = json.loads(line)
+    assert body["exception"] == "RuntimeError"
+    assert len(body["frames"]) == 10
+    assert all(re.fullmatch(r"services/mcp/tests/test_server.py:\d+ in nested", f) for f in body["frames"])
+    assert all(value not in line for value in LOG1_PRIVATE)
+    assert "frames" not in json.loads(JsonFormatter().format(_log1_record()))
+
+
+def test_log1_adapter_fields_keep_safe_facts_and_drop_unknown_values():
+    fields = {"tool": "manage_booking", "outcome": "NOTED", "nextStep": "SAY_REQUEST_NOTED"}
+    before = json.loads(JsonFormatter().format(_log1_record(fields=fields)))
+    assert all(before[k] == v for k, v in fields.items())
+    assert "omittedFields" not in before
+    private = {"patientName": LOG1_PRIVATE[0], "callerNumber": LOG1_PRIVATE[1],
+               "arguments": {"summaryText": LOG1_PRIVATE[3]}, "token": LOG1_PRIVATE[4]}
+    line = JsonFormatter().format(_log1_record(fields={**fields, **private}))
+    body = json.loads(line)
+    assert all(body[k] == v for k, v in fields.items())
+    assert set(body["omittedFields"]) == set(private)
+    assert not set(private) & body.keys()
+    assert all(value not in line for value in LOG1_PRIVATE)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("reason", "SECRETTOKENXYZ"), ("detail", "JOHN_SMITH"), ("outcome", "ZELDA_FAKENAME"),
+    ("nextStep", "CALL_9876501234"), ("error", "BearerSecretAlphaToken"), ("model", "ZeldaFakename"),
+    ("field", "zelda_fakename"), ("pack", "zelda-fakename"), ("header", "x-zelda-fakename"),
+    ("tool", "lookup_patient"), ("env", "zelda"), ("schemaVersion", "2026-10-10.9"),
+])
+def test_log1_secret_shaped_values_are_not_safe_codes(field, value):
+    line = JsonFormatter().format(_log1_record(fields={field: value}))
+    body = json.loads(line)
+    assert field not in body and body["omittedFields"] == [field]
+    assert value not in line
+
+
+@pytest.mark.parametrize("path,want", [
+    ("/doctors/doc_zelda_9876501234", "/doctors/{id}"),
+    ("/appointments/SECRETTOKENXYZ/cancel", "/appointments/{id}/cancel"),
+    ("/availability/SECRETTOKENXYZ/slots", "/availability/{id}/slots"),
+    ("/appointments/SECRETTOKENXYZ/reschedule", "/appointments/{id}/reschedule"),
+    ("/zelda/fakename", None), ("/appointments?mobile=9876501234", None),
+])
+def test_log1_owner_paths_discard_ids_and_refuse_unknown_routes(path, want):
+    line = JsonFormatter().format(_log1_record(fields={"path": path}))
+    body = json.loads(line)
+    if want:
+        assert body["path"] == want and "omittedFields" not in body
+    else:
+        assert "path" not in body and body["omittedFields"] == ["path"]
+    assert path not in line
+    assert all(value not in line for value in LOG1_PRIVATE)
+
+
+@pytest.mark.parametrize("field", ["attempt", "callId", "detail", "env", "error", "field", "header",
+    "httpStatus", "model", "nextStep", "outcome", "pack", "path", "reason", "retryAfterSeconds",
+    "schemaVersion", "status", "summaryId", "tool"])
+@pytest.mark.parametrize("value", [{"token": "SECRETTOKENXYZ"}, ["Zelda Fakename"]])
+def test_log1_fields_reject_containers_and_allow_none(field, value):
+    line = JsonFormatter().format(_log1_record(fields={field: value}))
+    assert json.loads(line)["omittedFields"] == [field]
+    assert field not in json.loads(line)
+    assert all(v not in line for v in LOG1_PRIVATE)
+    body = json.loads(JsonFormatter().format(_log1_record(fields={field: None})))
+    assert body[field] is None and "omittedFields" not in body
+
+
+@pytest.mark.parametrize("field,value", [
+    ("status", True), ("status", "404"), ("status", 99), ("httpStatus", 600),
+    ("attempt", True), ("attempt", 0), ("attempt", 11),
+    ("retryAfterSeconds", -1), ("retryAfterSeconds", 86401),
+    ("callId", "Zelda Fakename"), ("summaryId", "SECRETTOKENXYZ"),
+])
+def test_log1_invalid_primitives_are_omitted(field, value):
+    body = json.loads(JsonFormatter().format(_log1_record(fields={field: value})))
+    assert field not in body and body["omittedFields"] == [field]
+
+
+def test_log1_context_call_id_uses_the_existing_syntax_check():
+    from frontdesk_mcp.context import call_id_var
+
+    for value, want in [("safe-call-1", "safe-call-1"), ("Zelda Fakename", None)]:
+        token = call_id_var.set(value)
+        try:
+            line = JsonFormatter().format(_log1_record())
+            assert json.loads(line).get("callId") == want
+            assert "Zelda Fakename" not in line
+        finally:
+            call_id_var.reset(token)
+
+
+def _log1_subprocess(tmp_path, source):
+    import subprocess
+    import sys
+
+    child = tmp_path / "log1_child.py"
+    child.write_text("import sys\nsys.path[:0] = ['.', 'dev']\n" + source)
+    return subprocess.run([sys.executable, str(child)], cwd=Path(__file__).resolve().parents[1],
+                          capture_output=True, text=True, timeout=30)
+
+
+def _log1_import_warnings_only(stderr):
+    allowed = ("It will be compatible before version 2.0.0.",
+               "from authlib.jose import JsonWebKey, JsonWebToken", "from ._compat import httpx2")
+    for line in stderr.splitlines():
+        assert line.strip() in allowed or (
+            "AuthlibDeprecationWarning:" in line and
+            ("authlib.jose module is deprecated" in line or "httpx module is deprecated" in line)), line
+
+
+def test_log1_all_six_logging_sources_have_one_json_owner(tmp_path):
+    result = _log1_subprocess(tmp_path, '''
+import asyncio, logging
+from frontdesk_mcp.config import Settings
+from frontdesk_mcp.server import create_app
+from tests import conftest, harness
+h = harness.build(Settings(**conftest.ROLLOUT, **conftest.ENDPOINTS, env="test", log_level="INFO"))
+app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                 knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+private = 'Zelda Fakename 9876501234 +919876501234 SECRETREASONPAIN SECRETTOKENXYZ BearerSecretAlphaToken'
+logging.warning(private)
+try:
+    raise RuntimeError(private)
+except RuntimeError:
+    logging.getLogger('fastmcp.tools.tool_manager').exception(private)
+for name, level in [('mcp.shared.session', logging.WARNING), ('uvicorn.error', logging.ERROR),
+                    ('docket.worker', logging.WARNING), ('some.thirdparty.module', logging.WARNING)]:
+    logging.getLogger(name).log(level, private)
+assert not logging.getLogger('fastmcp').handlers
+assert logging.getLogger('fastmcp').propagate
+assert logging.getLogger('fastmcp').level == logging.NOTSET
+asyncio.run(app.state.services.aclose())
+asyncio.run(h.aclose())
+''')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert all(v not in result.stdout + result.stderr for v in LOG1_PRIVATE)
+    _log1_import_warnings_only(result.stderr)
+    records = [json.loads(line) for line in result.stdout.splitlines()]
+    assert len(records) == 6
+    assert {r["logger"] for r in records} == {"root", "fastmcp.tools.tool_manager", "mcp.shared.session",
+                                             "uvicorn.error", "docket.worker", "some.thirdparty.module"}
+    assert all(r["msg"] == "library_message_omitted" for r in records)
+    error = next(r for r in records if r["logger"] == "fastmcp.tools.tool_manager")
+    assert error["exception"] == "RuntimeError" and 1 <= len(error["frames"]) <= 10
+
+
+def test_log1_private_data_stays_out_of_real_http_logs_and_unexpected_errors(tmp_path):
+    result = _log1_subprocess(tmp_path, '''
+import asyncio, json
+import httpx
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+from frontdesk_mcp.config import Settings
+from frontdesk_mcp.server import create_app
+from tests import conftest, harness
+private = ('Zelda Fakename', '9876501234', '+919876501234', 'SECRETREASONPAIN',
+           'SECRETTOKENXYZ', 'BearerSecretAlphaToken')
+async def main():
+    h = harness.build(Settings(**conftest.ROLLOUT, **conftest.ENDPOINTS, env="test", log_level="INFO"))
+    app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                     knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+    headers = {'Authorization': 'Bearer mcp-token', **harness.headers(
+        call_id='log1-private', caller=private[2], operation_id='log1-create',
+        started_at='2026-10-01T09:58:00+05:30')}
+    async with conftest.serving(app) as base:
+        async with asyncio.timeout(10):
+            async with Client(StreamableHttpTransport(base+'/mcp/', headers=headers)) as c:
+                created = await c.call_tool('manage_booking', {'action': 'CREATE', 'patientName': private[0],
+                    'patientMobile': private[1], 'doctorId': 'doc_garima', 'visitDate': '2099-01-05',
+                    'preferredTime': '09:30', 'reasonVerbatim': private[3], 'callerConfirmed': True})
+                assert created.structured_content['outcome'] == 'NOTED'
+                listed = await c.call_tool('manage_booking', {'action': 'LIST'})
+                assert listed.structured_content['outcome'] == 'FOUND'
+                saved = await c.call_tool('record_call_summary', {'intent': 'BOOKING',
+                    'outcome': 'APPOINTMENT_NOTED', 'summaryText': ' '.join(private)})
+                assert saved.structured_content['outcome'] == 'SAVED'
+                invalid = await c.call_tool('record_call_summary', {'intent': 'BOOKING',
+                    'outcome': 'APPOINTMENT_NOTED', 'summaryText': {'secret': private[4]}}, raise_on_error=False)
+                assert invalid.is_error
+                assert invalid.content[0].text == (
+                    'Invalid call summary arguments. Check required fields, types and limits.')
+                async def broken(ctx, request):
+                    raise RuntimeError(' '.join(private))
+                app.state.services.summary.record = broken
+                failed = await c.call_tool('record_call_summary', {'intent': 'BOOKING',
+                    'outcome': 'APPOINTMENT_NOTED', 'summaryText': ' '.join(private)}, raise_on_error=False)
+                assert failed.is_error
+                assert failed.content[0].text == "Error calling tool 'record_call_summary'"
+                assert all(v not in json.dumps([b.model_dump() for b in failed.content]) for v in private)
+            async with httpx.AsyncClient() as http:
+                raw = {'jsonrpc': '2.0', 'id': 7, 'method': 'tools/call',
+                       'params': {'name': 123, 'arguments': {'patientName': private[0], 'token': private[4]}}}
+                await http.post(base+'/mcp/', json=raw,
+                                headers={**headers, 'Accept': 'application/json, text/event-stream'})
+    assert h.ops_state.summaries['log1-private']['callerMobile'] == private[1]
+    await h.aclose()
+asyncio.run(main())
+''')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert all(v not in result.stdout + result.stderr for v in LOG1_PRIVATE)
+    _log1_import_warnings_only(result.stderr)
+    records = [json.loads(line) for line in result.stdout.splitlines()]
+    assert any(r["logger"] == "root" and r["msg"] == "library_message_omitted" for r in records)
+    failure = next(r for r in records if r.get("exception") == "RuntimeError")
+    assert failure["logger"] == "fastmcp.tools.tool_manager" and failure["frames"]
+    assert failure["msg"] == "library_message_omitted"
+    messages = {r["msg"] for r in records}
+    assert {"Started server process [%d]", "Finished server process [%d]", "Application startup complete.",
+            "Application shutdown complete.", "tool_result", "summary_saved"} <= messages
+
+
+async def test_log1_all_observed_owner_routes_are_templated(served):
+    base, h = served
+    async with client(base, operation_id="log1-create", caller="+919876501234",
+                      started_at="2026-10-01T09:58:00+05:30") as c:
+        for arguments in ({"departmentName": "General Medicine", "date": "today"},
+                          {"doctorName": "garima", "date": "2099-01-05"}):
+            result = await c.call_tool("get_doctor_availability", arguments)
+            assert result.structured_content["outcome"] == "AVAILABILITY"
+        result = await c.call_tool("manage_booking", {"action": "CREATE", "patientName": "Zelda Fakename",
+            "patientMobile": "9876501234", "doctorId": "doc_garima", "visitDate": "2099-01-05",
+            "preferredTime": "09:30", "callerConfirmed": True})
+        assert result.structured_content["outcome"] == "NOTED"
+        appointment_id = result.structured_content["appointment"]["appointmentId"]
+        assert (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content["outcome"] == "FOUND"
+        assert (await c.call_tool("search_knowledge", {"question": "parking", "language": "en"})
+                ).structured_content["outcome"] == "ANSWERED"
+        assert (await c.call_tool("record_call_summary", {"intent": "BOOKING", "outcome": "APPOINTMENT_NOTED",
+                     "summaryText": "Synthetic test."})).structured_content["outcome"] == "SAVED"
+    for action, op, more in [("RESCHEDULE", "log1-move", {"newVisitDate": "2099-01-12"}),
+                             ("CANCEL", "log1-cancel", {})]:
+        async with client(base, operation_id=op, caller="+919876501234") as c:
+            result = await c.call_tool("manage_booking", {"action": action, "appointmentId": appointment_id,
+                                                       "callerConfirmed": True, **more})
+            assert result.structured_content["outcome"] == ("NOTED" if action == "RESCHEDULE" else "CANCELLED")
+    templates = set()
+    for request in h.requests:
+        prefix = httpx.URL(h.settings.ops_base_url).path.rstrip("/") if request.url.host == "ops-stub.test" else ""
+        path = request.url.path.removeprefix(prefix)
+        body = json.loads(JsonFormatter().format(_log1_record(fields={"path": path})))
+        assert "omittedFields" not in body, path
+        templates.add(body["path"])
+    assert templates == {"/auth/token", "/departments", "/doctors", "/doctors/{id}", "/availability",
+                         "/availability/{id}/slots", "/capabilities", "/appointments",
+                         "/appointments/{id}/cancel", "/appointments/{id}/reschedule", "/call-summaries", "/v1/answer"}
+
+
+async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings):
+    from frontdesk_mcp import availability, context, contract, knowledge_contract, summary
+    from frontdesk_mcp.clock import Deadline
+    from frontdesk_mcp.ops_client import Malformed, Unavailable, UncertainWrite
+
+    h = harness.build(make_settings(log_level="INFO"))
+    app = create_app(h.settings, ops_transport=h.ops.http._transport,
+                     knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+    records = []
+
+    class Capture(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    package = logging.getLogger("frontdesk_mcp")
+    capture = Capture()
+    package.addHandler(capture)
+    try:
+        async with serving(app):
+            ops = app.state.services.ops
+            ctx = h.ctx(started_at="2026-10-01T09:58:00+05:30")
+            request = summary.SummaryRequest(intent="GENERAL_INFO", outcome="RESOLVED_BY_AGENT",
+                                              summaryText="Synthetic test.")
+            assert (await app.state.services.summary.record(ctx, request)).outcome == "SAVED"
+            assert (await app.state.services.summary.record(context.CallContext(), request)).outcome == "NOT_SAVED"
+            context.from_headers({"X-Call-Id": "Zelda Fakename"}, h.settings)
+            knowledge_contract.AnswerResponse.model_validate({"outcome": "DESK_TRANSFER", "sourceId": {}})
+            with pytest.raises(Malformed):
+                ops._parse(contract.DepartmentList, {}, "/departments")
+            h.ops_state.fail_next.append(("/departments", 500, {}))
+            result = await app.state.services.availability.get(ctx,
+                availability.AvailabilityRequest(departmentName="General Medicine", date="today"))
+            assert result.outcome == "COULD_NOT_CHECK"
+            h.ops_state.fail_next.append(("/appointments", 500, {}))
+            with pytest.raises(UncertainWrite):
+                await ops.create_appointment({}, "log1-test", Deadline(1))
+            original = ops.http._transport
+
+            async def unavailable(request):
+                raise httpx.ConnectError("SECRETTOKENXYZ", request=request)
+
+            ops.http._transport = httpx.MockTransport(unavailable)
+            try:
+                with pytest.raises(Unavailable):
+                    await ops.list_departments(Deadline(1))
+            finally:
+                ops.http._transport = original
+    finally:
+        package.removeHandler(capture)
+        await h.aclose()
+    expected = {"ops_write_server_error", "ops_unreachable", "summary_write_unverified", "summary_saved",
+                "trusted_header_malformed", "availability_could_not_check", "ops_malformed_success",
+                "knowledge_optional_field_dropped", "service_started"}
+    found = {record.msg for record in records}
+    assert expected <= found
+    for record in records:
+        body = json.loads(JsonFormatter().format(record))
+        assert "omittedFields" not in body, (record.msg, getattr(record, "fields", None))
+        for key, value in getattr(record, "fields", {}).items():
+            assert body[key] == value  # these nine events use static paths

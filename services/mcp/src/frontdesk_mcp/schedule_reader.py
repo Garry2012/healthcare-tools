@@ -14,12 +14,13 @@ from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unava
 
 READ_ERRORS = (Unavailable, Malformed, Rejected, InvalidIdentifier)
 READ_FAILURE_STAGES = frozenset({"slots", "capabilities"})
+READ_FAILURE_DETAILS = {"board": "BOARD_UNAVAILABLE", "profile": "PROFILE_UNAVAILABLE",
+                        "slots": "SLOTS_UNAVAILABLE", "capabilities": "CAPABILITIES_UNAVAILABLE"}
 
 
 def read_failure_detail(stage: str | None, fallback: str) -> str:
     """Map the failed read; callers retain their existing AUTH precedence and fallback."""
-    return {"board": "BOARD_UNAVAILABLE", "profile": "PROFILE_UNAVAILABLE",
-            "slots": "SLOTS_UNAVAILABLE", "capabilities": "CAPABILITIES_UNAVAILABLE"}.get(stage, fallback)
+    return READ_FAILURE_DETAILS.get(stage, fallback)
 
 
 @dataclass(frozen=True)
