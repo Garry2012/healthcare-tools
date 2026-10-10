@@ -1,6 +1,6 @@
 # MCP tool interface
 
-Schema version: `2026-10-10.1`
+Schema version: `2026-10-08.1`
 
 ## Endpoint and transport
 
@@ -9,7 +9,7 @@ Streamable HTTP at `/mcp/` on the configured MCP host. The direct URL is the dep
 separate gateway endpoint supplied by its owner; the voice agent normally calls tools through it.
 
 Deployed: Azure canary `mcp-demo-hospital-canary`, image `frontdesk-mcp:36336aa`, schema `2026-10-06.1`
-(6 October 2026). This document describes schema `2026-10-10.1` for the combined slots/contact-fallback release; the canary still runs
+(6 October 2026). This document describes schema `2026-10-08.1` for the slots release; the canary still runs
 `2026-10-06.1` until that release is deployed. `GET /ready` returns the served `schemaVersion`;
 `tools/list` describes the contract actually deployed.
 
@@ -28,7 +28,7 @@ separate. Credentials, caller authority and call start time are not tool argumen
 | Header | Meaning and format |
 |---|---|
 | X-Call-Id | Platform call identifier: 1–64 ASCII letters, digits, dots, underscores, colons or hyphens. Required for booking writes and summaries. |
-| X-Caller-Number | End caller's own number in E.164: +configured country code followed by exactly 10 digits, without spaces. With accepted verification, authorizes LIST/CANCEL/RESCHEDULE. Optional summary-contact fallback; no verification is needed for contact. |
+| X-Caller-Number | Trusted caller number under the configured calling-code rule. With accepted verification, authorizes LIST/CANCEL/RESCHEDULE. Distinct from contact fields. |
 | X-Caller-Verification | Verification label in ACCEPTED_CALLER_VERIFICATION; default SIP_CALLER_ID. A number alone does not establish authority. |
 | X-Operation-Id | Confirmed-write identifier with the same 1–64 character syntax as call ID. Required for CREATE/CANCEL/RESCHEDULE. Same call/action/operation identifies the same payload; changed payload conflicts. |
 | X-Call-Started-At | ISO timestamp with timezone offset; required for record_call_summary. |
@@ -41,7 +41,7 @@ These interface facts apply to every tool.
 
 1. **The live schema is `tools/list`.** The MCP server publishes each tool's exact input schema, output
    schema and description. The input schemas below are copied from the pinned snapshot for schema
-   `2026-10-10.1`. If `tools/list` and this document disagree, `tools/list` wins.
+   `2026-10-08.1`. If `tools/list` and this document disagree, `tools/list` wins.
 2. **Unknown arguments are rejected.** An unknown argument (for example `doctorName` on
    `manage_booking`, or `callerName` on `record_call_summary`) is rejected before the tool runs, even
    though the published schema does not explicitly declare this boundary rule.
@@ -51,7 +51,7 @@ These interface facts apply to every tool.
 4. **Formats are exact.** Enums are upper case. Dates are `today` or `YYYY-MM-DD` (facility calendar,
    not in the past); `tomorrow`, `next Monday` and similar are refused. `facilityToday` in an availability
    result supplies the facility date reference. Times are 24-hour `HH:MM`
-   (`00:00`–`23:59`). Tool-argument mobiles are exactly 10 digits, with no `+91`, spaces or dashes. The trusted caller header uses E.164 instead.
+   (`00:00`–`23:59`). Mobiles are exactly 10 digits, with no `+91`, spaces or dashes.
 5. **Identifiers refer to owner records.** `doctorId` comes from `doctors[].doctorId` or
    `choices[].doctorId`; `departmentId` from `department.id` or `departmentChoices[].id`; `session` from
    `board[].session` or `usualSessions[].label`; `appointmentId` from `appointment.appointmentId` or
@@ -75,7 +75,7 @@ These interface facts apply to every tool.
 | manage_booking CREATE | required | required | required | not used | not used |
 | manage_booking LIST | required | not used | not used | required | not used |
 | manage_booking CANCEL, RESCHEDULE | required | required | required | required | not used |
-| record_call_summary | required | required | not used | number: optional contact fallback; verification: not used | required |
+| record_call_summary | required | required | not used | not used | required |
 
 Missing write headers return `OPERATION_CONTEXT_MISSING`; missing or unverified caller identity returns
 `IDENTITY_UNAVAILABLE`; missing summary headers return `NOT_SAVED`. Each distinct confirmed write
@@ -1363,7 +1363,7 @@ Structured result:
 
 ## record_call_summary
 
-Stores one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. A valid explicit callerMobile takes precedence; when omitted or null, the caller header supplies contact if it converts to the configured national format. Invalid explicit contact is rejected. Ordinary summaries may have no usable contact; CALLBACK_NOTED requires one and creates no appointment or callback task. Summary contact grants no appointment authority. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.
+Stores one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.
 
 ### How to call
 
@@ -1372,16 +1372,14 @@ One summary covers the whole call, including the last tool result. The first acc
 | Field | Rule |
 |---|---|
 | `intent`, `outcome`, `summaryText` | Always required. `summaryText` is nonblank, at most 500 characters, and is never shortened by MCP; longer text returns `INVALID_REQUEST` with `fields: ["summaryText"]`. |
-| `callerMobile` | Optional explicit contact, exactly 10 national digits. A valid explicit value wins; omitted/null uses the strictly converted E.164 caller header. Invalid explicit input is rejected. CALLBACK_NOTED needs a usable resolved contact; ordinary summaries may have none. |
+| `callerMobile` | Required when `outcome` is `CALLBACK_NOTED`. When sent, exactly 10 digits. |
 | `appointmentId` | Optional identifier returned by manage_booking; rejected with CALLBACK_NOTED. |
 | `transferredTo` | Only with `TRANSFERRED` or `EMERGENCY_TRANSFERRED`; refused with any other outcome. |
 | `doctorId`, `language` | Optional. `language` `en`, `kn` or `hi` is stored; other codes are dropped. |
 | Caller name, symptoms, dates, sessions | These facts belong within summaryText. There are no separate fields for them; any such argument is rejected. |
 
 Headers: X-Call-Id and X-Call-Started-At (ISO timestamp with offset). Without them the result is
-`NOT_SAVED` and nothing is sent. Optional X-Caller-Number supplies fallback contact only when it
-strictly converts under the configured country code. No trimming, guessing or foreign-prefix removal
-is applied. X-Caller-Verification is not needed for summary contact; appointment authority is unchanged.
+`NOT_SAVED` and nothing is sent.
 
 ### Input schema (exact)
 
@@ -1412,7 +1410,7 @@ is applied. X-Caller-Verification is not needed for summary contact; appointment
         }
       ],
       "default": null,
-      "description": "Optional 10-digit contact number. A valid explicit value takes precedence; omitted or null uses the converted X-Caller-Number when usable. Invalid explicit values are rejected. CALLBACK_NOTED requires a usable resolved contact; other outcomes may omit it. Contact does not grant appointment authority."
+      "description": "Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID."
     },
     "doctorId": {
       "anyOf": [
@@ -1507,7 +1505,7 @@ is applied. X-Caller-Verification is not needed for summary contact; appointment
 | Field path | Type / constraints (JSON Schema) | Presence | Meaning |
 |---|---|---|---|
 | `record_call_summary.input.appointmentId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Optional identifier of the appointment request associated with the call. |
-| `record_call_summary.input.callerMobile` | `{"anyOf":[{"maxLength":20,"type":"string"},{"type":"null"}]}` | optional | Optional 10-digit contact number. A valid explicit value takes precedence; omitted or null uses the converted X-Caller-Number when usable. Invalid explicit values are rejected. CALLBACK_NOTED requires a usable resolved contact; other outcomes may omit it. Contact does not grant appointment authority. |
+| `record_call_summary.input.callerMobile` | `{"anyOf":[{"maxLength":20,"type":"string"},{"type":"null"}]}` | optional | Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID. |
 | `record_call_summary.input.doctorId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Optional identifier of the doctor associated with the call. |
 | `record_call_summary.input.intent` | `{"enum":["AVAILABILITY","BOOKING","RESCHEDULE","CANCEL","GENERAL_INFO","LAB","INSURANCE","EMERGENCY","AMBULANCE","SYMPTOM_ROUTING","COMPLAINT","ADMIN","OTHER"],"type":"string"}` | required | Required call-intent category. |
 | `record_call_summary.input.language` | `{"anyOf":[{"maxLength":16,"type":"string"},{"type":"null"}]}` | optional | Optional call language; en, kn and hi primary codes map to the operational contract. Other codes are omitted upstream. |
@@ -1605,7 +1603,7 @@ Structured result:
 
 Nothing was changed; the first summary stays.
 
-**4. CALLBACK_NOTED without a usable callerMobile or caller header**
+**4. CALLBACK_NOTED without callerMobile**
 
 Arguments:
 
@@ -1743,15 +1741,3 @@ only, so it does not establish output-schema compatibility through the voice vir
   it; no partial phase is approved for deployment. The canary remains on schema 2026-10-06.1.
 - ContextForge discovery can retain the previous schema until refreshed after deployment. Voice
   integration compatibility depends on both input and output schemas exposed by the virtual server.
-
-## Changes in schema 2026-10-10.1 (combined release, not yet deployed)
-
-A valid explicit summary contact takes precedence. Omitted/null callerMobile uses the strictly
-converted X-Caller-Number if usable; invalid explicit input is still refused. CALLBACK_NOTED needs
-a usable resolved contact, while ordinary summaries may omit it. No appointment authorization
-changes. The first stored summary remains final; replay does not add a missing number.
-
-This description/version publication supersedes the slots-only schema for one coordinated release.
-Manoj must accept caller-ID contact provenance, and voice/ContextForge owners must confirm the
-header contains the end caller's own number, never a trunk or withheld-ID placeholder, before release.
-All release gates remain subject to separate approval; no deployment is implied.

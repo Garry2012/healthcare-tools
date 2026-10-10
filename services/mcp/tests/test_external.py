@@ -18,7 +18,6 @@ Layers and their variables (set what you are testing; the report must name the l
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -196,32 +195,11 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
         cancelled = await svc.manage(ctx("cancel"), booking.BookingRequest(
             action="CANCEL", appointmentId=appointment_id, callerConfirmed=True))
         assert cancelled.outcome == "CANCELLED", cancelled
-        created_summary_contacts = []
-
-        async def check_summary_request(request):
-            if request.method == "POST" and request.url.path.endswith("/call-summaries"):
-                assert json.loads(request.content)["callerMobile"] == "9000000101"
-
-        async def capture_summary_contact(response):
-            if (response.request.method == "POST" and response.request.url.path.endswith("/call-summaries")
-                    and response.status_code == 201):
-                await response.aread()
-                raw = response.json()
-                if "callerMobile" in raw:
-                    assert raw["callerMobile"] == "9000000101"
-                    created_summary_contacts.append("verified in raw 201 response")
-                else:
-                    created_summary_contacts.append("not independently verified (response omits it; no calls.read)")
-
-        ops.http.event_hooks["request"].append(check_summary_request)
-        ops.http.event_hooks["response"].append(capture_summary_contact)
         stored = await summary.SummaryService(ops, settings).record(context.from_headers(harness.headers(
             call_id=call_id, started_at=datetime.now(UTC).isoformat()), settings),
             summary.SummaryRequest(intent="BOOKING", outcome="APPOINTMENT_CANCELLED", appointmentId=appointment_id,
                                    summaryText="External synthetic journey: created, moved, cancelled."))
         assert stored.outcome == "SAVED", stored
-        assert len(created_summary_contacts) == 1, "no raw create response captured"
-        record_property("summary_contact_storage", created_summary_contacts[0])
         replay = await summary.SummaryService(ops, settings).record(context.from_headers(harness.headers(
             call_id=call_id, started_at=datetime.now(UTC).isoformat()), settings),
             summary.SummaryRequest(intent="BOOKING", outcome="APPOINTMENT_CANCELLED", appointmentId=appointment_id,

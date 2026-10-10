@@ -1,6 +1,6 @@
 {
-  "instructions": "MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service. Availability date: 'today' or YYYY-MM-DD; other relative dates are not accepted. NOTED records a request, not a reservation. CALLBACK_REQUIRED: ordinary unresolved schedule. On-call without a confirmed usable entry: HANDOFF_REQUIRED, not callback. Future dates: slots when enabled, usual hours otherwise; attendance not confirmed. Slots-enabled CREATE/RESCHEDULE require a time in openSlots; session is optional and validated. slotTime: owner slotTime, else expectedTime, else null. slotMoved marks a different block. UNCERTAIN: unverified write, desk handoff, not retry; a later same-operation invocation can fail a fresh schedule check. Gateway authentication covers all four tools. Supported languages: en, kn, hi. Tool schema 2026-10-10.1.",
-  "schemaVersion": "2026-10-10.1",
+  "instructions": "MCP tools for hospital front-desk operations. Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service. Availability date: 'today' or YYYY-MM-DD; other relative dates are not accepted. NOTED records a request, not a reservation. CALLBACK_REQUIRED: ordinary unresolved schedule. On-call without a confirmed usable entry: HANDOFF_REQUIRED, not callback. Future dates: slots when enabled, usual hours otherwise; attendance not confirmed. Slots-enabled CREATE/RESCHEDULE require a time in openSlots; session is optional and validated. slotTime: owner slotTime, else expectedTime, else null. slotMoved marks a different block. UNCERTAIN: unverified write, desk handoff, not retry; a later same-operation invocation can fail a fresh schedule check. Gateway authentication covers all four tools. Supported languages: en, kn, hi. Tool schema 2026-10-08.1.",
+  "schemaVersion": "2026-10-08.1",
   "tools": [
     {
       "annotations": {
@@ -1755,7 +1755,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Stores one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. A valid explicit callerMobile takes precedence; when omitted or null, the caller header supplies contact if it converts to the configured national format. Invalid explicit contact is rejected. Ordinary summaries may have no usable contact; CALLBACK_NOTED requires one and creates no appointment or callback task. Summary contact grants no appointment authority. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.",
+      "description": "Stores one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.",
       "inputSchema": {
         "properties": {
           "appointmentId": {
@@ -1782,7 +1782,7 @@
               }
             ],
             "default": null,
-            "description": "Optional 10-digit contact number. A valid explicit value takes precedence; omitted or null uses the converted X-Caller-Number when usable. Invalid explicit values are rejected. CALLBACK_NOTED requires a usable resolved contact; other outcomes may omit it. Contact does not grant appointment authority."
+            "description": "Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID."
           },
           "doctorId": {
             "anyOf": [

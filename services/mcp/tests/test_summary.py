@@ -89,72 +89,15 @@ async def test_missing_or_malformed_trusted_context_is_not_saved(h, field, value
     assert posted(h) == []
 
 
-@pytest.mark.parametrize("contact", [{}, {"callerMobile": None}], ids=["omitted", "null"])
-@pytest.mark.parametrize("outcome", ["RESOLVED_BY_AGENT", "CALLBACK_NOTED"])
-async def test_missing_contact_uses_header_without_verification(h, contact, outcome):
-    ctx = h.ctx(**CALL_CONTEXT, verification=None)
-    request = summary.SummaryRequest(intent="GENERAL_INFO", outcome=outcome, summaryText="Synthetic call.", **contact)
-    result = await summary.SummaryService(h.ops, h.settings).record(ctx, request)
-    assert result.model_dump(mode="json") == {"outcome": "SAVED"}
-    assert json.loads(posted(h)[0].content)["callerMobile"] == "9000000101"
-    assert request.callerMobile is None and ctx.caller_verification is None
-
-
-@pytest.mark.parametrize("header", [None, "invalid", "+919000000101"])
-@pytest.mark.parametrize("outcome", ["RESOLVED_BY_AGENT", "CALLBACK_NOTED"])
-async def test_explicit_contact_wins_over_header(h, header, outcome):
-    result = await record(h, h.ctx(**CALL_CONTEXT, caller=header), intent="GENERAL_INFO", outcome=outcome,
-                          summaryText="Synthetic call.", callerMobile="9000000999")
-    assert result.outcome == "SAVED"
-    assert json.loads(posted(h)[0].content)["callerMobile"] == "9000000999"
-
-
-@pytest.mark.parametrize("mobile", ["", " ", "+919000000101", "123", "90000001010"])
-@pytest.mark.parametrize("outcome", ["RESOLVED_BY_AGENT", "CALLBACK_NOTED"])
-async def test_invalid_explicit_contact_is_not_replaced_by_header(h, mobile, outcome):
-    result = await record(h, intent="GENERAL_INFO", outcome=outcome, summaryText="Synthetic call.", callerMobile=mobile)
-    assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["callerMobile"]}
-    assert posted(h) == []
-
-
-@pytest.mark.parametrize("header", [None, "", "+449000000101", "9000000101", "+91900000010",
-                                    "+9190000001010", " ", " +919000000101", "+919000000101 ", "bad"])
-@pytest.mark.parametrize("outcome", ["RESOLVED_BY_AGENT", "CALLBACK_NOTED"])
-async def test_unusable_header_does_not_invent_contact(h, header, outcome):
-    result = await record(h, h.ctx(**CALL_CONTEXT, caller=header), intent="GENERAL_INFO", outcome=outcome,
-                          summaryText="Synthetic call.")
-    if outcome == "CALLBACK_NOTED":
-        assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["callerMobile"]}
-        assert posted(h) == []
-    else:
-        assert result.outcome == "SAVED"
-        assert "callerMobile" not in json.loads(posted(h)[0].content)
-
-
-async def test_contact_conversion_uses_configured_country(make_settings):
-    h = harness.build(make_settings(tenant_country_calling_code="44"))
-    try:
-        result = await record(h, h.ctx(**CALL_CONTEXT, caller="+449000000101"), intent="GENERAL_INFO",
-                              outcome="RESOLVED_BY_AGENT", summaryText="Synthetic call.")
-        assert result.outcome == "SAVED"
-        assert json.loads(posted(h)[0].content)["callerMobile"] == "9000000101"
-    finally:
-        await h.aclose()
-
-
-@pytest.mark.parametrize("contact", [{}, {"callerMobile": "9000000888"}])
-async def test_replay_keeps_original_header_contact(h, contact):
-    args = {"intent": "GENERAL_INFO", "outcome": "RESOLVED_BY_AGENT", "summaryText": "Synthetic call."}
+async def test_caller_mobile_is_never_copied_from_caller_id(h):
+    args = {**CALLBACK, "outcome": "RESOLVED_BY_AGENT", "intent": "GENERAL_INFO"}
+    del args["callerMobile"]
     assert (await record(h, **args)).outcome == "SAVED"
-    assert h.ops_state.summaries["call-1"]["callerMobile"] == "9000000101"
-    original = dict(h.ops_state.summaries["call-1"])
-    replay = await record(h, h.ctx(**CALL_CONTEXT, caller="+919000000999"), **args, **contact)
-    assert replay.outcome == "ALREADY_SAVED"
-    assert h.ops_state.summaries["call-1"] == original
+    assert "callerMobile" not in json.loads(posted(h)[0].content)
 
 
 @pytest.mark.parametrize("override,field", [
-    ({"callerMobile": "+919000000101"}, "callerMobile"),
+    ({"callerMobile": None}, "callerMobile"), ({"callerMobile": "+919000000101"}, "callerMobile"),
     ({"callerMobile": "123"}, "callerMobile"), ({"appointmentId": "appt_1"}, "appointmentId"),
     ({"transferredTo": "desk"}, "transferredTo"), ({"doctorId": "../doc"}, "doctorId"),
 ])
@@ -263,12 +206,8 @@ async def test_lost_write_response_then_verified_replay_is_already_saved(h):
 
     async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
         result = await summary.SummaryService(ops, h.settings).record(h.ctx(**CALL_CONTEXT),
-                                                                    summary.SummaryRequest(
-                                                                        intent="GENERAL_INFO",
-                                                                        outcome="RESOLVED_BY_AGENT",
-                                                                        summaryText="Synthetic retry."))
+                                                                    summary.SummaryRequest(**GENERAL))
     assert result.model_dump(mode="json") == {"outcome": "ALREADY_SAVED"}
-    assert h.ops_state.summaries["call-1"]["callerMobile"] == "9000000101"
     assert len(h.ops_state.summaries) == 1 and len(posted(h)) == 2
     assert posted(h)[0].content == posted(h)[1].content
 
