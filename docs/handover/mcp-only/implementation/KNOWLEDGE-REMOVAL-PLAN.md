@@ -1,6 +1,8 @@
 # Plan: remove `search_knowledge` from the front-desk MCP server (three-tool server)
 
-- **Status:** **revision 3, approved by Garima on 11 October 2026** ("looks good"), including the wording of gate 8 and gate 9. Implementation waits for steps P2–P5 in §3: LOG-1 revision 6 approved, the Azure-retirement work committed, both plans committed, and the base SHA recorded. No Astra prompt exists yet, and no code, configuration, cloud or ContextForge change has been made.
+- **Status:** **revision 3, approved by Garima on 11 October 2026** ("looks good"), including the wording of gate 8 and gate 9. P2–P4 are complete: LOG-1 revision 6 approved, the Azure-retirement work committed (`9964839`), and both plans committed (`4548ab1`).
+- **Documentation correction, 11 October 2026 (Garima's request):** this plan and `LOG-1-PLAN.md` are **governing documents** (§6). They are excluded from the knowledge residual search, must stay byte-identical to the base, and stay inside the contact-rollback trace search. This doesn't change implementation scope.
+- No code, configuration, cloud or ContextForge change has been made.
 - **Author:** Opus.
 - **Branch:** `Garry2012/slots-phase-1a-1b` at `42dae2c` (not pushed; nothing released since the canary).
 
@@ -156,8 +158,13 @@ LOG-1 revision 4 (`b7feb3c`/`7c44955`) assumes four tools and uses knowledge mod
 
 - **Updated (current):** `VOICE-TEAM.md` (C1) and the files in C4.
 - **In `PLAN.md`:** update the status block, the gate list, the tool table and the "four tools" sentences (`:121`, `:168`, `:261`). Add **one** "superseded by K3" note where the knowledge design sections begin, instead of rewriting migration history.
+- **Governing documents (unchanged by implementation, excluded from the knowledge residual search):** `docs/handover/mcp-only/implementation/KNOWLEDGE-REMOVAL-PLAN.md` and `docs/handover/mcp-only/implementation/LOG-1-PLAN.md`.
+  - **Why excluded:** they specify the removal itself, so they necessarily name `search_knowledge`, `knowledge_client`, `knowledge_contract`, `KNOWLEDGE_*` and "four tools".
+  - **What applies instead:**
+    - Astra must not edit them, and at C4 they must be byte-identical to the base (§10);
+    - the contact-rollback trace search still covers them, and must find nothing.
 - **Unchanged (historical):**
-  - `docs/handover/mcp-only/implementation/` (121 files, apart from this plan and LOG-1 revision 6, committed in P4);
+  - the rest of `docs/handover/mcp-only/implementation/` (121 historical files);
   - `CURRENT-STATE.md`, `OPUS-REVIEW.md`, `FABLE-MASTER-PROMPT.md`, `OWNER-INTEGRATION-MESSAGES.md`, `AZURE-RETIREMENT.md` (`:48`);
   - `docs/review*`;
   - earlier `DECISIONS.md` entries;
@@ -222,11 +229,14 @@ Gates 1, 2, 3 and 7 keep their meaning. Gate 2's 10 October live evidence is in 
 1. **Knowledge references:**
 
    ```
-   git grep -n -i -e search_knowledge -e knowledge_client -e knowledge_contract -e "KNOWLEDGE_" -e "four tools" -e "four MCP tools" -e "two owner" -e "two local development stubs" HEAD
+   git grep -n -i -e search_knowledge -e knowledge_client -e knowledge_contract -e "KNOWLEDGE_" -e "four tools" -e "four MCP tools" -e "two owner" -e "two local development stubs" HEAD -- . \
+     ':(exclude)docs/handover/mcp-only/implementation/KNOWLEDGE-REMOVAL-PLAN.md' \
+     ':(exclude)docs/handover/mcp-only/implementation/LOG-1-PLAN.md'
    ```
 
-   Every remaining hit must be in a §6 historical file or in Manoj's contracts. Paste the list.
-2. **The contact-rollback trace search** (supplied in the Astra prompt) prints nothing.
+   The two governing documents are excluded (§6). Every remaining hit must be in a §6 historical file or in Manoj's contracts. Paste the list.
+2. **The governing documents are unchanged:** `git diff --exit-code <base> HEAD -- docs/handover/mcp-only/implementation/KNOWLEDGE-REMOVAL-PLAN.md docs/handover/mcp-only/implementation/LOG-1-PLAN.md` prints nothing.
+3. **The contact-rollback trace search** (supplied in the Astra prompt) runs over the whole committed tree, governing documents included, and prints nothing.
 
 **Scope evidence in the hand-back:**
 - the base SHA and each commit's file list, matching §5 (any extra file explained);
