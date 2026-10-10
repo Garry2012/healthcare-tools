@@ -63,4 +63,5 @@ values. Rotate a credential by creating a new version at its existing vault name
 revision. The profile controls subscription `4e1c081a-9a6a-4e16-9da2-90217c22378b`, resource group
 `healthcare-rg` and the canary `mcp-demo-hospital-canary`. Deployment requires existing shared
 infrastructure and does not create a resource group, registry, environment, vault or shared identity.
-The legacy `mcp-demo-hospital` remains separate until consumer cutover is verified.
+The legacy `mcp-demo-hospital` and `api-demo-hospital` were deleted on 9 October 2026;
+see the [retirement record](../../docs/handover/mcp-only/implementation/AZURE-RETIREMENT-CHECK-20261009.md).

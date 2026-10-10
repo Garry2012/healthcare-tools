@@ -202,7 +202,6 @@ if exists az containerapp show -g "$RG" -n "$APP"; then
       run az containerapp secret remove -g "$RG" -n "$APP" --secret-names "$KNOWLEDGE_SECRET" -o none
     fi
   fi
-  # Legacy secrets (agent-token for the retired API) stay attached until the retirement step removes them.
 else
   # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
   run az containerapp create -g "$RG" -n "$APP" --environment "$ENV_NAME" --image "$MCP_IMAGE" \
