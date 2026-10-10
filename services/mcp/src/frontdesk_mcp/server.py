@@ -171,7 +171,7 @@ class JsonFormatter(logging.Formatter):
                     omitted.append(name)
             if omitted:
                 entry["omittedFields"] = omitted
-        if record.exc_info and record.levelno >= logging.ERROR:
+        if record.exc_info and record.exc_info[0] is not None and record.levelno >= logging.ERROR:
             entry["exception"] = record.exc_info[0].__name__
             entry["frames"] = _error_frames(record.exc_info[2])
         return json.dumps(entry)

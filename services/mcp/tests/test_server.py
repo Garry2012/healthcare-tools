@@ -1544,6 +1544,26 @@ asyncio.run(h.aclose())
     assert error["exception"] == "RuntimeError" and 1 <= len(error["frames"]) <= 10
 
 
+def test_log1_exc_info_without_an_active_exception_keeps_logs_private(tmp_path):
+    result = _log1_subprocess(tmp_path, '''
+import logging
+from frontdesk_mcp.server import configure_logging
+configure_logging("INFO")
+private = 'Zelda Fakename 9876501234 +919876501234 SECRETREASONPAIN SECRETTOKENXYZ BearerSecretAlphaToken'
+logging.getLogger('some.library').error('lookup failed for %s', private, exc_info=True)
+logging.getLogger('frontdesk_mcp.tools').exception('tool_result')
+''')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert all(v not in result.stdout + result.stderr for v in LOG1_PRIVATE), result.stdout + result.stderr
+    _log1_import_warnings_only(result.stderr)
+    records = [json.loads(line) for line in result.stdout.splitlines()]
+    assert [(r["logger"], r["level"], r["msg"]) for r in records] == [
+        ("some.library", "ERROR", "library_message_omitted"),
+        ("frontdesk_mcp.tools", "ERROR", "tool_result"),
+    ]
+    assert all("exception" not in r and "frames" not in r for r in records)
+
+
 def test_log1_private_data_stays_out_of_real_http_logs_and_unexpected_errors(tmp_path):
     result = _log1_subprocess(tmp_path, '''
 import asyncio, json

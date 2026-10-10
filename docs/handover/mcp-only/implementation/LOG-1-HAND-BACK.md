@@ -472,3 +472,70 @@ The required protected working files and every file under `temp/` have these bef
 - Every recorded fake-value leak was eliminated locally. This is not a claim that every conceivable runtime path has been exercised.
 - **Not verified:** production container logs after deployment; real Manoj or knowledge services; Azure; ContextForge; real voice response latency; closure of release gate 7. No changes or requests were made to those systems in this task.
 - The local verification supports **ready for review**. Merge and deployment remain unauthorized for LOG-1, and the other release gates in PLAN.md still apply. Garima must explicitly close gate 7 after review.
+
+## Opus re-review correction M-1 — 10 October 2026
+
+The P/A/B evidence above is the original implementation record. Opus reviewed `e53eee2..29b0562` and requested one additional correction. This follow-up starts at `29b0562a170a74e05468e37174adf1a6e64a5be7`; it changes only `server.py`, `tests/test_server.py` and this hand-back, in one new commit. Resolve that commit with `git log -1 --format=%H -- services/mcp/src/frontdesk_mcp/server.py`; the final hand-back also gives its hash.
+
+**M-1 fixed:** Python records `exc_info=True` outside an active exception as `(None, None, None)`. The formatter previously dereferenced that missing exception type, causing `StreamHandler.emit` to call `handleError`, which prints raw record arguments to stderr. The formatter now adds exception type and frames only when the tuple contains an exception type. No broad catch, logging suppression, new handler or validation layer was introduced. Inspection of the installed Python logging implementation confirms this path; no other reproducible formatter failure was identified for the standard records and trusted field-name sources reviewed here.
+
+One subprocess regression test emits both a library `.error(..., private, exc_info=True)` and adapter `.exception('tool_result')` outside an exception. It exercises real logging with the existing 30-second child timeout, checks exactly two JSON records, no exception/frames keys, no private values anywhere, and only the known Authlib import warnings on stderr. Existing tests retain coverage for real exception frames and HTTP flows.
+
+**Red first**, before the production guard, from `services/mcp`:
+
+```sh
+uv run pytest tests/test_server.py -q -k exc_info_without_an_active_exception --tb=short
+```
+
+Actual output (`.context/log1-m1/red.txt`, exit 1):
+
+```text
+    assert all(v not in result.stdout + result.stderr for v in LOG1_PRIVATE), result.stdout + result.stderr
+E     --- Logging error ---
+E         entry["exception"] = record.exc_info[0].__name__
+E     AttributeError: 'NoneType' object has no attribute '__name__'. Did you mean: '__ne__'?
+E     Message: 'lookup failed for %s'
+E     Arguments: ('Zelda Fakename 9876501234 +919876501234 SECRETREASONPAIN SECRETTOKENXYZ BearerSecretAlphaToken',)
+1 failed, 167 deselected, 2 warnings in 1.99s
+```
+
+**Green**, after the one-line guard:
+
+```sh
+uv run pytest tests/test_server.py -q -k log1 --tb=short
+```
+
+Actual output (`.context/log1-m1/green.txt`, exit 0):
+
+```text
+84 passed, 84 deselected, 2 warnings in 4.66s
+```
+
+**Optional findings:** O-1 is left unchanged: ERROR-only frames are explicitly required by the approved build brief's “Error traces” decision and plan sections 2.2/5, so retaining the level guard is not a deviation from the approved rules. WARNING exception diagnostics remain intentionally omitted. O-2 is left unchanged: Opus accepts the single-handler `assert` for the development benchmark; optimized Python support was not added.
+
+**Full fast gate**, once for this correction, repository root:
+
+```sh
+PYTEST_ADDOPTS=--tb=short timeout -k 10 900 make test-fast > .context/log1-m1/fast.txt 2>&1
+```
+
+Actual output, exit 0:
+
+```text
+All checks passed!
+1298 passed, 14 deselected, 2 warnings in 95.67s (0:01:35)
+```
+
+**Original probe**, once, local stubs only:
+
+```sh
+cd services/mcp
+PYTHONPATH=.:src:dev timeout -k 5 180 uv run python ../../.context/log1/probe.py \
+  > ../../.context/log1-m1/stdout-after.txt 2> ../../.context/log1-m1/stderr-after.txt
+```
+
+Exit 0; `=== PROBE DONE` present. `Zelda Fakename`, `9876501234`, `+919876501234`, `SECRETREASONPAIN`, `SECRETTOKENXYZ` and `BearerSecretAlphaToken` each have **0 occurrences in stdout and 0 in stderr**. As in the original report, the last marker is exercised by the regression tests, not the original probe. The original probe does not cover M-1's trigger; the new subprocess regression test does.
+
+`make schema` plus `cmp` passed: byte-identical, 64,603 bytes, SHA-256 `d666020548a83315c47ac2529a1972efa89f5bbe722786d18de7316f55454fdf`, still `2026-10-10.1`. `git diff --check` passed. All 386 files captured outside the three correction files retain their SHA-256 hashes, including the user's modified deployment files, untracked review/plan files and `temp/` (`.context/log1-m1/protected-before.json` / `protected-after.json`). No failing command was retried for a favorable result; the red test is retained and followed by the implementation/green test.
+
+No benchmark rerun: records without `exc_info` still short-circuit at the same first check, and the added guard handles exception metadata only. The original benchmark evidence remains historical, not a fresh measurement of this commit. The full `scripts/test.sh`, process e2e and Docker builds were not rerun for this one-line correction; their earlier P/A/B results above are not presented as fresh M-1 results. No external services were called, no schema/configuration/dependency changes were made, and nothing was pushed, merged or deployed. **Ready for Opus's focused re-review; gate 7 remains open for Garima.**
