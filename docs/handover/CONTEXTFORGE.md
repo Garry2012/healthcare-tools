@@ -142,8 +142,9 @@ The 4 October deployment refreshed the existing registration; it did not rotate 
 
 ## Source release awaiting approval — 2026-10-11.2
 
-Schema `2026-10-11.1` was deployed to the canary on 11 October 2026 (revision `--0000004`, image `28f11a8`); our ContextForge entries have not been refreshed since.
-`2026-10-11.2` changes description text only. Refresh once, after `2026-10-11.2` is deployed.
+Schema `2026-10-11.1` was deployed to the canary on 11 October 2026 (revision `--0000004`, image `28f11a8`); Garima reported on 12 October 2026 that our front-desk entries were refreshed; the canary then served
+`2026-10-11.1` (three tools, no front-desk `search_knowledge`). `2026-10-11.2` changes description text only;
+refresh our entries again after `2026-10-11.2` is deployed.
 
 The helper checks our three names and complete input schemas only; manually compare every
 `outputSchema`, nested definition and required field through the voice-facing virtual-server URL
