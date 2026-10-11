@@ -141,8 +141,12 @@ class AvailabilityResult(_Out):
     weekday: str | None = None
     department: DepartmentChoice | None = None
     doctors: list[DoctorAvailability] = []
-    choices: list[DoctorChoice] = []
-    departmentChoices: list[DepartmentChoice] = []  # noqa: N815
+    choices: list[DoctorChoice] = Field(default=[], description=(
+        "Doctors matching a doctorName with several directory matches, capped by the configured limit; "
+        "a doctorId from here gives a doctor-specific result."))
+    departmentChoices: list[DepartmentChoice] = Field(default=[], description=(  # noqa: N815
+        "Departments with consultants, returned when departmentName or departmentId matched none or several; "
+        "a departmentId from here gives a department result."))
     complete: bool = Field(default=True,
                            description="Every directory candidate was evaluated; no failed or unchecked reads.")
     totalMatches: int | None = Field(default=None,  # noqa: N815

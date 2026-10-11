@@ -1134,9 +1134,20 @@ def _interface_rows():
     rows = {}
     for line in text.splitlines():
         if line.startswith("| `"):
-            cells = [c.strip().strip("`") for c in line.strip("|").split(" | ")]
-            assert cells[0] not in rows, f"duplicate interface row: {cells[0]}"
-            rows[cells[0]] = cells[1:]
+            cells = [c.strip() for c in line.strip("|").split(" | ")]
+            key = cells[0].strip("`")
+            if key.startswith(("outcome.", "nextStep.")):
+                assert len(cells) == 3 and cells[2], f"missing code meaning: {key}"
+                tools = tuple(sorted(t.strip() for t in cells[1].split(",")))
+                assert all(tools) and len(tools) == len(set(tools)), f"invalid code tools: {key}"
+            elif key.startswith("$defs.") or ".input." in key or ".output." in key:
+                assert len(cells) == 4 and cells[3], f"missing field meaning: {key}"
+                tools = ()
+            else:
+                continue
+            row_key = (key, tools)
+            assert row_key not in rows, f"duplicate (key, tools) row: {row_key}"
+            rows[row_key] = cells[1:]
     return text, rows
 
 
@@ -1145,6 +1156,7 @@ def test_interface_parameter_and_output_tables_match_pinned_schema():
     text, rows = _interface_rows()
     assert f"Schema version: `{snapshot['schemaVersion']}`" in text
     expected = {}
+    definitions = {}
 
     def wire_shape(value):
         # Descriptions are separate prose; output defaults include callback metadata,
@@ -1157,19 +1169,24 @@ def test_interface_parameter_and_output_tables_match_pinned_schema():
 
     for tool in snapshot["tools"]:
         for kind, schema in (("input", tool["inputSchema"]), ("output", tool["outputSchema"])):
-            objects = [("", schema), *[(f"$defs.{name}.", definition)
-                                      for name, definition in schema.get("$defs", {}).items()]]
+            objects = [(f"{tool['name']}.{kind}.", schema)]
+            for name, definition in schema.get("$defs", {}).items():
+                shape = wire_shape(definition)
+                if name in definitions:
+                    assert definitions[name] == shape, f"different shared type: {name} in {tool['name']}.{kind}"
+                definitions[name] = shape
+                objects.append((f"$defs.{name}.", definition))
             for prefix, obj in objects:
                 for field, shape in obj.get("properties", {}).items():
-                    key = f"{tool['name']}.{kind}.{prefix}{field}"
+                    key = f"{prefix}{field}"
                     expected[key] = (wire_shape(shape), "required" if field in obj.get("required", []) else "optional")
-                    assert key in rows, f"missing interface field: {key}"
-                    cells = rows[key]
+                    assert (key, ()) in rows, f"missing interface field: {key}"
+                    cells = rows[key, ()]
                     assert len(cells) == 3 and cells[2], f"missing field meaning: {key}"
-                    assert (json.loads(cells[0]), cells[1]) == expected[key], key
+                    assert (json.loads(cells[0].strip("`")), cells[1]) == expected[key], key
                     if kind == "input":
                         assert cells[2] == shape["description"], key
-    actual = {key for key in rows if ".input." in key or ".output." in key}
+    actual = {key for key, tools in rows if not tools}
     assert actual == set(expected)
 
 
@@ -1185,10 +1202,18 @@ def test_interface_describes_every_outcome_and_next_step():
     for name, model in models.items():
         for field in ("outcome", "nextStep") if name != "record_call_summary" else ("outcome",):
             for value in get_args(model.model_fields[field].annotation):
-                key = f"{name}.{field}.{value}"
-                expected.add(key)
-                assert key in rows and len(rows[key]) == 1 and rows[key][0], f"undocumented meaning: {key}"
-    actual = {key for key in rows if ".outcome." in key or ".nextStep." in key}
+                expected.add((name, field, value))
+    actual = set()
+    for (key, tools), cells in rows.items():
+        if not tools:
+            continue
+        assert len(cells) == 2 and cells[1], f"undocumented meaning: {key}"
+        field, value = key.split(".", 1)
+        for name in tools:
+            entry = (name, field, value)
+            assert entry in expected, f"code not supported by tool: {entry}"
+            assert entry not in actual, f"duplicate code coverage: {entry}"
+            actual.add(entry)
     assert actual == expected
 
 
