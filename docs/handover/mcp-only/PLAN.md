@@ -1,6 +1,6 @@
 # MCP integration plan with confirmed service ownership
 
-Status: source migration implemented; three-tool removal implemented 11 October 2026, awaiting review. Slots rules remain SL1. Slots documentation approval and deployment readiness are separate (gates below). Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
+Status: source migration implemented; three-tool removal implemented and approved in review on 11 October 2026 (implementation only; not merged to `main` or deployed). Slots rules remain SL1. Slots documentation approval and deployment readiness are separate (gates below). Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
 
 Current availability and booking rules are recorded in [DECISIONS.md SL1](../../DECISIONS.md#sl1--slot-aware-availability-and-booking-9-october-2026) and the [slots plan](implementation/SLOTS-PLAN.md). SL1 supersedes the earlier on-call callback rules in A12/A13; source schema is `2026-10-11.1`; this update is not a deployment. Earlier migration history below is not release evidence.
 
@@ -33,18 +33,18 @@ Manoj's public interface is the adapter's only owner-service dependency: keep co
 ## Source status and pre-deployment gates (11 October 2026)
 
 Phases 1a–4b were built and reviewed; phase 4b is accepted. Phase 5 updates these documents and
-is complete only when their review is approved. The three-tool source schema is `2026-10-11.1`; removal review is pending.
+is complete only when their review is approved. The three-tool source schema is `2026-10-11.1`; the removal implementation was approved in review on 11 October 2026.
 **Nothing in the slots series has been merged or deployed. Documentation completion is not deployment readiness.**
 
 These release gates are not closed by this source change:
 
 1. Garima approves the pull request to `main` and separately authorises deployment.
-2. Authorised live verification on Manoj's HTTPS synthetic tenant: the external write journey recording `slots_path`, open blocks on both journey dates, the negative UNKNOWN-today test and read gates.
+2. Authorised live verification on Manoj's HTTPS synthetic tenant: the external write journey recording `slots_path`, open blocks on both journey dates, the negative UNKNOWN-today test and read gates. **Local evidence, 10 October 2026:** with Garima's authorisation, a run against tenant `jayashree` passed the read gates, the slot-aware write journey (create refused without a time, then created with a time, listed, rescheduled, cancelled, summary saved and replay recognised as already saved) and the negative UNKNOWN-today test. It left one cancelled synthetic appointment and one summary. The run used `42dae2c`, before the knowledge removal, which did not change these scheduling paths. **The gate stays open** until Manoj confirms the tenant as a designated synthetic tenant.
 3. Authorised live bench against the 0.30 s tool budget, including the extra on-call by-name read group.
 4. Deployed-adapter credentials, followed by deployed-transport gates and release smoke against the canary.
 5. Separately approved ContextForge refresh of our front-desk registration `frontdesk-healthcare-canary` and virtual server `frontdesk-healthcare` to schema `2026-10-11.1`, with our `search_knowledge` removed, then the LiveKit cached tool view. Stratum's registration and tools are not touched.
 6. Voice-team readiness for SL1's fields/outcomes and the three-tool front-desk server: the agent no longer calls our front-desk `search_knowledge`.
-7. **LOG-1: implemented (LOG-1); awaiting review and Garima's closure.** Library messages and adapter fields pass through one JSON logging boundary; unexpected tool errors are masked. Local privacy, regression and latency evidence is in [LOG-1-HAND-BACK.md](implementation/LOG-1-HAND-BACK.md). This gate is not closed; production logs still require verification after an approved deployment.
+7. **LOG-1: implemented and reviewed; open only for production-log verification.** The revision 6 three-tool update was approved in review on 11 October 2026. Library messages and adapter fields pass through one JSON logging boundary; unexpected tool errors are masked. Local privacy, regression and latency evidence is in [LOG-1-HAND-BACK.md](implementation/LOG-1-HAND-BACK.md). The gate stays open until production logs are verified after an approved deployment.
 8. **Before deployment:** Rajeev's team confirms and tests symptom and emergency journeys, including transfer behaviour, through Stratum via ContextForge.
 9. **No live voice traffic** until the three-tool adapter is deployed, our front-desk ContextForge entries and LiveKit tool view are refreshed, and discovery through the voice client path shows exactly `get_doctor_availability`, `manage_booking` and `record_call_summary` in the front-desk view. A combined view shows those three plus Stratum's tools, and no front-desk `search_knowledge`.
 

@@ -3,7 +3,7 @@
 Updated 11 October 2026: the source exposes three front-desk tools over Manoj's operational API.
 It contains no operational backend, database or knowledge implementation. The voice team owns
 knowledge, symptom routing and emergency decisions through Stratum's separate ContextForge registration.
-The three-tool removal awaits review; source completion is not deployment or live acceptance.
+The three-tool removal was approved in review on 11 October 2026; source completion is not deployment or live acceptance.
 
 ## Current integration contract
 
@@ -28,7 +28,7 @@ Summary values for symptoms and emergencies remain valid.
 
 [CURRENT-STATE.md](CURRENT-STATE.md), [OPUS-REVIEW.md](OPUS-REVIEW.md), the original Fable assignment
 and dated implementation reports preserve historical evidence; they are not current deployment inventories.
-The committed removal plan and LOG-1 revision 6 specify this change; their implementation needs Opus review.
+The committed removal plan and LOG-1 revision 6 specified this change; its implementation was approved in review on 11 October 2026.
 Gate 8 requires Rajeev's Stratum symptom/emergency and transfer acceptance before deployment.
 Gate 9 prevents voice traffic until our adapter and gateway/voice discovery are refreshed.
 A combined voice view may include Stratum; its registration and tools are outside this repository's scope.

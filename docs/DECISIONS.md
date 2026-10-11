@@ -313,3 +313,5 @@ Source schema is `2026-10-11.1`. Fixture checks do not prove deployment or voice
 Merge, deployment, our ContextForge refresh, voice acceptance and later removal of leftover cloud
 settings/secrets require separate approval. Governing detail: [removal plan](handover/mcp-only/implementation/KNOWLEDGE-REMOVAL-PLAN.md)
 and [LOG-1 revision 6](handover/mcp-only/implementation/LOG-1-PLAN.md).
+
+**K3 supplement, 11 October 2026.** Opus review approved the three-tool implementation (`8f1df7d`–`5bc5490`), including LOG-1 revision 6. Before approval, a follow-up removed a leftover stub `answers` fixture, the knowledge stub port and an unused smoke language setting. Gate 7 stays open only for production-log verification after an approved deployment. Gate 2 has local live evidence from 10 October on tenant `jayashree`, pending Manoj's confirmation of that tenant. Merge to `main`, deployment, our ContextForge refresh and the remaining release gates are still open. Implementation approval is not deployment readiness.
