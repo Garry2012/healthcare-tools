@@ -1,23 +1,23 @@
 # MCP integration plan with confirmed service ownership
 
-Status: source migration implemented; slots rules updated 9 October 2026. Slots documentation approval and deployment readiness are separate (gates below). Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
+Status: source migration implemented; three-tool removal implemented 11 October 2026, awaiting review. Slots rules remain SL1. Slots documentation approval and deployment readiness are separate (gates below). Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
 
-Current availability and booking rules are recorded in [DECISIONS.md SL1](../../DECISIONS.md#sl1--slot-aware-availability-and-booking-9-october-2026) and the [slots plan](implementation/SLOTS-PLAN.md). SL1 supersedes the earlier on-call callback rules in A12/A13; schema `2026-10-08.1` is frozen. Earlier migration history below is not release evidence.
+Current availability and booking rules are recorded in [DECISIONS.md SL1](../../DECISIONS.md#sl1--slot-aware-availability-and-booking-9-october-2026) and the [slots plan](implementation/SLOTS-PLAN.md). SL1 supersedes the earlier on-call callback rules in A12/A13; source schema is `2026-10-11.1`; this update is not a deployment. Earlier migration history below is not release evidence.
 
 Updated 30 September 2026 from the user's decisions, the [published Manoj contract](https://healthcare-contract-docs.icytree-6543aaa9.centralindia.azurecontainerapps.io/openapi.yaml), and the [Opus review](OPUS-REVIEW.md). This is the migration plan, including the actionable review recommendations and the user's callback-only UNKNOWN policy. It supersedes earlier ownership proposals, slot requirements and the direct platform-to-REST summary path. Retirement, rollback and acceptance requirements are included here; the historical investigation is source evidence, not an additional implementation checklist. This is an implementation plan, not a claim of verified production readiness.
 
-Keep the repository and extract in place. Our deliverable is the MCP server and tools consuming Manoj's operational backend and Shobhit's knowledge base. No operational backend, scheduling engine, interpretation engine, knowledge retrieval engine or application database should remain in our production implementation.
+Keep the repository and extract in place. Our deliverable is the three-tool MCP server consuming Manoj's operational backend. The voice team uses Stratum through a separate ContextForge registration for knowledge, symptom routing and emergency decisions. No operational backend, scheduling engine, interpretation engine, knowledge retrieval engine or application database should remain in our production implementation.
 
 ```mermaid
 flowchart LR
   V[Voice agent] --> G[ContextForge]
   G --> M[Our MCP tools]
   M --> O[Manoj: directory, working hours, live board, slots and appointments]
-  M --> K[Shobhit: symptom routing, red flags, hospital information]
+  G --> K[Stratum: separate registration, voice-team owned]
   M -. record_call_summary .-> O
 ```
 
-The public interfaces are the only dependency on either owner's implementation: keep contract snapshots, client-side types/adapters, configuration and consumer tests; no owner server source, images, database access or local knowledge/operational engines. Each owner builds and hosts their service independently. See [TARGET-STATE.md](TARGET-STATE.md) for allowed repository contents and conversational-tool design requirements.
+Manoj's public interface is the adapter's only owner-service dependency: keep contract snapshots, client-side types/adapters, configuration and consumer tests; no owner server source, images, database access or local knowledge/operational engines. Manoj and the Stratum owners build and host their services independently; this repository does not integrate Stratum. See [TARGET-STATE.md](TARGET-STATE.md) for allowed repository contents and conversational-tool design requirements.
 
 **Confirmed scope**
 
@@ -26,29 +26,35 @@ The public interfaces are the only dependency on either owner's implementation: 
 | Slot reads consume Manoj's pinned 0.4.0 contract | Selected-doctor AVAILABILITY reads `/availability/{doctorId}/slots`; its `enabled` controls slot policy. The live board is today-only; future slots supplement usual schedules. Department AVAILABILITY uses cached `/capabilities`, never slot fan-out. WORKING_HOURS reads neither board nor slots. Capacity is owner data, never computed by MCP (SL1). |
 | Patient suggests a preferred time; agent creates the appointment | CREATE/RESCHEDULE require the chosen time when slots are enabled; absence gives INVALID_REQUEST/ASK_WHICH_TIME and no write. Optional session is internal, never forwarded. Success remains NOTED; return the recorded slotTime and slotMoved facts, without promising a confirmed appointment (SL1). |
 | Rich multilingual date interpretation, ambiguous-name handling and department synonyms will be developed as we proceed | Start with the existing department list, free-text doctor search and explicit calendar dates. No new interpretation endpoint is a prerequisite. Basic caller clarification is sufficient when the returned choices or date are unclear; do not copy the legacy interpretation engine. |
-| Shobhit owns symptom routing, red-flag detection and hospital information | Consume explicit routing/emergency/approved-answer results from the knowledge service. Do not ask Manoj to implement clinical routing or retain the old lexical engine locally. |
+| The voice team owns knowledge, symptom routing and emergency decisions through Stratum | Stratum is a separate ContextForge registration. Rajeev's team validates symptom/emergency journeys and transfers before deployment (gate 8). No clinical engine belongs in MCP. |
 | Call summaries need an MCP tool | The implemented `record_call_summary` tool uses `createCallSummary`. Route call finalization through MCP; do not require a separate direct REST writer in the voice platform. |
 | Ordinary UNKNOWN means callback details and call summary only | UNKNOWN in the selected scope prevents appointment writes; CALLBACK_NOTED carries callback contact. No separate task or transfer is created. NOT_CONFIRMED with an open bookable block can permit a request. On-call AVAILABILITY instead follows confirmed usable evidence or returns handoff; single-doctor on-call WORKING_HOURS always returns handoff. See SL1 D-6–D-8. |
 
-## Slots series status and pre-deployment gates (9 October 2026)
+## Source status and pre-deployment gates (11 October 2026)
 
 Phases 1a–4b were built and reviewed; phase 4b is accepted. Phase 5 updates these documents and
-is complete only when their review is approved. The schema is frozen at `2026-10-08.1`.
+is complete only when their review is approved. The three-tool source schema is `2026-10-11.1`; removal review is pending.
 **Nothing in the slots series has been merged or deployed. Documentation completion is not deployment readiness.**
 
-Every release gate below remains pending for this slots release:
+These release gates are not closed by this source change:
 
 1. Garima approves the pull request to `main` and separately authorises deployment.
 2. Authorised live verification on Manoj's HTTPS synthetic tenant: the external write journey recording `slots_path`, open blocks on both journey dates, the negative UNKNOWN-today test and read gates.
 3. Authorised live bench against the 0.30 s tool budget, including the extra on-call by-name read group.
-4. Knowledge host and deployed-adapter credentials, followed by deployed-transport gates and release smoke against the canary.
-5. ContextForge schema refresh to `2026-10-08.1` after the approved release.
-6. Voice-team readiness for SL1's new fields and outcomes.
+4. Deployed-adapter credentials, followed by deployed-transport gates and release smoke against the canary.
+5. Separately approved ContextForge refresh of our front-desk registration `frontdesk-healthcare-canary` and virtual server `frontdesk-healthcare` to schema `2026-10-11.1`, with our `search_knowledge` removed, then the LiveKit cached tool view. Stratum's registration and tools are not touched.
+6. Voice-team readiness for SL1's fields/outcomes and the three-tool front-desk server: the agent no longer calls our front-desk `search_knowledge`.
 7. **LOG-1: implemented (LOG-1); awaiting review and Garima's closure.** Library messages and adapter fields pass through one JSON logging boundary; unexpected tool errors are masked. Local privacy, regression and latency evidence is in [LOG-1-HAND-BACK.md](implementation/LOG-1-HAND-BACK.md). This gate is not closed; production logs still require verification after an approved deployment.
+8. **Before deployment:** Rajeev's team confirms and tests symptom and emergency journeys, including transfer behaviour, through Stratum via ContextForge.
+9. **No live voice traffic** until the three-tool adapter is deployed, our front-desk ContextForge entries and LiveKit tool view are refreshed, and discovery through the voice client path shows exactly `get_doctor_availability`, `manage_booking` and `record_call_summary` in the front-desk view. A combined view shows those three plus Stratum's tools, and no front-desk `search_knowledge`.
+
+Cloud cleanup is not a release gate: after approved deployment, separately approve removal of the canary's leftover knowledge secret/variables and Key Vault `knowledge-token`. No cloud cleanup is executed by these source changes.
 
 Open but **not deployment gates unless Garima says so**: Manoj G-13–G-15 (already designed around),
 recorder strictness permanence, and optional 4b-M1 review O-1. The T-4 test-setup remedy is implemented
 (T-5, `151ea61`). These are documented in SL1; none reopens the accepted phase 4b.
+
+**Historical knowledge design — superseded by K3:** the knowledge-client, fixture and ownership proposals retained in the migration discussion below are historical, not implementation or release requirements. Current front-desk tools are the three listed below; voice knowledge and emergency journeys belong to Stratum's owners.
 
 **What the published contract changes**
 
@@ -78,7 +84,7 @@ Use the full configured base URL without legacy `/api/v1` stripping. Test constr
 The current consumer interface is [VOICE-TEAM.md](../VOICE-TEAM.md). MCP publishes facts and wire
 requirements; conversation design and tool selection belong to the calling application.
 
-1. Availability and booking call only Manoj. search_knowledge makes one explicit knowledge request.
+1. All three front-desk tools call only Manoj; voice knowledge journeys are external to this adapter.
    reasonVerbatim is operational data forwarded without interpretation.
 2. Directory reads resolve names and department IDs. Ambiguity returns structured choices; specialized
    phonetic, synonym and multilingual interpretation remains external service work.
@@ -115,10 +121,9 @@ plan for exact precedence; earlier board-overlay and department-write proposals 
 |---|---|---|
 | `get_doctor_availability` | Manoj directory, profile, live board, slots and capabilities reads | Selected-doctor slot-aware availability; department matches before slot checking; WORKING_HOURS without board/slots. SL1 defines on-call and refusal rules. |
 | `manage_booking` | Manoj create/list/cancel/reschedule operations | Slot-aware CREATE/RESCHEDULE validate the chosen time. Identity, truthful lifecycle status, uncertainty and owner write contracts remain unchanged. |
-| `search_knowledge` | Shobhit interface, pending | Explicit symptom routing, emergency/desk escalation and hospital answers; provisional downstream contract still needs owner acceptance. |
 | `record_call_summary` | `createCallSummary`, `POST /call-summaries` | LLM-callable through the same gateway bearer; no summary listing or staff tools. |
 
-There are four MCP tools. Schema `2026-10-08.1` is published in the repository; gateway/voice discovery
+There are three MCP tools. Schema `2026-10-11.1` is published in the repository; gateway/voice discovery
 refresh remains a release gate, not proof of deployment. Each appointment output includes nullable
 slotTime and default-false slotMoved; LIST and CANCEL keep slotMoved false.
 
@@ -158,14 +163,13 @@ Paths below are relative to the configured service base URL. Manoj's documented 
 | `manage_booking` — list | Manoj | `GET /appointments?mobile=...` (`findAppointments`) | Retrieve appointments for the authorized number; optional from/to/status filters. |
 | `manage_booking` — cancel | Manoj | `POST /appointments/{appointmentId}/cancel` (`cancelAppointment`) | Cancel using trusted caller identity and the documented request fields. |
 | `manage_booking` — reschedule | Manoj | `POST /appointments/{appointmentId}/reschedule` (`rescheduleAppointment`) | Change visit date and preferred time (required when slots enabled); no new doctor/department field. session is not sent upstream. |
-| `search_knowledge` | Shobhit | Endpoint pending | Hospital information, symptom routing and red-flag decisions through Shobhit's service. |
 | `record_call_summary` | Manoj | `POST /call-summaries` (`createCallSummary`) | Store the completed call's summary, with callId replay protection. |
 
-Shared transport calls `POST /auth/token` (`issueMachineToken`) for Manoj machine credentials when a cached token needs obtaining/renewing; it is not another MCP tool and need not run on every tool call. Shobhit authentication remains separately configured according to his contract. `GET /availability` is today's board, distinct from the per-doctor slots endpoint. The slots series changes no owner write endpoint or scope and adds no MCP tool; there are still four.
+Shared transport calls `POST /auth/token` (`issueMachineToken`) for Manoj machine credentials when a cached token needs obtaining/renewing; it is not another MCP tool and need not run on every tool call. `GET /availability` is today's board, distinct from the per-doctor slots endpoint. The slots series changes no owner write endpoint or scope and adds no MCP tool; there are three front-desk tools.
 
 **Call-summary tool contract (approved 4 October 2026)**
 
-All four tools share gateway authentication; record_call_summary is LLM-called. Its eight arguments are
+All three tools share gateway authentication; record_call_summary is LLM-called. Its eight arguments are
 intent, outcome, summaryText, callerMobile, language, doctorId, appointmentId and transferredTo.
 Whole-call summaryText is required, nonblank and at most 500 characters, sent unchanged. The advertised
 schema cap is 500; the existing outer 2000 cap allows service-level INVALID_REQUEST for 501–2000.
@@ -258,13 +262,13 @@ Keep any temporary legacy test profile explicitly named during migration. The ne
 
 Maintain `prompt.py` and the healthcare pack around date-aware facts, clarification, CALLBACK_NOTED and truthful appointment states. Remove slotId/newSlotId, capacity/confirmation-code promises and obsolete timingCertainty/outcome branches. CONFIRMED_BY_DESK can be described as desk acknowledgement; it still does not mean a guaranteed time under Manoj's contract. Include explicit instructions for missing identity, routing failures and uncertain mutations.
 
-Keep the four-tool discovery set and refresh gateway/voice schemas to `2026-10-08.1` after an approved release; handle SL1's new fields/outcomes. The implemented registration script checks names/input schemas only; output schemas require manual comparison through the voice virtual server against `make schema` after separately approved deployment. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
+Keep the three-tool front-desk discovery set and refresh gateway/voice schemas to `2026-10-11.1` after an approved release; handle SL1's new fields/outcomes. The implemented registration script checks names/input schemas only; output schemas require manual comparison through the voice virtual server against `make schema` after separately approved deployment. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
 
 **Active repository retirement inventory**
 
 | Disposition | Files/surfaces | Required result |
 |---|---|---|
-| Keep/adapt | `services/mcp/src/frontdesk_mcp/{tools,config,server,prompt,packs}.py`, `packs/healthcare.json`, CLI, pyproject/lockfile, Dockerfile and README | Standalone four-tool adapter with no backend imports, SQL stack, retrieval or interpretation engine. Preserve protocol/security/failure coverage while adapting semantics. |
+| Keep/adapt | `services/mcp/src/frontdesk_mcp/{tools,config,server,prompt,packs}.py`, `packs/healthcare.json`, CLI, pyproject/lockfile, Dockerfile and README | Standalone three-tool adapter with no backend imports, SQL stack, retrieval or interpretation engine. Preserve protocol/security/failure coverage while adapting semantics. |
 | Adapt | `services/mcp/tests/test_tools_unit.py`, `test_e2e.py`, `test_deploy_smoke.py`, `services/mcp/tests/review/test_mcp_rest_integration.py`, conftest | Replace old x-mcp-tools, seeded slot and API-process/DB fixtures with mandatory MCP contracts and external-boundary fixtures. Keep identity/retry/transport test intent. |
 | Adapt | `Makefile`, `scripts/{test,review-suite,demo,rollout-env}.sh`, `.github/workflows/ci.yml` | MCP-only default install/lint/build/test/demo; no API virtualenv, local DB, migration or seed requirement. Retain env parsing only for MCP-owned configuration. |
 | Adapt | `deploy/docker-compose.yml`, `deploy/azure/{deploy.sh,smoke.py}`, `deploy/contextforge/register.py`, `.env.example` | Only MCP production deployment; two optional dev stub services; independent endpoint/credential settings; no API image/data-layer build, DB provisioning/jobs/waits or API virtualenv even for probe generation. |
@@ -294,10 +298,10 @@ Execute source removal and infrastructure decommission as distinct steps within 
 | UNKNOWN callback | Ordinary UNKNOWN in scope collects name/number and saves CALLBACK_NOTED only, with no appointment, transfer, alternate booking, notification or task. On-call instead follows SL1 handoff; never treat a failed board request as successful UNKNOWN. |
 | Basic lookup | Department IDs, free-text doctor search, multiple-choice clarification, explicit dates, pagination and unknown gender/language. Preserve incompleteness; advanced multilingual/synonym parsing is deferred. |
 | Identity | Model phone/header/tenant override rejected; configured E.164 normalization; missing/unsupported verification; cross-number family access refused; concurrent calls/tenants isolated; patient/callback contact never reused as authorization. |
-| Routing | Availability and booking make zero knowledge requests. search_knowledge makes one verbatim request. Voice-side tests prove every-turn emergency coverage, stale-result handling and write ordering. |
+| Routing | Front-desk tools call only Manoj. Voice-side Stratum tests prove symptom/emergency coverage and transfer behaviour before deployment; gate 9 prevents traffic before discovery refresh. |
 | Writes | Concurrent same-intent retry, changed payload, correction after definite rejection, uncertain commit, malformed success, replay after later mutation, missing call ID, 429/5xx/401 and total deadlines. Never uncertain write → success; never new key just because a response was lost. |
 | Summaries | Same gateway access as all tools; trusted call/start headers; exact whole-call text within 500 characters, no composition or truncation; verified same-call 200 is ALREADY_SAVED even with changed payload; lost response uncertainty and language validation. Callback detail quality and disconnect recovery belong to the voice platform; no separate callback task. |
-| Runtime/release | OAuth skew/single-flight/401 handling, mock/backend prefixes, local readiness plus separate dependency health, refreshed four-tool schemas/prompts, read-only production smoke, production cannot use development stubs. |
+| Runtime/release | OAuth skew/single-flight/401 handling, mock/backend prefixes, local readiness plus separate dependency health, refreshed three-tool schemas/prompts, read-only production smoke, production cannot use development stubs. |
 | Separation | Required tests pass in a clean environment without API source/virtualenv/PostgreSQL. MCP builds/deploys independently. Active scripts/hooks/docs no longer start or generate the backend. No hidden knowledge fallback. |
 | Azure retirement | Mandatory phase 6: scoped removal of obsolete resources, shared-consumer preservation/relocation, data disposition, no obsolete active references, remaining-resource ownership and cost verification. |
 | Performance and recovery | Real voice-to-result p50/p95/p99 at declared cold/warm/concurrent conditions; per-turn deadlines; filler excluded; summaries outside budget; compatible rollback against one appointment ledger. |
@@ -318,6 +322,6 @@ Execute source removal and infrastructure decommission as distinct steps within 
 | OPUS-10 | Original spec preserved; any quoting-only test overlay labelled/hashed; stub assumptions separated from owner guarantees. |
 | OPUS-11 | Retirement inventory, rollout/rollback, coordinated CI migration and corrected acceptance checks included in this current plan. |
 
-External items still required before production claims: Shobhit's actual routing/answer/auth contract and outage handling; real Manoj host and caller-verification trust agreement; replay/missing-board semantics; approved treatment of profile data; verified gateway access controls; any necessary data handoff; and measured response target/percentile/load. Slots use the pinned contract; advanced interpretation remains deferred. Fixture checks do not establish release readiness; use the slots gates above. Questions are handled one at a time as the relevant dependency is reached.
+External items still required before production claims: Rajeev's Stratum symptom/emergency and transfer acceptance; real Manoj host and caller-verification trust agreement; replay/missing-board semantics; approved treatment of profile data; verified gateway access controls; any necessary data handoff; and measured response target/percentile/load. Slots use the pinned contract; advanced interpretation remains deferred. Fixture checks do not establish release readiness; use the slots gates above. Questions are handled one at a time as the relevant dependency is reached.
 
 No source implementation, deletion, deployment, database writes, operational API calls or communications to either team were performed. This revision updates planning documents only. Incorporating review recommendations is not a claim that the resulting implementation has already passed these checks, or that Opus has re-reviewed the revised plan.

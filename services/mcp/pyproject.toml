@@ -1,7 +1,7 @@
 [project]
 name = "frontdesk-mcp"
 version = "0.1.0"
-description = "Thin FastMCP adapter: four hospital front-desk tools over the owners' operational and knowledge services"
+description = "Thin FastMCP adapter: three hospital front-desk tools over Manoj's operational service"
 requires-python = "==3.13.*"
 dependencies = [
     "fastmcp==2.14.7",

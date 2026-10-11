@@ -289,3 +289,27 @@ This entry supersedes the historical SL1 statement that LOG-1 handling is undeci
 **implemented (LOG-1); awaiting review and Garima's closure**, not closed. Nothing is pushed, merged
 or deployed by this work. Full commands, failures, test-scaffolding correction, benchmark tables and
 protected-file hashes: [LOG-1 hand-back](handover/mcp-only/implementation/LOG-1-HAND-BACK.md).
+
+## K3 — Three-tool front-desk adapter (11 October 2026)
+
+Garima approved removal of Shobhit's `search_knowledge` from our front-desk adapter. K3 supersedes
+K1's knowledge-tool decision. The tools are `get_doctor_availability`, `manage_booking` and
+`record_call_summary`, all using the existing gateway bearer and Manoj's operational API.
+Knowledge, symptom routing and emergency decisions belong to the LiveKit voice team through
+Stratum's separate ContextForge registration; this repository neither modifies nor verifies it.
+
+The three-tool rule applies to our adapter, registration `frontdesk-healthcare-canary` and virtual
+server `frontdesk-healthcare`. A combined voice view may also contain Stratum's tools.
+Rajeev's team must validate symptom/emergency journeys and transfers before deployment (gate 8).
+No live voice traffic until the adapter, our gateway entries and LiveKit cache are refreshed and
+voice-client discovery proves the intended front-desk surface (gate 9).
+
+LOG-1 revision 6 removes only the deleted tool's permitted values: L1 now has 18 field names and
+11 operational route templates. Existing privacy/masking and M-1 rules remain; gate 7 awaits
+review and Garima's closure. Summary values including EMERGENCY, SYMPTOM_ROUTING and
+EMERGENCY_TRANSFERRED remain unchanged. Scheduling, authorization and write semantics are unchanged.
+
+Source schema is `2026-10-11.1`. Fixture checks do not prove deployment or voice safety.
+Merge, deployment, our ContextForge refresh, voice acceptance and later removal of leftover cloud
+settings/secrets require separate approval. Governing detail: [removal plan](handover/mcp-only/implementation/KNOWLEDGE-REMOVAL-PLAN.md)
+and [LOG-1 revision 6](handover/mcp-only/implementation/LOG-1-PLAN.md).

@@ -5,10 +5,10 @@ MCP := services/mcp
 
 .PHONY: up up-mcp down test test-fast test-e2e lint build schema demo bench logs
 
-up: ## Start the adapter against the two local development stubs (profiles mcp + stubs)
+up: ## Start the adapter against the local operational stub (profiles mcp + stubs)
 	$(COMPOSE) --profile stubs up -d --build --wait
 
-up-mcp: ## Start only the adapter, pointed at the owner services configured in .env
+up-mcp: ## Start only the adapter, pointed at the operational service configured in .env
 	$(COMPOSE) --profile mcp up -d --build --wait mcp
 
 down: ## Stop everything
@@ -33,7 +33,7 @@ schema: ## Print the pinned tool surface (compare with tests/contracts/mcp-tools
 	@cd $(MCP) && eval "$$(../../scripts/rollout-env.sh ../../rollouts/$${PROVIDER_ID:-demo-hospital})" && \
 	  ENV=development OPS_BASE_URL=http://127.0.0.1:8200/api/v1 uv run frontdesk-mcp schema
 
-demo: ## In-process walk-through of the four tools against the stubs (dev/demo.py)
+demo: ## In-process walk-through of the three tools against the stubs (dev/demo.py)
 	cd $(MCP) && uv run python dev/demo.py
 
 bench: ## Tool round-trip latency: in-process stubs by default; `eval "$$(scripts/env.sh mock|live)"` first for a real host
