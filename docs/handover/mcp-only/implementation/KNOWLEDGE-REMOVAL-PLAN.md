@@ -2,6 +2,7 @@
 
 - **Status:** **revision 3, approved by Garima on 11 October 2026** ("looks good"), including the wording of gate 8 and gate 9. P2–P4 are complete: LOG-1 revision 6 approved, the Azure-retirement work committed (`9964839`), and both plans committed (`4548ab1`).
 - **Documentation correction, 11 October 2026 (Garima's request):** this plan and `LOG-1-PLAN.md` are **governing documents** (§6). They are excluded from the knowledge residual search, must stay byte-identical to the base, and stay inside the contact-rollback trace search. This doesn't change implementation scope.
+- **Second documentation correction, 11 October 2026 (Astra's specification stop):** the knowledge residual search now allows explicitly classified negative-test and removal-documentation references (§10), while runtime and published files must have no match at all. This doesn't change implementation scope.
 - No code, configuration, cloud or ContextForge change has been made.
 - **Author:** Opus.
 - **Branch:** `Garry2012/slots-phase-1a-1b` at `42dae2c` (not pushed; nothing released since the canary).
@@ -161,6 +162,7 @@ LOG-1 revision 4 (`b7feb3c`/`7c44955`) assumes four tools and uses knowledge mod
 - **Governing documents (unchanged by implementation, excluded from the knowledge residual search):** `docs/handover/mcp-only/implementation/KNOWLEDGE-REMOVAL-PLAN.md` and `docs/handover/mcp-only/implementation/LOG-1-PLAN.md`.
   - **Why excluded:** they specify the removal itself, so they necessarily name `search_knowledge`, `knowledge_client`, `knowledge_contract`, `KNOWLEDGE_*` and "four tools".
   - **What applies instead:**
+    - other files' allowed references are classified under §10 (classes H, N and D);
     - Astra must not edit them, and at C4 they must be byte-identical to the base (§10);
     - the contact-rollback trace search still covers them, and must find nothing.
 - **Unchanged (historical):**
@@ -226,7 +228,15 @@ Gates 1, 2, 3 and 7 keep their meaning. Gate 2's 10 October live evidence is in 
 | **C4** (after C4b) | `make test-fast`; the **schema comparison** again; the **residual searches** below; the **after-removal benchmark** and comparison (§9) |
 
 **Residual searches at C4's head (committed tree):**
-1. **Knowledge references:**
+1. **No match in runtime or published files.** This search must print **nothing**:
+
+   ```
+   git grep -n -i -e search_knowledge -e knowledge_client -e knowledge_contract -e "KNOWLEDGE_" -e "four tools" -e "four MCP tools" -e "two owner" -e "two local development stubs" HEAD -- \
+     services/mcp/src services/mcp/dev services/mcp/tests/contracts services/mcp/pyproject.toml deploy scripts rollouts Makefile .env.example
+   ```
+
+   It covers source, packs, stubs, bench and demo, the pinned schema snapshot, packaging, deployment and registration scripts, profiles and environments, rollouts, the Makefile and the example environment.
+2. **Every other match is classified.** Run the full search with the two governing documents excluded (§6):
 
    ```
    git grep -n -i -e search_knowledge -e knowledge_client -e knowledge_contract -e "KNOWLEDGE_" -e "four tools" -e "four MCP tools" -e "two owner" -e "two local development stubs" HEAD -- . \
@@ -234,9 +244,18 @@ Gates 1, 2, 3 and 7 keep their meaning. Gate 2's 10 October live evidence is in 
      ':(exclude)docs/handover/mcp-only/implementation/LOG-1-PLAN.md'
    ```
 
-   The two governing documents are excluded (§6). Every remaining hit must be in a §6 historical file or in Manoj's contracts. Paste the list.
-2. **The governing documents are unchanged:** `git diff --exit-code <base> HEAD -- docs/handover/mcp-only/implementation/KNOWLEDGE-REMOVAL-PLAN.md docs/handover/mcp-only/implementation/LOG-1-PLAN.md` prints nothing.
-3. **The contact-rollback trace search** (supplied in the Astra prompt) runs over the whole committed tree, governing documents included, and prints nothing.
+   Every match must fall into **exactly one** of these classes. Any match outside them is a failure.
+
+   | Class | Allowed where | Allowed only when |
+   |---|---|---|
+   | **H: history** | §6 historical files and Manoj's contracts | always (these files are unchanged) |
+   | **N: negative test** | `services/mcp/tests/` only | the line is inside a test that **asserts the removed thing is absent, rejected, omitted or ignored**. Examples: the unknown-tool test (§8 item 1), the smoke test with a missing or extra fourth tool (§8 item 3), the Stratum-separation test (§8 item 4), the LOG-1 omission tests (LOG-1 §R.2 item 3), and the leftover `KNOWLEDGE_*` test (§8 item 8). **Not N:** any fixture, helper, harness, transport, environment variable passed to a process, or environment-strip prefix that still configures or anticipates knowledge. These must be gone (for example, `test_e2e_processes.py` drops `"KNOWLEDGE_"` from its environment-strip tuple and stops passing `KNOWLEDGE_*` in C2) |
+   | **D: removal documentation** | current documents in C1/C4: `docs/DECISIONS.md` (K3), `docs/handover/mcp-only/PLAN.md` (gates 5, 6 and 9, the "superseded by K3" note and the superseded knowledge sections it keeps), `docs/handover/CONTEXTFORGE.md` (our front-desk removal, the Stratum separation, gate 9's check, and dated deployment records), `docs/handover/AZURE.md` (dated records), `docs/handover/VOICE-TEAM.md` (at most a one-line removal note, with **no** interface rows), `CLAUDE.md` and `.claude/agents/*` (at most a line stating the tool is removed and must not return) | the text says the tool or knowledge path is **removed, superseded, historical or must not be called**. Text that presents knowledge as present or usable is a failure |
+
+   **Hand-back:** a table of every match: file:line, class, and reason. For N, the test name and what it asserts.
+   **Forbidden:** hiding a reference from the search (for example, building `"search_" + "knowledge"`), or weakening a test to avoid a match.
+3. **The governing documents are unchanged:** `git diff --exit-code <base> HEAD -- docs/handover/mcp-only/implementation/KNOWLEDGE-REMOVAL-PLAN.md docs/handover/mcp-only/implementation/LOG-1-PLAN.md` prints nothing.
+4. **The contact-rollback trace search** (supplied in the Astra prompt) runs over the whole committed tree, governing documents included, and prints nothing.
 
 **Scope evidence in the hand-back:**
 - the base SHA and each commit's file list, matching §5 (any extra file explained);
