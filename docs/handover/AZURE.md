@@ -100,7 +100,7 @@ and auth configuration for rollback; an older image expects the removed second c
 ## Three-tool release and later cleanup
 
 Schema `2026-10-11.1` was deployed to the canary on 11 October 2026 (revision `--0000004`, image `28f11a8`).
-The source schema is now `2026-10-11.2` (description text only), not yet deployed. Follow
+Schema `2026-10-11.2` (description text only) was deployed to the canary on 12 October 2026 (revision `--0000005`, image `01b9dcc`). Follow
 [PLAN.md](mcp-only/PLAN.md); Garima approved gate 8 on 11 October 2026. After deployment refresh only our
 front-desk registration, virtual server and LiveKit cache. Gate 9 requires voice-client discovery before live traffic.
 
