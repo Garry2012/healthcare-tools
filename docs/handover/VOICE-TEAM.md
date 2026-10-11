@@ -17,27 +17,30 @@ This is the single authoritative handover for calling the front-desk MCP tools.
 
 - **Three tools:** `get_doctor_availability`, `manage_booking` and `record_call_summary`. All data comes from the hospital's operational service, which is owned by Manoj's team.
 - **Knowledge, symptom routing and emergencies** are not handled by these tools. They are handled through Stratum's separate ContextForge registration.
-- **The canary** `mcp-demo-hospital-canary` runs schema `2026-10-11.1`. It was deployed on 11 October 2026.
-- **Schema `2026-10-11.2`,** described here, changes only description text: the availability tool description, the `doctorId`, `doctorName` and `date` parameters, and the `choices` and `departmentChoices` outputs. It goes live with the next deployment.
+- **The canary** `mcp-demo-hospital-canary` runs schema `2026-10-11.2`, deployed on 12 October 2026 (revision `--0000005`, image `01b9dcc`).
 - **Checking the served version:** `GET /ready` returns the served `schemaVersion`. ContextForge shows the schema from its last refresh of our entries, which may be older.
 
 ## 2. Connect
 
 - **Endpoint:** streamable HTTP at `/mcp/`. The voice agent normally reaches it through the ContextForge virtual server `frontdesk-healthcare`. Its URL and scoped access come from the ContextForge owner.
 - **The direct adapter URL** is `https://<mcp-host>/mcp/`. `GET /health`, `GET /ready` and `GET /dependencies` need no authentication.
-- **Authentication:** every tool needs `Authorization: Bearer <gateway credential>`. A ContextForge client authenticates to ContextForge, and ContextForge holds the upstream bearer.
-- **Never tool arguments:** credentials, the caller's telephone number and the call start time. They come only from the request context (§3).
+- **Authentication: two calling paths, two different credentials.**
+  - **Through ContextForge (the normal path):** the voice client sends its scoped ContextForge client token in `Authorization` to ContextForge. ContextForge separately uses its stored MCP credential when it calls the front-desk MCP server. The client token is not forwarded upstream.
+  - **Directly to the adapter:** only a client calling the adapter's `/mcp/` itself sends the MCP credential, as `Authorization: Bearer <MCP credential>`.
+  - **No `X-Upstream-Authorization`:** the voice client must not send this header. ContextForge renames it to `Authorization` on the upstream call, replacing its stored MCP credential.
+- **Never tool arguments:** credentials, the trusted caller identity (`X-Caller-Number` with `X-Caller-Verification`) and the call start time. They come only from the request context (§3).
+- **Contact numbers are arguments:** `patientMobile` (CREATE) and `callerMobile` (callback summary) are numbers the caller gives. They are contact data and grant no authority.
 - **The hospital (tenant)** is fixed by the deployment, not by any argument.
 
 ## 3. Request context (trusted headers)
 
-The voice platform sets these headers on each MCP request; through ContextForge, they must be forwarded.
+The voice platform sets the five `X-` call-context headers below on each tool call, and ContextForge forwards exactly these five to the adapter. `Authorization` depends on the calling path (§2).
 - Header names are case-insensitive.
 - A malformed value is treated as absent.
 
 | Header | Format | Needed by |
 |---|---|---|
-| `Authorization` | `Bearer <gateway credential>` | every tool |
+| `Authorization` | ContextForge client token when calling ContextForge; MCP credential only when calling the adapter directly | every tool |
 | `X-Call-Id` | 1–64 characters: ASCII letters, digits, `.`, `_`, `:` or `-` | `manage_booking` CREATE, CANCEL, RESCHEDULE; `record_call_summary` |
 | `X-Operation-Id` | same syntax as `X-Call-Id`; one value per distinct confirmed write | `manage_booking` CREATE, CANCEL, RESCHEDULE |
 | `X-Caller-Number` | the platform's verified caller number, for example `+919000000101` | `manage_booking` LIST, CANCEL, RESCHEDULE |
@@ -147,8 +150,8 @@ The schedule check is the same one `get_doctor_availability` applies, run again 
 
 **Typical chains.** Callers can supply facts in any order. A chain step is simply the next request, carrying everything it needs.
 1. **Finding a time:**
-   - a department or name request gives `DOCTORS_MATCHED` or `CLARIFICATION_NEEDED`;
-   - an AVAILABILITY request with the chosen `doctorId` and a date gives that doctor's sessions and `openSlots`;
+   - a department request gives `DOCTORS_MATCHED` (slots enabled) with `doctors[]`; a `doctorName` with several matches gives `CLARIFICATION_NEEDED` with `choices[]`;
+   - an AVAILABILITY request with the chosen `doctorId` and a date gives that doctor's sessions and `openSlots`. A `doctorName` with exactly one match gives this doctor-specific result directly;
    - CREATE with the same doctor and date, and `preferredTime` inside an open block, gives `NOTED`.
 2. **Changing an appointment:** LIST gives `appointmentId`, then CANCEL or RESCHEDULE.
 3. **Closing the call:** the last tool result goes into the summary:
@@ -191,6 +194,7 @@ MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
   - `slotTime` is the time the hospital recorded, normally the block start; choosing 10:45 in the 10:30–11:00 block gives `slotTime` 10:30 with `slotMoved: false`;
   - `slotMoved` is true only when the hospital recorded a different block;
   - LIST and CANCEL always return `slotMoved: false`.
+- **`dataConfirmed`** is the hospital's profile metadata, passed through unchanged. No MCP decision uses it: `false` or `null` never means unavailable and never requires callback. Availability is given only by `decision`, `outcome` and `openSlots`.
 - **Booking `NOT_FOUND` is neutral:** an unknown id, another caller's id and a past appointment all look the same.
 - **Private data in results:** results never contain caller numbers, reasons or upstream error text. The only exceptions are `patientName` on the verified caller's own appointments, and the desk-written board `note` (at most 200 characters, written for callers).
 
@@ -213,7 +217,7 @@ MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
 **Summaries:**
 - A repeat for the same call returns `ALREADY_SAVED`, even with different text; the first summary stays.
 - `NOT_CONFIRMED` means saving could not be verified.
-- `NOT_SAVED` means the headers were missing or invalid, or the credentials were refused.
+- `NOT_SAVED` means the headers were missing or invalid, or the hospital service refused the adapter's own credentials.
 
 **Time budgets:**
 - Availability reads and booking reads and writes must finish within 0.30 seconds of adapter time (out of a 1-second voice budget). If the hospital service is slower, the result is `COULD_NOT_CHECK` or `COULD_NOT_RECORD`, not a guess. MCP makes at most one same-key retry inside that budget.
@@ -312,6 +316,7 @@ These are the expected results for testing a client end to end. Each one matches
 |---|---|---|---|
 | 1 | Department and date, slots enabled | `DOCTORS_MATCHED` / `ASK_WHICH_DOCTOR` | `bookableFound` 0; no `openSlots` |
 | 2 | The same date with a listed `doctorId` | `AVAILABILITY` / `OFFER_APPOINTMENT_REQUEST` | sessions carry `openSlots` |
+| 2a | A doctor name with exactly one match, and a date | `AVAILABILITY` | doctor-specific; `openSlots` directly, with no `choices` |
 | 3 | Doctor name only, no date | `INVALID_REQUEST` / `ASK_EXPLICIT_DATE` | no lookup happens |
 | 4 | A name with several matches | `CLARIFICATION_NEEDED` / `ASK_WHICH_DOCTOR` | `choices[].doctorId` |
 | 5 | An unknown department name | `CLARIFICATION_NEEDED` / `ASK_WHICH_DEPARTMENT` | `departmentChoices` |
@@ -376,7 +381,7 @@ These are the expected results for testing a client end to end. Each one matches
 | `outcome.SAVED` | record_call_summary | A new summary was stored for this call |
 | `outcome.ALREADY_SAVED` | record_call_summary | This call already has a summary. Nothing changed, even if the new text differs |
 | `outcome.NOT_CONFIRMED` | record_call_summary | Saving couldn't be verified: no answer, malformed success, call-id mismatch, transport failure, rate limit or server error |
-| `outcome.NOT_SAVED` | record_call_summary | Missing or malformed `X-Call-Id`/`X-Call-Started-At`, or credentials definitively refused. If an earlier send may have committed, `NOT_CONFIRMED` takes precedence |
+| `outcome.NOT_SAVED` | record_call_summary | Missing or malformed `X-Call-Id`/`X-Call-Started-At`, or the hospital service definitively refused the adapter's own credentials. If an earlier send may have committed, `NOT_CONFIRMED` takes precedence |
 
 ## 13. nextStep codes
 
@@ -625,7 +630,7 @@ These tables list each tool's top-level input and output fields, followed by the
 | `$defs.DepartmentChoice.name` | `{"type":"string"}` | required | Department display name. |
 | `$defs.DoctorAvailability.attendanceType` | `{"enum":["REGULAR","VISITING","ON_CALL"],"type":"string"}` | required | Operational attendance classification: REGULAR, VISITING or ON_CALL. |
 | `$defs.DoctorAvailability.board` | `{"items":{"$ref":"#/$defs/BoardSessionOut"},"type":"array"}` | required | Today's board rows for this doctor (LIVE_BOARD); empty for future dates and WORKING_HOURS. |
-| `$defs.DoctorAvailability.dataConfirmed` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | optional | Owner confirmation metadata; null means unspecified. |
+| `$defs.DoctorAvailability.dataConfirmed` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | optional | Hospital profile confirmation metadata, passed through unchanged; null means unspecified. Not used by any MCP decision: false does not mean unavailable or callback. |
 | `$defs.DoctorAvailability.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision for this doctor on the requested scope; see Decision table. |
 | `$defs.DoctorAvailability.departments` | `{"items":{"type":"string"},"type":"array"}` | required | Department names associated with the doctor. |
 | `$defs.DoctorAvailability.doctorId` | `{"type":"string"}` | required | Operational doctor identifier. |
