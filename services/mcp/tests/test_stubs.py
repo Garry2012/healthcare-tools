@@ -1,6 +1,6 @@
 """The development stubs simulate the two owner contracts for tests and local demos. Their operational
-responses are validated against the pinned Manoj contract (via the quoting-only overlay); the knowledge
-stub follows the PROVISIONAL knowledge_contract. They are fixtures, never engines or production config."""
+responses are validated against the pinned Manoj contract (via the quoting-only overlay).
+They are fixtures, never engines or production config."""
 
 from __future__ import annotations
 
@@ -13,9 +13,7 @@ import jsonschema
 import pytest
 import yaml
 
-from frontdesk_mcp import knowledge_contract
 from frontdesk_mcp.clock import FixedClock
-from frontdesk_stubs import knowledge as knowledge_stub
 from frontdesk_stubs import ops as ops_stub
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "docs/handover/mcp-only/contracts"
@@ -244,76 +242,6 @@ async def test_board_can_be_scripted_for_a_scenario(ops):
     board = (await http.get("/availability", params={"doctorId": "doc_garima", "date": "2026-10-02"},
                             headers=auth)).json()
     assert [e["status"] for e in board["items"]] == ["IN"] and board["items"][0]["isStale"] is False
-
-
-@pytest.fixture
-def knowledge():
-    state = knowledge_stub.KnowledgeStubState(bearer="knowledge-secret")
-    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=knowledge_stub.create_app(state)), base_url="http://kb")
-    return state, http
-
-
-async def test_knowledge_stub_requires_its_bearer(knowledge):
-    state, http = knowledge
-    response = await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"})
-    assert response.status_code == 401
-
-
-async def test_routing_fixtures_are_an_exact_match_table_not_a_classifier(knowledge):
-    state, http = knowledge
-    auth = {"Authorization": "Bearer knowledge-secret"}
-
-    async def route(utterance: str) -> dict:
-        response = await http.post(knowledge_contract.ANSWER_PATH, json={"question": utterance, "language": "en"},
-                                   headers=auth)
-        assert response.status_code == 200
-        return knowledge_contract.AnswerResponse.model_validate(response.json()).model_dump()
-
-    assert (await route("Dr Garima, I have chest pain"))["outcome"] == "EMERGENCY_TRANSFER"
-    assert (await route("severe stomach pain"))["outcome"] == "DESK_TRANSFER"
-    assert (await route("my child has stomach pain"))["outcome"] == "CLARIFY"
-    routed = await route("I need a children's doctor")
-    assert routed["outcome"] == "ROUTE_DEPARTMENT" and routed["department"]["name"] == "Paediatrics"
-    assert routed["answer"]["text"] == "I can check the Paediatrics department for you."
-    general = await route("pet mein dard hai")
-    assert general["answer"]["text"] == "I can check the General Medicine department for you."
-    assert (await route("is Dr Garima there tomorrow"))["outcome"] == "NO_ANSWER"
-    # a near miss of an emergency phrase is NOT matched: the stub does not interpret words
-    assert (await route("chest pain"))["outcome"] == "NO_ANSWER"
-
-
-async def test_answers_come_back_verbatim_in_the_requested_language(knowledge):
-    state, http = knowledge
-    auth = {"Authorization": "Bearer knowledge-secret"}
-    answered = (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", "language": "kn"},
-                                headers=auth)).json()
-    parsed = knowledge_contract.AnswerResponse.model_validate(answered)
-    assert parsed.outcome == "ANSWERED" and parsed.sourceId == "kb_parking" and parsed.answer.language == "kn"
-    assert parsed.answer.text.startswith("ಹೌದು")
-    desk = knowledge_contract.AnswerResponse.model_validate((await http.post(
-        knowledge_contract.ANSWER_PATH, json={"question": "cashless", "language": "en"}, headers=auth)).json())
-    assert desk.outcome == "DESK_TRANSFER" and desk.destination == "insurance"
-    unknown = knowledge_contract.AnswerResponse.model_validate((await http.post(
-        knowledge_contract.ANSWER_PATH, json={"question": "what is the meaning of life", "language": "en"},
-        headers=auth)).json())
-    assert unknown.outcome == "NO_ANSWER" and unknown.answer is None
-
-
-async def test_knowledge_scenarios(knowledge):
-    state, http = knowledge
-    auth = {"Authorization": "Bearer knowledge-secret"}
-    state.fail_next.append(503)
-    assert (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"},
-                            headers=auth)).status_code == 503
-    state.malformed_next.append(True)
-    body = (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"},
-                            headers=auth)).json()
-    assert "outcome" not in body
-    state.answers.append({"id": "test", "questions": ["test phrase"], "outcome": "DESK_TRANSFER",
-                          "answers": {"en": "Ask the desk"}})
-    scripted = (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "test phrase", "language": "en"},
-                                headers=auth)).json()
-    assert scripted["outcome"] == "DESK_TRANSFER"
 
 
 def test_fixture_data_is_contract_shaped():

@@ -48,18 +48,16 @@ def _stop_processes(children, timeout=10):
 
 @pytest.fixture
 def processes():
-    ops_port, kb_port, mcp_port = free_port(), free_port(), free_port()
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("OPS_", "KNOWLEDGE_", "MCP_", "TENANT_"))}
+    ops_port, mcp_port = free_port(), free_port()
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OPS_", "MCP_", "TENANT_"))}
     stubs = subprocess.Popen(
-        [sys.executable, "-m", "frontdesk_stubs", "--ops-port", str(ops_port), "--knowledge-port", str(kb_port),
-         "--ops-prefix", "/api/v1", "--client-id", "mcp-e2e", "--client-secret", "e2e-secret",
-         "--knowledge-bearer", "kb-e2e"],
+        [sys.executable, "-m", "frontdesk_stubs", "--ops-port", str(ops_port),
+         "--ops-prefix", "/api/v1", "--client-id", "mcp-e2e", "--client-secret", "e2e-secret"],
         env={**env, "PYTHONPATH": "dev:src"}, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     mcp_env = {**env, "ENV": "test", "PROVIDER_ID": "demo-hospital", "DOMAIN_PACK": "healthcare",
                "TENANT_SUPPORTED_LANGUAGES": "en,kn,hi", "TENANT_TIMEZONE": "Asia/Kolkata",
                "TENANT_COUNTRY_CALLING_CODE": "91", "OPS_BASE_URL": f"http://127.0.0.1:{ops_port}/api/v1",
                "OPS_CLIENT_ID": "mcp-e2e", "OPS_CLIENT_SECRET": "e2e-secret",
-               "KNOWLEDGE_BASE_URL": f"http://127.0.0.1:{kb_port}", "KNOWLEDGE_BEARER_TOKEN": "kb-e2e",
                "MCP_BEARER_TOKEN": "gateway-e2e",
                "HOST": "127.0.0.1", "PORT": str(mcp_port), "LOG_LEVEL": "WARNING"}
     mcp = subprocess.Popen([sys.executable, "-m", "frontdesk_mcp.cli", "serve"], env=mcp_env,

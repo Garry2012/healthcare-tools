@@ -324,7 +324,6 @@ ROLLOUT = {
 # Dev/test endpoints: the in-process stubs (tests) or the compose stub services.
 ENDPOINTS = {
     "ops_base_url": "http://ops-stub.test/api/v1", "ops_client_id": "mcp-test", "ops_client_secret": "ops-secret",
-    "knowledge_base_url": "http://knowledge-stub.test", "knowledge_bearer_token": "knowledge-secret",
     "mcp_bearer_token": "mcp-token",
 }
 

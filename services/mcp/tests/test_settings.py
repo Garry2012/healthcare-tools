@@ -1,4 +1,4 @@
-"""Configuration: two independent owner services, tenant identity, and production guards that
+"""Configuration: one operational owner service, tenant identity, and production guards that
 refuse development stubs, clear-text transport and missing credentials."""
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ import pytest
 
 from frontdesk_mcp.config import Settings
 
-PROD = {"env": "production", "ops_base_url": "https://ops.example/api/v1", "knowledge_base_url": "https://kb.example"}
+PROD = {"env": "production", "ops_base_url": "https://ops.example/api/v1"}
 
 
 def test_rollout_identity_is_required():
@@ -44,11 +44,9 @@ def test_token_url_respects_the_full_configured_base_path(make_settings):
     assert backend.ops_base_url == "https://ops.example/api/v1"  # trailing slash normalised
 
 
-def test_production_requires_https_for_both_services(make_settings):
+def test_production_requires_https_for_operational_service(make_settings):
     with pytest.raises(ValueError, match="OPS_BASE_URL"):
         make_settings(**{**PROD, "ops_base_url": "http://ops.internal/api/v1"})
-    with pytest.raises(ValueError, match="KNOWLEDGE_BASE_URL"):
-        make_settings(**{**PROD, "knowledge_base_url": "http://kb.internal"})
 
 
 @pytest.mark.parametrize("url", [
@@ -58,8 +56,6 @@ def test_production_requires_https_for_both_services(make_settings):
 def test_production_refuses_known_stub_and_mock_endpoints(make_settings, url):
     with pytest.raises(ValueError, match="stub|mock"):
         make_settings(**{**PROD, "ops_base_url": url})
-    with pytest.raises(ValueError, match="stub|mock"):
-        make_settings(**{**PROD, "knowledge_base_url": url})
 
 
 def test_production_requires_owner_credentials_and_gateway_bearer(make_settings):
@@ -162,7 +158,7 @@ def test_budget_override_flag_is_parsed_as_a_boolean_from_the_environment(monkey
     assert Settings(**ROLLOUT, **ENDPOINTS, env="test").read_deadline_seconds == 2.0
 
 
-async def test_production_without_knowledge_still_serves_scheduling(make_settings):
+async def test_production_serves_scheduling(make_settings):
     import httpx
 
     from frontdesk_mcp.availability import AvailabilityRequest
@@ -172,7 +168,7 @@ async def test_production_without_knowledge_still_serves_scheduling(make_setting
 
     from . import harness
 
-    settings = make_settings(**{**PROD, "knowledge_base_url": "", "knowledge_bearer_token": ""})
+    settings = make_settings(**PROD)
     h = harness.build(settings)
 
     services = Services.build(settings, clock=h.clock,
@@ -186,18 +182,13 @@ async def test_production_without_knowledge_still_serves_scheduling(make_setting
         await h.aclose()
 
 
-@pytest.mark.parametrize("url,token", [("https://kb.example", ""), ("", "token"),
-                                       ("https://kb.example", "  "), (" / ", "token"), ("/", "")])
-@pytest.mark.parametrize("environment", ["test", "production"])
-def test_knowledge_configuration_cannot_be_half_set(make_settings, url, token, environment):
-    with pytest.raises(ValueError):
-        make_settings(**{**PROD, "env": environment, "knowledge_base_url": url, "knowledge_bearer_token": token})
+@pytest.mark.parametrize("url,token", [("http://retired-stub.invalid", "unused"), ("", "leftover-token")])
+def test_production_ignores_retired_knowledge_environment(monkeypatch, url, token):
+    from .conftest import ROLLOUT
 
-
-def test_knowledge_configuration_trims_whitespace_before_pair_validation(make_settings):
-    absent = make_settings(**{**PROD, "knowledge_base_url": "  ", "knowledge_bearer_token": "  "})
-    assert absent.knowledge_base_url == "" and absent.knowledge_bearer_token.get_secret_value() == ""
-    present = make_settings(**{**PROD, "knowledge_base_url": " https://kb.example/ ",
-                              "knowledge_bearer_token": " token "})
-    assert present.knowledge_base_url == "https://kb.example"
-    assert present.knowledge_bearer_token.get_secret_value() == "token"
+    monkeypatch.setenv("KNOWLEDGE_BASE_URL", url)
+    monkeypatch.setenv("KNOWLEDGE_BEARER_TOKEN", token)
+    settings = Settings(**ROLLOUT, env="production", ops_base_url="https://ops.example/api/v1",
+                        ops_client_id="client", ops_client_secret="secret", mcp_bearer_token="gateway")
+    assert settings.ops_token_url == "https://ops.example/api/v1/auth/token"
+    assert not any(name.startswith("knowledge_") for name in settings.model_dump())
