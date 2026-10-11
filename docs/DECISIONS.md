@@ -331,3 +331,15 @@ unknown id.
 The owner appointment's `expectedTime` is validated as `ApproxTime` (R-2), so a malformed owner
 time maps to `UNCERTAIN` after a write and `COULD_NOT_CHECK` on LIST, never an unexpected error.
 The published schema is unchanged.
+
+## A16 — Order-independent availability descriptions (12 October 2026)
+
+A live ContextForge chat test treated a department result (`DOCTORS_MATCHED`) as if slots needed
+a later check, although a doctor-specific request returned open blocks at once. Garima approved
+clearer published wording, stated as facts and independent of conversation order: each request
+stands on its own arguments; `openSlots` come only from a doctor-specific result for that doctor and
+date; a department result reads no slots and establishes no open time; a doctor without slots for
+that date follows the slots-disabled rules. `doctorId`, `doctorName`, `date`, `choices` and
+`departmentChoices` descriptions carry precedence and match rules. Schema `2026-10-11.2` changes
+description text only. `VOICE-TEAM.md` became one authoritative handover: a practical guide first,
+then the complete reference, with shared fields and codes described once.

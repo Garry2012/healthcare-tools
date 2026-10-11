@@ -2,7 +2,7 @@
 
 Status: source migration implemented; three-tool removal implemented and approved in review on 11 October 2026 (implementation only; not merged to `main` or deployed). Slots rules remain SL1. Slots documentation approval and deployment readiness are separate (gates below). Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
 
-Current availability and booking rules are recorded in [DECISIONS.md SL1](../../DECISIONS.md#sl1--slot-aware-availability-and-booking-9-october-2026) and the [slots plan](implementation/SLOTS-PLAN.md). SL1 supersedes the earlier on-call callback rules in A12/A13; source schema is `2026-10-11.1`; this update is not a deployment. Earlier migration history below is not release evidence.
+Current availability and booking rules are recorded in [DECISIONS.md SL1](../../DECISIONS.md#sl1--slot-aware-availability-and-booking-9-october-2026) and the [slots plan](implementation/SLOTS-PLAN.md). SL1 supersedes the earlier on-call callback rules in A12/A13; source schema is `2026-10-11.2` (`2026-10-11.1` is deployed on the canary). Earlier migration history below is not release evidence.
 
 Updated 30 September 2026 from the user's decisions, the [published Manoj contract](https://healthcare-contract-docs.icytree-6543aaa9.centralindia.azurecontainerapps.io/openapi.yaml), and the [Opus review](OPUS-REVIEW.md). This is the migration plan, including the actionable review recommendations and the user's callback-only UNKNOWN policy. It supersedes earlier ownership proposals, slot requirements and the direct platform-to-REST summary path. Retirement, rollback and acceptance requirements are included here; the historical investigation is source evidence, not an additional implementation checklist. This is an implementation plan, not a claim of verified production readiness.
 
@@ -33,16 +33,16 @@ Manoj's public interface is the adapter's only owner-service dependency: keep co
 ## Source status and pre-deployment gates (11 October 2026)
 
 Phases 1a–4b were built and reviewed; phase 4b is accepted. Phase 5 updates these documents and
-is complete only when their review is approved. The three-tool source schema is `2026-10-11.1`; the removal implementation was approved in review on 11 October 2026.
-**Nothing in the slots series has been merged or deployed. Documentation completion is not deployment readiness.**
+is complete only when their review is approved. The three-tool source schema is `2026-10-11.2`: description text only, per [VOICE-TEAM-DOC-PLAN.md](implementation/VOICE-TEAM-DOC-PLAN.md). The removal implementation was approved in review on 11 October 2026.
+**The slots series and the three-tool removal were merged to `main` (pull request #17, `28f11a8`) and schema `2026-10-11.1` was deployed to the canary on 11 October 2026 (revision `--0000004`, image `28f11a8`). Documentation completion is not deployment readiness.**
 
 These release gates are not closed by this source change:
 
-1. Garima approves the pull request to `main` and separately authorises deployment.
+1. Garima approves the pull request to `main` and separately authorises deployment. **Done for `2026-10-11.1`, 11 October 2026** (pull request #17 squash-merged; canary deployment authorised). Each later release needs the same approvals.
 2. Authorised live verification on Manoj's HTTPS synthetic tenant: the external write journey recording `slots_path`, open blocks on both journey dates, the negative UNKNOWN-today test and read gates. **Local evidence, 10 October 2026:** with Garima's authorisation, a run against tenant `jayashree` passed the read gates, the slot-aware write journey (create refused without a time, then created with a time, listed, rescheduled, cancelled, summary saved and replay recognised as already saved) and the negative UNKNOWN-today test. It left one cancelled synthetic appointment and one summary. The run used `42dae2c`, before the knowledge removal, which did not change these scheduling paths. **The gate stays open** until Manoj confirms the tenant as a designated synthetic tenant.
 3. Authorised live bench against the 0.30 s tool budget, including the extra on-call by-name read group.
-4. Deployed-adapter credentials, followed by deployed-transport gates and release smoke against the canary.
-5. Separately approved ContextForge refresh of our front-desk registration `frontdesk-healthcare-canary` and virtual server `frontdesk-healthcare` to schema `2026-10-11.1`, with our `search_knowledge` removed, then the LiveKit cached tool view. Stratum's registration and tools are not touched.
+4. Deployed-adapter credentials, followed by deployed-transport gates and release smoke against the canary. **11 October 2026:** the release smoke passed on revision `--0000004`; the deployed-transport gates are still open.
+5. Separately approved ContextForge refresh of our front-desk registration `frontdesk-healthcare-canary` and virtual server `frontdesk-healthcare` to schema `2026-10-11.2`, with our `search_knowledge` removed, then the LiveKit cached tool view. Stratum's registration and tools are not touched.
 6. Voice-team readiness for SL1's fields/outcomes and the three-tool front-desk server: the agent no longer calls our front-desk `search_knowledge`.
 7. **LOG-1: implemented and reviewed; open only for production-log verification.** The revision 6 three-tool update was approved in review on 11 October 2026. Library messages and adapter fields pass through one JSON logging boundary; unexpected tool errors are masked. Local privacy, regression and latency evidence is in [LOG-1-HAND-BACK.md](implementation/LOG-1-HAND-BACK.md). The gate stays open until production logs are verified after an approved deployment.
 8. **Before deployment:** Rajeev's team confirms and tests symptom and emergency journeys, including transfer behaviour, through Stratum via ContextForge. **Approved by Garima on 11 October 2026:** the voice agent is in testing mode, and Garima confirmed that the Stratum knowledge tool works. Separate symptom, emergency and transfer results from Rajeev's team are not recorded here.
@@ -123,7 +123,7 @@ plan for exact precedence; earlier board-overlay and department-write proposals 
 | `manage_booking` | Manoj create/list/cancel/reschedule operations | Slot-aware CREATE/RESCHEDULE validate the chosen time. Identity, truthful lifecycle status, uncertainty and owner write contracts remain unchanged. |
 | `record_call_summary` | `createCallSummary`, `POST /call-summaries` | LLM-callable through the same gateway bearer; no summary listing or staff tools. |
 
-There are three MCP tools. Schema `2026-10-11.1` is published in the repository; gateway/voice discovery
+There are three MCP tools. Schema `2026-10-11.2` is published in the repository; gateway/voice discovery
 refresh remains a release gate, not proof of deployment. Each appointment output includes nullable
 slotTime and default-false slotMoved; LIST and CANCEL keep slotMoved false.
 
@@ -262,7 +262,7 @@ Keep any temporary legacy test profile explicitly named during migration. The ne
 
 Maintain `prompt.py` and the healthcare pack around date-aware facts, clarification, CALLBACK_NOTED and truthful appointment states. Remove slotId/newSlotId, capacity/confirmation-code promises and obsolete timingCertainty/outcome branches. CONFIRMED_BY_DESK can be described as desk acknowledgement; it still does not mean a guaranteed time under Manoj's contract. Include explicit instructions for missing identity, routing failures and uncertain mutations.
 
-Keep the three-tool front-desk discovery set and refresh gateway/voice schemas to `2026-10-11.1` after an approved release; handle SL1's new fields/outcomes. The implemented registration script checks names/input schemas only; output schemas require manual comparison through the voice virtual server against `make schema` after separately approved deployment. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
+Keep the three-tool front-desk discovery set and refresh gateway/voice schemas to `2026-10-11.2` after an approved release; handle SL1's new fields/outcomes. The implemented registration script checks names/input schemas only; output schemas require manual comparison through the voice virtual server against `make schema` after separately approved deployment. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
 
 **Active repository retirement inventory**
 

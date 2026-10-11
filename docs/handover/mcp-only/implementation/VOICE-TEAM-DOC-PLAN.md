@@ -40,7 +40,7 @@ I derived these needs from what an integrator has to decide at each step of a ca
 1. **One authoritative file, in two parts** (Garima's decision, revision 3). There is a single `VOICE-TEAM.md`, so nothing can be missed by reading only part of the handover.
    - **Part 1, "Using the tools":** everything needed to integrate with and safely use the tools.
    - **Part 2, "Reference":** the complete field and code tables, in the same file.
-   - **Length:** no fixed limit (Garima, revision 5). Completeness and clarity come first, with no unnecessary duplication. Result: 657 lines (Part 1 351), down from 1,596.
+   - **Length:** no fixed limit (Garima, revision 5). Completeness and clarity come first, with no unnecessary duplication. Result: 652 lines (Part 1 about 345), down from 1,596.
    - **Placement rule:** a fact needed in order to *act* on a result goes in Part 1; a fact needed only to *look something up* goes in Part 2. No fact appears in both.
    - **Navigation:** Part 1 opens with a contents list covering both parts. Where Part 1 relies on a Part 2 table, it names that table.
 2. **Removed material:**
@@ -318,12 +318,13 @@ Nothing else needs a code or schema decision. The document content, structure, e
 - the rewritten `docs/handover/VOICE-TEAM.md`, written for schema `2026-10-11.2`;
 - this plan.
 
+**Commit 1b (Opus, documentation):** the current documents that named `2026-10-11.1` as the release to publish (`AZURE.md`, `CONTEXTFORGE.md`, `PLAN.md`, `mcp-only/README.md`, `TARGET-STATE.md`) now name `2026-10-11.2` and record the 11 October merge and deployment; `docs/DECISIONS.md` A16.
+
 **Commit 2 (Astra, code):**
 - `packs/healthcare.json`: the tool description and the three parameters (§8 A);
 - `outcomes.py`: the `choices` and `departmentChoices` descriptions;
 - `prompt.SCHEMA_VERSION` set to `2026-10-11.2`, and the regenerated snapshot;
-- `test_server.py`: the interface tests (§8 B), plus any missing published-fact tests (§8 A);
-- `docs/DECISIONS.md`: one line.
+- `test_server.py`: the interface tests (§8 B), plus any missing published-fact tests (§8 A).
 
 Astra **doesn't** edit `VOICE-TEAM.md`. If a test shows the document disagrees with the code or schema, Astra stops and reports it.
 

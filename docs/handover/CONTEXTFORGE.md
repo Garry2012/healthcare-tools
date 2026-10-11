@@ -108,7 +108,7 @@ prefixes. Do not compare the combined tool count to three.
   exactly the three front-desk tools; a combined view may additionally show Stratum's tools.
   Neither view may retain our front-desk `search_knowledge`. Stratum remains untouched.
 - Confirm another team or unauthorized token cannot invoke our tools. Inspect complete input/output
-  schemas and tool descriptions against `make schema` for source schema `2026-10-11.1`.
+  schemas and tool descriptions against `make schema` for source schema `2026-10-11.2`.
 - Prove headers reach the adapter and stay isolated between simultaneous calls. Missing identity
   must be refused; the valid-identity LIST must actually reach Manoj, not merely avoid refusal.
 - Scheduling requires no transcript header. Verify operation IDs are request-scoped through the local
@@ -128,7 +128,7 @@ References: [IBM header passthrough](https://ibm.github.io/mcp-context-forge/1.0
 The request fields and version above were checked against this deployed instance's authenticated
 OpenAPI, not inferred from a different release's examples.
 
-After approved deployment, refresh discovered descriptions/input/output schemas for source schema `2026-10-11.1`.
+After approved deployment, refresh discovered descriptions/input/output schemas for source schema `2026-10-11.2`.
 The forwarding allowlist is exactly the five headers above; remove obsolete transcript and duration entries.
 Refresh both input and output schemas and verify the voice client discovers the new summary result.
 The published tool contract is [VOICE-TEAM.md](VOICE-TEAM.md); server metadata contains neutral tool facts. Voice prompts and behaviour belong to the consuming team.
@@ -140,7 +140,10 @@ Rollback needs matching MCP image, gateway discovery and voice schema; the previ
 separate summary authentication. Do not reactivate it with only the new single-token configuration.
 The 4 October deployment refreshed the existing registration; it did not rotate tokens or delete Key Vault secrets.
 
-## Source release awaiting approval — 2026-10-11.1
+## Source release awaiting approval — 2026-10-11.2
+
+Schema `2026-10-11.1` was deployed to the canary on 11 October 2026 (revision `--0000004`, image `28f11a8`); our ContextForge entries have not been refreshed since.
+`2026-10-11.2` changes description text only. Refresh once, after `2026-10-11.2` is deployed.
 
 The helper checks our three names and complete input schemas only; manually compare every
 `outputSchema`, nested definition and required field through the voice-facing virtual-server URL

@@ -99,10 +99,10 @@ and auth configuration for rollback; an older image expects the removed second c
 
 ## Three-tool release and later cleanup
 
-The source schema is `2026-10-11.1`; this document does not claim it deployed. Follow
-[PLAN.md](mcp-only/PLAN.md): gate 8 requires Rajeev's symptom/emergency and transfer validation
-through Stratum before deployment. After deployment refresh only our front-desk registration,
-virtual server and LiveKit cache. Gate 9 requires voice-client discovery before live traffic.
+Schema `2026-10-11.1` was deployed to the canary on 11 October 2026 (revision `--0000004`, image `28f11a8`).
+The source schema is now `2026-10-11.2` (description text only), not yet deployed. Follow
+[PLAN.md](mcp-only/PLAN.md); Garima approved gate 8 on 11 October 2026. After deployment refresh only our
+front-desk registration, virtual server and LiveKit cache. Gate 9 requires voice-client discovery before live traffic.
 
 The deployment script no longer reads, creates, attaches or deletes a knowledge credential.
 Leftover app secret references and Key Vault `knowledge-token` require separately approved removal

@@ -8,7 +8,7 @@ The three-tool removal was approved in review on 11 October 2026; source complet
 ## Current integration contract
 
 [VOICE-TEAM.md](../VOICE-TEAM.md) defines the three tools: `get_doctor_availability`,
-`manage_booking` and `record_call_summary`. Source schema is `2026-10-11.1`.
+`manage_booking` and `record_call_summary`. Source schema is `2026-10-11.2`.
 Voice prompts, behaviour, guardrails and SDK wiring belong to the voice team.
 
 Current availability and booking policy is DECISIONS.md SL1. Today uses the live board; selected-doctor
