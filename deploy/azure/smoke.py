@@ -24,8 +24,6 @@ AVAILABILITY_OK = {"AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", 
                    "DOCTORS_MATCHED"}
 
 
-
-
 async def check_http(http: httpx.AsyncClient, root: str) -> None:
     for path, expected in (("health", "ok"), ("ready", "ready")):
         response = await http.get(f"{root}/{path}")
@@ -47,7 +45,7 @@ async def check_http(http: httpx.AsyncClient, root: str) -> None:
         raise RuntimeError("MCP accepted an unauthenticated request")
 
 
-async def check_tools(client: Client, language: str, department: str) -> None:
+async def check_tools(client: Client, department: str) -> None:
     names = {tool.name for tool in await client.list_tools()}
     if names != TOOL_NAMES:
         raise RuntimeError("unexpected MCP tool set")
@@ -69,7 +67,7 @@ async def check_tools(client: Client, language: str, department: str) -> None:
             raise RuntimeError(f"{name} failed its read-only smoke check")
 
 
-async def smoke(url: str, token: str, language: str, department: str) -> None:
+async def smoke(url: str, token: str, department: str) -> None:
     root = url.removesuffix("/").removesuffix("/mcp")
     async with asyncio.timeout(120):
         async with httpx.AsyncClient(timeout=10) as http:
@@ -77,18 +75,17 @@ async def smoke(url: str, token: str, language: str, department: str) -> None:
         call_id = f"deploy-smoke-{uuid.uuid4().hex}"
         headers = {"Authorization": f"Bearer {token}", "X-Call-Id": call_id}
         async with Client(StreamableHttpTransport(url, headers=headers), timeout=20) as conversational:
-            await check_tools(conversational, language, department)
+            await check_tools(conversational, department)
 
 
 def main() -> int:
     try:
         url = os.environ["MCP_URL"]
         token = os.environ["MCP_BEARER_TOKEN"]
-        language = os.environ["SMOKE_LANGUAGE"]
         department = os.environ.get("SMOKE_DEPARTMENT", "General Medicine")
-        if not url.startswith("https://") or not token or not language:
-            raise ValueError("HTTPS URL, token and rollout language are required")
-        asyncio.run(smoke(url, token, language, department))
+        if not url.startswith("https://") or not token:
+            raise ValueError("HTTPS URL and token are required")
+        asyncio.run(smoke(url, token, department))
     except (KeyError, ValueError, RuntimeError, TimeoutError, httpx.HTTPError, McpError, FastMCPError, ClientError,
             ExceptionGroup):  # expected CLI/transport failures: never print raw dependency errors
         print("Deployment smoke test failed; inspect MCP logs. No success declared.", file=sys.stderr)

@@ -15,5 +15,5 @@ COPY --from=build /app/.venv /app/.venv
 COPY dev/frontdesk_stubs /app/dev/frontdesk_stubs
 ENV PATH=/app/.venv/bin:$PATH PYTHONPATH=/app/dev PYTHONUNBUFFERED=1
 USER 10001:10001
-EXPOSE 8200 8300
+EXPOSE 8200
 CMD ["python", "-m", "frontdesk_stubs", "--host", "0.0.0.0"]

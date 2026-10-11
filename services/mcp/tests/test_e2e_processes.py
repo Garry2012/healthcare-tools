@@ -72,7 +72,7 @@ def processes():
 
 async def test_release_smoke_passes_against_real_processes(processes):
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "en",
+    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e",
                          "General Medicine")
 
 
@@ -158,7 +158,7 @@ async def test_slot_journey_and_release_smoke_through_real_processes(processes):
         assert moved["appointment"]["status"] == "CHANGED"
         assert moved["appointment"]["slotTime"] == "15:00"
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "en", "General Medicine")
+    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "General Medicine")
 
 
 def test_process_cleanup_reaps_stuck_and_cooperative_children():

@@ -35,7 +35,7 @@ def required(name: str) -> str:
 async def test_release_smoke_against_the_deployed_adapter():
     url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](url, bearer, "en", os.environ.get("MCP_E2E_DEPARTMENT", "General Medicine"))
+    await smoke["smoke"](url, bearer, os.environ.get("MCP_E2E_DEPARTMENT", "General Medicine"))
 
 
 async def test_trusted_headers_are_forwarded_by_the_deployed_transport():

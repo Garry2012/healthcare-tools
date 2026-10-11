@@ -61,7 +61,7 @@ async def test_smoke_requires_all_three_tools(missing):
             remote.tool(name=name)(lambda: {"outcome": "NO_ANSWER"})
     async with Client(remote) as client:
         with pytest.raises(RuntimeError, match="tool set"):
-            await SMOKE["check_tools"](client, "en", "General Medicine")
+            await SMOKE["check_tools"](client, "General Medicine")
 
 
 @pytest.mark.parametrize("hours_body", [
@@ -82,7 +82,7 @@ async def test_smoke_probes_working_hours_and_accepts_a_closed_session(hours_bod
     for name in ("manage_booking", "record_call_summary"):
         remote.tool(name=name)(lambda: pytest.fail("smoke wrote data"))
     async with Client(remote) as client:
-        await SMOKE["check_tools"](client, "en", "General Medicine")
+        await SMOKE["check_tools"](client, "General Medicine")
     assert purposes == ["AVAILABILITY", "WORKING_HOURS"]
 
 
@@ -102,10 +102,10 @@ async def test_smoke_accepts_slot_matches_but_not_unknown_outcomes(outcome):
         remote.tool(name=name)(lambda: pytest.fail("smoke wrote data"))
     async with Client(remote) as client:
         if outcome == "DOCTORS_MATCHED":
-            await SMOKE["check_tools"](client, "en", "General Medicine")
+            await SMOKE["check_tools"](client, "General Medicine")
         else:
             with pytest.raises(RuntimeError, match="read-only smoke"):
-                await SMOKE["check_tools"](client, "en", "General Medicine")
+                await SMOKE["check_tools"](client, "General Medicine")
 
 
 @pytest.mark.parametrize("body", [
@@ -117,13 +117,12 @@ async def test_transport_success_does_not_hide_failures(body):
     client.list_tools.return_value = _tools(TOOL_NAMES)
     client.call_tool.return_value = _result(body)
     with pytest.raises(RuntimeError, match="read-only smoke"):
-        await SMOKE["check_tools"](client, "en", "General Medicine")
+        await SMOKE["check_tools"](client, "General Medicine")
 
 
 def test_main_requires_https_and_never_leaks(monkeypatch, capsys):
     monkeypatch.setenv("MCP_URL", "http://adapter.example/mcp/")
     monkeypatch.setenv("MCP_BEARER_TOKEN", "secret-must-not-be-printed")
-    monkeypatch.setenv("SMOKE_LANGUAGE", "en")
     assert SMOKE["main"]() == 1
     monkeypatch.setenv("MCP_URL", "https://adapter.example/mcp/")
 
@@ -401,17 +400,16 @@ async def test_smoke_handoff_requires_complete_oncall_result(probe, case):
         remote.tool(name=name)(lambda: pytest.fail("smoke must not write"))
     async with Client(remote) as client:
         if case == "valid":
-            await SMOKE["check_tools"](client, "en", "General Medicine")
+            await SMOKE["check_tools"](client, "General Medicine")
         else:
             with pytest.raises(RuntimeError, match="read-only smoke"):
-                await SMOKE["check_tools"](client, "en", "General Medicine")
+                await SMOKE["check_tools"](client, "General Medicine")
 
 
 @pytest.mark.parametrize("failure", ["timeout", "auth", "server"])
 def test_smoke_cli_refuses_transport_failures(monkeypatch, capsys, failure):
     monkeypatch.setenv("MCP_URL", "https://adapter.example/mcp/")
     monkeypatch.setenv("MCP_BEARER_TOKEN", "secret-not-printed")
-    monkeypatch.setenv("SMOKE_LANGUAGE", "en")
 
     async def transport(_self, request):
         if failure == "timeout":
@@ -436,7 +434,7 @@ async def test_smoke_rejects_removed_fourth_tool():
     client.list_tools.return_value = _tools([
         "get_doctor_availability", "manage_booking", "record_call_summary", "search_knowledge"])
     with pytest.raises(RuntimeError, match="tool set"):
-        await SMOKE["check_tools"](client, "en", "General Medicine")
+        await SMOKE["check_tools"](client, "General Medicine")
     client.call_tool.assert_not_called()
 
 
@@ -451,3 +449,19 @@ def test_registration_ignores_other_registration_but_rejects_removed_frontdesk_t
     drift = REGISTER["drift"](served, [*ours, unrelated, removed], "frontdesk-demo-hospital")
     assert len(drift) == 1
     assert "adapter no longer serves" in drift[0]
+
+
+def test_smoke_main_needs_no_language(monkeypatch, capsys):
+    monkeypatch.setenv("MCP_URL", "https://adapter.example/mcp/")
+    monkeypatch.setenv("MCP_BEARER_TOKEN", "secret-not-printed")
+    monkeypatch.delenv("SMOKE_LANGUAGE", raising=False)
+    received = []
+
+    async def fake_smoke(*args):
+        received.append(args)
+
+    monkeypatch.setitem(SMOKE["main"].__globals__, "smoke", fake_smoke)
+    assert SMOKE["main"]() == 0
+    assert received == [("https://adapter.example/mcp/", "secret-not-printed", "General Medicine")]
+    captured = capsys.readouterr()
+    assert "secret-not-printed" not in captured.out + captured.err

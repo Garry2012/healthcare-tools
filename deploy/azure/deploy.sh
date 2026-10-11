@@ -181,7 +181,6 @@ if exists az containerapp show -g "$RG" -n "$APP"; then
   # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
   run az containerapp secret set -g "$RG" -n "$APP" --secrets $SECRETS -o none
   run az containerapp update -g "$RG" -n "$APP" --image "$MCP_IMAGE" --replace-env-vars "${ENV_VARS[@]}" -o none
-
 else
   # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
   run az containerapp create -g "$RG" -n "$APP" --environment "$ENV_NAME" --image "$MCP_IMAGE" \
@@ -224,12 +223,11 @@ wait_ready() {
 step "verify: latest revision ready, dependencies, authentication, three tools"
 wait_ready
 MCP_HOST="$(out az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv)"
-LANG1="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^TENANT_SUPPORTED_LANGUAGES=//p' | cut -d, -f1)"
 if [[ -n "$DRY" ]]; then
   show uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 else
   MCP_URL="https://$MCP_HOST/mcp/" MCP_BEARER_TOKEN="$MCP_TOKEN" \
-    SMOKE_LANGUAGE="$LANG1" uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
+    uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 fi
 
 step "done: $P"

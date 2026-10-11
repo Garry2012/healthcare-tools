@@ -246,6 +246,7 @@ async def test_board_can_be_scripted_for_a_scenario(ops):
 
 def test_fixture_data_is_contract_shaped():
     data = json.loads((Path(ops_stub.__file__).parent / "data/demo_hospital.json").read_text(encoding="utf-8"))
+    assert "answers" not in data
     for department in data["departments"]:
         conforms(department, "Department")
     for doctor in data["doctors"]:

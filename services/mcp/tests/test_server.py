@@ -1113,7 +1113,7 @@ async def test_smoke_checks_scheduling_without_writes(make_settings, capsys):
     app = create_app(settings, ops_transport=h.ops.http._transport, clock=h.clock)
     try:
         async with serving(app) as base:
-            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "en", "General Medicine")
+            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "General Medicine")
         assert h.ops_state.summaries == {} and h.ops_state.appointments == {}
         assert not [r for r in h.requests if r.method == "POST" and r.url.path != "/api/v1/auth/token"]
     finally:
