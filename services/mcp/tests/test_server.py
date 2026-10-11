@@ -1,4 +1,4 @@
-"""The assembled server over real streamable HTTP (uvicorn): exactly four tools under gateway authentication,
+"""The assembled server over real streamable HTTP (uvicorn): exactly three tools under gateway authentication,
 trusted identity from headers only, concurrent-call isolation,
 local readiness distinct from dependency status, and a pinned tool-schema snapshot."""
 
@@ -27,7 +27,7 @@ FORBIDDEN = {"x-call-id", "xcallid", "callid", "x-caller-number", "xcallernumber
              "idempotency-key", "idempotencykey", "operationid", "x-operation-id",
              "turncontext", "x-turn-context", "utterance", "tenant", "tenantid", "principal",
              "startedat", "durationseconds"}
-TOOLS = ["get_doctor_availability", "manage_booking", "record_call_summary", "search_knowledge"]
+TOOLS = ["get_doctor_availability", "manage_booking", "record_call_summary"]
 
 
 class _LifespanApp:
@@ -267,8 +267,7 @@ def test_serving_resets_previous_server_sse_drain_flag(tmp_path):
         async def test_fresh_server_completes_session_after_previous_drain():
             h = harness.build(Settings(**conftest.ROLLOUT, **conftest.ENDPOINTS, env="test"))
             try:
-                app = create_app(h.settings, ops_transport=h.ops.http._transport,
-                                 knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+                app = create_app(h.settings, ops_transport=h.ops.http._transport, clock=h.clock)
                 module = sys.modules["sse_starlette.sse"]
                 module.AppStatus.should_exit = True
                 async with conftest.serving(app) as base:
@@ -789,7 +788,7 @@ def _names(schema) -> set[str]:
 @pytest.fixture
 async def served(make_settings):
     h = harness.build(make_settings())
-    app = create_app(h.settings, ops_transport=h.ops.http._transport, knowledge_transport=h.knowledge.http._transport,
+    app = create_app(h.settings, ops_transport=h.ops.http._transport,
                      clock=h.clock)
     async with serving(app) as base:
         yield base, h
@@ -801,7 +800,7 @@ def client(base: str, token: str = "mcp-token", **kwargs) -> Client:
                                                                     **harness.headers(**kwargs)}))
 
 
-async def test_gateway_gets_all_four_tools_without_trusted_fields(served):
+async def test_gateway_gets_all_three_tools_without_trusted_fields(served):
     base, _ = served
     async with client(base) as c:
         tools = await c.list_tools()
@@ -905,8 +904,9 @@ async def test_the_whole_journey_over_http(served):
         appointment_id = noted["appointment"]["appointmentId"]
         listed = (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content
         assert [a["appointmentId"] for a in listed["appointments"]] == [appointment_id]
-        answer = (await c.call_tool("search_knowledge", {"question": "parking", "language": "en"})).structured_content
-        assert answer["outcome"] == "ANSWERED"
+        hours = (await c.call_tool("get_doctor_availability", {
+            "doctorId": "doc_garima", "purpose": "WORKING_HOURS"})).structured_content
+        assert hours["outcome"] == "WORKING_HOURS"
     async with client(base, operation_id="op-2") as c:
         unknown_move = (await c.call_tool("manage_booking", {"action": "RESCHEDULE", "appointmentId": appointment_id,
                                                              "newVisitDate": "2026-10-03", "callerConfirmed": True})
@@ -993,7 +993,7 @@ async def test_dependency_status_is_separate_from_local_readiness(served, monkey
     base, h = served
     async with httpx.AsyncClient() as http:
         healthy = (await http.get(f"{base}/dependencies")).json()
-        assert healthy["operational"]["status"] == "ok" and healthy["knowledge"]["status"] == "configured"
+        assert healthy == {"operational": {"status": "ok", "check": "listDepartments"}}
         h.ops_state.fail_next.append(("/departments", 503, {}))
         h.ops_state.fail_next.append(("/departments", 503, {}))
         degraded = await http.get(f"{base}/dependencies", params={"refresh": "1"})
@@ -1028,7 +1028,7 @@ async def test_log_lines_carry_the_call_id_not_the_caller(served):
     assert "garima" not in json.dumps(lines).lower()
 
 
-def test_pack_describes_exactly_the_four_tools():
+def test_pack_describes_exactly_the_three_tools():
     assert set(packs.load("healthcare").tools) == set(TOOLS)
 
 
@@ -1104,17 +1104,16 @@ def test_an_external_suite_exists_for_owner_designated_services():
     assert collected and int(collected.group(1)) >= 3, out.stdout[-300:]
 
 
-async def test_smoke_distinguishes_unconfigured_knowledge_from_scheduling_failure(make_settings, capsys):
+async def test_smoke_checks_scheduling_without_writes(make_settings, capsys):
     import runpy
 
     smoke = runpy.run_path(str(Path(__file__).resolve().parents[3] / "deploy/azure/smoke.py"))
-    settings = make_settings(knowledge_base_url="", knowledge_bearer_token="")
+    settings = make_settings()
     h = harness.build(settings)
     app = create_app(settings, ops_transport=h.ops.http._transport, clock=h.clock)
     try:
         async with serving(app) as base:
-            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "en", "General Medicine", "absent")
-        assert "knowledge: NOT_CONFIGURED" in capsys.readouterr().out
+            await smoke["smoke"](f"{base}/mcp/", "mcp-token", "en", "General Medicine")
         assert h.ops_state.summaries == {} and h.ops_state.appointments == {}
         assert not [r for r in h.requests if r.method == "POST" and r.url.path != "/api/v1/auth/token"]
     finally:
@@ -1128,15 +1127,6 @@ def test_cli_exposes_only_server_and_schema_commands():
     assert result.returncode == 0
     assert "{serve,schema}" in result.stdout
 
-
-
-def test_routing_object_cannot_claim_a_clarification_decision():
-    from pydantic import ValidationError
-
-    from frontdesk_mcp.outcomes import Routing
-
-    with pytest.raises(ValidationError):
-        Routing(decision="CLARIFY")
 
 
 def _interface_rows():
@@ -1190,7 +1180,7 @@ def test_interface_describes_every_outcome_and_next_step():
 
     _, rows = _interface_rows()
     models = {"get_doctor_availability": outcomes.AvailabilityResult, "manage_booking": outcomes.BookingResult,
-              "search_knowledge": outcomes.KnowledgeResult, "record_call_summary": outcomes.SummaryResult}
+              "record_call_summary": outcomes.SummaryResult}
     expected = set()
     for name, model in models.items():
         for field in ("outcome", "nextStep") if name != "record_call_summary" else ("outcome",):
@@ -1407,7 +1397,7 @@ def test_log1_secret_shaped_values_are_not_safe_codes(field, value):
     ("/appointments/SECRETTOKENXYZ/cancel", "/appointments/{id}/cancel"),
     ("/availability/SECRETTOKENXYZ/slots", "/availability/{id}/slots"),
     ("/appointments/SECRETTOKENXYZ/reschedule", "/appointments/{id}/reschedule"),
-    ("/zelda/fakename", None), ("/appointments?mobile=9876501234", None),
+    ("/v1/answer", None), ("/zelda/fakename", None), ("/appointments?mobile=9876501234", None),
 ])
 def test_log1_owner_paths_discard_ids_and_refuse_unknown_routes(path, want):
     line = JsonFormatter().format(_log1_record(fields={"path": path}))
@@ -1420,7 +1410,7 @@ def test_log1_owner_paths_discard_ids_and_refuse_unknown_routes(path, want):
     assert all(value not in line for value in LOG1_PRIVATE)
 
 
-@pytest.mark.parametrize("field", ["attempt", "callId", "detail", "env", "error", "field", "header",
+@pytest.mark.parametrize("field", ["attempt", "callId", "detail", "env", "error", "header",
     "httpStatus", "model", "nextStep", "outcome", "pack", "path", "reason", "retryAfterSeconds",
     "schemaVersion", "status", "summaryId", "tool"])
 @pytest.mark.parametrize("value", [{"token": "SECRETTOKENXYZ"}, ["Zelda Fakename"]])
@@ -1483,8 +1473,7 @@ from frontdesk_mcp.config import Settings
 from frontdesk_mcp.server import create_app
 from tests import conftest, harness
 h = harness.build(Settings(**conftest.ROLLOUT, **conftest.ENDPOINTS, env="test", log_level="INFO"))
-app = create_app(h.settings, ops_transport=h.ops.http._transport,
-                 knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+app = create_app(h.settings, ops_transport=h.ops.http._transport, clock=h.clock)
 private = 'Zelda Fakename 9876501234 +919876501234 SECRETREASONPAIN SECRETTOKENXYZ BearerSecretAlphaToken'
 logging.warning(private)
 try:
@@ -1545,8 +1534,7 @@ private = ('Zelda Fakename', '9876501234', '+919876501234', 'SECRETREASONPAIN',
            'SECRETTOKENXYZ', 'BearerSecretAlphaToken')
 async def main():
     h = harness.build(Settings(**conftest.ROLLOUT, **conftest.ENDPOINTS, env="test", log_level="INFO"))
-    app = create_app(h.settings, ops_transport=h.ops.http._transport,
-                     knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+    app = create_app(h.settings, ops_transport=h.ops.http._transport, clock=h.clock)
     headers = {'Authorization': 'Bearer mcp-token', **harness.headers(
         call_id='log1-private', caller=private[2], operation_id='log1-create',
         started_at='2026-10-01T09:58:00+05:30')}
@@ -1611,8 +1599,9 @@ async def test_log1_all_observed_owner_routes_are_templated(served):
         assert result.structured_content["outcome"] == "NOTED"
         appointment_id = result.structured_content["appointment"]["appointmentId"]
         assert (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content["outcome"] == "FOUND"
-        assert (await c.call_tool("search_knowledge", {"question": "parking", "language": "en"})
-                ).structured_content["outcome"] == "ANSWERED"
+        assert (await c.call_tool("get_doctor_availability", {
+            "doctorId": "doc_garima", "purpose": "WORKING_HOURS"})
+                ).structured_content["outcome"] == "WORKING_HOURS"
         assert (await c.call_tool("record_call_summary", {"intent": "BOOKING", "outcome": "APPOINTMENT_NOTED",
                      "summaryText": "Synthetic test."})).structured_content["outcome"] == "SAVED"
     for action, op, more in [("RESCHEDULE", "log1-move", {"newVisitDate": "2099-01-12"}),
@@ -1630,17 +1619,16 @@ async def test_log1_all_observed_owner_routes_are_templated(served):
         templates.add(body["path"])
     assert templates == {"/auth/token", "/departments", "/doctors", "/doctors/{id}", "/availability",
                          "/availability/{id}/slots", "/capabilities", "/appointments",
-                         "/appointments/{id}/cancel", "/appointments/{id}/reschedule", "/call-summaries", "/v1/answer"}
+                         "/appointments/{id}/cancel", "/appointments/{id}/reschedule", "/call-summaries"}
 
 
 async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings):
-    from frontdesk_mcp import availability, context, contract, knowledge_contract, summary
+    from frontdesk_mcp import availability, context, contract, summary
     from frontdesk_mcp.clock import Deadline
     from frontdesk_mcp.ops_client import Malformed, Unavailable, UncertainWrite
 
     h = harness.build(make_settings(log_level="INFO"))
-    app = create_app(h.settings, ops_transport=h.ops.http._transport,
-                     knowledge_transport=h.knowledge.http._transport, clock=h.clock)
+    app = create_app(h.settings, ops_transport=h.ops.http._transport, clock=h.clock)
     records = []
 
     class Capture(logging.Handler):
@@ -1659,7 +1647,6 @@ async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings
             assert (await app.state.services.summary.record(ctx, request)).outcome == "SAVED"
             assert (await app.state.services.summary.record(context.CallContext(), request)).outcome == "NOT_SAVED"
             context.from_headers({"X-Call-Id": "Zelda Fakename"}, h.settings)
-            knowledge_contract.AnswerResponse.model_validate({"outcome": "DESK_TRANSFER", "sourceId": {}})
             with pytest.raises(Malformed):
                 ops._parse(contract.DepartmentList, {}, "/departments")
             h.ops_state.fail_next.append(("/departments", 500, {}))
@@ -1685,11 +1672,58 @@ async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings
         await h.aclose()
     expected = {"ops_write_server_error", "ops_unreachable", "summary_write_unverified", "summary_saved",
                 "trusted_header_malformed", "availability_could_not_check", "ops_malformed_success",
-                "knowledge_optional_field_dropped", "service_started"}
+                "service_started"}
     found = {record.msg for record in records}
     assert expected <= found
     for record in records:
         body = json.loads(JsonFormatter().format(record))
         assert "omittedFields" not in body, (record.msg, getattr(record, "fields", None))
         for key, value in getattr(record, "fields", {}).items():
-            assert body[key] == value  # these nine events use static paths
+            assert body[key] == value  # these eight events use static paths
+
+
+async def test_removed_tool_is_rejected_without_owner_request(served):
+    base, h = served
+    async with client(base) as c:
+        assert {tool.name for tool in await c.list_tools()} == {
+            "get_doctor_availability", "manage_booking", "record_call_summary"}
+        before = len(h.requests)
+        result = await c.call_tool("search_knowledge", {"question": "parking", "language": "en"},
+                                   raise_on_error=False)
+        assert result.is_error
+        assert "Unknown tool" in str(result.content)
+        assert len(h.requests) == before
+
+
+@pytest.mark.parametrize("value", [None, "sourceId", "zelda_fakename",
+                                  {"token": "SECRETTOKENXYZ"}, ["Zelda Fakename"]])
+def test_log1_field_is_no_longer_a_permitted_name(value):
+    line = JsonFormatter().format(_log1_record(fields={"field": value}))
+    body = json.loads(line)
+    assert body["omittedFields"] == ["field"]
+    assert "field" not in body
+    assert all(private not in line for private in LOG1_PRIVATE)
+
+
+# Former knowledge-only values must be omitted after the tool is removed.
+@pytest.mark.parametrize("field,value", [
+    ("tool", "search_knowledge"),
+    ("outcome", "ANSWERED"), ("outcome", "NO_ANSWER"), ("outcome", "ROUTING_REQUIRED"),
+    ("nextStep", "ASK_CLARIFICATION"), ("nextStep", "CHECK_AVAILABILITY"),
+    ("nextStep", "SAY_NO_ANSWER_AND_OFFER_DESK"), ("nextStep", "SPEAK_ANSWER"),
+    ("nextStep", "TRANSFER_EMERGENCY"),
+])
+def test_log1_removed_values_are_omitted(field, value):
+    body = json.loads(JsonFormatter().format(_log1_record(fields={field: value})))
+    assert field not in body
+    assert body["omittedFields"] == [field]
+
+
+@pytest.mark.parametrize("field,value", [
+    ("outcome", "CLARIFICATION_NEEDED"), ("outcome", "COULD_NOT_CHECK"), ("outcome", "INVALID_REQUEST"),
+    ("nextStep", "TRANSFER_DESK"), ("nextStep", "SAY_COULD_NOT_CHECK"), ("nextStep", "ASK_TO_REPHRASE"),
+])
+def test_log1_shared_scheduling_values_stay_permitted(field, value):
+    body = json.loads(JsonFormatter().format(_log1_record(fields={field: value})))
+    assert body[field] == value
+    assert "omittedFields" not in body

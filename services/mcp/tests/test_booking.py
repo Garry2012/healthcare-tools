@@ -549,7 +549,7 @@ async def test_reschedule_of_an_unknown_appointment_is_still_the_owners_neutral_
 
 
 @pytest.mark.parametrize("reason", [None, "fever for three days", "chest pain, my left arm is numb"])
-async def test_booking_journey_forwards_reason_without_knowledge_or_transcript(make_settings, reason):
+async def test_booking_journey_forwards_reason_without_transcript(make_settings, reason):
     import httpx
 
     from frontdesk_mcp.context import CallContext
@@ -558,20 +558,14 @@ async def test_booking_journey_forwards_reason_without_knowledge_or_transcript(m
 
     settings = make_settings()
     h = harness.build(settings)
-    calls = []
     owner_requests = []
     inner = httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1"))
-
-    async def forbidden(request):
-        calls.append(request)
-        raise AssertionError("booking must not contact knowledge")
 
     async def owner(request):
         owner_requests.append(request)
         return await inner.handle_async_request(request)
 
-    services = Services.build(settings, clock=h.clock, ops_transport=httpx.MockTransport(owner),
-                              knowledge_transport=httpx.MockTransport(forbidden))
+    services = Services.build(settings, clock=h.clock, ops_transport=httpx.MockTransport(owner))
     try:
         ctx = CallContext(call_id="call-1", caller_number=harness.CALLER,
                           caller_verification="SIP_CALLER_ID", operation_id="create")
@@ -594,7 +588,7 @@ async def test_booking_journey_forwards_reason_without_knowledge_or_transcript(m
             assert bodies["cancel"]["reason"] == reason
         else:
             assert "reasonVerbatim" not in bodies["appointments"] and "reason" not in bodies["cancel"]
-        assert calls == [] and len(h.ops_state.appointments) == 1
+        assert len(h.ops_state.appointments) == 1
         assert next(iter(h.ops_state.appointments.values()))["status"] == "CANCELLED"
     finally:
         await services.aclose()
@@ -705,8 +699,7 @@ async def booking_mcp(make_settings):
     h = harness.build(make_settings(), now=harness.NOW.replace(hour=5, minute=0, second=40))  # 10:30:40 IST
     h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_meera_kulkarni", "session": "Morning",
         "status": "IN", "expectedTime": "09:00", "expectedEndTime": "11:00", "updatedMinutesAgo": 1}])
-    app = create_app(h.settings, clock=h.clock, ops_transport=h.ops.http._transport,
-                     knowledge_transport=h.knowledge.http._transport)
+    app = create_app(h.settings, clock=h.clock, ops_transport=h.ops.http._transport,)
     try:
         async with serving(app) as base:
             yield base, h
@@ -991,7 +984,6 @@ async def test_slot_failures_prevent_booking_writes(h, action, failure):
 
 
 async def test_non_scheduling_actions_never_read_slots(h):
-    from frontdesk_mcp.knowledge import KnowledgeRequest, KnowledgeService
     from frontdesk_mcp.summary import SummaryRequest, SummaryService
 
     created = await run(h, **CREATE)
@@ -1000,7 +992,6 @@ async def test_non_scheduling_actions_never_read_slots(h):
     assert (await run(h, action="LIST")).outcome == "FOUND"
     assert (await run(h, h.ctx(operation_id="cancel"), action="CANCEL",
                       appointmentId=created.appointment.appointmentId, callerConfirmed=True)).outcome == "CANCELLED"
-    await KnowledgeService(h.knowledge, h.settings).search(h.ctx(), KnowledgeRequest(question="parking", language="en"))
     await SummaryService(h.ops, h.settings).record(h.ctx(started_at="2026-10-01T04:00:00Z"), SummaryRequest(
         summaryText="Caller asked about parking", intent="GENERAL_INFO", outcome="RESOLVED_BY_AGENT"))
     assert not any(p.endswith("/slots") or p == "/capabilities" for p in h.ops_paths())

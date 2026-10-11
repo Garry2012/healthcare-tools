@@ -1,6 +1,6 @@
 {
   "role": "hospital front-desk operations",
-  "instructions": "Directory, board, appointment and call-summary data come from the operational service; hospital answers and routing decisions come from the knowledge service.",
+  "instructions": "Directory, board, appointment and call-summary data come from the operational service.",
   "tools": {
     "get_doctor_availability": {
       "description": "Doctor or department availability for today or an explicit future date; WORKING_HOURS returns usual hours without board or slot checks. Today is LIVE_BOARD: status is Manoj's IN, LATE, CANCELLED, NOT_CONFIRMED or UNKNOWN; decision is the separate MCP result. With slots enabled, a selected doctor's date is checked against slots: openSlots lists the owner's open blocks when the session permits a request; [] means checked and no block is offered (none open, or the session does not permit a request), null means not checked. For ordinary doctors, UNKNOWN always requires callback, even if another source says CANCELLED; NOT_CONFIRMED with an open bookable block permits a request, noted for desk confirmation. CANCELLED is NOT_AVAILABLE; no open slot is NOT_AVAILABLE/NO_OPEN_SLOT. A supplied passed end time means NOT_AVAILABLE/SESSION_ENDED; a missing end time is not an ended session. An ON_CALL doctor needs a confirmed IN/LATE entry with a usable window or open block; otherwise HANDOFF_REQUIRED means desk assistance, without callback metadata. A cancelled on-call session remains NOT_AVAILABLE. Future dates rely on slots when enabled, including desk-added oneDay sessions for that date only; a one-day session with null hours has no bookable time. With slots disabled, IN/LATE permit a request today, ordinary NOT_CONFIRMED/UNKNOWN require callback, and future regular/visiting hours describe usual attendance days, attendance not confirmed. Several sessions with the same decision require no session choice; differing decisions may require one. Department searches with slots enabled return DOCTORS_MATCHED and SLOT_CHECK_REQUIRED when doctors match: doctors match the request, not yet available; slot availability is known after a doctor-specific check, with bookableFound=0 for these matches. With slots disabled, department AVAILABILITY lists bookable doctors when any exist; otherwise callback, handoff or unavailable facts. Results are capped by the configured limit. totalMatches is the directory count across all types and decisions; bookableFound counts bookable doctors found among those checked, potentially more than the returned list; complete means every directory candidate was evaluated, not that every doctor's slots were read. An incomplete search with no match is HANDOFF_REQUIRED/SEARCH_INCOMPLETE, not unavailability. WORKING_HOURS with hours returns PRESENT_WORKING_HOURS for one doctor and always bookableFound=0; an empty ordinary schedule returns CALLBACK_REQUIRED, while an on-call doctor requires HANDOFF_REQUIRED. Department WORKING_HOURS keeps on-call handoff facts within the list limit. Callback details are stored only in record_call_summary as CALLBACK_NOTED. Ambiguous names return choices.",
@@ -33,13 +33,6 @@
         "fromDate": "Optional LIST lower date filter in YYYY-MM-DD format; past dates are accepted.",
         "toDate": "Optional LIST upper date filter in YYYY-MM-DD format; past dates are accepted.",
         "status": "Optional LIST appointment-status filter."
-      }
-    },
-    "search_knowledge": {
-      "description": "One knowledge-service request for hospital information or symptom-to-department routing. It does not read availability or change appointments. ANSWERED and CLARIFICATION_NEEDED carry owner-provided text in answer.text. Routing results carry text only in routing.speak, when present. TRANSFER_EMERGENCY means the knowledge service decided the caller needs emergency help; TRANSFER_DESK means desk assistance; CHECK_AVAILABILITY identifies a department in routing.department. NO_ANSWER is an owner decision; COULD_NOT_CHECK is a service failure.",
-      "parameters": {
-        "question": "Required original question, untranslated and unsummarised; nonblank, maximum 500 characters.",
-        "language": "Required nonblank language code, up to 16 characters; forwarded unchanged to the knowledge service."
       }
     },
     "record_call_summary": {

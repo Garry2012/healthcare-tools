@@ -34,7 +34,8 @@ async def test_external_benchmark_defaults_to_reads_without_authenticating(monke
     monkeypatch.setitem(SELECT.__globals__, "OpsClient", forbidden)
     scenarios = await SELECT(make_settings(), external=True)
     assert "booking_create" not in scenarios
-    assert "booking_list" in scenarios and "knowledge_answer" in scenarios
+    assert "booking_list" in scenarios
+    assert "knowledge_answer" not in scenarios
     assert "booking_create" in await SELECT(make_settings(), external=False)
 
 

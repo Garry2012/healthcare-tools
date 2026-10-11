@@ -1,6 +1,6 @@
 # MCP tool interface
 
-Schema version: `2026-10-08.1`
+Schema version: `2026-10-11.1`
 
 ## Endpoint and transport
 
@@ -9,7 +9,7 @@ Streamable HTTP at `/mcp/` on the configured MCP host. The direct URL is the dep
 separate gateway endpoint supplied by its owner; the voice agent normally calls tools through it.
 
 Deployed: Azure canary `mcp-demo-hospital-canary`, image `frontdesk-mcp:36336aa`, schema `2026-10-06.1`
-(6 October 2026). This document describes schema `2026-10-08.1` for the slots release; the canary still runs
+(6 October 2026). This document describes schema `2026-10-11.1` for the slots release; the canary still runs
 `2026-10-06.1` until that release is deployed. `GET /ready` returns the served `schemaVersion`;
 `tools/list` describes the contract actually deployed.
 
@@ -17,9 +17,9 @@ Deployed: Azure canary `mcp-demo-hospital-canary`, image `frontdesk-mcp:36336aa`
 
 | Scope | Direct MCP bearer | Accessible tools |
 |---|---|---|
-| Gateway | MCP_BEARER_TOKEN | get_doctor_availability, manage_booking, search_knowledge, record_call_summary |
+| Gateway | MCP_BEARER_TOKEN | get_doctor_availability, manage_booking, record_call_summary |
 
-The HTTP header is `Authorization: Bearer <credential>`. All four tools use gateway authentication.
+The HTTP header is `Authorization: Bearer <credential>`. All three tools use gateway authentication.
 A ContextForge client authenticates with gateway-issued scoped access; its upstream MCP bearer is
 separate. Credentials, caller authority and call start time are not tool arguments.
 
@@ -41,7 +41,7 @@ These interface facts apply to every tool.
 
 1. **The live schema is `tools/list`.** The MCP server publishes each tool's exact input schema, output
    schema and description. The input schemas below are copied from the pinned snapshot for schema
-   `2026-10-08.1`. If `tools/list` and this document disagree, `tools/list` wins.
+   `2026-10-11.1`. If `tools/list` and this document disagree, `tools/list` wins.
 2. **Unknown arguments are rejected.** An unknown argument (for example `doctorName` on
    `manage_booking`, or `callerName` on `record_call_summary`) is rejected before the tool runs, even
    though the published schema does not explicitly declare this boundary rule.
@@ -71,7 +71,6 @@ These interface facts apply to every tool.
 | Tool and action | Authorization | X-Call-Id | X-Operation-Id | X-Caller-Number + X-Caller-Verification | X-Call-Started-At |
 |---|---|---|---|---|---|
 | get_doctor_availability | required | not used | not used | not used | not used |
-| search_knowledge | required | not used | not used | not used | not used |
 | manage_booking CREATE | required | required | required | not used | not used |
 | manage_booking LIST | required | not used | not used | required | not used |
 | manage_booking CANCEL, RESCHEDULE | required | required | required | required | not used |
@@ -87,7 +86,6 @@ earlier write failed. A new operation id identifies another write, not a replay 
 | Tool | Read-only | Changes data | Safe to retry with the same arguments |
 |---|---|---|---|
 | get_doctor_availability | yes | no | yes |
-| search_knowledge | yes | no | yes |
 | manage_booking | LIST only | CREATE, CANCEL, RESCHEDULE | same `X-Operation-Id` and identical arguments; a fresh schedule check can refuse the retry |
 | record_call_summary | no | stores one summary per call | yes; a repeat returns `ALREADY_SAVED` |
 
@@ -1215,152 +1213,6 @@ doctorName
     For further information visit https://errors.pydantic.dev/2.13/v/unexpected_keyword_argument
 ```
 
-## search_knowledge
-
-One knowledge-service request for hospital information or symptom-to-department routing. It does not read availability or change appointments. ANSWERED and CLARIFICATION_NEEDED carry owner-provided text in answer.text. Routing results carry text only in routing.speak, when present. TRANSFER_EMERGENCY means the knowledge service decided the caller needs emergency help; TRANSFER_DESK means desk assistance; CHECK_AVAILABILITY identifies a department in routing.department. NO_ANSWER is an owner decision; COULD_NOT_CHECK is a service failure.
-
-### How to call
-
-Both fields are required. `question` contains the caller's original wording, untranslated and
-unsummarised, at most 500 characters. `language` is the caller's language code (`en`, `kn` or `hi`).
-
-**Provisional:** the knowledge service contract is still being agreed with its owner. The input fields are
-not expected to change; output fields may. The version at the top of this document will change if they do.
-
-### Input schema (exact)
-
-```json
-{
-  "properties": {
-    "language": {
-      "description": "Required nonblank language code, up to 16 characters; forwarded unchanged to the knowledge service.",
-      "maxLength": 16,
-      "type": "string"
-    },
-    "question": {
-      "description": "Required original question, untranslated and unsummarised; nonblank, maximum 500 characters.",
-      "maxLength": 500,
-      "type": "string"
-    }
-  },
-  "required": [
-    "question",
-    "language"
-  ],
-  "type": "object"
-}
-```
-
-### Parameters
-
-| Field path | Type / constraints (JSON Schema) | Presence | Meaning |
-|---|---|---|---|
-| `search_knowledge.input.language` | `{"maxLength":16,"type":"string"}` | required | Required nonblank language code, up to 16 characters; forwarded unchanged to the knowledge service. |
-| `search_knowledge.input.question` | `{"maxLength":500,"type":"string"}` | required | Required original question, untranslated and unsummarised; nonblank, maximum 500 characters. |
-
-### Output fields
-
-| Field path | Type / constraints (JSON Schema) | Presence | Meaning |
-|---|---|---|---|
-| `search_knowledge.output.answer` | `{"anyOf":[{"$ref":"#/$defs/Speech"},{"type":"null"}]}` | optional | Knowledge-service answer or clarification text. |
-| `search_knowledge.output.destination` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Optional knowledge-service destination identifier. |
-| `search_knowledge.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for a non-success result; optional. |
-| `search_knowledge.output.nextStep` | `{"enum":["SPEAK_ANSWER","SAY_NO_ANSWER_AND_OFFER_DESK","ASK_CLARIFICATION","TRANSFER_DESK","TRANSFER_EMERGENCY","CHECK_AVAILABILITY","SAY_COULD_NOT_CHECK","ASK_TO_REPHRASE"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
-| `search_knowledge.output.outcome` | `{"enum":["ANSWERED","NO_ANSWER","CLARIFICATION_NEEDED","ROUTING_REQUIRED","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category, defined below. |
-| `search_knowledge.output.routing` | `{"anyOf":[{"$ref":"#/$defs/Routing"},{"type":"null"}]}` | optional | The owner's routing decision over the caller's words. |
-| `search_knowledge.output.sourceId` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Optional knowledge-service source identifier. |
-| `search_knowledge.output.$defs.Routing.decision` | `{"enum":["ROUTE_DEPARTMENT","DESK_TRANSFER","EMERGENCY_TRANSFER"],"type":"string"}` | required | Knowledge owner routing decision, distinct from schedule decisions. |
-| `search_knowledge.output.$defs.Routing.department` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Department name returned by the knowledge service; compatible with availability departmentName. |
-| `search_knowledge.output.$defs.Routing.speak` | `{"anyOf":[{"$ref":"#/$defs/Speech"},{"type":"null"}]}` | optional | Optional knowledge-service text associated with a routing decision; not duplicated in answer. |
-| `search_knowledge.output.$defs.Speech.language` | `{"type":"string"}` | required | Language of the knowledge-service text. |
-| `search_knowledge.output.$defs.Speech.text` | `{"type":"string"}` | required | Knowledge-service text, preserved unchanged. |
-
-### Outcomes and nextStep meanings
-
-| Code | Meaning |
-|---|---|
-| `search_knowledge.outcome.ANSWERED` | The knowledge service returned answer text. |
-| `search_knowledge.outcome.NO_ANSWER` | The knowledge service explicitly returned no answer. |
-| `search_knowledge.outcome.CLARIFICATION_NEEDED` | Knowledge-service clarification text is returned in answer.text. |
-| `search_knowledge.outcome.ROUTING_REQUIRED` | The knowledge service returned a department, desk or emergency decision. |
-| `search_knowledge.outcome.COULD_NOT_CHECK` | A read could not be completed; this is not an empty or negative result. |
-| `search_knowledge.outcome.INVALID_REQUEST` | Request validation failed; fields or detail identify the issue when available. |
-| `search_knowledge.nextStep.SPEAK_ANSWER` | Answer text is available in answer.text. |
-| `search_knowledge.nextStep.SAY_NO_ANSWER_AND_OFFER_DESK` | The knowledge service has no answer; desk assistance is the disposition. |
-| `search_knowledge.nextStep.ASK_CLARIFICATION` | Knowledge-service clarification text is available in answer.text. |
-| `search_knowledge.nextStep.TRANSFER_DESK` | Desk assistance is the returned disposition; MCP does not execute a telephone transfer. |
-| `search_knowledge.nextStep.TRANSFER_EMERGENCY` | The knowledge service decided the caller needs emergency help; MCP does not execute a transfer. |
-| `search_knowledge.nextStep.CHECK_AVAILABILITY` | routing.department contains the department name associated with the knowledge decision. |
-| `search_knowledge.nextStep.SAY_COULD_NOT_CHECK` | The requested information could not be checked. |
-| `search_knowledge.nextStep.ASK_TO_REPHRASE` | The supplied name, department or question could not resolve the request. |
-
-### Examples
-
-Examples come from the development stubs (facility date 2026-10-01, Thursday, 10:00); names and
-identifiers are fixtures. Live values differ; field names and shapes do not.
-
-**1. Hospital information**
-
-Arguments:
-
-```json
-{
-  "question": "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ",
-  "language": "kn"
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "ANSWERED",
-  "nextStep": "SPEAK_ANSWER",
-  "answer": {
-    "text": "ಹೌದು. ನೆಲಮಾಳಿಗೆಯಲ್ಲಿ ಉಚಿತ ಪಾರ್ಕಿಂಗ್ ಇದೆ; ಮುಖ್ಯ ದ್ವಾರದ ಪಕ್ಕದ ರಸ್ತೆಯಿಂದ ಒಳಗೆ ಬನ್ನಿ.",
-    "language": "kn"
-  },
-  "sourceId": "kb_parking",
-  "destination": null,
-  "routing": null,
-  "detail": null
-}
-```
-
-**2. Emergency routing**
-
-Arguments:
-
-```json
-{
-  "question": "Dr Garima, I have chest pain",
-  "language": "en"
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "ROUTING_REQUIRED",
-  "nextStep": "TRANSFER_EMERGENCY",
-  "answer": null,
-  "sourceId": "routing-0",
-  "destination": null,
-  "routing": {
-    "decision": "EMERGENCY_TRANSFER",
-    "speak": {
-      "text": "This may be an emergency. I am connecting you to the emergency desk now.",
-      "language": "en"
-    },
-    "department": null
-  },
-  "detail": null
-}
-```
-
-`TRANSFER_EMERGENCY` is the knowledge service's decision. MCP does not transfer the call.
-
 ## record_call_summary
 
 Stores one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.
@@ -1732,7 +1584,7 @@ discovered 2026-10-05.1 retains an older schema until rediscovery; registration 
 only, so it does not establish output-schema compatibility through the voice virtual server.
 
 
-## Changes in schema 2026-10-08.1 (slots release, not yet deployed)
+## Changes in schema 2026-10-11.1 (slots release, not yet deployed)
 
 - Published the complete slot response contract: openSlots, oneDay, nullable required session hours,
   owner slot status, slotTime/slotMoved, DOCTORS_MATCHED, SLOT_CHECK_REQUIRED, HANDOFF_REQUIRED as a

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .packs import Pack
 
-SCHEMA_VERSION = "2026-10-08.1"
+SCHEMA_VERSION = "2026-10-11.1"
 
 
 def instructions(pack: Pack, languages: tuple[str, ...], display_name: str = "") -> str:
@@ -20,6 +20,6 @@ def instructions(pack: Pack, languages: tuple[str, ...], display_name: str = "")
         "slotTime: owner slotTime, else expectedTime, else null. slotMoved marks a different block.",
         "UNCERTAIN: unverified write, desk handoff, not retry; a later same-operation invocation can fail a "
         "fresh schedule check.",
-        "Gateway authentication covers all four tools.",
+        "Gateway authentication covers all three tools.",
         f"Supported languages: {', '.join(languages)}. Tool schema {SCHEMA_VERSION}.",
     ))

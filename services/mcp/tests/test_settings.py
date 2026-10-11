@@ -167,7 +167,6 @@ async def test_production_without_knowledge_still_serves_scheduling(make_setting
 
     from frontdesk_mcp.availability import AvailabilityRequest
     from frontdesk_mcp.context import CallContext
-    from frontdesk_mcp.knowledge import KnowledgeRequest
     from frontdesk_mcp.tools import Services
     from frontdesk_stubs import ops as ops_stub
 
@@ -176,18 +175,12 @@ async def test_production_without_knowledge_still_serves_scheduling(make_setting
     settings = make_settings(**{**PROD, "knowledge_base_url": "", "knowledge_bearer_token": ""})
     h = harness.build(settings)
 
-    async def forbidden(request):
-        raise AssertionError("unconfigured knowledge must make no network request")
-
     services = Services.build(settings, clock=h.clock,
-                              ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
-                              knowledge_transport=httpx.MockTransport(forbidden))
+                              ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")))
     try:
         result = await services.availability.get(
             CallContext(), AvailabilityRequest(date="today", doctorId="doc_garima"))
         assert result.outcome == "AVAILABILITY" and result.doctors[0].board[0].status == "IN"
-        answer = await services.search.search(CallContext(), KnowledgeRequest(question="parking", language="en"))
-        assert (answer.outcome, answer.detail) == ("COULD_NOT_CHECK", "NOT_CONFIGURED")
     finally:
         await services.aclose()
         await h.aclose()

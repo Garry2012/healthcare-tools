@@ -12,7 +12,6 @@ Layers and their variables (set what you are testing; the report must name the l
                              plus OPS_E2E_DOCTOR_ID, OPS_E2E_VISIT_DATE and OPS_E2E_RESCHEDULE_DATE
                              (two future usual working days; negative gate requires UNKNOWN/NOT_CONFIRMED today)
                              slots_path records enabled (offered times required) or disabled (day-level journey).
-  Knowledge (Shobhit):       KNOWLEDGE_E2E_BASE_URL, KNOWLEDGE_E2E_BEARER_TOKEN
 """
 
 from __future__ import annotations
@@ -24,11 +23,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from frontdesk_mcp import availability, booking, context, knowledge, summary
+from frontdesk_mcp import availability, booking, context, summary
 from frontdesk_mcp.cache import DirectoryCache
 from frontdesk_mcp.clock import Deadline, SystemClock
 from frontdesk_mcp.config import Settings
-from frontdesk_mcp.knowledge_client import KnowledgeClient
 from frontdesk_mcp.ops_client import OpsClient
 
 from . import gates, harness
@@ -55,8 +53,6 @@ def mode() -> str:
 def settings() -> Settings:
     return Settings(**ROLLOUT, env="test", ops_base_url=required("OPS_E2E_BASE_URL"),
                     ops_client_id=required("OPS_E2E_CLIENT_ID"), ops_client_secret=required("OPS_E2E_CLIENT_SECRET"),
-                    knowledge_base_url=os.environ.get("KNOWLEDGE_E2E_BASE_URL") or "https://knowledge.pending.invalid",
-                    knowledge_bearer_token=os.environ.get("KNOWLEDGE_E2E_BEARER_TOKEN") or "pending",
                     mcp_bearer_token="external-gateway",
                     # diagnostic overrides: the laptop → Azure path is far slower than the in-region budget; these are
                     # explicitly allowed here and never become production defaults
@@ -109,7 +105,6 @@ async def test_an_absent_bearer_is_refused_by_the_service(settings):
 async def test_availability_tool_end_to_end_against_the_service(settings):
     """Scheduling reads work independently of knowledge configuration."""
     mode()
-    kb = KnowledgeClient(settings)
     ops = OpsClient(settings)
     try:
         service = availability.AvailabilityService(ops, DirectoryCache(settings), settings, SystemClock())
@@ -121,7 +116,6 @@ async def test_availability_tool_end_to_end_against_the_service(settings):
             "AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND", "DOCTORS_MATCHED"), result
     finally:
         await ops.aclose()
-        await kb.aclose()
 
 
 # ------------------------------------------------------------------ writes (designated synthetic tenant only)
@@ -141,7 +135,7 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
     doctor_id = required("OPS_E2E_DOCTOR_ID")
     visit = required("OPS_E2E_VISIT_DATE")  # owner-designated usual working day
     move_date = required("OPS_E2E_RESCHEDULE_DATE")  # another usual working day
-    ops, kb = OpsClient(settings), KnowledgeClient(settings)
+    ops = OpsClient(settings)
     try:
         await _write_gate(ops)
         slots_enabled = (await ops.get_capabilities(Deadline(settings.read_deadline_seconds))).slots.enabled
@@ -207,7 +201,6 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
         assert replay.model_dump(mode="json") == {"outcome": "ALREADY_SAVED"}
     finally:
         await ops.aclose()
-        await kb.aclose()
 
 
 async def test_negative_unknown_date_is_callback_only_and_writes_nothing(settings):
@@ -215,7 +208,7 @@ async def test_negative_unknown_date_is_callback_only_and_writes_nothing(setting
     doctor_id = required("OPS_E2E_DOCTOR_ID")
     unknown_date = datetime.now(UTC).astimezone(settings.zone).date().isoformat()
     # Owner-designated doctor must have UNKNOWN/NOT_CONFIRMED today; future boards are irrelevant.
-    ops, kb = OpsClient(settings), KnowledgeClient(settings)
+    ops = OpsClient(settings)
     try:
         await _write_gate(ops)
         svc = booking.BookingService(ops, settings, SystemClock())
@@ -231,19 +224,5 @@ async def test_negative_unknown_date_is_callback_only_and_writes_nothing(setting
         gates.assert_no_new_appointment(before, after, doctor_id, unknown_date)
     finally:
         await ops.aclose()
-        await kb.aclose()
 
 
-# ------------------------------------------------------------------ knowledge (Shobhit)
-
-
-async def test_knowledge_search_against_the_real_host(settings):
-    required("KNOWLEDGE_E2E_BASE_URL")
-    kb = KnowledgeClient(settings)
-    try:
-        result = await knowledge.KnowledgeService(kb, settings).search(
-            context.from_headers(harness.headers(call_id="ext-kb"), settings),
-            knowledge.KnowledgeRequest(question="parking", language="en"))
-        assert result.outcome in ("ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED"), result
-    finally:
-        await kb.aclose()

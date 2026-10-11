@@ -75,7 +75,7 @@ def processes():
 async def test_release_smoke_passes_against_real_processes(processes):
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
     await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "en",
-                         "General Medicine", "required")
+                         "General Medicine")
 
 
 async def test_journey_and_summary_through_real_transport(processes):
@@ -97,7 +97,7 @@ async def test_journey_and_summary_through_real_transport(processes):
         call_id="e2e-1", started_at="2026-10-01T10:00:00+05:30")}
     async with Client(StreamableHttpTransport(f"{base}/mcp/", headers=summary_headers)) as c:
         assert {t.name for t in await c.list_tools()} == {
-            "get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary"}
+            "get_doctor_availability", "manage_booking", "record_call_summary"}
         stored = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_NOTED", "appointmentId": noted["appointment"]["appointmentId"],
             "summaryText": "E2E journey."})).structured_content
@@ -160,7 +160,7 @@ async def test_slot_journey_and_release_smoke_through_real_processes(processes):
         assert moved["appointment"]["status"] == "CHANGED"
         assert moved["appointment"]["slotTime"] == "15:00"
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "en", "General Medicine", "required")
+    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "en", "General Medicine")
 
 
 def test_process_cleanup_reaps_stuck_and_cooperative_children():

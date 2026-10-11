@@ -9,7 +9,6 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_serializer
 
 from . import contract
-from . import knowledge_contract as kc
 from .availability_policy import Basis, Decision, Reason, RequestedDate, SessionDecision, on_requested_date
 
 
@@ -22,17 +21,6 @@ SessionChoice = Annotated[str | None, AfterValidator(_blank_session)]
 
 class _Out(BaseModel):
     model_config = ConfigDict(frozen=True)
-
-
-class Speech(_Out):
-    text: str
-    language: str
-
-
-class Routing(_Out):
-    decision: kc.RoutingDecision
-    speak: Speech | None = None
-    department: str | None = None
 
 
 class Callback(_Out):
@@ -214,25 +202,6 @@ class BookingResult(_Out):
     callback: Callback | None = None
     detail: str | None = None
     retryAfterSeconds: int | None = None  # noqa: N815
-
-
-# -------------------------------------------------------------------------------- search_knowledge
-
-
-KnowledgeOutcome = Literal["ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED",
-                           "COULD_NOT_CHECK", "INVALID_REQUEST"]
-KnowledgeNextStep = Literal["SPEAK_ANSWER", "SAY_NO_ANSWER_AND_OFFER_DESK", "ASK_CLARIFICATION", "TRANSFER_DESK",
-                            "TRANSFER_EMERGENCY", "CHECK_AVAILABILITY", "SAY_COULD_NOT_CHECK", "ASK_TO_REPHRASE"]
-
-
-class KnowledgeResult(_Out):
-    outcome: KnowledgeOutcome
-    nextStep: KnowledgeNextStep  # noqa: N815
-    answer: Speech | None = Field(default=None, description="Knowledge-service answer or clarification text.")
-    sourceId: str | None = None  # noqa: N815
-    destination: str | None = None
-    routing: Routing | None = Field(default=None, description="The owner's routing decision over the caller's words.")
-    detail: str | None = None
 
 
 # ----------------------------------------------------------------------------- record_call_summary

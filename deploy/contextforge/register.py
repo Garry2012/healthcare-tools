@@ -19,7 +19,7 @@ the environment.
     python deploy/contextforge/register.py
 
 ContextForge must run with ENABLE_HEADER_PASSTHROUGH=true so the trusted call headers reach the
-adapter. The gateway entry carries the gateway bearer: all four tools are available through it.
+adapter. The gateway entry carries the gateway bearer: all three tools are available through it.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ import httpx
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-TOOLS = ("get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary")
+TOOLS = ("get_doctor_availability", "manage_booking", "record_call_summary")
 # Trusted call context travels from the voice platform through the gateway to the adapter.
 PASSTHROUGH = ["X-Call-Id", "X-Caller-Number", "X-Caller-Verification", "X-Operation-Id",
                "X-Call-Started-At"]
@@ -112,7 +112,7 @@ async def served_tools(url: str, token: str) -> list[dict]:
 def verify(client: httpx.Client, gateway_id: str, name: str) -> None:
     served = asyncio.run(served_tools(env("MCP_PUBLIC_URL"), env("MCP_BEARER_TOKEN")))
     if sorted(t["name"] for t in served) != sorted(TOOLS):
-        raise SystemExit("the adapter does not serve exactly the four tools to the gateway bearer")
+        raise SystemExit("the adapter does not serve exactly the three tools to the gateway bearer")
     for attempt in (1, 2):
         tools = client.get("/v1/tools", params={"include_inactive": "true"})
         tools.raise_for_status()

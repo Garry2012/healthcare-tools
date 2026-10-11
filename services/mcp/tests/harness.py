@@ -10,9 +10,7 @@ import httpx
 from frontdesk_mcp import context
 from frontdesk_mcp.cache import DirectoryCache
 from frontdesk_mcp.clock import FixedClock
-from frontdesk_mcp.knowledge_client import KnowledgeClient
 from frontdesk_mcp.ops_client import OpsClient
-from frontdesk_stubs import knowledge as knowledge_stub
 from frontdesk_stubs import ops as ops_stub
 
 # Thursday 1 October 2026, 10:00 IST (04:30 UTC)
@@ -42,9 +40,7 @@ class Harness:
     settings: object
     clock: FixedClock
     ops_state: ops_stub.OpsStubState
-    knowledge_state: knowledge_stub.KnowledgeStubState
     ops: OpsClient
-    knowledge: KnowledgeClient
     requests: list[httpx.Request]
     cache: DirectoryCache
 
@@ -58,7 +54,6 @@ class Harness:
 
     async def aclose(self) -> None:
         await self.ops.aclose()
-        await self.knowledge.aclose()
 
 
 def build(settings, now: datetime = NOW, ops_secret: str = "ops-secret") -> Harness:
@@ -67,7 +62,6 @@ def build(settings, now: datetime = NOW, ops_secret: str = "ops-secret") -> Harn
     scopes = {"appointments.write", "calls.write"}
     ops_state = ops_stub.OpsStubState(clock=clock, zone=settings.tenant_timezone,
                                       clients={settings.ops_client_id: (ops_secret, scopes)})
-    knowledge_state = knowledge_stub.KnowledgeStubState(bearer=settings.knowledge_bearer_token.get_secret_value())
     requests: list[httpx.Request] = []
 
     class Recording(httpx.AsyncBaseTransport):
@@ -81,8 +75,7 @@ def build(settings, now: datetime = NOW, ops_secret: str = "ops-secret") -> Harn
 
     prefix = httpx.URL(settings.ops_base_url).path.rstrip("/")
     ops = OpsClient(settings, transport=Recording(ops_stub.create_app(ops_state, prefix=prefix)))
-    knowledge = KnowledgeClient(settings, transport=Recording(knowledge_stub.create_app(knowledge_state)))
-    return Harness(settings, clock, ops_state, knowledge_state, ops, knowledge, requests, DirectoryCache(settings))
+    return Harness(settings, clock, ops_state, ops, requests, DirectoryCache(settings))
 
 
 def slot_plan(doctor_id="doc_garima", date="2026-10-01") -> dict:

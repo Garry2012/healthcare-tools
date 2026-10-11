@@ -1,6 +1,6 @@
 """Starlette + FastMCP assembly: /mcp/ (streamable HTTP, stateless), /health, /ready, /dependencies.
 
-The gateway bearer authenticates all four tools; trusted call identity comes from headers."""
+The gateway bearer authenticates all three tools; trusted call identity comes from headers."""
 
 from __future__ import annotations
 
@@ -34,7 +34,6 @@ from . import (
     availability,
     context,
     contract,
-    knowledge_contract,
     outcomes,
     packs,
     prompt,
@@ -75,7 +74,7 @@ ROUTE_TEMPLATES = {
     re.compile(re.escape(route).replace(r"\{id\}", r"[^/?#]+")): route
     for route in ("/auth/token", "/departments", "/doctors", "/doctors/{id}", "/availability",
                   "/availability/{id}/slots", "/capabilities", "/appointments", "/appointments/{id}/cancel",
-                  "/appointments/{id}/reschedule", "/call-summaries", knowledge_contract.ANSWER_PATH)
+                  "/appointments/{id}/reschedule", "/call-summaries")
 }
 
 
@@ -88,16 +87,15 @@ def _route_template(value):
 SAFE_LOG_FIELDS = {
     "tool": _known(tools.TOOL_NAMES),
     "outcome": _known(value for kind in (outcomes.AvailabilityOutcome, outcomes.BookingOutcome,
-                                        outcomes.KnowledgeOutcome, outcomes.SummaryOutcome)
+                                        outcomes.SummaryOutcome)
                       for value in get_args(kind)),
-    "nextStep": _known(value for kind in (outcomes.NextStep, outcomes.BookingNextStep, outcomes.KnowledgeNextStep)
+    "nextStep": _known(value for kind in (outcomes.NextStep, outcomes.BookingNextStep)
                        for value in get_args(kind)),
     "detail": _known((*schedule_reader.READ_FAILURE_DETAILS.values(), availability.DIRECTORY_FAILURE_DETAIL)),
     "reason": _known((*get_args(summary.SummaryFailureReason), *get_args(UnavailableReason))),
     "error": _known(c.__name__ for c in (*schedule_reader.READ_ERRORS, *_REQUEST_ERRORS, TimeoutError)),
     "model": _known(c.__name__ for c in vars(contract).values()
                     if isinstance(c, type) and issubclass(c, BaseModel) and c.__module__ == contract.__name__),
-    "field": _known(knowledge_contract.AnswerResponse.model_fields),
     "header": _known(context.FIELD_OF_HEADER),
     "path": _route_template,
     "callId": lambda value: type(value) is str and context._ID.fullmatch(value) is not None,
@@ -244,7 +242,7 @@ def build_mcp(services: tools.Services) -> FastMCP:
 
 
 class DependencyStatus:
-    """Bounded, cached checks of the two owner services; distinct from local readiness."""
+    """Bounded, cached checks of the operational service; distinct from local readiness."""
 
     def __init__(self, services: tools.Services) -> None:
         self.services = services
@@ -268,18 +266,16 @@ class DependencyStatus:
         except UpstreamError as exc:
             operational = {"status": "unavailable", "reason": getattr(exc, "reason", type(exc).__name__)}
             status = 503
-        knowledge = {"status": "configured" if self.services.settings.knowledge_base_url else "not_configured",
-                     "check": "none agreed (contract pending)"}
-        body = {"operational": operational, "knowledge": knowledge}
+        body = {"operational": operational}
         self._cached = (now, body, status)
         return body, status
 
 
 def create_app(settings: Settings | None = None, *, ops_transport: httpx.AsyncBaseTransport | None = None,
-               knowledge_transport: httpx.AsyncBaseTransport | None = None, clock: Clock | None = None) -> Starlette:
+               clock: Clock | None = None) -> Starlette:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.provider_id)
-    services = tools.Services.build(settings, ops_transport=ops_transport, knowledge_transport=knowledge_transport,
+    services = tools.Services.build(settings, ops_transport=ops_transport,
                                     clock=clock)
     mcp = build_mcp(services)
     # Stateless: no per-session server state, so any replica can serve any request.

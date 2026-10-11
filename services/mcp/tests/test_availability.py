@@ -428,32 +428,24 @@ async def test_single_match_search_then_profile_and_board_overlap(make_settings)
     ({}, "INVALID_REQUEST", "ASK_TO_REPHRASE"),
     ({"doctorId": "doc_garima", "date": "tomorrow"}, "INVALID_REQUEST", "ASK_EXPLICIT_DATE"),
 ])
-@pytest.mark.parametrize("configured", [True, False])
-async def test_availability_is_independent_of_knowledge_and_transcript(make_settings, target, expected,
-                                                                    step, configured):
+async def test_availability_is_independent_of_transcript(make_settings, target, expected,
+                                                                    step):
     import httpx
 
     from frontdesk_mcp.context import CallContext
     from frontdesk_mcp.tools import Services
     from frontdesk_stubs import ops as ops_stub
 
-    settings = make_settings(env="development", knowledge_base_url="https://knowledge.test" if configured else "")
+    settings = make_settings(env="development")
     h = harness.build(settings)
-    knowledge_requests = []
-
-    async def forbidden(request):
-        knowledge_requests.append(request)
-        raise AssertionError("availability must not contact knowledge")
 
     services = Services.build(settings, clock=h.clock,
-                              ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")),
-                              knowledge_transport=httpx.MockTransport(forbidden))
+                              ops_transport=httpx.ASGITransport(app=ops_stub.create_app(h.ops_state, prefix="/api/v1")))
     try:
         result = await services.availability.get(CallContext(), availability.AvailabilityRequest(
             **{"date": "today", **target}))
         assert (result.outcome, result.nextStep) == (expected, step)
         assert result.facilityToday == "2026-10-01"
-        assert knowledge_requests == []
         if expected == "AVAILABILITY":
             assert result.doctors and result.doctors[0].board
         if expected == "AVAILABILITY":
@@ -792,7 +784,6 @@ async def test_department_existing_failure_precedes_capability_failure(h, day, p
 
 
 async def test_capability_failure_is_not_cached_and_other_tool_paths_do_not_depend_on_it(h):
-    from frontdesk_mcp.knowledge import KnowledgeRequest, KnowledgeService
     from frontdesk_mcp.summary import SummaryRequest, SummaryService
 
     from .test_booking import CREATE, run
@@ -803,9 +794,6 @@ async def test_capability_failure_is_not_cached_and_other_tool_paths_do_not_depe
     summary = await SummaryService(h.ops, h.settings).record(h.ctx(started_at="2026-10-01T04:00:00Z"),
         SummaryRequest(summaryText="Explained visiting hours.", intent="GENERAL_INFO", outcome="RESOLVED_BY_AGENT"))
     assert summary.outcome == "SAVED"
-    knowledge = await KnowledgeService(h.knowledge, h.settings).search(h.ctx(),
-        KnowledgeRequest(question="parking", language="en"))
-    assert knowledge.outcome == "ANSWERED"
     assert "/capabilities" not in h.ops_paths()
     failed = await ask(h, departmentId="dept_genmed")
     assert (failed.outcome, failed.detail) == ("COULD_NOT_CHECK", "CAPABILITIES_UNAVAILABLE")

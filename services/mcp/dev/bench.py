@@ -36,7 +36,6 @@ from frontdesk_mcp.clock import Deadline, FixedClock, SystemClock  # noqa: E402
 from frontdesk_mcp.config import Settings  # noqa: E402
 from frontdesk_mcp.ops_client import OpsClient  # noqa: E402
 from frontdesk_mcp.server import create_app  # noqa: E402
-from frontdesk_stubs import knowledge as knowledge_stub  # noqa: E402
 from frontdesk_stubs import ops as ops_stub  # noqa: E402
 
 # name → (tool, arguments, outcomes that count as the intended success, owner paths the call must have hit:
@@ -58,8 +57,6 @@ SCENARIOS = {
     # departments are cached across samples: the board is the per-call owner read that must be observed
     "availability_department": ("get_doctor_availability", {"departmentName": DEPARTMENT, "date": "today"},
                                 {"AVAILABILITY", "CALLBACK_REQUIRED"}, ("GET /availability",)),
-    "knowledge_answer": ("search_knowledge", {"question": "parking", "language": "en"}, {"ANSWERED", "NO_ANSWER"},
-                         ("POST /v1/answer",)),
     "booking_list": ("manage_booking", {"action": "LIST"}, {"FOUND", "NOT_FOUND"}, ("GET /appointments",)),
     "booking_create": ("manage_booking", {"action": "CREATE", "patientName": "Bench Patient",
                                           "patientMobile": "9000000101", "doctorId": DOCTOR_ID, "visitDate": "today",
@@ -244,9 +241,6 @@ async def main() -> int:
     if args.log_level in {"DEBUG", "INFO"} and not args.log_file:
         parser.error("--log-level below WARNING requires --log-file")
     real_ops = os.environ.get("BENCH_OPS_BASE_URL")
-    # With real operational hosts but no knowledge host yet, keep the in-process knowledge stub so knowledge
-    # answer samples remain labelled fixtures. Scheduling never uses that stub.
-    knowledge_stub_with_real_ops = bool(real_ops) and not os.environ.get("BENCH_KNOWLEDGE_BASE_URL")
     settings = Settings(
         env="development", log_level=args.log_level, provider_id="demo-hospital", domain_pack="healthcare",
         tenant_supported_languages="en,kn,hi",
@@ -255,23 +249,14 @@ async def main() -> int:
         ops_client_id=os.environ.get("BENCH_OPS_CLIENT_ID") or os.environ.get("OPS_E2E_CLIENT_ID", "mcp-dev"),
         ops_client_secret=(os.environ.get("BENCH_OPS_CLIENT_SECRET")
                            or os.environ.get("OPS_E2E_CLIENT_SECRET", "dev-secret")),
-        knowledge_base_url=os.environ.get("BENCH_KNOWLEDGE_BASE_URL") or "http://knowledge-stub.local",
-        knowledge_bearer_token=os.environ.get("BENCH_KNOWLEDGE_BEARER_TOKEN") or "dev-knowledge-secret",
         mcp_bearer_token="gateway",
         allow_budget_overrides=bool(real_ops),  # only distant real-host diagnostics exceed the in-call budget
         read_deadline_seconds=float(os.environ.get("BENCH_READ_DEADLINE", "2.0")) if real_ops else None,
         write_deadline_seconds=max(4.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))) if real_ops else None,
         summary_deadline_seconds=max(8.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))))
     if real_ops:
-        knowledge = settings.knowledge_base_url
-        if knowledge_stub_with_real_ops:
-            knowledge = "in-process knowledge STUB (no real host yet)"
-        boundary = f"laptop → MCP (local TCP) → {real_ops} (real network); knowledge: {knowledge}"
+        boundary = f"laptop → MCP (local TCP) → {real_ops} (real network)"
         ops_transport = None
-        kb_state = knowledge_stub.KnowledgeStubState(bearer="dev-knowledge-secret")
-        knowledge_transport = None
-        if knowledge_stub_with_real_ops:
-            knowledge_transport = httpx.ASGITransport(app=knowledge_stub.create_app(kb_state))
         clock = SystemClock()
     else:
         boundary = "laptop → MCP (local TCP) → in-process stubs (ASGI, no network): fixture timings only"
@@ -280,8 +265,7 @@ async def main() -> int:
         ops_state = ops_stub.OpsStubState(clock=clock, clients={"mcp-dev": ("dev-secret", scopes)})
 
         class Recording(httpx.AsyncBaseTransport):
-            """Attributes each owner request to the MCP call that caused it (callId travels in request bodies for
-            the knowledge service; operational requests are matched through the adapter's call-id contextvar)."""
+            """Attributes owner requests to the MCP call through the adapter's call-id contextvar."""
 
             def __init__(self, app):
                 self.inner = httpx.ASGITransport(app=app)
@@ -297,8 +281,6 @@ async def main() -> int:
         global RECORDING_OWNER_CALLS
         RECORDING_OWNER_CALLS = True
         ops_transport = Recording(ops_stub.create_app(ops_state, prefix="/api/v1"))
-        kb_state = knowledge_stub.KnowledgeStubState(bearer="dev-knowledge-secret")
-        knowledge_transport = Recording(knowledge_stub.create_app(kb_state))
     scenarios = await selected_scenarios(settings, external=bool(real_ops))
     omitted = {name: "external writes disabled" for name in SCENARIOS if name not in scenarios}
     scenarios = {
@@ -307,7 +289,7 @@ async def main() -> int:
         if values.get("visitDate") == "today" else (tool, values, expected, paths)
         for name, (tool, values, expected, paths) in scenarios.items()
     }
-    app = create_app(settings, ops_transport=ops_transport, knowledge_transport=knowledge_transport, clock=clock)
+    app = create_app(settings, ops_transport=ops_transport, clock=clock)
     with contextlib.ExitStack() as log_files:
         if args.log_file:
             stream = log_files.enter_context(args.log_file.open("w", encoding="utf-8"))

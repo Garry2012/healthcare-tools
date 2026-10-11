@@ -222,8 +222,7 @@ async def test_untrusted_owner_field_names_are_not_reflected(h):
     assert result.model_dump(mode="json") == {"outcome": "INVALID_REQUEST", "fields": ["callerMobile"]}
 
 
-async def test_summary_works_without_knowledge_and_with_a_slow_healthy_owner(h):
-    h.knowledge_state.fail_next.append(503)
+async def test_summary_works_with_a_slow_healthy_owner(h):
     h.ops_state.delay_for_prefix["/call-summaries"] = 0.4
     assert h.settings.request_timeout_seconds == pytest.approx(0.30)
     assert (await record(h, **CALLBACK)).outcome == "SAVED"
