@@ -70,11 +70,11 @@ These are engineering targets, not measured guarantees or MCP protocol requireme
 
 To keep the adapter thin and fast:
 
-- Reuse async HTTP connections and warm tokens; bound request/response sizes and fan-out. Cache only permitted stable directory/profile data, not current board truth or stale knowledge answers.
+- Reuse async HTTP connections and warm tokens; bound request/response sizes and fan-out. Cache only permitted stable directory/profile data, never current board or slot facts.
 - Overlap independent Manoj reads. Once the doctor is resolved, profile and board can run together. An appointment write requires caller confirmation and the shared schedule decision: fresh board for today, usual profile schedule for a future date. Search-dependent reads cannot all be called parallel by assumption.
 - Keep the gateway, MCP and owner services close enough in network terms to meet the measured budget. Bound cold-start delays with the chosen hosting setup; include cold starts in reporting.
 - Summaries have a separate default 8-second deadline and may be selected by the LLM; their timing is the voice application's responsibility. Durable retries belong to platform infrastructure; no database/queue backend belongs in MCP. Cancelling a local request does not prove a remote appointment was undone.
-- Measure the gateway separately and trace the entire LiveKit path. Owner API latency and any knowledge-service LLM work count against the same response budget. If either service is too slow, negotiate placement/contract performance with its owner; do not copy its implementation into MCP or invent local interpretation.
+- Measure the gateway separately and trace the entire LiveKit path. Owner API latency counts against the same response budget. If the owner service is too slow, negotiate placement/contract performance with its owner; do not copy its implementation into MCP or invent local interpretation.
 
 Real-host MCP measurements still require declared concurrency, cold/warm token state and useful
 outcomes/failure rates. End-to-end audio measurement belongs to the voice platform. Publishing a tool

@@ -49,7 +49,7 @@ read-only availability calls (a department today and WORKING_HOURS for a doctor)
 creates an appointment or a summary. Run it again any time:
 
 ```bash
-MCP_URL=https://mcp-$P.$DOMAIN/mcp/ MCP_BEARER_TOKEN=... SMOKE_LANGUAGE=en \
+MCP_URL=https://mcp-$P.$DOMAIN/mcp/ MCP_BEARER_TOKEN=... \
   uv run --project services/mcp python deploy/azure/smoke.py
 ```
 

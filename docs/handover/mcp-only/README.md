@@ -53,7 +53,7 @@ separate approvals, governed by [PLAN.md](PLAN.md).
 - A checkout made exclusively from staged Git files, with no private workspace artifacts, passed frozen MCP dependency installation, source/wheel package builds and all 35 database-free MCP tests (16 end-to-end tests deselected).
 - `make test-fast` passed: lint, all nine architecture import contracts, 413 API unit/contract tests and 35 MCP tests.
 - Handover links resolve to tracked files/directories. The public contract checksum matches, and the original Opus review body is preserved unchanged.
-- These checks validate the existing package and portable handover. They do not exercise real Manoj/Shobhit services, prove the latency target, or clear the legacy end-to-end failure below. No local database or deployment was started for this handover.
+- These checks validate the existing package and portable handover. They do not exercise Manoj's real service, prove the latency target, or clear the legacy end-to-end failure below. No local database or deployment was started for this handover.
 
 ## Historical starting limitations — 1 October 2026
 
