@@ -315,3 +315,19 @@ settings/secrets require separate approval. Governing detail: [removal plan](han
 and [LOG-1 revision 6](handover/mcp-only/implementation/LOG-1-PLAN.md).
 
 **K3 supplement, 11 October 2026.** Opus review approved the three-tool implementation (`8f1df7d`–`5bc5490`), including LOG-1 revision 6. Before approval, a follow-up removed a leftover stub `answers` fixture, the knowledge stub port and an unused smoke language setting. Gate 7 stays open only for production-log verification after an approved deployment. Gate 2 has local live evidence from 10 October on tenant `jayashree`, pending Manoj's confirmation of that tenant. Merge to `main`, deployment, our ContextForge refresh and the remaining release gates are still open. Implementation approval is not deployment readiness.
+
+**Gate 8, 11 October 2026.** Garima approved gate 8: the voice agent is in testing mode and she confirmed that the Stratum knowledge tool works. Separate symptom, emergency and transfer results from Rajeev's team are not recorded here.
+
+## A15 — Reschedule only an appointment in the caller's list (11 October 2026)
+
+RESCHEDULE requires the appointment to be in the verified caller's own appointment list, which
+starts today by the owner's default. Any other id, including the caller's past appointment, returns
+`NOT_FOUND`/`SAY_NOT_FOUND` with no write; the desk handles past appointments. Garima approved this
+on 11 October 2026 after the whole-branch review (R-1, option A). It supersedes her 6 October
+acceptance of B-1, under which such a reschedule was sent without a schedule check. The on-call
+(D-8) and slot (K-6) rules made that bypass wider. Another caller's id still looks exactly like an
+unknown id.
+
+The owner appointment's `expectedTime` is validated as `ApproxTime` (R-2), so a malformed owner
+time maps to `UNCERTAIN` after a write and `COULD_NOT_CHECK` on LIST, never an unexpected error.
+The published schema is unchanged.
