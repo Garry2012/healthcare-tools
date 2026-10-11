@@ -368,6 +368,14 @@ class OpsClient:
         path = f"/doctors/{_path_id(doctor_id)}"
         return self._parse(contract.DoctorDetail, await self._read(path, deadline), "/doctors/{id}")
 
+    async def get_capabilities(self, deadline: Deadline) -> contract.Capabilities:
+        return self._parse(contract.Capabilities, await self._read("/capabilities", deadline), "/capabilities")
+
+    async def get_slots(self, deadline: Deadline, *, doctor_id: str, date: str) -> contract.SlotPlan:
+        path = f"/availability/{_path_id(doctor_id)}/slots"
+        return self._parse(contract.SlotPlan, await self._read(path, deadline, {"date": date}),
+                           "/availability/{id}/slots")
+
     async def get_availability(self, deadline: Deadline, *, date: str, doctor_id: str | None = None,
                                department: str | None = None) -> contract.AvailabilityBoard:
         if bool(doctor_id) == bool(department):

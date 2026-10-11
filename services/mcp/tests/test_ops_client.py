@@ -523,3 +523,102 @@ async def test_summary_retries_same_body_without_a_header_key(make_settings):
     assert status == 200 and result.callId == "call-1"
     assert len(up.api_requests()) == 2
     assert all(json.loads(r.content) == body and "idempotency-key" not in r.headers for r in up.api_requests())
+
+
+@pytest.mark.parametrize("date", ["today", "2026-10-07"])
+async def test_slot_reads_use_validated_path_and_unchanged_date(make_settings, date):
+    from frontdesk_mcp import contract
+
+    from .test_contract import slot_example
+
+    up = Upstream(responses=[httpx.Response(200, json=slot_example())])
+    async with client_for(make_settings(), up) as client:
+        result = await client.get_slots(dl(), doctor_id="doc_001", date=date)
+    assert isinstance(result, contract.SlotPlan)
+    assert result.sessions[0].slots[1].available == 2
+    [request] = up.api_requests()
+    assert request.method == "GET" and request.url.path == "/api/v1/availability/doc_001/slots"
+    assert dict(request.url.params) == {"date": date} and request.headers["authorization"] == "Bearer tok-1"
+
+
+async def test_capability_read_returns_typed_used_fields(make_settings):
+    from frontdesk_mcp import contract
+
+    from .test_contract import capability_example
+
+    up = Upstream(responses=[httpx.Response(200, json=capability_example())])
+    async with client_for(make_settings(), up) as client:
+        result = await client.get_capabilities(dl())
+    assert isinstance(result, contract.Capabilities)
+    assert result.slots.enabled is True and result.slots.blockMinutes == 30
+    [request] = up.api_requests()
+    assert request.method == "GET" and str(request.url) == "http://ops-stub.test/api/v1/capabilities"
+
+
+async def test_slot_read_rejects_malformed_identifier_before_auth_or_http(make_settings):
+    up = Upstream()
+    async with client_for(make_settings(), up) as client:
+        for value in ("../departments", "doc_1?x=1", "doc 1", "", "a" * 65):
+            with pytest.raises(ops_client.InvalidIdentifier):
+                await client.get_slots(dl(), doctor_id=value, date="today")
+    assert up.requests == []
+
+
+@pytest.mark.parametrize("method,args", [("get_slots", {"doctor_id": "doc_001", "date": "today"}),
+                                        ("get_capabilities", {})])
+@pytest.mark.parametrize("status,code", [(400, "VALIDATION_FAILED"), (404, "NOT_FOUND")])
+async def test_new_reads_keep_definite_owner_rejections(make_settings, method, args, status, code):
+    up = Upstream(responses=[httpx.Response(status, json={"error": {"code": code, "message": "private owner text"}})])
+    async with client_for(make_settings(), up) as client:
+        with pytest.raises(ops_client.Rejected) as caught:
+            await getattr(client, method)(dl(), **args)
+    assert caught.value.status == status and caught.value.code == code
+    assert "private owner text" not in str(caught.value) and len(up.api_requests()) == 1
+
+
+@pytest.mark.parametrize("method,args", [("get_slots", {"doctor_id": "doc_001", "date": "today"}),
+                                        ("get_capabilities", {})])
+@pytest.mark.parametrize("response,reason", [(httpx.Response(503), "UPSTREAM"),
+                                            (httpx.ReadTimeout("slow"), "TIMEOUT")])
+async def test_new_reads_keep_unavailable_failures(make_settings, method, args, response, reason):
+    up = Upstream(responses=[response])
+    async with client_for(make_settings(), up) as client:
+        with pytest.raises(ops_client.Unavailable) as caught:
+            await getattr(client, method)(dl(), **args)
+    assert caught.value.reason == reason and len(up.api_requests()) == 1
+
+
+@pytest.mark.parametrize("method,args,body", [
+    ("get_slots", {"doctor_id": "doc_001", "date": "today"}, {}),
+    ("get_capabilities", {}, {}),
+    ("get_capabilities", {}, {"slots": {"blockMinutes": 30}}),
+])
+async def test_new_reads_reject_missing_required_facts_as_malformed(make_settings, method, args, body):
+    up = Upstream(responses=[httpx.Response(200, json=body)])
+    async with client_for(make_settings(), up) as client:
+        with pytest.raises(ops_client.Malformed):
+            await getattr(client, method)(dl(), **args)
+    assert len(up.api_requests()) == 1
+
+
+@pytest.mark.parametrize("invalid", ["reversed", "negative", "excess", "unordered", "overlap"])
+async def test_slot_invariant_violations_use_existing_malformed_failure(make_settings, invalid):
+    from .test_contract import slot_example
+
+    raw = slot_example()
+    blocks = raw["sessions"][0]["slots"]
+    if invalid == "reversed":
+        blocks[0]["end"] = blocks[0]["start"]
+    elif invalid == "negative":
+        blocks[0]["booked"] = -1
+    elif invalid == "excess":
+        blocks[0]["available"] = 4
+    elif invalid == "unordered":
+        blocks.reverse()
+    else:
+        blocks[1]["start"] = "10:45"
+    up = Upstream(responses=[httpx.Response(200, json=raw)])
+    async with client_for(make_settings(), up) as client:
+        with pytest.raises(ops_client.Malformed):
+            await client.get_slots(dl(), doctor_id="doc_001", date="today")
+    assert len(up.api_requests()) == 1

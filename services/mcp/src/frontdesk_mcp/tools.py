@@ -1,4 +1,4 @@
-"""The four tools. Each maps model-facing arguments to one service call; trusted context (call id,
+"""The three tools. Each maps model-facing arguments to one service call; trusted context (call id,
 caller number, operation id, call start time) is read from the request headers only and is never
 a parameter. Business rules live with the owners; the services here compose contracted facts."""
 
@@ -17,18 +17,17 @@ from fastmcp.tools.tool import ToolResult
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
-from . import availability, booking, context, contract, knowledge, outcomes, prompt, summary
+from . import availability, booking, context, contract, outcomes, prompt, summary
 from .cache import DirectoryCache
 from .clock import Clock, SystemClock
 from .config import Settings
-from .knowledge_client import KnowledgeClient
 from .ops_client import OpsClient
 from .packs import Pack
 from .schedule_reader import ScheduleReader
 
 logger = logging.getLogger(__name__)
 
-TOOL_NAMES = ("get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary")
+TOOL_NAMES = ("get_doctor_availability", "manage_booking", "record_call_summary")
 
 
 @dataclass
@@ -36,31 +35,26 @@ class Services:
     settings: Settings
     clock: Clock
     ops: OpsClient
-    knowledge: KnowledgeClient
     cache: DirectoryCache
     availability: availability.AvailabilityService
     booking: booking.BookingService
-    search: knowledge.KnowledgeService
     summary: summary.SummaryService
 
     @classmethod
     def build(cls, settings: Settings, *, ops_transport: httpx.AsyncBaseTransport | None = None,
-              knowledge_transport: httpx.AsyncBaseTransport | None = None, clock: Clock | None = None,
+              clock: Clock | None = None,
               monotonic: Callable[[], float] = time.monotonic) -> Services:
         clock = clock or SystemClock()
         ops = OpsClient(settings, transport=ops_transport, monotonic=monotonic)
-        kb = KnowledgeClient(settings, transport=knowledge_transport)
         cache = DirectoryCache(settings, monotonic)
         reader = ScheduleReader(ops, cache, settings)
-        return cls(settings, clock, ops, kb, cache,
+        return cls(settings, clock, ops, cache,
                    availability.AvailabilityService(ops, cache, settings, clock, reader),
                    booking.BookingService(ops, settings, clock, cache, reader),
-                   knowledge.KnowledgeService(kb, settings),
                    summary.SummaryService(ops, settings))
 
     async def aclose(self) -> None:
         await self.ops.aclose()
-        await self.knowledge.aclose()
 
 
 def _apply_pack_text(tool: Any, text: Any) -> None:
@@ -155,21 +149,6 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         return observed("manage_booking", await services.booking.manage(ctx(), request))
 
     _apply_pack_text(manage_booking, pack.tools["manage_booking"])
-
-    @mcp.tool(
-        name="search_knowledge",
-        description=pack.tools["search_knowledge"].description,
-        output_schema=outcomes.KnowledgeResult.model_json_schema(),
-        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
-    )
-    async def search_knowledge(
-        question: Annotated[str, Field(max_length=500)],
-        language: Annotated[str, Field(max_length=16)],
-    ) -> ToolResult:
-        request = knowledge.KnowledgeRequest(question=question, language=language)
-        return observed("search_knowledge", await services.search.search(ctx(), request))
-
-    _apply_pack_text(search_knowledge, pack.tools["search_knowledge"])
 
     @mcp.tool(
         name="record_call_summary",

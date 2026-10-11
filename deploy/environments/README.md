@@ -9,14 +9,9 @@ the profile contains only vault and secret names.
 | `mock` | `https://healthcare-contract-mock.icytree-6543aaa9.centralindia.azurecontainerapps.io` | Public example credentials; static Prism responses, no persistence |
 | `live` | `https://healthcare-api.icytree-6543aaa9.centralindia.azurecontainerapps.io/api/v1` | Registered machine client from the shared vault; real-service tests and the canary |
 
-The inspected live contract matches pinned paths/schemas; its `servers` entry differs. As checked on
-2 October 2026, the live client authenticates as `jayashree` with `appointments.write`, but still needs
-`calls.write`. Shobhit's URL was not supplied at that inspection; this is historical live status, not a fresh probe.
-The revised adapter accepts an empty knowledge URL and bearer together: scheduling remains independent,
-and knowledge reports NOT_CONFIGURED. Both must be set to enable knowledge; no placeholder host is needed.
-The profile derives `SMOKE_EXPECT_KNOWLEDGE=required|absent`; smoke refuses a mismatched deployment.
-Deployment clears the unused environment value and removes an existing app's stale knowledge-token
-reference after switching its environment. An already-absent reference needs no removal; unrelated secrets stay.
+The 2 October 2026 inspection recorded a live client authenticating as `jayashree` with
+`appointments.write` and a pending `calls.write` grant. This is historical status, not a fresh probe.
+Current release readiness requires separately approved owner and deployed-transport checks.
 
 ## Run tests and benchmarks with the same configuration
 
@@ -33,11 +28,10 @@ scripts/run-profile.sh live -- uv run --project services/mcp pytest services/mcp
 scripts/run-profile.sh live -- uv run --project services/mcp python services/mcp/dev/bench.py
 ```
 
-`scripts/env.sh live` remains available for non-secret exports. It derives the runtime, `OPS_E2E_*`,
-`KNOWLEDGE_E2E_*` and `BENCH_*` URL aliases. Blank profile values **clear stale shell values**. The
-launcher supplies the corresponding credential aliases from `OPS_CLIENT_ID_SECRET_NAME`,
-`OPS_CLIENT_SECRET_SECRET_NAME` and `KNOWLEDGE_BEARER_TOKEN_SECRET_NAME`. With no knowledge URL,
-external knowledge gates remain blocked; the benchmark explicitly labels its local knowledge stub.
+`scripts/env.sh live` provides non-secret exports and derives `OPS_E2E_BASE_URL` and
+`BENCH_OPS_BASE_URL` from `OPS_BASE_URL`. Switching profiles replaces these operational URLs.
+The launcher supplies matching credential aliases from `OPS_CLIENT_ID_SECRET_NAME` and
+`OPS_CLIENT_SECRET_SECRET_NAME`; the runtime, external gates and benchmark use the same pair.
 External benchmarks omit CREATE by default and report that omission. To benchmark real test bookings,
 set `BENCH_ALLOW_WRITES=1`, `OPS_E2E_MODE=live` and `BENCH_WRITE_TENANT` to the owner-designated synthetic
 tenant; the same authenticated-tenant check runs first. This deliberately creates synthetic records;
@@ -50,7 +44,7 @@ mismatching identity fails closed; matching a name does not establish that data 
 
 ## Deploy or change an endpoint
 
-Edit `OPS_BASE_URL` / `KNOWLEDGE_BASE_URL` in the selected profile; keep credentials at its named
+Edit `OPS_BASE_URL` in the selected profile; keep credentials at its named
 vault references. After required owner inputs are available:
 
 ```bash
@@ -63,4 +57,5 @@ values. Rotate a credential by creating a new version at its existing vault name
 revision. The profile controls subscription `4e1c081a-9a6a-4e16-9da2-90217c22378b`, resource group
 `healthcare-rg` and the canary `mcp-demo-hospital-canary`. Deployment requires existing shared
 infrastructure and does not create a resource group, registry, environment, vault or shared identity.
-The legacy `mcp-demo-hospital` remains separate until consumer cutover is verified.
+The legacy `mcp-demo-hospital` and `api-demo-hospital` were deleted on 9 October 2026;
+see the [retirement record](../../docs/handover/mcp-only/implementation/AZURE-RETIREMENT-CHECK-20261009.md).

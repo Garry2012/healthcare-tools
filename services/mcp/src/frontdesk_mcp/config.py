@@ -1,5 +1,5 @@
 """Adapter settings, from the environment: the rollout's identity (rollouts/<id>/rollout.env), the
-two owner services (Manoj's operational API, Shobhit's knowledge service) and the gateway
+one owner service (Manoj's operational API) and the gateway
 bearer. Nothing provider-specific is written in code, and production refuses development stubs."""
 
 from __future__ import annotations
@@ -38,12 +38,8 @@ class Settings(BaseSettings):
     ops_client_id: str = ""
     ops_client_secret: SecretStr = SecretStr("")
 
-    # --- Shobhit's knowledge service (contract pending: see knowledge_contract.py) ----------------
-    knowledge_base_url: str = ""
-    knowledge_bearer_token: SecretStr = SecretStr("")
-
     # --- who may call us ------------------------------------------------------------------------
-    # The bearer the gateway presents for all four tools.
+    # The bearer the gateway presents for all three tools.
     mcp_bearer_token: SecretStr = SecretStr("")
     # Dev only: used when the gateway forwards no X-Caller-Number.
     mcp_dev_caller_number: str = ""
@@ -59,7 +55,7 @@ class Settings(BaseSettings):
     voice_response_budget_seconds: float = Field(default=1.0, gt=0, le=10)
     reserved_stage_seconds: float = Field(default=0.65, ge=0, le=10)
     gateway_overhead_seconds: float = Field(default=0.05, ge=0, le=5)  # ContextForge hop, outside the adapter
-    # Scheduling and knowledge tools (reads AND confirmed booking writes) get the same share:
+    # Scheduling tools (reads AND confirmed booking writes) get the same share:
     # budget − reserved − gateway. Explicit values are diagnostic overrides; one that exceeds the share is refused
     # unless ALLOW_BUDGET_OVERRIDES=true is set deliberately (bench/external runs from a distant laptop).
     read_deadline_seconds: float | None = Field(default=None, gt=0, le=30)
@@ -76,7 +72,6 @@ class Settings(BaseSettings):
     min_batch_headroom_seconds: float = Field(default=0.05, ge=0, le=30)
     directory_cache_max_entries: int = Field(default=512, ge=1, le=100_000)
     ops_pool_max_connections: int = Field(default=20, ge=1, le=1000)
-    knowledge_pool_max_connections: int = Field(default=10, ge=1, le=1000)
 
     @model_validator(mode="after")
     def _profile_pool(self) -> Settings:
@@ -108,18 +103,13 @@ class Settings(BaseSettings):
             raise ValueError("TENANT_COUNTRY_CALLING_CODE must be the digits of the calling code, e.g. 91")
         return value
 
-    @field_validator("ops_base_url", "knowledge_base_url")
+    @field_validator("ops_base_url")
     @classmethod
     def _strip_slash(cls, value: str) -> str:
         value = value.strip()
         if value and not value.rstrip("/"):
             raise ValueError("owner base URL must not contain only slashes")
         return value.rstrip("/")
-
-    @field_validator("knowledge_bearer_token")
-    @classmethod
-    def _knowledge_token(cls, value: SecretStr) -> SecretStr:
-        return SecretStr(value.get_secret_value().strip())
 
     @field_validator("accepted_caller_verification")
     @classmethod
@@ -186,21 +176,16 @@ class Settings(BaseSettings):
     def _guards(self) -> Settings:
         packs.load(self.domain_pack)
         if self.env != "development":
-            if bool(self.knowledge_base_url) != bool(self.knowledge_bearer_token.get_secret_value()):
-                raise ValueError("KNOWLEDGE_BASE_URL and KNOWLEDGE_BEARER_TOKEN must both be set or both empty")
             if self.mcp_dev_caller_number:
                 raise ValueError("MCP_DEV_CALLER_NUMBER is allowed only when ENV=development")
             if not (self.ops_client_id and self.ops_client_secret.get_secret_value()):
                 raise ValueError("OPS_CLIENT_ID and OPS_CLIENT_SECRET are required outside development")
         if self.env == "production":
-            for name, url in (("OPS_BASE_URL", self.ops_base_url), ("KNOWLEDGE_BASE_URL", self.knowledge_base_url)):
-                if name == "KNOWLEDGE_BASE_URL" and not url:
-                    continue  # only the knowledge tool is unavailable; scheduling remains independent
-                if not url.startswith("https://"):
-                    # Caller numbers, names and symptoms cross these hops: never in clear text in production.
-                    raise ValueError(f"{name} must use https:// when ENV=production")
-                if any(marker in url.lower() for marker in STUB_MARKERS):
-                    raise ValueError(f"{name} points at a stub/mock endpoint; production needs the owner's service")
+            if not self.ops_base_url.startswith("https://"):
+                # Caller numbers, names and symptoms never cross a clear-text hop in production.
+                raise ValueError("OPS_BASE_URL must use https:// when ENV=production")
+            if any(marker in self.ops_base_url.lower() for marker in STUB_MARKERS):
+                raise ValueError("OPS_BASE_URL points at a stub/mock endpoint; production needs the owner's service")
             gateway = self.mcp_bearer_token.get_secret_value()
             if not gateway:
                 raise ValueError("MCP_BEARER_TOKEN is required when ENV=production")

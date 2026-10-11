@@ -2,7 +2,7 @@ name: frontdesk-${PROVIDER_ID:-demo-hospital}
 
 # One compose file, two profiles:
 #   mcp   : the MCP adapter alone, pointed at the owner services configured in .env
-#   stubs : the two development stubs (Manoj contract stub under /api/v1, provisional knowledge stub)
+#   stubs : the operational development stub (Manoj contract under /api/v1)
 #           for local demos; `make up` runs both profiles with the adapter pointed at the stubs.
 # Secrets and ports come from the repository-root .env (the Makefile passes --env-file .env).
 # The rollout (a provider's tenant settings) comes from rollouts/$PROVIDER_ID/rollout.env.
@@ -25,8 +25,6 @@ services:
       OPS_BASE_URL: ${COMPOSE_OPS_BASE_URL:-http://ops-stub:8200/api/v1}
       OPS_CLIENT_ID: ${OPS_CLIENT_ID}
       OPS_CLIENT_SECRET: ${OPS_CLIENT_SECRET}
-      KNOWLEDGE_BASE_URL: ${COMPOSE_KNOWLEDGE_BASE_URL:-http://knowledge-stub:8300}
-      KNOWLEDGE_BEARER_TOKEN: ${KNOWLEDGE_BEARER_TOKEN}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
       MCP_DEV_CALLER_NUMBER: ${MCP_DEV_CALLER_NUMBER:-}
       VOICE_RESPONSE_BUDGET_SECONDS: ${VOICE_RESPONSE_BUDGET_SECONDS:-1.0}
@@ -46,15 +44,6 @@ services:
     build:
       context: ../services/mcp
       dockerfile: dev/Dockerfile
-    command: ["python", "-m", "frontdesk_stubs", "--host", "0.0.0.0", "--ops-port", "8200", "--knowledge-port", "8300",
-              "--ops-prefix", "/api/v1", "--client-id", "${OPS_CLIENT_ID}", "--client-secret", "${OPS_CLIENT_SECRET}",
-              "--knowledge-bearer", "${KNOWLEDGE_BEARER_TOKEN}"]
-    ports: ["127.0.0.1:${OPS_STUB_HOST_PORT:-8200}:8200", "127.0.0.1:${KNOWLEDGE_STUB_HOST_PORT:-8300}:8300"]
-
-  # The knowledge stub runs in the same process as the operational stub; this alias keeps the two
-  # owner URLs distinct in the adapter's configuration, as they will be in every real deployment.
-  knowledge-stub:
-    profiles: [stubs]
-    image: alpine/socat:1.8.0.0
-    command: ["TCP-LISTEN:8300,fork,reuseaddr", "TCP:ops-stub:8300"]
-    depends_on: [ops-stub]
+    command: ["python", "-m", "frontdesk_stubs", "--host", "0.0.0.0", "--ops-port", "8200",
+              "--ops-prefix", "/api/v1", "--client-id", "${OPS_CLIENT_ID}", "--client-secret", "${OPS_CLIENT_SECRET}"]
+    ports: ["127.0.0.1:${OPS_STUB_HOST_PORT:-8200}:8200"]

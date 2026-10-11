@@ -26,7 +26,7 @@ from .clock import Clock, Deadline, local_now
 from .config import Settings
 from .context import CallContext
 from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unavailable, UncertainWrite
-from .schedule_reader import ScheduleReader
+from .schedule_reader import READ_ERRORS, READ_FAILURE_STAGES, ScheduleReader, read_failure_detail
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,8 @@ class BookingRequest(BaseModel):
     doctorId: str | None = Field(default=None, max_length=64)  # noqa: N815
     visitDate: str | None = Field(default=None, max_length=10)  # noqa: N815
     preferredTime: str | None = Field(default=None, max_length=5)  # noqa: N815
-    session: str | None = Field(default=None, max_length=40, description="The board session the caller chose.")
+    session: outcomes.SessionChoice = Field(
+        default=None, max_length=40, description="The board session the caller chose.")
     reasonVerbatim: str | None = Field(default=None, max_length=500)  # noqa: N815
     # CANCEL / RESCHEDULE
     appointmentId: str | None = Field(default=None, max_length=64)  # noqa: N815
@@ -83,10 +84,12 @@ def operation_key(provider: str, call_id: str, action: str, operation_id: str) -
     return hashlib.sha256("|".join((provider, call_id, action, operation_id)).encode("utf-8")).hexdigest()
 
 
-def _appointment_out(a: contract.Appointment) -> outcomes.AppointmentOut:
+def _appointment_out(a: contract.Appointment, expected_slot: str | None = None) -> outcomes.AppointmentOut:
     return outcomes.AppointmentOut(appointmentId=a.id, status=a.status, visitDate=a.visitDate.isoformat(),
                                    expectedTime=a.expectedTime, doctorId=a.doctorId, department=a.department,
-                                   patientName=a.patientName)
+                                   patientName=a.patientName, slotTime=a.slotTime or a.expectedTime,
+                                   slotMoved=a.slotTime is not None and expected_slot is not None
+                                   and a.slotTime != expected_slot)
 
 
 def _list_date(value: str | None, field: str, issues: list[str]) -> str | None:
@@ -154,6 +157,9 @@ class BookingService:
                                               detail="IDEMPOTENCY_CONFLICT")
             if exc.code == "CONFLICT":
                 return outcomes.BookingResult(outcome="CONFLICT", nextStep="TRANSFER_DESK", detail="STATE_CONFLICT")
+            if exc.code == "SLOT_FULL":
+                return outcomes.BookingResult(outcome="NOT_AVAILABLE", nextStep="OFFER_OTHER_SESSION_OR_TIME",
+                                              detail="SLOT_FULL")
             names = _REJECTION_FIELDS[action]
             fields = {names[field] for field in exc.fields if field in names}
             return outcomes.BookingResult(outcome="REJECTED", nextStep="ASK_TO_CORRECT", fields=sorted(fields),
@@ -211,9 +217,10 @@ class BookingService:
         if gate := self._write_gate(ctx, request):
             return gate
         deadline = Deadline(self.settings.write_deadline_seconds)
-        if blocked := await self._schedule_gate(request.doctorId, requested, request.session, preferred, deadline, now,
-                                                request.action):
-            return blocked
+        schedule = await self._schedule_gate(request.doctorId, requested, request.session, preferred, deadline, now,
+                                              request.action)
+        if isinstance(schedule, outcomes.BookingResult):
+            return schedule
         body = _write_body(request, patientName=request.patientName.strip(), visitDate=visit_date,
                            preferredTime=preferred)
         body["callId"] = ctx.call_id
@@ -222,25 +229,37 @@ class BookingService:
             _, appointment = await self.ops.create_appointment(body, key, deadline)
         except (Rejected, Malformed, Unavailable, UncertainWrite) as exc:
             return self._failure(exc, request.action)
-        return self._written(appointment, "SAY_REQUEST_NOTED")
+        return self._written(appointment, schedule.expected_slot)
 
     async def _schedule_gate(self, doctor_id: str, requested: policy.RequestedDate, session: str | None,
                              preferred: str | None, deadline: Deadline, now: datetime,
-                             action: Action) -> outcomes.BookingResult | None:
+                             action: Action) -> outcomes.BookingResult | policy.Write:
         try:
             facts = await self.reader.doctor(doctor_id, requested, policy.Purpose.AVAILABILITY, deadline)
-        except (Unavailable, Malformed, InvalidIdentifier) as exc:
+        except READ_ERRORS as exc:
+            if getattr(exc, "stage", None) not in READ_FAILURE_STAGES and isinstance(exc, Rejected):
+                return self._failure(exc, action)
             retry = exc.retry_after if isinstance(exc, Unavailable) else None
-            detail = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else (
-                "BOARD_UNAVAILABLE" if getattr(exc, "stage", None) == "board" else "PROFILE_UNAVAILABLE")
+            detail = "AUTH" if isinstance(exc, Unavailable) and exc.reason == "AUTH" else read_failure_detail(
+                getattr(exc, "stage", None), "PROFILE_UNAVAILABLE")
             return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",
                                           detail=detail, retryAfterSeconds=retry)
-        except Rejected as exc:
-            return self._failure(exc, action)
+        return self._schedule_result(facts, requested, session, preferred, now, action)
+
+    @staticmethod
+    def _schedule_result(facts: policy.DoctorFacts, requested: policy.RequestedDate, session: str | None,
+                         preferred: str | None, now: datetime, action: Action) -> outcomes.BookingResult | policy.Write:
+        if isinstance(facts.slots, policy.SlotsNotRead):
+            return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",
+                                          detail="SLOTS_UNAVAILABLE")
         decision = policy.decide_doctor(facts, requested, session=session, now=now)
         booking = policy.decide_booking(decision, session=session, preferred_time=preferred, now=now)
         if isinstance(booking, policy.Write):
-            return None
+            return booking
+        if isinstance(booking, policy.TimeRequired):
+            return outcomes.BookingResult(outcome="INVALID_REQUEST", nextStep="ASK_WHICH_TIME",
+                fields=["preferredTime" if action == "CREATE" else "newPreferredTime"], detail="TIME_REQUIRED",
+                sessions=[outcomes.session_out(s, requested) for s in booking.alternatives])
         if isinstance(booking, policy.SessionRequired):
             return outcomes.BookingResult(outcome="INVALID_REQUEST", nextStep="ASK_WHICH_SESSION",
                 fields=["session"], detail="SESSION_REQUIRED",
@@ -277,19 +296,20 @@ class BookingService:
         if mobile is None:
             return self._identity_unavailable()
         deadline = Deadline(self.settings.write_deadline_seconds)
+        expected_slot = None
         if request.action == "RESCHEDULE":
-            if blocked := await self._reschedule_gate(mobile, request, requested, new_time, deadline, now):
-                return blocked
+            schedule = await self._reschedule_gate(mobile, request, requested, new_time, deadline, now)
+            if isinstance(schedule, outcomes.BookingResult):
+                return schedule
+            expected_slot = schedule.expected_slot
         body = _write_body(request, newVisitDate=new_date, newPreferredTime=new_time)
         body.update(callerMobile=mobile, callId=ctx.call_id)
         if request.action == "CANCEL":
             key = operation_key(self.settings.provider_id, ctx.call_id, "CANCEL", ctx.operation_id)
             call = self.ops.cancel_appointment(request.appointmentId, body, key, deadline)
-            step = "SAY_CANCELLED"
         else:
             key = operation_key(self.settings.provider_id, ctx.call_id, "RESCHEDULE", ctx.operation_id)
             call = self.ops.reschedule_appointment(request.appointmentId, body, key, deadline)
-            step = "SAY_CHANGED"
         try:
             _, appointment = await call
         except (Rejected, Malformed, Unavailable, UncertainWrite, InvalidIdentifier) as exc:
@@ -298,11 +318,12 @@ class BookingService:
             return self._failure(exc, request.action)
         if request.action == "RESCHEDULE":
             return outcomes.BookingResult(outcome="NOTED", nextStep="SAY_REQUEST_NOTED",
-                                          appointment=_appointment_out(appointment))
-        return self._written(appointment, step)
+                                          appointment=_appointment_out(appointment, expected_slot))
+        return self._written(appointment)
 
     async def _reschedule_gate(self, mobile: str, request: BookingRequest, requested: policy.RequestedDate,
-                              new_time: str | None, deadline: Deadline, now: datetime) -> outcomes.BookingResult | None:
+                              new_time: str | None, deadline: Deadline, now: datetime
+                              ) -> outcomes.BookingResult | policy.Write:
         try:
             listed = await self.ops.find_appointments(deadline, mobile=mobile)
         except (Rejected, Malformed, Unavailable) as exc:
@@ -313,7 +334,9 @@ class BookingService:
                                           detail="APPOINTMENT_UNAVAILABLE", retryAfterSeconds=retry)
         current = next((a for a in listed.items if a.id == request.appointmentId), None)
         if current is None:
-            return None  # preserve the owner's neutral NOT_FOUND for this verified caller
+            # The appointment must be in the verified caller's list, which starts today by owner contract.
+            # Another caller's or a past appointment gets the same neutral NOT_FOUND, with no write.
+            return outcomes.BookingResult(outcome="NOT_FOUND", nextStep="SAY_NOT_FOUND")
         if not current.doctorId:
             return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",
                                           detail="MALFORMED")
@@ -321,8 +344,9 @@ class BookingService:
                                          request.action)
 
     @staticmethod
-    def _written(appointment: contract.Appointment, step: str) -> outcomes.BookingResult:
+    def _written(appointment: contract.Appointment, expected_slot: str | None = None) -> outcomes.BookingResult:
         outcome = {"NOTED": "NOTED", "CONFIRMED_BY_DESK": "NOTED", "CHANGED": "CHANGED",
                    "CANCELLED": "CANCELLED"}[appointment.status]
         step = {"NOTED": "SAY_REQUEST_NOTED", "CHANGED": "SAY_CHANGED", "CANCELLED": "SAY_CANCELLED"}[outcome]
-        return outcomes.BookingResult(outcome=outcome, nextStep=step, appointment=_appointment_out(appointment))
+        return outcomes.BookingResult(outcome=outcome, nextStep=step,
+                                      appointment=_appointment_out(appointment, expected_slot))

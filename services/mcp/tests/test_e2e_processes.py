@@ -35,20 +35,29 @@ def _wait(url: str, proc: subprocess.Popen, seconds: float = 15) -> None:
     raise RuntimeError(f"{url} did not come up")
 
 
-@pytest.fixture(scope="module")
+def _stop_processes(children, timeout=10):
+    for proc in children:
+        proc.terminate()
+    for proc in children:
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+
+@pytest.fixture
 def processes():
-    ops_port, kb_port, mcp_port = free_port(), free_port(), free_port()
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("OPS_", "KNOWLEDGE_", "MCP_", "TENANT_"))}
+    ops_port, mcp_port = free_port(), free_port()
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OPS_", "MCP_", "TENANT_"))}
     stubs = subprocess.Popen(
-        [sys.executable, "-m", "frontdesk_stubs", "--ops-port", str(ops_port), "--knowledge-port", str(kb_port),
-         "--ops-prefix", "/api/v1", "--client-id", "mcp-e2e", "--client-secret", "e2e-secret",
-         "--knowledge-bearer", "kb-e2e"],
+        [sys.executable, "-m", "frontdesk_stubs", "--ops-port", str(ops_port),
+         "--ops-prefix", "/api/v1", "--client-id", "mcp-e2e", "--client-secret", "e2e-secret"],
         env={**env, "PYTHONPATH": "dev:src"}, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     mcp_env = {**env, "ENV": "test", "PROVIDER_ID": "demo-hospital", "DOMAIN_PACK": "healthcare",
                "TENANT_SUPPORTED_LANGUAGES": "en,kn,hi", "TENANT_TIMEZONE": "Asia/Kolkata",
                "TENANT_COUNTRY_CALLING_CODE": "91", "OPS_BASE_URL": f"http://127.0.0.1:{ops_port}/api/v1",
                "OPS_CLIENT_ID": "mcp-e2e", "OPS_CLIENT_SECRET": "e2e-secret",
-               "KNOWLEDGE_BASE_URL": f"http://127.0.0.1:{kb_port}", "KNOWLEDGE_BEARER_TOKEN": "kb-e2e",
                "MCP_BEARER_TOKEN": "gateway-e2e",
                "HOST": "127.0.0.1", "PORT": str(mcp_port), "LOG_LEVEL": "WARNING"}
     mcp = subprocess.Popen([sys.executable, "-m", "frontdesk_mcp.cli", "serve"], env=mcp_env,
@@ -58,15 +67,13 @@ def processes():
         _wait(f"http://127.0.0.1:{mcp_port}/health", mcp)
         yield {"mcp": f"http://127.0.0.1:{mcp_port}", "ops": f"http://127.0.0.1:{ops_port}/api/v1"}
     finally:
-        for proc in (mcp, stubs):
-            proc.terminate()
-            proc.wait(timeout=10)
+        _stop_processes((mcp, stubs))
 
 
 async def test_release_smoke_passes_against_real_processes(processes):
     smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
-    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "en",
-                         "General Medicine", "required")
+    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e",
+                         "General Medicine")
 
 
 async def test_journey_and_summary_through_real_transport(processes):
@@ -88,7 +95,7 @@ async def test_journey_and_summary_through_real_transport(processes):
         call_id="e2e-1", started_at="2026-10-01T10:00:00+05:30")}
     async with Client(StreamableHttpTransport(f"{base}/mcp/", headers=summary_headers)) as c:
         assert {t.name for t in await c.list_tools()} == {
-            "get_doctor_availability", "manage_booking", "search_knowledge", "record_call_summary"}
+            "get_doctor_availability", "manage_booking", "record_call_summary"}
         stored = (await c.call_tool("record_call_summary", {
             "intent": "BOOKING", "outcome": "APPOINTMENT_NOTED", "appointmentId": noted["appointment"]["appointmentId"],
             "summaryText": "E2E journey."})).structured_content
@@ -101,3 +108,91 @@ async def test_journey_and_summary_through_real_transport(processes):
     assert not any(r["path"] == "/availability" and r["method"] == "GET"
                    for r in state["requests"][before_future:])
     assert len(state["appointments"]) == 1 and len(state["summaries"]) == 1
+
+
+async def test_slot_journey_and_release_smoke_through_real_processes(processes):
+    state_url = f"{processes['ops']}/__stub/state"
+    plan = harness.slot_plan(date="2099-01-05")
+    afternoon = plan["sessions"][1]
+    afternoon["session"] = "Afternoon"
+    afternoon["slots"][0].update(start="15:00", end="15:30")
+    response = httpx.post(f"{processes['ops']}/__stub/scenario", json={
+        "capabilities": {"slots": {"enabled": True}},
+        "slots": {"doc_garima": {"2099-01-05": plan}}})
+    response.raise_for_status()
+    headers = {"Authorization": "Bearer gateway-e2e", **harness.headers(
+        call_id="e2e-slots", operation_id="e2e-slots-create")}
+    async def operation_header(request):
+        request.headers["X-Operation-Id"] = headers["X-Operation-Id"]
+
+    def http_client(**kwargs):
+        return httpx.AsyncClient(**kwargs, event_hooks={"request": [operation_header]})
+
+    async with Client(StreamableHttpTransport(f"{processes['mcp']}/mcp/", headers=headers,
+                                             httpx_client_factory=http_client)) as c:
+        available = (await c.call_tool("get_doctor_availability", {
+            "doctorId": "doc_garima", "date": "2099-01-05"})).structured_content
+        assert available["outcome"] == "AVAILABILITY"
+        offered = {session["label"]: session["openSlots"]
+                   for session in available["doctors"][0]["usualSessions"]}
+        assert offered["Morning"], "future Morning must offer its scripted slot"
+        assert offered["Morning"][0]["start"] == "10:30"
+        assert offered["Afternoon"][0]["start"] == "15:00"
+        create = {"action": "CREATE", "doctorId": "doc_garima", "visitDate": "2099-01-05",
+                  "patientName": "Slots E2E", "patientMobile": "9000000101", "callerConfirmed": True}
+        refused = (await c.call_tool("manage_booking", create)).structured_content
+        assert (refused["outcome"], refused["nextStep"]) == ("INVALID_REQUEST", "ASK_WHICH_TIME")
+        state = httpx.get(state_url).json()
+        assert state["appointments"] == []
+        assert not any(r["method"] == "POST" and r["path"] == "/appointments" for r in state["requests"])
+        noted = (await c.call_tool("manage_booking", {
+            **create, "preferredTime": offered["Morning"][0]["start"]})).structured_content
+        assert noted["outcome"] == "NOTED"
+        assert noted["appointment"]["slotTime"] == "10:30"
+        headers["X-Operation-Id"] = "e2e-slots-reschedule"
+        moved = (await c.call_tool("manage_booking", {
+            "action": "RESCHEDULE", "appointmentId": noted["appointment"]["appointmentId"],
+            "newVisitDate": "2099-01-05", "newPreferredTime": offered["Afternoon"][0]["start"],
+            "callerConfirmed": True})).structured_content
+        assert moved["outcome"] == "NOTED"
+        assert moved["appointment"]["status"] == "CHANGED"
+        assert moved["appointment"]["slotTime"] == "15:00"
+    smoke = runpy.run_path(str(ROOT / "deploy/azure/smoke.py"))
+    await smoke["smoke"](f"{processes['mcp']}/mcp/", "gateway-e2e", "General Medicine")
+
+
+def test_process_cleanup_reaps_stuck_and_cooperative_children():
+    children = []
+    try:
+        for handler in ("signal.SIG_IGN", "signal.SIG_DFL"):
+            proc = subprocess.Popen([sys.executable, "-u", "-c",
+                f"import signal,time; signal.signal(signal.SIGTERM, {handler}); print('ready'); time.sleep(60)"],
+                stdout=subprocess.PIPE)
+            children.append(proc)
+            assert proc.stdout.readline() == b"ready\n"
+        _stop_processes(children, timeout=.1)
+        assert all(proc.poll() is not None for proc in children)
+        assert all(proc.returncode < 0 for proc in children)
+    finally:
+        for proc in children:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+            proc.stdout.close()
+
+
+def test_process_cleanup_terminates_every_child_before_waiting():
+    events = []
+
+    class Child:
+        def __init__(self, name):
+            self.name = name
+
+        def terminate(self):
+            events.append((self.name, "terminate"))
+
+        def wait(self, timeout):
+            events.append((self.name, "wait"))
+
+    _stop_processes([Child("mcp"), Child("stubs")])
+    assert events == [("mcp", "terminate"), ("stubs", "terminate"), ("mcp", "wait"), ("stubs", "wait")]

@@ -1,6 +1,6 @@
-"""The development stubs simulate the two owner contracts for tests and local demos. Their operational
-responses are validated against the pinned Manoj contract (via the quoting-only overlay); the knowledge
-stub follows the PROVISIONAL knowledge_contract. They are fixtures, never engines or production config."""
+"""The operational development stub simulates Manoj's contract for tests and local demos. Its
+responses are validated against the pinned Manoj contract (via the quoting-only overlay).
+They are fixtures, never engines or production config."""
 
 from __future__ import annotations
 
@@ -13,13 +13,11 @@ import jsonschema
 import pytest
 import yaml
 
-from frontdesk_mcp import knowledge_contract
 from frontdesk_mcp.clock import FixedClock
-from frontdesk_stubs import knowledge as knowledge_stub
 from frontdesk_stubs import ops as ops_stub
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "docs/handover/mcp-only/contracts"
-OVERLAY = CONTRACTS / "manoj-openapi-20260930.test-overlay.yaml"
+OVERLAY = CONTRACTS / "manoj-openapi-20261007.test-overlay.yaml"
 SPEC = yaml.safe_load(OVERLAY.read_text(encoding="utf-8"))
 TOKEN_URL = "http://ops/auth/token"
 # Wednesday 1 Oct 2026 10:00 IST
@@ -246,78 +244,9 @@ async def test_board_can_be_scripted_for_a_scenario(ops):
     assert [e["status"] for e in board["items"]] == ["IN"] and board["items"][0]["isStale"] is False
 
 
-@pytest.fixture
-def knowledge():
-    state = knowledge_stub.KnowledgeStubState(bearer="knowledge-secret")
-    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=knowledge_stub.create_app(state)), base_url="http://kb")
-    return state, http
-
-
-async def test_knowledge_stub_requires_its_bearer(knowledge):
-    state, http = knowledge
-    response = await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"})
-    assert response.status_code == 401
-
-
-async def test_routing_fixtures_are_an_exact_match_table_not_a_classifier(knowledge):
-    state, http = knowledge
-    auth = {"Authorization": "Bearer knowledge-secret"}
-
-    async def route(utterance: str) -> dict:
-        response = await http.post(knowledge_contract.ANSWER_PATH, json={"question": utterance, "language": "en"},
-                                   headers=auth)
-        assert response.status_code == 200
-        return knowledge_contract.AnswerResponse.model_validate(response.json()).model_dump()
-
-    assert (await route("Dr Garima, I have chest pain"))["outcome"] == "EMERGENCY_TRANSFER"
-    assert (await route("severe stomach pain"))["outcome"] == "DESK_TRANSFER"
-    assert (await route("my child has stomach pain"))["outcome"] == "CLARIFY"
-    routed = await route("I need a children's doctor")
-    assert routed["outcome"] == "ROUTE_DEPARTMENT" and routed["department"]["name"] == "Paediatrics"
-    assert routed["answer"]["text"] == "I can check the Paediatrics department for you."
-    general = await route("pet mein dard hai")
-    assert general["answer"]["text"] == "I can check the General Medicine department for you."
-    assert (await route("is Dr Garima there tomorrow"))["outcome"] == "NO_ANSWER"
-    # a near miss of an emergency phrase is NOT matched: the stub does not interpret words
-    assert (await route("chest pain"))["outcome"] == "NO_ANSWER"
-
-
-async def test_answers_come_back_verbatim_in_the_requested_language(knowledge):
-    state, http = knowledge
-    auth = {"Authorization": "Bearer knowledge-secret"}
-    answered = (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "ಪಾರ್ಕಿಂಗ್ ಇದೆಯಾ", "language": "kn"},
-                                headers=auth)).json()
-    parsed = knowledge_contract.AnswerResponse.model_validate(answered)
-    assert parsed.outcome == "ANSWERED" and parsed.sourceId == "kb_parking" and parsed.answer.language == "kn"
-    assert parsed.answer.text.startswith("ಹೌದು")
-    desk = knowledge_contract.AnswerResponse.model_validate((await http.post(
-        knowledge_contract.ANSWER_PATH, json={"question": "cashless", "language": "en"}, headers=auth)).json())
-    assert desk.outcome == "DESK_TRANSFER" and desk.destination == "insurance"
-    unknown = knowledge_contract.AnswerResponse.model_validate((await http.post(
-        knowledge_contract.ANSWER_PATH, json={"question": "what is the meaning of life", "language": "en"},
-        headers=auth)).json())
-    assert unknown.outcome == "NO_ANSWER" and unknown.answer is None
-
-
-async def test_knowledge_scenarios(knowledge):
-    state, http = knowledge
-    auth = {"Authorization": "Bearer knowledge-secret"}
-    state.fail_next.append(503)
-    assert (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"},
-                            headers=auth)).status_code == 503
-    state.malformed_next.append(True)
-    body = (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "x", "language": "en"},
-                            headers=auth)).json()
-    assert "outcome" not in body
-    state.answers.append({"id": "test", "questions": ["test phrase"], "outcome": "DESK_TRANSFER",
-                          "answers": {"en": "Ask the desk"}})
-    scripted = (await http.post(knowledge_contract.ANSWER_PATH, json={"question": "test phrase", "language": "en"},
-                                headers=auth)).json()
-    assert scripted["outcome"] == "DESK_TRANSFER"
-
-
 def test_fixture_data_is_contract_shaped():
     data = json.loads((Path(ops_stub.__file__).parent / "data/demo_hospital.json").read_text(encoding="utf-8"))
+    assert "answers" not in data
     for department in data["departments"]:
         conforms(department, "Department")
     for doctor in data["doctors"]:
@@ -336,3 +265,302 @@ async def test_summary_ignores_supplied_idempotency_keys_and_keeps_first_call_bo
                                headers={**auth, "Idempotency-Key": "different-key"})
     assert repeated.status_code == 200 and repeated.json() == first.json()
     assert len(state.summaries) == 2 and state.idempotency == {}
+
+
+@pytest.mark.parametrize("code,status", [("SLOT_FULL", 409), ("UNSUPPORTED_CAPABILITY", 400),
+                                        ("NOT_A_CONTRACT_CODE", 409)])
+async def test_scripted_write_outcomes_are_checked_against_the_owner_contract(ops, code, status):
+    state, http = ops
+    auth = {**await token(http), "Idempotency-Key": "scripted"}
+    state.write_outcomes = {"/appointments": [{"status": status, "code": code}]}
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    response = await http.post("/appointments", json=body, headers=auth)
+    assert response.status_code == status and state.appointments == {}
+    assert response.json()["error"] == {"code": code, "message": "scripted owner response"}
+    if code == "NOT_A_CONTRACT_CODE":
+        with pytest.raises(jsonschema.ValidationError):
+            conforms(response.json(), "Error")
+    else:
+        conforms(response.json(), "Error")
+
+
+async def test_scripted_write_queue_over_http_keeps_auth_replay_fifo_and_read_boundaries(ops):
+    state, http = ops
+    auth = await token(http)
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    created = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "original"})
+    assert created.status_code == 201
+    configured = await http.post("/__stub/scenario", json={"writeOutcomes": {
+        "/appointments": [{"status": 409, "code": "SLOT_FULL"}, {"status": 400, "code": "UNSUPPORTED_CAPABILITY"}]}})
+    assert configured.status_code == 200
+    assert (await http.post("/appointments", json=body)).status_code == 401
+    readonly = await token(http, "readonly", "ro-secret")
+    assert (await http.post("/appointments", json=body, headers=readonly)).status_code == 403
+    replay = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "original"})
+    assert replay.json() == created.json() and replay.status_code == 201
+    conflict = await http.post("/appointments", json={**body, "patientName": "Changed"},
+                               headers={**auth, "Idempotency-Key": "original"})
+    assert conflict.status_code == 409 and conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    assert (await http.get("/appointments", params={"mobile": "9000000101"}, headers=auth)).status_code == 200
+    for key, status, code in [("full", 409, "SLOT_FULL"), ("unsupported", 400, "UNSUPPORTED_CAPABILITY")]:
+        response = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": key})
+        assert response.status_code == status and response.json()["error"]["code"] == code
+        conforms(response.json(), "Error")
+    assert len(state.appointments) == 1
+    # A rejection is not saved as a successful replay; the consumed queue leaves normal handling intact.
+    accepted = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "full"})
+    assert accepted.status_code == 201 and len(state.appointments) == 2
+
+
+async def test_scripted_write_queue_is_path_specific_and_reset_clears_it(ops):
+    state, http = ops
+    auth = await token(http)
+    state.write_outcomes = {"/appointments/other/reschedule": [{"status": 409, "code": "SLOT_FULL"}]}
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    assert (await http.post("/appointments", json=body, headers=auth)).status_code == 201
+    # Infrastructure failure must not consume the later owner decision.
+    state.fail_next.append(("/appointments/other/reschedule", 503, {}))
+    response = await http.post("/appointments/other/reschedule", json={}, headers=auth)
+    assert response.status_code == 503 and response.json()["error"]["code"] == "INTERNAL"
+    response = await http.post("/appointments/other/reschedule", json={}, headers=auth)
+    assert response.status_code == 409 and response.json()["error"]["code"] == "SLOT_FULL"
+    state.write_outcomes = {"/appointments": [{"status": 409, "code": "SLOT_FULL"}]}
+    assert (await http.post("/__stub/reset")).status_code == 200
+    assert (await http.post("/appointments", json=body, headers=auth)).status_code == 201
+
+
+async def test_capabilities_default_scripting_and_reset(ops):
+    from .test_contract import capability_example
+
+    state, http = ops
+    auth = await token(http)
+    response = await http.get("/capabilities", headers=auth)
+    assert response.status_code == 200
+    default = response.json()
+    conforms(default, "Capabilities")
+    assert default["slots"] == {"enabled": False, "blockMinutes": 30}
+    assert default["availability"] == {"supportedModes": ["SESSION", "TIME_WINDOW"], "defaultMode": "SESSION",
+                                        "stalenessThresholdHours": 4}
+    assert default["appointments"] == {"verification": "MOBILE_MATCH", "confirmation": "DESK_ONLY"}
+    state.capabilities = capability_example("tokenHospital")  # contract example, not a live capture
+    scripted = (await http.get("/capabilities", headers=auth)).json()
+    conforms(scripted, "Capabilities")
+    assert scripted["slots"] == {"enabled": True, "blockMinutes": 20}
+    configured = capability_example()
+    assert (await http.post("/__stub/scenario", json={"capabilities": configured})).status_code == 200
+    scripted = (await http.get("/capabilities", headers=auth)).json()
+    conforms(scripted, "Capabilities")
+    assert scripted == configured
+    assert (await http.post("/__stub/reset")).status_code == 200
+    assert (await http.get("/capabilities", headers=auth)).json() == default
+
+
+@pytest.mark.parametrize("query,date", [({}, "2026-10-01"), ({"date": "today"}, "2026-10-01"),
+                                       ({"date": "2026-10-07"}, "2026-10-07")])
+async def test_slots_default_is_complete_disabled_and_never_calculated(ops, query, date):
+    state, http = ops
+    auth = await token(http)
+    # Contract-shaped override: even an enabled facility does not synthesize unscripted plans.
+    await http.post("/__stub/scenario", json={"capabilities": {
+        "availability": {}, "slots": {"enabled": True, "blockMinutes": 20}, "appointments": {}}})
+    response = await http.get("/availability/doc_garima/slots", params=query, headers=auth)
+    assert response.status_code == 200
+    conforms(response.json(), "SlotPlan")
+    assert response.json() == {"doctorId": "doc_garima", "date": date, "enabled": False,
+                               "blockMinutes": 20, "sessions": []}
+
+
+async def test_slot_today_uses_the_existing_facility_clock(ops):
+    state, http = ops
+    state.clock = FixedClock(datetime(2026, 10, 1, 20, 30, tzinfo=UTC))  # Oct 2 in India
+    auth = await token(http)
+    response = await http.get("/availability/doc_garima/slots", headers=auth)
+    assert response.status_code == 200 and response.json()["date"] == "2026-10-02"
+    conforms(response.json(), "SlotPlan")
+
+
+async def test_slot_plans_are_scripted_by_doctor_and_date_and_reset(ops):
+    from .test_contract import slot_example
+
+    state, http = ops
+    auth = await token(http)
+    first = slot_example() | {"doctorId": "doc_garima"}  # contract example, not a live capture
+    state.set_slots("doc_garima", "2026-10-07", first)
+    second = slot_example("morningCancelled") | {"doctorId": "doc_meera_kulkarni", "date": "2026-10-08"}
+    configured = await http.post("/__stub/scenario", json={"slots": {"doc_meera_kulkarni": {"2026-10-08": second}}})
+    assert configured.status_code == 200
+    for expected in (first, second):
+        response = await http.get(f"/availability/{expected['doctorId']}/slots",
+                                  params={"date": expected["date"]}, headers=auth)
+        assert response.status_code == 200 and response.json() == expected
+        conforms(response.json(), "SlotPlan")
+    for doctor, date in [("doc_garima", "2026-10-08"), ("doc_meera_kulkarni", "2026-10-07")]:
+        response = await http.get(f"/availability/{doctor}/slots", params={"date": date}, headers=auth)
+        conforms(response.json(), "SlotPlan")
+        assert response.json()["enabled"] is False and response.json()["sessions"] == []
+    assert (await http.post("/__stub/reset")).status_code == 200
+    for expected in (first, second):
+        response = await http.get(f"/availability/{expected['doctorId']}/slots",
+                                  params={"date": expected["date"]}, headers=auth)
+        conforms(response.json(), "SlotPlan")
+        assert response.json()["enabled"] is False and response.json()["sessions"] == []
+
+
+@pytest.mark.parametrize("path", ["/capabilities", "/availability/doc_garima/slots"])
+async def test_new_stub_reads_keep_auth_and_failure_scenarios(ops, path):
+    state, http = ops
+    for headers in ({}, {"Authorization": "Bearer forged"}):
+        denied = await http.get(path, headers=headers)
+        assert denied.status_code == 401
+        conforms(denied.json(), "Error")
+    auth = await token(http, "readonly", "ro-secret")  # no write scopes needed to read
+    assert (await http.get(path, headers=auth)).status_code == 200
+    state.fail_next.append((path, 503, {}))
+    failed = await http.get(path, headers=auth)
+    assert failed.status_code == 503
+    conforms(failed.json(), "Error")
+    state.malformed_next.append(path)
+    assert (await http.get(path, headers=auth)).json() == {"unexpected": True}
+
+
+@pytest.mark.parametrize("doctor,date,status,code", [("doc_missing", "today", 404, "NOT_FOUND"),
+                                                    ("doc_garima", "tomorrow", 400, "VALIDATION_FAILED")])
+async def test_slot_stub_owner_rejections_conform(ops, doctor, date, status, code):
+    state, http = ops
+    response = await http.get(f"/availability/{doctor}/slots", params={"date": date}, headers=await token(http))
+    assert response.status_code == status and response.json()["error"]["code"] == code
+    conforms(response.json(), "Error")
+
+
+@pytest.mark.parametrize("action", ["CREATE", "RESCHEDULE"])
+@pytest.mark.parametrize("configuration", ["in_process", "http"])
+async def test_mixed_write_outcomes_commit_slot_time_and_preserve_fifo_replay(ops, action, configuration):
+    state, http = ops
+    auth = await token(http)
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02",
+            "expectedTime": "10:45"}  # contract-shaped synthetic write, not a live capture
+    path = "/appointments"
+    if action == "RESCHEDULE":
+        created = await http.post(path, json=body, headers={**auth, "Idempotency-Key": "create"})
+        assert created.status_code == 201 and "slotTime" not in created.json()
+        path = f"/appointments/{created.json()['id']}/reschedule"
+        body = {"callerMobile": "9000000101", "newVisitDate": "2026-10-03", "newExpectedTime": "10:45"}
+    before = json.loads(json.dumps(state.appointments))
+    # Contract-shaped error/success fixtures: cancelled/unknown-time 400, moved slotTime, then full.
+    script = [{"status": 400, "code": "VALIDATION_FAILED"}, {"slotTime": "11:00"},
+              {"status": 409, "code": "SLOT_FULL"}]
+    if configuration == "in_process":
+        state.write_outcomes = {path: script}
+    else:
+        assert (await http.post("/__stub/scenario", json={"writeOutcomes": {path: script}})).status_code == 200
+    rejected = await http.post(path, json=body, headers={**auth, "Idempotency-Key": "invalid"})
+    assert rejected.status_code == 400 and rejected.json()["error"]["code"] == "VALIDATION_FAILED"
+    conforms(rejected.json(), "Error")
+    assert state.appointments == before
+    state.commit_then[path] = 504
+    lost = await http.post(path, json=body, headers={**auth, "Idempotency-Key": "move"})
+    assert lost.status_code == 504  # handler committed before the response was lost
+    assert len(state.appointments) == 1
+    stored = next(iter(state.appointments.values()))
+    assert stored["slotTime"] == "11:00" and stored["expectedTime"] == "10:45"
+    assert stored["status"] == ("NOTED" if action == "CREATE" else "CHANGED")
+    replay = await http.post(path, json=body, headers={**auth, "Idempotency-Key": "move"})
+    assert replay.status_code == (201 if action == "CREATE" else 200) and replay.json() == stored
+    conforms(replay.json(), "Appointment")
+    full = await http.post(path, json=body, headers={**auth, "Idempotency-Key": "full"})
+    assert full.status_code == 409 and full.json()["error"]["code"] == "SLOT_FULL"
+    conforms(full.json(), "Error")
+    assert state.appointments == {stored["id"]: replay.json()}
+
+
+async def test_success_fixture_does_not_turn_a_handler_rejection_into_success(ops):
+    state, http = ops
+    auth = await token(http)
+    state.write_outcomes = {"/appointments": [{"slotTime": "11:00"}]}
+    rejected = await http.post("/appointments", json={}, headers={**auth, "Idempotency-Key": "bad"})
+    assert rejected.status_code == 400 and "slotTime" not in rejected.json()
+    conforms(rejected.json(), "Error")
+    assert state.appointments == {} and state.idempotency == {}
+    assert state.write_outcomes == {"/appointments": []}
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    next_write = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "valid"})
+    assert next_write.status_code == 201 and "slotTime" not in next_write.json()
+    conforms(next_write.json(), "Appointment")
+
+
+async def test_unscripted_slots_default_minutes_when_capabilities_omit_them(ops):
+    state, http = ops
+    capabilities = {"availability": {}, "slots": {"enabled": False}, "appointments": {}}
+    conforms(capabilities, "Capabilities")
+    configured = await http.post("/__stub/scenario", json={"capabilities": capabilities})
+    assert configured.status_code == 200
+    response = await http.get("/availability/doc_garima/slots", headers=await token(http))
+    assert response.status_code == 200
+    assert response.json() == {"doctorId": "doc_garima", "date": "2026-10-01", "enabled": False,
+                               "blockMinutes": 30, "sessions": []}
+    conforms(response.json(), "SlotPlan")
+
+
+async def test_http_write_outcomes_normalise_string_status_before_consumption(ops):
+    state, http = ops
+    configured = await http.post("/__stub/scenario", json={"writeOutcomes": {
+        "/appointments": [{"status": "409", "code": "SLOT_FULL"}, {"slotTime": "11:00"}]}})
+    assert configured.status_code == 200
+    auth = await token(http)
+    body = {"patientName": "A B", "mobile": "9000000101", "doctorId": "doc_garima", "visitDate": "2026-10-02"}
+    full = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "full"})
+    assert full.status_code == 409 and full.json()["error"]["code"] == "SLOT_FULL"
+    conforms(full.json(), "Error")
+    saved = await http.post("/appointments", json=body, headers={**auth, "Idempotency-Key": "saved"})
+    assert saved.status_code == 201 and saved.json()["slotTime"] == "11:00"
+    conforms(saved.json(), "Appointment")
+
+
+@pytest.mark.parametrize("item", [
+    {}, {"status": 409}, {"code": "SLOT_FULL"},
+    {"status": "bad", "code": "SLOT_FULL"}, {"status": None, "code": "SLOT_FULL"},
+    {"status": 200, "code": "SLOT_FULL"}, {"status": 600, "code": "SLOT_FULL"},
+    {"status": 409, "code": "NOT_A_CONTRACT_CODE"},
+    {"status": 409, "code": "SLOT_FULL", "slotTime": "11:00"},
+    {"slotTime": None}, {"slotTime": "25:00"}, {"slotTime": "11:00", "extra": True},
+    None, "invalid", [],
+])
+async def test_http_write_outcomes_reject_invalid_items_without_partial_scripting(ops, item):
+    state, http = ops
+    state.write_outcomes = {"/appointments": [{"slotTime": "10:30"}]}
+    response = await http.post("/__stub/scenario", json={
+        "failNext": [{"path": "/appointments", "status": 503}],
+        "writeOutcomes": {"/appointments": [{"status": 409, "code": "SLOT_FULL"}],
+                          "/appointments/other/reschedule": [item]}})
+    assert response.status_code == 400 and response.json()["error"]["code"] == "VALIDATION_FAILED"
+    conforms(response.json(), "Error")
+    assert state.write_outcomes == {"/appointments": [{"slotTime": "10:30"}]}
+    assert state.fail_next == []
+
+
+@pytest.mark.parametrize("capabilities", [
+    {}, None, [], {"slots": None}, {"slots": {}}, {"slots": {"enabled": "false"}},
+    {"slots": {"enabled": 0}},
+    *({"slots": {"enabled": True, "blockMinutes": value}} for value in (None, "30", 0, -1, 1.5, True)),
+])
+async def test_http_capabilities_rejected_before_any_scenario_mutation(ops, capabilities):
+    state, http = ops
+    original = json.loads(json.dumps(state.capabilities))
+    response = await http.post("/__stub/scenario", json={
+        "capabilities": capabilities, "writeOutcomes": {"/appointments": [{"slotTime": "11:00"}]},
+        "failNext": [{"path": "/doctors", "status": 503}], "malformedNext": ["/availability"],
+        "commitThen": {"/appointments": 504}, "delaySeconds": 1, "delayForPrefix": {"/doctors": 1},
+        "boards": {"2026-10-01": []}, "slots": {"doc_garima": {"2026-10-01": {}}}})
+    assert response.status_code == 400 and response.json()["error"]["code"] == "VALIDATION_FAILED"
+    conforms(response.json(), "Error")
+    assert state.capabilities == original and state.write_outcomes == {} and state.fail_next == []
+    assert state.malformed_next == [] and state.commit_then == {} and state.delay_seconds == 0
+    assert state.delay_for_prefix == {} and state.boards == {} and state.slots == {}
+
+
+async def test_http_capabilities_keep_unconsumed_owner_sections(ops):
+    state, http = ops
+    capabilities = {"slots": {"enabled": True, "blockMinutes": 20},
+                    "availability": {"ownerFact": "unchanged"}, "appointments": {"ownerFact": [1, 2]}}
+    assert (await http.post("/__stub/scenario", json={"capabilities": capabilities})).status_code == 200
+    assert (await http.get("/capabilities", headers=await token(http))).json() == capabilities

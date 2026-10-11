@@ -13,6 +13,14 @@ from .config import Settings
 from .ops_client import InvalidIdentifier, Malformed, OpsClient, Rejected, Unavailable
 
 READ_ERRORS = (Unavailable, Malformed, Rejected, InvalidIdentifier)
+READ_FAILURE_STAGES = frozenset({"slots", "capabilities"})
+READ_FAILURE_DETAILS = {"board": "BOARD_UNAVAILABLE", "profile": "PROFILE_UNAVAILABLE",
+                        "slots": "SLOTS_UNAVAILABLE", "capabilities": "CAPABILITIES_UNAVAILABLE"}
+
+
+def read_failure_detail(stage: str | None, fallback: str) -> str:
+    """Map the failed read; callers retain their existing AUTH precedence and fallback."""
+    return READ_FAILURE_DETAILS.get(stage, fallback)
 
 
 @dataclass(frozen=True)
@@ -44,6 +52,17 @@ class ScheduleReader:
             self.cache.set(("departments",), cached)
         return cached
 
+    async def capabilities(self, deadline: Deadline) -> contract.Capabilities:
+        cached = self.cache.get(("capabilities",))
+        if cached is None:
+            try:
+                cached = await self.ops.get_capabilities(deadline)
+            except READ_ERRORS as exc:
+                exc.stage = "capabilities"
+                raise
+            self.cache.set(("capabilities",), cached)
+        return cached
+
     async def profile(self, doctor_id: str, deadline: Deadline) -> contract.DoctorDetail:
         cached = self.cache.get(("doctor", doctor_id))
         if cached is None:
@@ -68,51 +87,78 @@ class ScheduleReader:
             exc.stage = "board"
             raise
 
+    async def slots(self, doctor_id: str, requested: policy.RequestedDate,
+                    deadline: Deadline) -> contract.SlotPlan | None:
+        try:
+            plan = await self.ops.get_slots(deadline, doctor_id=doctor_id, date=requested.value.isoformat())
+            if plan.doctorId != doctor_id or plan.date != requested.value:
+                raise Malformed("slot plan does not match the requested doctor and date")
+            labels = [policy.normalised(session.session or "") for session in plan.sessions]
+            if len(labels) != len(set(labels)):
+                raise Malformed("slot session labels are not unique")
+            blocks = sorted((block for session in plan.sessions for block in session.slots), key=lambda b: b.start)
+            if not contract.ordered_slot_blocks(blocks):
+                raise Malformed("slot sessions overlap")
+            return plan if plan.enabled else None
+        except READ_ERRORS as exc:
+            exc.stage = "slots"
+            raise
+
     async def doctor(self, doctor_id: str, requested: policy.RequestedDate | None, purpose: policy.Purpose,
                      deadline: Deadline, summary: contract.DoctorSummary | None = None) -> policy.DoctorFacts:
-        if summary is not None and summary.attendanceType == "ON_CALL":
-            return policy.DoctorFacts(summary)
-        today = purpose == policy.Purpose.AVAILABILITY and requested.kind == policy.DateKind.TODAY
+        if purpose == policy.Purpose.WORKING_HOURS:
+            if summary is not None and summary.attendanceType == "ON_CALL":
+                return policy.DoctorFacts(summary)
+            profile = await self.profile(doctor_id, deadline)
+            return policy.DoctorFacts(profile, profile)
+        today = requested.kind == policy.DateKind.TODAY
+        reads = {}
+        if summary is None or not today:
+            reads["profile"] = self.profile(doctor_id, deadline)
         if today:
-            if summary is None:
-                results = await asyncio.gather(self.profile(doctor_id, deadline),
-                                                self.board(deadline, doctor_id=doctor_id), return_exceptions=True)
-                for result in results:
-                    if isinstance(result, BaseException):
-                        raise result
-                profile, board = results
-                return policy.DoctorFacts(profile, profile, tuple(e for e in board.items if e.doctorId == doctor_id))
-            board = await self.board(deadline, doctor_id=doctor_id)
-            return policy.DoctorFacts(summary, entries=tuple(e for e in board.items if e.doctorId == doctor_id))
-        profile = await self.profile(doctor_id, deadline)
-        return policy.DoctorFacts(profile, profile)
+            reads["board"] = self.board(deadline, doctor_id=doctor_id)
+        reads["slots"] = self.slots(doctor_id, requested, deadline)
+        results = await asyncio.gather(*reads.values(), return_exceptions=True)
+        for result in results:  # preserve profile, then board, then slots failure precedence
+            if isinstance(result, BaseException):
+                raise result
+        fetched = dict(zip(reads, results, strict=True))
+        profile, board = fetched.get("profile"), fetched.get("board")
+        entries = tuple(e for e in board.items if e.doctorId == doctor_id) if board else ()
+        return policy.DoctorFacts(profile or summary, profile, entries, slots=fetched["slots"])
 
-    async def _candidate(self, doctor: contract.DoctorSummary,
-                         deadline: Deadline) -> policy.DoctorFacts | ReadFailure:
+    async def _candidate(self, doctor: contract.DoctorSummary, deadline: Deadline,
+                         slots: policy.SlotsNotRead | None) -> policy.DoctorFacts | ReadFailure:
         try:
             profile = await self.profile(doctor.id, deadline)
         except READ_ERRORS:
             return ReadFailure(doctor)
-        return policy.DoctorFacts(doctor, profile)
+        return policy.DoctorFacts(doctor, profile, slots=slots)
 
     async def department(self, department_id: str, gender: str | None, requested: policy.RequestedDate | None,
                          purpose: policy.Purpose, deadline: Deadline,
                          evaluate: Callable[[policy.DoctorFacts], policy.DoctorDecision]) -> DepartmentFacts:
-        if purpose == policy.Purpose.AVAILABILITY and requested.kind == policy.DateKind.TODAY:
-            results = await asyncio.gather(self.search(deadline, department=department_id, gender=gender),
-                                            self.board(deadline, department=department_id), return_exceptions=True)
-            for result in results:
-                if isinstance(result, BaseException):
-                    raise result
-            page, board = results
-            facts = tuple(policy.DoctorFacts(d, entries=tuple(e for e in board.items if e.doctorId == d.id))
-                          for d in page.items)
-            found = sum(evaluate(f).decision == policy.Decision.APPOINTMENT_REQUEST for f in facts)
+        reads = {"search": self.search(deadline, department=department_id, gender=gender)}
+        if purpose == policy.Purpose.AVAILABILITY:
+            if requested.kind == policy.DateKind.TODAY:
+                reads["board"] = self.board(deadline, department=department_id)
+            reads["capabilities"] = self.capabilities(deadline)
+        results = await asyncio.gather(*reads.values(), return_exceptions=True)
+        for result in results:  # preserve search, then board, then capabilities failure precedence
+            if isinstance(result, BaseException):
+                raise result
+        initial = dict(zip(reads, results, strict=True))
+        page, board, capabilities = initial["search"], initial.get("board"), initial.get("capabilities")
+        slots = policy.SlotsNotRead() if capabilities is not None and capabilities.slots.enabled else None
+        if board is not None:
+            facts = tuple(policy.DoctorFacts(d, entries=tuple(e for e in board.items if e.doctorId == d.id),
+                                            slots=slots) for d in page.items)
+            found = sum(policy.is_match(evaluate(f).decision) for f in facts)
             search = policy.SearchState(found, len(facts), page.total <= len(facts))
             return DepartmentFacts(facts, facts, page.total, search)
-        page = await self.search(deadline, department=department_id, gender=gender)
         reached: dict[str, policy.DoctorFacts | ReadFailure | Unchecked] = {
-            d.id: policy.DoctorFacts(d) if d.attendanceType == "ON_CALL" else Unchecked(d) for d in page.items}
+            d.id: policy.DoctorFacts(d, slots=slots) if d.attendanceType == "ON_CALL" else Unchecked(d)
+            for d in page.items}
         pending = [d for d in page.items if d.attendanceType != "ON_CALL"]
         found = 0
         size = self.settings.profile_batch_size
@@ -122,13 +168,13 @@ class ScheduleReader:
             batch = pending[offset:offset + size]
             try:
                 async with asyncio.timeout(max(0, deadline.remaining())):
-                    fetched = await asyncio.gather(*(self._candidate(d, deadline) for d in batch))
+                    fetched = await asyncio.gather(*(self._candidate(d, deadline, slots) for d in batch))
             except TimeoutError:
                 break  # gather cancellation is awaited; this whole batch remains unchecked
             for doctor, result in zip(batch, fetched, strict=True):
                 reached[doctor.id] = result
                 if isinstance(result, policy.DoctorFacts):
-                    found += evaluate(result).decision == policy.Decision.APPOINTMENT_REQUEST
+                    found += policy.is_match(evaluate(result).decision)
             if found >= self.settings.doctor_choice_limit:
                 break
         all_results = tuple(reached[d.id] for d in page.items)

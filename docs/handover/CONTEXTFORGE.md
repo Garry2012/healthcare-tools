@@ -31,14 +31,15 @@ not register anything or change Azure settings. Do not provision a second gatewa
 | Upstream bearer | Current `mcp-token` in `kv-fd-demo-hospi-0574c1` |
 | Existing admin access | Email from gateway `PLATFORM_ADMIN_EMAIL`; password reference `mcpgw-platform-admin-password` in that vault |
 
-The 2 October inspection found no working knowledge host on the canary. In the revised adapter,
-availability and booking depend on Manoj only; knowledge queries need the agreed knowledge host.
-The revision in this branch is not claimed deployed. The gateway's actual
-voice-facing URL is created in step 3 below, not the gateway base URL alone.
+The three-tool source revision is not claimed deployed. It calls only Manoj.
+The existing front-desk voice-facing virtual server is listed in the dated record above.
+Stratum is a separate registration managed by its owners; this source change neither modifies
+nor verifies its tools.
 
 ```text
 Voice backend -- scoped gateway token + trusted headers --> ContextForge virtual server
-             -- stored mcp-token + forwarded headers --> MCP canary --> Manoj / knowledge API
+             -- stored mcp-token + forwarded headers --> MCP canary --> Manoj
+Voice backend -- separately owned tool access --> Stratum registration via ContextForge
 ```
 
 ## 1. Platform owner: configure the existing instance
@@ -74,58 +75,46 @@ uv run --project services/mcp python deploy/contextforge/register.py --name fron
 ```
 
 The script POSTs `/v1/gateways` with the live schema's `authType`, `authToken`, `passthroughHeaders`
-and `teamId` fields. It registers/updates the backend and compares all four tool
+and `teamId` fields. It registers/updates the backend and compares all three front-desk tool
 names and complete input schemas with the adapter. On drift it POSTs
 `/v1/gateways/{id}/tools/refresh`, with a deactivate/activate fallback. It does **not** create a
 virtual server or issue a voice-client token. Rerun after MCP schema changes; refresh the voice
 agent's tool cache as well. Review full discovered schemas during acceptance, not just property names.
 
-## 3. Platform owner: create the voice-facing virtual server
+## 3. Platform owner: refresh our existing front-desk virtual server
 
-From `GET /v1/tools`, select all four tool IDs belonging to this registration:
-`get_doctor_availability`, `manage_booking`, `search_knowledge`, `record_call_summary`. Names may carry the registration
-prefix. Verify their gateway association; do not select similarly named tools from another service.
-Use the admin UI or this **1.0.11** REST request shape:
+From `GET /v1/tools`, select the three IDs belonging to registration `frontdesk-healthcare-canary`:
+`get_doctor_availability`, `manage_booking` and `record_call_summary`. Names carry our registration
+prefix. Update the existing virtual server `frontdesk-healthcare` using the supported admin UI/API;
+do not create a replacement server merely to refresh its tool selection. Remove only our retired
+front-desk `search_knowledge` entry. Never remove or modify Stratum's registration or tools,
+even if one has a similar name.
 
-```http
-POST /v1/servers
-Authorization: Bearer <temporary-admin-JWT>
-Content-Type: application/json
+The voice client uses the existing server URL from the verified record above, with a scoped,
+non-admin token authorized for its team/server. Share only the secure token reference with Rajeev.
+Keep the upstream MCP bearer stored in gateway configuration, separate from the voice client token.
+All three front-desk tools share that upstream bearer, including `record_call_summary`.
 
-{
-  "server": {
-    "name": "healthcare-voice",
-    "associated_tools": ["<availability-tool-id>", "<booking-tool-id>", "<knowledge-tool-id>", "<summary-tool-id>"]
-  },
-  "team_id": "<existing-team-id>",
-  "visibility": "team"
-}
-```
-
-Save the returned server ID and issue a scoped, non-admin token authorized to use that team's
-server. Give Rajiv the secure token reference and the resulting URL:
-
-```text
-https://mcp-gateway.icytree-6543aaa9.centralindia.azurecontainerapps.io/servers/<server-id>/mcp
-```
-
-That is the URL the voice agent registers as its MCP server. Confirm the deployed route using an
-MCP initialize + tools/list request with the voice-client token. The platform supplies the existing
-team choice, creates the virtual server and scopes its token; this repo supplies the upstream URL,
-tool schemas, registration helper and header contract. No backend/database access is needed by the
-gateway. The virtual server includes `record_call_summary` with the same upstream gateway bearer.
+A combined view may contain our three front-desk tools plus Stratum's separately configured tools.
+Its owner manages that composition; the adapter registration helper ignores other registration
+prefixes. Do not compare the combined tool count to three.
 
 ## 4. Joint acceptance before voice cutover
 
-- Discover exactly four tools through the scoped voice-client token; confirm another team or
-  an unauthorized token cannot invoke them. Inspect complete input schemas and tool descriptions.
+- Gate 8, before deployment: Rajeev's team confirms and tests Stratum symptom/emergency journeys
+  and transfer behaviour. This repository's tests do not verify Stratum.
+- Gate 9: no live voice traffic until the adapter, our front-desk entries and LiveKit cached tool
+  view are refreshed. Through the scoped voice-client path, the front-desk view must discover
+  exactly the three front-desk tools; a combined view may additionally show Stratum's tools.
+  Neither view may retain our front-desk `search_knowledge`. Stratum remains untouched.
+- Confirm another team or unauthorized token cannot invoke our tools. Inspect complete input/output
+  schemas and tool descriptions against `make schema` for source schema `2026-10-11.1`.
 - Prove headers reach the adapter and stay isolated between simultaneous calls. Missing identity
   must be refused; the valid-identity LIST must actually reach Manoj, not merely avoid refusal.
-- Test EN/KN/HI question bodies end to end and fail explicitly on oversized questions; never truncate.
-  Scheduling requires no transcript header. Verify operation IDs are request-scoped through the local
+- Scheduling requires no transcript header. Verify operation IDs are request-scoped through the local
   booking wrapper and the gateway; no shared-header mutation between concurrent requests.
-- Through the virtual server, complete direct availability, caller-confirmed booking requests and explicit knowledge
-  journeys once owner inputs exist. Invoke the summary through the same virtual server;
+- Through the virtual server, complete direct availability and caller-confirmed booking requests
+  once owner inputs exist. Invoke the summary through the same virtual server;
   verify retries/replay and UNKNOWN -> callback summary only.
 - Measure gateway overhead and successful full voice responses from the deployed region under
   concurrency. The MCP in-call allocation is 0.30 s; the target is under one second to first caller
@@ -139,7 +128,7 @@ References: [IBM header passthrough](https://ibm.github.io/mcp-context-forge/1.0
 The request fields and version above were checked against this deployed instance's authenticated
 OpenAPI, not inferred from a different release's examples.
 
-After this change, refresh discovered descriptions/output schemas for schema `2026-10-04.2`.
+After approved deployment, refresh discovered descriptions/input/output schemas for source schema `2026-10-11.1`.
 The forwarding allowlist is exactly the five headers above; remove obsolete transcript and duration entries.
 Refresh both input and output schemas and verify the voice client discovers the new summary result.
 The published tool contract is [VOICE-TEAM.md](VOICE-TEAM.md); server metadata contains neutral tool facts. Voice prompts and behaviour belong to the consuming team.
@@ -151,25 +140,11 @@ Rollback needs matching MCP image, gateway discovery and voice schema; the previ
 separate summary authentication. Do not reactivate it with only the new single-token configuration.
 The 4 October deployment refreshed the existing registration; it did not rotate tokens or delete Key Vault secrets.
 
-## Pending availability-policy release — 2026-10-06.1 (not deployed)
+## Source release awaiting approval — 2026-10-11.1
 
-After separate deployment approval, rerun `register.py`. It checks exactly four names and complete
-**input** schemas; the new purpose/date and doctor-only booking inputs trigger refresh. It does not
-verify output schemas. No script, token, passthrough header or access-scope change is required.
-
-Manual acceptance: run `make schema`, list tools via the voice-facing virtual-server URL, and compare
-each tool's `outputSchema` (including nested definitions and required fields) to that generated JSON.
-Confirm unchanged owner BoardSessionOut.status plus new decision/reason; removed journey/expired and
-spoken callback fields; and booking sessions/outcomes. Record differences and refresh gateway discovery
-until they match. Then refresh virtual-server/voice caches. An input-only script pass is insufficient.
-Exercise General Medicine/Gynaecology today and future and Dr. Shreyas WORKING_HOURS; future queries
-must use populated profiles without board reads. Measure actual voice-path latency separately.
-Keep image, gateway discovery and voice schema aligned on rollback; 2026-10-04.2 and 2026-10-05.1
-are not interchangeable consumer schemas. The verified deployment section above is historical evidence.
-
-The 6 October corrections add PRESENT_WORKING_HOURS and retire NO_REGULAR_HOURS from output reasons.
-Relative to source schema 2026-10-05.1, the input schemas are unchanged. If that version is already
-registered, `register.py` can report no drift while outputs remain stale. After approved deployment,
-explicitly refresh `/v1/gateways/{id}/tools/refresh` using the gateway's admin access, then perform the
-virtual-server outputSchema comparison above against schema 2026-10-06.1 and refresh voice caches.
-Registration code, passthrough headers, tokens and access scopes are unchanged.
+The helper checks our three names and complete input schemas only; manually compare every
+`outputSchema`, nested definition and required field through the voice-facing virtual-server URL
+with `make schema`. A successful helper run alone is insufficient. Refresh the gateway and
+LiveKit caches and record discovery evidence under gate 9. The five-header allowlist and access
+scopes are unchanged. Keep image, gateway discovery and voice schema aligned on rollback.
+The verified deployment section at the top is historical evidence, not evidence of this release.

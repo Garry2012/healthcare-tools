@@ -1,5 +1,7 @@
 # Azure retirement results (1 October 2026)
 
+> Historical inventory. The old API/MCP apps, exclusive database/role, images and six secrets were removed on 9 October 2026. See the [execution record](AZURE-RETIREMENT-CHECK-20261009.md) for verified results and the shared resources and Rajeev-owned references that remain.
+
 > **Reconciliation (architect's actions, same day):** after this report was written the architect, at the user's
 > request, deleted the three legacy jobs (`job-migrate-demo-hospital`, `job-apply-demo-hospital`,
 > `job-seed-demo-hospital`) and created two generated test secrets (`ops-client-id`, `ops-client-secret`) in

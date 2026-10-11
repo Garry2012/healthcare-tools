@@ -8,7 +8,7 @@ design decisions (A-series); the owner services' designs are theirs.
 
 ```
 LiveKit voice agent ──MCP + trusted call headers──▶ ContextForge ──▶ frontdesk-mcp ──HTTPS──▶ Manoj's operational API
-                                                                           └──HTTPS──▶ Shobhit's knowledge service
+                                                 └──▶ Stratum (separate registration, voice-team owned)
 ```
 
 ## Decisions
@@ -16,11 +16,11 @@ LiveKit voice agent ──MCP + trusted call headers──▶ ContextForge ─�
 | # | Decision | Why |
 |---|---|---|
 | A1 | One deployment per rollout; tenant identity (timezone, calling code, languages) has no default | A wrong default is a wrong hospital |
-| A2 | Four task-level tools; directory, profile and board composed inside one availability call | Fewer model decisions, one round-trip budget |
-| A3 | Trusted context in headers only; gateway authentication for all four tools | Model arguments are untrusted; client-side hiding is not authorization |
-| A4 | LLM-selected knowledge tool; voice platform owns every-turn emergency detection; no knowledge gates in scheduling | Shobhit owns clinical routing |
-| A5 | Today UNKNOWN/NOT_CONFIRMED or ON_CALL → callback; future usual hours → unconfirmed request; failed reads → COULD_NOT_CHECK | User-fixed policy; failures are never "no availability" |
-| A6 | NOTED, never confirmed; no slot, capacity or arrival computation | The owner contract has no slots |
+| A2 | Three task-level tools; directory, profile and board composed inside one availability call | Fewer model decisions, one round-trip budget |
+| A3 | Trusted context in headers only; gateway authentication for all three tools | Model arguments are untrusted; client-side hiding is not authorization |
+| A4 | Voice platform owns knowledge, symptom and emergency journeys through Stratum's separate registration; no knowledge client in this adapter | Gate 8 requires voice-team acceptance before deployment; gate 9 requires refreshed discovery before traffic |
+| A5 | SL1 governs ordinary UNKNOWN callbacks, on-call confirmed evidence or handoff, and slot-aware requests; failed reads remain failures | User-fixed policy; failures are never "no availability" |
+| A6 | NOTED, never confirmed; no slot, capacity or arrival computation | Slots and capacity come from the owner contract, never local allocation |
 | A7 | Frozen booking body keyed by sha256(tenant\|call\|action\|operation); UNCERTAIN as a distinct outcome; one same-key retry within the deadline | Lost responses must not mint new intents |
 | A8 | One deadline per invocation covering auth, every call and any retry; warm single-flight token cache; bounded directory cache; board never cached | Voice latency |
 | A9 | Pinned owner contract (hash + quoting-only test overlay) and client-side types asserted by tests; development stubs outside the image; production refuses stub hosts | Contract drift and shadow backends fail loudly |

@@ -17,15 +17,17 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
+from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, with_config
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
 from frontdesk_mcp.clock import Clock, SystemClock
+from frontdesk_mcp.contract import ErrorCode
 
 DATA = Path(__file__).parent / "data/demo_hospital.json"
 MOBILE = re.compile(r"^[0-9]{10}$")
@@ -41,6 +43,43 @@ def load_data() -> dict[str, Any]:
     return json.loads(DATA.read_text(encoding="utf-8"))
 
 
+def default_capabilities() -> dict[str, Any]:
+    return {
+        "availability": {"supportedModes": ["SESSION", "TIME_WINDOW"], "defaultMode": "SESSION",
+                         "stalenessThresholdHours": 4},
+        "slots": {"enabled": False, "blockMinutes": 30},
+        "appointments": {"verification": "MOBILE_MATCH", "confirmation": "DESK_ONLY"},
+    }
+
+
+@with_config(ConfigDict(extra="forbid"))
+class ErrorWriteOutcome(TypedDict):
+    status: Annotated[int, Field(ge=400, le=599)]
+    code: ErrorCode
+
+
+@with_config(ConfigDict(extra="forbid"))
+class SuccessWriteOutcome(TypedDict):
+    slotTime: Annotated[str, Field(pattern=APPROX_TIME.pattern)]  # noqa: N815
+
+
+WRITE_OUTCOMES = TypeAdapter(dict[str, list[ErrorWriteOutcome | SuccessWriteOutcome]])
+
+
+@with_config(ConfigDict(extra="allow"))
+class SlotSettings(TypedDict):
+    enabled: Annotated[bool, Field(strict=True)]
+    blockMinutes: NotRequired[Annotated[int, Field(strict=True, ge=1)]]  # noqa: N815
+
+
+@with_config(ConfigDict(extra="allow"))
+class CapabilityFixture(TypedDict):
+    slots: SlotSettings
+
+
+CAPABILITIES = TypeAdapter(CapabilityFixture)
+
+
 @dataclass
 class OpsStubState:
     clock: Clock = field(default_factory=SystemClock)
@@ -52,8 +91,11 @@ class OpsStubState:
     summaries: dict[str, dict[str, Any]] = field(default_factory=dict)
     idempotency: dict[str, tuple[str, int, dict[str, Any]]] = field(default_factory=dict)
     boards: dict[str, list[dict[str, Any]]] = field(default_factory=dict)  # ISO date → scripted entries
+    capabilities: dict[str, Any] = field(default_factory=default_capabilities)
+    slots: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)  # doctor → ISO date → plan
     # scenarios
     fail_next: list[tuple[str, int, dict[str, str]]] = field(default_factory=list)  # (path prefix, status, headers)
+    write_outcomes: dict[str, list[ErrorWriteOutcome | SuccessWriteOutcome]] = field(default_factory=dict)
     malformed_next: list[str] = field(default_factory=list)  # path prefixes answering {"unexpected": true}
     commit_then: dict[str, int] = field(default_factory=dict)  # path prefix → status returned AFTER committing
     delay_seconds: float = 0.0
@@ -68,6 +110,9 @@ class OpsStubState:
 
     def set_board(self, iso_date: str, entries: list[dict[str, Any]]) -> None:
         self.boards[iso_date] = entries
+
+    def set_slots(self, doctor_id: str, iso_date: str, plan: dict[str, Any]) -> None:
+        self.slots.setdefault(doctor_id, {})[iso_date] = plan
 
     def next_id(self, prefix: str) -> str:
         self.counter += 1
@@ -89,6 +134,9 @@ class OpsStubState:
     def reset(self) -> None:
         self.appointments.clear(), self.summaries.clear(), self.idempotency.clear(), self.boards.clear()
         self.fail_next.clear(), self.malformed_next.clear(), self.commit_then.clear()
+        self.write_outcomes.clear()
+        self.capabilities = default_capabilities()
+        self.slots.clear()
         self.delay_seconds = 0.0
         self.delay_for_prefix.clear()
         self.requests.clear()
@@ -242,6 +290,43 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         return {"doctorId": doctor["id"], "doctorName": doctor["name"], "date": iso, "status": "UNKNOWN",
                 "isStale": True}
 
+    def requested_date(request: Request) -> str | Response:
+        requested = request.query_params.get("date", "today")
+        if requested == "today":
+            return state.today().isoformat()
+        try:
+            return date.fromisoformat(requested).isoformat()
+        except ValueError:
+            return error(400, "VALIDATION_FAILED", "date must be ISO or 'today'",
+                         [{"field": "date", "issue": "format"}])
+
+    async def capabilities(request: Request) -> Response:
+        _, denied = authenticated(request)
+        if denied:
+            return denied
+        if blocked := await scenario(request) or malformed(request):
+            return blocked
+        return JSONResponse(state.capabilities)
+
+    async def slots(request: Request) -> Response:
+        _, denied = authenticated(request)
+        if denied:
+            return denied
+        if blocked := await scenario(request) or malformed(request):
+            return blocked
+        doctor_id = request.path_params["doctor_id"]
+        if not any(d["id"] == doctor_id for d in state.data["doctors"]):
+            return error(404, "NOT_FOUND", "No such doctor")
+        iso = requested_date(request)
+        if isinstance(iso, Response):
+            return iso
+        plan = state.slots.get(doctor_id, {}).get(iso)
+        if plan is None:
+            plan = {"doctorId": doctor_id, "date": iso, "enabled": False,
+                    "blockMinutes": state.capabilities["slots"].get(
+                        "blockMinutes", default_capabilities()["slots"]["blockMinutes"]), "sessions": []}
+        return JSONResponse(plan)
+
     async def availability(request: Request) -> Response:
         _, denied = authenticated(request)
         if denied:
@@ -252,15 +337,9 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         doctor_id, department = q.get("doctorId"), q.get("department")
         if bool(doctor_id) == bool(department):
             return error(400, "VALIDATION_FAILED", "Exactly one of doctorId or department must be given")
-        requested = q.get("date", "today")
-        if requested == "today":
-            iso = state.today().isoformat()
-        else:
-            try:
-                iso = date.fromisoformat(requested).isoformat()
-            except ValueError:
-                return error(400, "VALIDATION_FAILED", "date must be ISO or 'today'",
-                             [{"field": "date", "issue": "format"}])
+        iso = requested_date(request)
+        if isinstance(iso, Response):
+            return iso
         now = state.clock.now().astimezone(ZoneInfo(state.zone))
         if doctor_id:
             doctors = [d for d in state.data["doctors"] if d["id"] == doctor_id]
@@ -297,7 +376,14 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
             if stored_hash != body_hash(body):
                 return error(409, "IDEMPOTENCY_CONFLICT", "Same key, different body")
             return JSONResponse(stored, status_code=status)
+        scripted = state.write_outcomes.get(relative_path(request))
+        # One item per write reaching the owner decision, including a handler rejection; replay consumes none.
+        outcome = scripted.pop(0) if scripted else None
+        if outcome is not None and "code" in outcome:
+            return error(outcome["status"], outcome["code"], "scripted owner response")
         status, payload = handler(body)
+        if status < 300 and outcome is not None and "slotTime" in outcome:
+            payload["slotTime"] = outcome["slotTime"]
         if status < 300 and key:
             state.idempotency[key] = (body_hash(body), status, payload)
         if status < 300:
@@ -452,8 +538,15 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
 
     async def stub_scenario(request: Request) -> Response:
         body = await request.json()
+        try:
+            outcomes = WRITE_OUTCOMES.validate_python(body.get("writeOutcomes", {}))
+            capabilities = CAPABILITIES.validate_python(body["capabilities"]) if "capabilities" in body else None
+        except ValidationError:
+            return error(400, "VALIDATION_FAILED", "Invalid writeOutcomes or capabilities fixture")
         for item in body.get("failNext", []):
             state.fail_next.append((item["path"], int(item["status"]), dict(item.get("headers", {}))))
+        for path, items in outcomes.items():
+            state.write_outcomes.setdefault(path, []).extend(items)
         state.malformed_next.extend(body.get("malformedNext", []))
         state.commit_then.update({k: int(v) for k, v in body.get("commitThen", {}).items()})
         if "delaySeconds" in body:
@@ -461,6 +554,11 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         state.delay_for_prefix.update({k: float(v) for k, v in body.get("delayForPrefix", {}).items()})
         for iso, entries in body.get("boards", {}).items():
             state.set_board(iso, entries)
+        if capabilities is not None:
+            state.capabilities = capabilities
+        for doctor_id, plans in body.get("slots", {}).items():
+            for iso, plan in plans.items():
+                state.set_slots(doctor_id, iso, plan)
         return JSONResponse({"ok": True})
 
     async def stub_state(_: Request) -> Response:
@@ -474,6 +572,8 @@ def create_app(state: OpsStubState, prefix: str = "") -> Starlette:
         Route("/doctors", search_doctors),
         Route("/doctors/{doctor_id}", get_doctor),
         Route("/availability", availability),
+        Route("/capabilities", capabilities),
+        Route("/availability/{doctor_id}/slots", slots),
         Route("/appointments", post_appointment, methods=["POST"]),
         Route("/appointments", find_appointments, methods=["GET"]),
         Route("/appointments/{appointment_id}/cancel", post_cancel, methods=["POST"]),

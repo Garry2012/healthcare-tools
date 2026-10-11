@@ -1,5 +1,7 @@
 # Azure inventory and mandatory retirement work
 
+> Historical inventory. The old API/MCP apps, exclusive database/role, images and six secrets were removed on 9 October 2026. See the [execution record](implementation/AZURE-RETIREMENT-CHECK-20261009.md) for verified results and the shared resources and Rajeev-owned references that remain.
+
 Read-only inspection: 1 October 2026, the currently selected Azure subscription. These findings come from Azure Resource Manager and deployed app configuration, not just repository documentation. They do not establish who originally created every resource or prove ownership of all data. No secrets, database rows or live call content were read; no deployment, database modification or deletion was performed.
 
 The user requires removal of obsolete resources from the former full-backend approach as part of the future MCP-only migration. **Cloud cleanup is a completion gate**, with an exact scoped execution list prepared after ownership, data handoff and cutover checks. It is not satisfied by deleting source files.

@@ -166,3 +166,168 @@ should force a choice) remains pending; the approved mixed-decision rule is unch
 Today's booking window starts at the later of the session start and facility now (strict, minute precision); future usual schedules and unknown-boundary handoffs are unchanged.
 
 Booking rejection fields are tool argument names only: owner names are translated using the originating action's owner-field mapping (also used for write bodies), and names without a tool argument for that action are dropped.
+
+## SL1 — Slot-aware availability and booking (9 October 2026)
+
+Context: Manoj's 0.4.0-draft contract supplies per-doctor/date slot blocks and capacity facts.
+The [pinned contract](handover/mcp-only/contracts/manoj-openapi-20261007.yaml) has SHA-256
+`d3e93f45498fb86feeb5bb93c0adaba7cff47b48daa21ac810790b5483e96c80` (K-4).
+The adapter consumes those facts; it does not implement the owner's scheduling engine.
+The [slots plan](handover/mcp-only/implementation/SLOTS-PLAN.md) records the approved rules and reviews.
+
+Decision:
+
+- **K-1:** consume owner capacity, never compute it. NOT_CONFIRMED can permit a request with an open bookable block; future AVAILABILITY also reads slots.
+- **K-2:** today's block is bookable only until its end; a block that has started but not ended can remain open.
+- **K-3:** slot-enabled department searches report matching doctors (`DOCTORS_MATCHED`, `bookableFound=0`), not verified slot availability. Slots are checked after a doctor is selected.
+- **K-4:** pin the served contract by hash, with the separately hashed quoting-only overlay; a version label alone is insufficient.
+- **K-5:** owner blocks already reflect TIME_WINDOW (G-9); do not intersect them with a locally reconstructed board window.
+- **K-6 / D-2:** slot-enabled CREATE/RESCHEDULE require `preferredTime`/`newPreferredTime`; absence gives `INVALID_REQUEST/ASK_WHICH_TIME`, no write. Optional nonblank `session` must match the containing session's normalized label; an unlabelled session cannot satisfy a name. Never forward `session` to Manoj.
+- **K-7 / D-3:** accept the owner's returned block start in `slotTime`. `slotMoved` is true only when that returned time differs from the start of the block containing the chosen time. Choosing 10:45 and receiving 10:30 is not a move. Every appointment object exposes nullable `slotTime` and `slotMoved=false` by default; LIST/CANCEL keep false.
+- **K-8:** unreadable slots/capabilities refuse booking and mean `COULD_NOT_CHECK`/`COULD_NOT_RECORD`, never unavailability. Existing authentication failure precedence remains.
+- **D-1:** publish the complete schema once (3a-1); freeze `2026-10-08.1` for the rest of the series. Completing the series does not authorise deployment.
+- **D-4:** a slot-only session can be offered when it has an open bookable block; future usual-session output marks it `oneDay`, not regular hours (today uses live-board facts). Keep refusal facts even when it cannot be offered.
+- **D-5:** selected-doctor AVAILABILITY always reads slots alongside existing reads; `SlotPlan.enabled` decides applicability. Only department AVAILABILITY uses cached capabilities, with no slots fan-out or capability startup/background process. WORKING_HOURS reads neither board nor slots.
+- **D-6:** ordinary UNKNOWN in a session that could be the caller's target always means callback, even against CANCELLED. Passed or out-of-hours times remain refused; callback cannot make them bookable.
+- **D-7:** a session's label is evidence. Time-matched sessions and unlabelled unresolved rows remain in scope; if none matches, unknown-hour rows remain as the existing fallback. A labelled UNKNOWN for a different selected session does not block it.
+- **D-8, on-call AVAILABILITY:** confirmed IN/LATE plus either a usable window (both bounds, not ended) or an open bookable block follows ordinary policy. CANCELLED is unavailable; otherwise `HANDOFF_REQUIRED/TRANSFER_DESK`, reason `ON_CALL_DOCTOR`, never callback. Usual schedules cannot establish an on-call doctor's availability.
+- **D-8, single-doctor on-call WORKING_HOURS:** always `HANDOFF_REQUIRED/TRANSFER_DESK`, reason `ON_CALL_DOCTOR`, because no confirmation data is read. Empty regular schedules retain callback; normal hours use `PRESENT_WORKING_HOURS` and hours-only queries have `bookableFound=0`.
+
+This entry supersedes A12's and A13's 'ON_CALL is always callback', including single-doctor WORKING_HOURS (D-8).
+Garima accepted the latency consequence on 8 October: an on-call doctor resolved by name needs one
+extra read group for AVAILABILITY (today board ∥ slots; future profile ∥ slots).
+
+Garima's 9 October decisions:
+
+- Release smoke accepts `HANDOFF_REQUIRED` from either department probe of `get_doctor_availability` (AVAILABILITY and WORKING_HOURS) only for a valid response with `detail=ON_CALL_DOCTOR`, `complete` exactly true and `nextStep=TRANSFER_DESK`. Other handoffs, including `SEARCH_INCOMPLETE`, and unexpected failures fail; the other approved smoke outcomes remain unchanged.
+- Hermetic process and journey tests (in-process/local stubs) use fixed future dates and normal daytime slots, never wall-clock, overnight or all-day windows. Overnight appointments remain unsupported (A13). Read-only smoke may query today; authorised live external journeys use owner-designated dates.
+
+Test infrastructure: T-1 to T-4 isolated sse-starlette's process-wide shutdown flag: a first test
+server can leave it set and cut off the second server's event-stream replies. The mechanism was
+confirmed in 20/20 runs, with a clean comparison in 20/20. Use one `serving()` server per process
+or separate processes. Source analysis found no single-server production risk **for this mechanism
+and execution model only**; the cause of the old intermittent freeze remains unproven.
+The recorder fails incomplete HTTP responses; whether this strictness stays permanently is open
+for Garima. An optional test-setup remedy remains separate.
+
+Rejected: startup/background capabilities and flag parameters (unnecessary lifecycle or duplicate
+facts); a separate booking matrix (duplicates policy and loses scope protections); department slot
+fan-out (voice latency); relying only on owner write rejection (no offerable facts or local guards);
+board-window/block intersection (G-9); CANCELLED over UNKNOWN or dropping one-day refusal rows
+(loses refusal evidence); callbacks for every out-of-hours time or every other labelled stale session
+(ignores the selected scope, D-6/D-7); policy-level malformed-data failures (reader responsibility);
+a new blank-session module (existing shared module suffices); multiple schema publications and
+forwarding `session` (D-1/D-2).
+
+Consequences: the voice team must handle `DOCTORS_MATCHED`, `ASK_WHICH_TIME`, `openSlots`, `oneDay`,
+`slotTime`, `slotMoved` and `HANDOFF_REQUIRED/ON_CALL_DOCTOR`, and use the returned appointment time.
+The gateway/ContextForge and voice consumer need schema refresh. Owner write APIs and their scopes
+are unchanged; new reads consume the pinned contract rather than revising the owner's API.
+Phases 1a–4b are built and reviewed. Phase 5 completes the documentation only once approved;
+**nothing in the slots series has been merged or deployed**. Deployment readiness is separate:
+all [pre-deployment gates](handover/mcp-only/PLAN.md#slots-series-status-and-pre-deployment-gates-9-october-2026)
+remain pending, including LOG-1 (fastmcp's own console handler bypasses JSON logging/privacy;
+Garima's handling decision is open).
+
+Open with Manoj, already designed around:
+
+- **G-13:** a time exactly at session end belongs to no block and is refused.
+- **G-14:** overlapping blocks across sessions or duplicate normalized session labels are malformed data: could not check/record.
+- **G-15:** mixed labelled/unlabelled rows retain unlabelled refusals in booking scope under D-7; revisit only if owner clarification requires it.
+
+Optional, not a blocker: 4b-M1 review O-1 notes that the process test does not assert a distinct
+RESCHEDULE operation ID; its stub does not record idempotency keys. No change is required here.
+Owner questions, recorder permanence, the optional T-4 setup remedy and O-1 are not deployment
+gates unless Garima decides otherwise.
+
+**SL1 supplement — 10 October 2026 (T-5).** The test-setup remedy for the T-4 mechanism is implemented
+(`151ea61`): `serving()` resets sse-starlette's process-wide drain flag at the start of every test server,
+proven by a subprocess regression test. It is no longer an open item. The SL1 lines above that call it
+optional or separate are historical. Recorder strictness permanence remains open for Garima.
+
+## L1 — 10 October 2026: one logging boundary for private data (LOG-1)
+
+Garima approved LOG-1 revision 4 and retained `callId` and `summaryId` for correlation.
+The local probe demonstrated two leaks: malformed MCP JSON-RPC validation echoed fake input into
+root JSON logs, and an unexpected tool exception exposed fake private values through FastMCP's
+independent Rich traceback on stderr. Unexpected exception messages also reached tool results.
+Raising levels would not fix either log leak because both occur at WARNING or ERROR.
+
+Implemented: `configure_logging` removes FastMCP's own handlers and propagates through the single
+root JSON handler. `JsonFormatter` never interpolates arguments. Libraries/root keep only exact
+approved unfilled templates, otherwise `library_message_omitted`; their extra fields are ignored.
+Adapter fields use one 19-name table, with exact internal code/class sets built once from their
+producers, primitive bounds and existing ID syntax checks. Unknown names or rejected values are
+omitted, with names only in `omittedFields`. Dynamic owner path IDs become route templates; unknown
+or query-bearing paths are omitted. Error records with `exc_info` keep only exception type and up to
+10 file/line/function frames, never messages, locals, arguments or source lines. `mask_error_details=True`
+hides unexpected tool-error text; deliberate ToolError and summary-validation responses are preserved.
+Provider remains configuration data; syntax-checked `callId`/`summaryId` remain visible by design.
+
+Rejected: a field-name denylist (new fields would escape); regex redaction of free text (unreliable);
+higher logger levels (the demonstrated leaks survive); environment-only FastMCP suppression (leaves
+root validation leakage); per-logger filters (scattered coverage); patching libraries (not this adapter's
+boundary). No new calls, waits, locks, background work or success-path log events were introduced.
+
+Evidence: 1,297 hermetic tests and five process e2e tests passed; wheel/source distribution and both
+Docker images built. The original probe now contains zero fake private values on stdout and stderr.
+LOG-1 does not change the published schema. WARNING and INFO fixture benchmarks
+ran once before and once after, 50 samples per scenario, concurrency 1, both slot modes: 750/750
+verified outcomes in each run, no material p50 regression (>10% and >1 ms). WARNING p50 deltas were
+−0.1 to −1.2 ms; INFO −0.5 to −1.3 ms. Different host load means these small improvements are not
+attributed to the change. INFO produced 752 `tool_result` entries before and after; `summary_saved`
+was zero in both (not in that workload). Lifecycle strings now retain placeholders, with identical
+event counts. These are local fixture timings, not real-service or voice latency evidence.
+
+Remaining risks: lost library prose; template changes on dependency upgrades; future fields/codes/routes
+requiring source-set updates; retained correlation IDs can carry syntax-valid sensitive content;
+trusted adapter event names/logger names/provider remain code or configuration responsibility.
+FastMCP's import-time handlers exist until application logging is configured, before serving requests.
+Production container logs, live services, ContextForge and end-to-end voice latency remain unverified.
+
+This entry supersedes the historical SL1 statement that LOG-1 handling is undecided. Gate 7 is
+**implemented (LOG-1); awaiting review and Garima's closure**, not closed. Nothing is pushed, merged
+or deployed by this work. Full commands, failures, test-scaffolding correction, benchmark tables and
+protected-file hashes: [LOG-1 hand-back](handover/mcp-only/implementation/LOG-1-HAND-BACK.md).
+
+## K3 — Three-tool front-desk adapter (11 October 2026)
+
+Garima approved removal of Shobhit's `search_knowledge` from our front-desk adapter. K3 supersedes
+K1's knowledge-tool decision. The tools are `get_doctor_availability`, `manage_booking` and
+`record_call_summary`, all using the existing gateway bearer and Manoj's operational API.
+Knowledge, symptom routing and emergency decisions belong to the LiveKit voice team through
+Stratum's separate ContextForge registration; this repository neither modifies nor verifies it.
+
+The three-tool rule applies to our adapter, registration `frontdesk-healthcare-canary` and virtual
+server `frontdesk-healthcare`. A combined voice view may also contain Stratum's tools.
+Rajeev's team must validate symptom/emergency journeys and transfers before deployment (gate 8).
+No live voice traffic until the adapter, our gateway entries and LiveKit cache are refreshed and
+voice-client discovery proves the intended front-desk surface (gate 9).
+
+LOG-1 revision 6 removes only the deleted tool's permitted values: L1 now has 18 field names and
+11 operational route templates. Existing privacy/masking and M-1 rules remain; gate 7 awaits
+review and Garima's closure. Summary values including EMERGENCY, SYMPTOM_ROUTING and
+EMERGENCY_TRANSFERRED remain unchanged. Scheduling, authorization and write semantics are unchanged.
+
+Source schema is `2026-10-11.1`. Fixture checks do not prove deployment or voice safety.
+Merge, deployment, our ContextForge refresh, voice acceptance and later removal of leftover cloud
+settings/secrets require separate approval. Governing detail: [removal plan](handover/mcp-only/implementation/KNOWLEDGE-REMOVAL-PLAN.md)
+and [LOG-1 revision 6](handover/mcp-only/implementation/LOG-1-PLAN.md).
+
+**K3 supplement, 11 October 2026.** Opus review approved the three-tool implementation (`8f1df7d`–`5bc5490`), including LOG-1 revision 6. Before approval, a follow-up removed a leftover stub `answers` fixture, the knowledge stub port and an unused smoke language setting. Gate 7 stays open only for production-log verification after an approved deployment. Gate 2 has local live evidence from 10 October on tenant `jayashree`, pending Manoj's confirmation of that tenant. Merge to `main`, deployment, our ContextForge refresh and the remaining release gates are still open. Implementation approval is not deployment readiness.
+
+**Gate 8, 11 October 2026.** Garima approved gate 8: the voice agent is in testing mode and she confirmed that the Stratum knowledge tool works. Separate symptom, emergency and transfer results from Rajeev's team are not recorded here.
+
+## A15 — Reschedule only an appointment in the caller's list (11 October 2026)
+
+RESCHEDULE requires the appointment to be in the verified caller's own appointment list, which
+starts today by the owner's default. Any other id, including the caller's past appointment, returns
+`NOT_FOUND`/`SAY_NOT_FOUND` with no write; the desk handles past appointments. Garima approved this
+on 11 October 2026 after the whole-branch review (R-1, option A). It supersedes her 6 October
+acceptance of B-1, under which such a reschedule was sent without a schedule check. The on-call
+(D-8) and slot (K-6) rules made that bypass wider. Another caller's id still looks exactly like an
+unknown id.
+
+The owner appointment's `expectedTime` is validated as `ApproxTime` (R-2), so a malformed owner
+time maps to `UNCERTAIN` after a write and `COULD_NOT_CHECK` on LIST, never an unexpected error.
+The published schema is unchanged.

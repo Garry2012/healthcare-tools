@@ -11,7 +11,7 @@ Layers and their variables (set what you are testing; the report must name the l
   Synthetic write journey:   OPS_E2E_ALLOW_WRITES=1 and OPS_E2E_WRITE_TENANT=<designated synthetic tenant id>
                              plus OPS_E2E_DOCTOR_ID, OPS_E2E_VISIT_DATE and OPS_E2E_RESCHEDULE_DATE
                              (two future usual working days; negative gate requires UNKNOWN/NOT_CONFIRMED today)
-  Knowledge (Shobhit):       KNOWLEDGE_E2E_BASE_URL, KNOWLEDGE_E2E_BEARER_TOKEN
+                             slots_path records enabled (offered times required) or disabled (day-level journey).
 """
 
 from __future__ import annotations
@@ -23,11 +23,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from frontdesk_mcp import availability, booking, context, knowledge, summary
+from frontdesk_mcp import availability, booking, context, summary
 from frontdesk_mcp.cache import DirectoryCache
 from frontdesk_mcp.clock import Deadline, SystemClock
 from frontdesk_mcp.config import Settings
-from frontdesk_mcp.knowledge_client import KnowledgeClient
 from frontdesk_mcp.ops_client import OpsClient
 
 from . import gates, harness
@@ -54,8 +53,6 @@ def mode() -> str:
 def settings() -> Settings:
     return Settings(**ROLLOUT, env="test", ops_base_url=required("OPS_E2E_BASE_URL"),
                     ops_client_id=required("OPS_E2E_CLIENT_ID"), ops_client_secret=required("OPS_E2E_CLIENT_SECRET"),
-                    knowledge_base_url=os.environ.get("KNOWLEDGE_E2E_BASE_URL") or "https://knowledge.pending.invalid",
-                    knowledge_bearer_token=os.environ.get("KNOWLEDGE_E2E_BEARER_TOKEN") or "pending",
                     mcp_bearer_token="external-gateway",
                     # diagnostic overrides: the laptop → Azure path is far slower than the in-region budget; these are
                     # explicitly allowed here and never become production defaults
@@ -108,7 +105,6 @@ async def test_an_absent_bearer_is_refused_by_the_service(settings):
 async def test_availability_tool_end_to_end_against_the_service(settings):
     """Scheduling reads work independently of knowledge configuration."""
     mode()
-    kb = KnowledgeClient(settings)
     ops = OpsClient(settings)
     try:
         service = availability.AvailabilityService(ops, DirectoryCache(settings), settings, SystemClock())
@@ -116,10 +112,10 @@ async def test_availability_tool_end_to_end_against_the_service(settings):
                                    settings)
         department = os.environ.get("OPS_E2E_DEPARTMENT", "General Medicine")
         result = await service.get(ctx, availability.AvailabilityRequest(date="today", departmentName=department))
-        assert result.outcome in ("AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND"), result
+        assert result.outcome in (
+            "AVAILABILITY", "CALLBACK_REQUIRED", "CLARIFICATION_NEEDED", "NOT_FOUND", "DOCTORS_MATCHED"), result
     finally:
         await ops.aclose()
-        await kb.aclose()
 
 
 # ------------------------------------------------------------------ writes (designated synthetic tenant only)
@@ -134,31 +130,62 @@ async def _write_gate(ops: OpsClient) -> None:
     await gates.assert_authenticated_write_tenant(ops, tenant)
 
 
-async def test_positive_write_journey_create_list_reschedule_cancel_summary(settings):
+async def test_positive_write_journey_create_list_reschedule_cancel_summary(settings, record_property):
     """Deterministic positive journey on the designated synthetic tenant; every step must succeed."""
     doctor_id = required("OPS_E2E_DOCTOR_ID")
     visit = required("OPS_E2E_VISIT_DATE")  # owner-designated usual working day
     move_date = required("OPS_E2E_RESCHEDULE_DATE")  # another usual working day
-    ops, kb = OpsClient(settings), KnowledgeClient(settings)
+    ops = OpsClient(settings)
     try:
         await _write_gate(ops)
+        slots_enabled = (await ops.get_capabilities(Deadline(settings.read_deadline_seconds))).slots.enabled
+        record_property("slots_path", "enabled" if slots_enabled else "disabled")
         svc = booking.BookingService(ops, settings, SystemClock())
+        availability_service = availability.AvailabilityService(ops, DirectoryCache(settings), settings, SystemClock())
         call_id = f"ext-{uuid.uuid4().hex[:8]}"
 
         def ctx(op: str):
             return context.from_headers(harness.headers(call_id=call_id, operation_id=f"{call_id}-{op}"), settings)
 
-        created = await svc.manage(ctx("create"), booking.BookingRequest(
+        async def open_time(day: str) -> str:
+            result = await availability_service.get(ctx("availability"), availability.AvailabilityRequest(
+                doctorId=doctor_id, date=day))
+            block = next((b for doctor in result.doctors
+                          for session in [*doctor.board, *(doctor.usualSessions or [])]
+                          for b in session.openSlots or []), None)
+            if block is None:
+                pytest.fail("BLOCKED: the owner-designated date has no open block; "
+                            f"outcome={result.outcome}, detail={result.detail}")
+            return block.start
+
+        create = booking.BookingRequest(
             action="CREATE", patientName="Synthetic Test Patient", patientMobile=harness.CALLER[3:], doctorId=doctor_id,
-            visitDate=visit, callerConfirmed=True))
+            visitDate=visit, callerConfirmed=True)
+        if slots_enabled:
+            time = await open_time(visit)
+            window = booking.BookingRequest(action="LIST", fromDate=visit, toDate=visit)
+            before = gates.assert_list_succeeded(await svc.manage(ctx("before"), window))
+            refused = await svc.manage(ctx("missing-time"), create)
+            assert (refused.outcome, refused.nextStep) == ("INVALID_REQUEST", "ASK_WHICH_TIME"), refused
+            after = gates.assert_list_succeeded(await svc.manage(ctx("after"), window))
+            gates.assert_no_new_appointment(before, after, doctor_id, visit)
+            create = create.model_copy(update={"preferredTime": time})
+        created = await svc.manage(ctx("create"), create)
         assert created.outcome == "NOTED", created  # the designated doctor/date must not be UNKNOWN
+        if slots_enabled:
+            assert created.appointment.slotTime is not None
         appointment_id = created.appointment.appointmentId
         listed = gates.assert_list_succeeded(await svc.manage(ctx("list"), booking.BookingRequest(action="LIST")))
         assert appointment_id in [a.appointmentId for a in listed]
-        moved = await svc.manage(ctx("move"), booking.BookingRequest(
+        move = booking.BookingRequest(
             action="RESCHEDULE", appointmentId=appointment_id,
-            newVisitDate=move_date, callerConfirmed=True))
+            newVisitDate=move_date, callerConfirmed=True)
+        if slots_enabled:
+            move = move.model_copy(update={"newPreferredTime": await open_time(move_date)})
+        moved = await svc.manage(ctx("move"), move)
         assert moved.outcome == "NOTED" and moved.appointment.status == "CHANGED", moved
+        if slots_enabled:
+            assert moved.appointment.slotTime is not None
         cancelled = await svc.manage(ctx("cancel"), booking.BookingRequest(
             action="CANCEL", appointmentId=appointment_id, callerConfirmed=True))
         assert cancelled.outcome == "CANCELLED", cancelled
@@ -174,7 +201,6 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
         assert replay.model_dump(mode="json") == {"outcome": "ALREADY_SAVED"}
     finally:
         await ops.aclose()
-        await kb.aclose()
 
 
 async def test_negative_unknown_date_is_callback_only_and_writes_nothing(settings):
@@ -182,7 +208,7 @@ async def test_negative_unknown_date_is_callback_only_and_writes_nothing(setting
     doctor_id = required("OPS_E2E_DOCTOR_ID")
     unknown_date = datetime.now(UTC).astimezone(settings.zone).date().isoformat()
     # Owner-designated doctor must have UNKNOWN/NOT_CONFIRMED today; future boards are irrelevant.
-    ops, kb = OpsClient(settings), KnowledgeClient(settings)
+    ops = OpsClient(settings)
     try:
         await _write_gate(ops)
         svc = booking.BookingService(ops, settings, SystemClock())
@@ -198,19 +224,5 @@ async def test_negative_unknown_date_is_callback_only_and_writes_nothing(setting
         gates.assert_no_new_appointment(before, after, doctor_id, unknown_date)
     finally:
         await ops.aclose()
-        await kb.aclose()
 
 
-# ------------------------------------------------------------------ knowledge (Shobhit)
-
-
-async def test_knowledge_search_against_the_real_host(settings):
-    required("KNOWLEDGE_E2E_BASE_URL")
-    kb = KnowledgeClient(settings)
-    try:
-        result = await knowledge.KnowledgeService(kb, settings).search(
-            context.from_headers(harness.headers(call_id="ext-kb"), settings),
-            knowledge.KnowledgeRequest(question="parking", language="en"))
-        assert result.outcome in ("ANSWERED", "NO_ANSWER", "CLARIFICATION_NEEDED", "ROUTING_REQUIRED"), result
-    finally:
-        await kb.aclose()

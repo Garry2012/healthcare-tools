@@ -1,0 +1,131 @@
+# Read-only live captures of Manoj's Operations API 0.4.0 (Opus, 7 October 2026, Garima-approved).
+# Machine client: canary ops client from Key Vault; no secrets recorded. No patient data in these responses.
+
+## Capture 1: first REGULAR doctor in GET /doctors?limit=25 (no usual schedule; window from desk board entry)
+captured at: 2026-10-07T14:35:18+05:30
+doctorId: a540cc21-8b1a-43e3-8296-43d5fe156278 | attendanceType: REGULAR
+request: GET /availability/a540cc21-8b1a-43e3-8296-43d5fe156278/slots?date=today -> 200
+{
+ "doctorId": "a540cc21-8b1a-43e3-8296-43d5fe156278",
+ "date": "2026-10-07",
+ "enabled": true,
+ "blockMinutes": 30,
+ "sessions": [
+  {
+   "session": "",
+   "status": "IN",
+   "bookable": true,
+   "slots": [
+    {
+     "start": "10:30",
+     "end": "11:00",
+     "capacity": 5,
+     "booked": 0,
+     "available": 0,
+     "bookable": false
+    },
+    {
+     "start": "11:00",
+     "end": "11:30",
+     "capacity": 5,
+     "booked": 0,
+     "available": 0,
+     "bookable": false
+    },
+    {
+     "start": "11:30",
+     "end": "12:00",
+     "capacity": 5,
+     "booked": 0,
+     "available": 0,
+     "bookable": false
+    }
+   ]
+  }
+ ]
+}
+
+board same doctor/date -> 200
+[
+ {
+  "session": null,
+  "status": "IN",
+  "expectedTime": "10:30",
+  "expectedEndTime": "12:00",
+  "delayMinutes": null,
+  "isStale": false,
+  "mode": "SESSION",
+  "source": "DESK",
+  "lastUpdatedAt": "2026-10-07T08:35:30.182019Z"
+ }
+]
+
+usualSchedule: [] | patientsPerHour: None
+
+## Capture 2: REGULAR doctor with a usual schedule whose Morning ended before capture
+captured at: 2026-10-07T14:35:42+05:30
+doctorId: 62476883-f54e-4a3a-878f-81782f48f6d7 | usualSchedule: [{"label": "Morning", "daysOfWeek": ["MON", "TUE", "WED", "THU", "FRI", "SAT"], "start": "10:30", "end": "12:00"}, {"label": "Evening", "daysOfWeek": ["MON", "TUE", "WED", "THU", "FRI", "SAT"], "start": "18:30", "end": "19:30"}]
+GET /availability/62476883-f54e-4a3a-878f-81782f48f6d7/slots?date=today -> 200
+{
+ "doctorId": "62476883-f54e-4a3a-878f-81782f48f6d7",
+ "date": "2026-10-07",
+ "enabled": true,
+ "blockMinutes": 30,
+ "sessions": [
+  {
+   "session": "Morning",
+   "status": "NOT_CONFIRMED",
+   "bookable": true,
+   "slots": [
+    {
+     "start": "10:30",
+     "end": "11:00",
+     "capacity": 5,
+     "booked": 0,
+     "available": 0,
+     "bookable": false
+    },
+    {
+     "start": "11:00",
+     "end": "11:30",
+     "capacity": 5,
+     "booked": 0,
+     "available": 0,
+     "bookable": false
+    },
+    {
+     "start": "11:30",
+     "end": "12:00",
+     "capacity": 5,
+     "booked": 0,
+     "available": 0,
+     "bookable": false
+    }
+   ]
+  },
+  {
+   "session": "Evening",
+   "status": "NOT_CONFIRMED",
+   "bookable": true,
+   "slots": [
+    {
+     "start": "18:30",
+     "end": "19:00",
+     "capacity": 5,
+     "booked": 0,
+     "available": 5,
+     "bookable": true
+    },
+    {
+     "start": "19:00",
+     "end": "19:30",
+     "capacity": 5,
+     "booked": 0,
+     "available": 5,
+     "bookable": true
+    }
+   ]
+  }
+ ]
+}
+board: [{"session": "Morning", "status": "NOT_CONFIRMED", "expectedTime": null, "expectedEndTime": null, "isStale": false, "source": "DESK"}, {"session": "Evening", "status": "NOT_CONFIRMED", "expectedTime": "18:30", "expectedEndTime": "19:30", "isStale": false, "source": null}]

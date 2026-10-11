@@ -9,7 +9,7 @@
 # to run without a profile, when the signed-in subscription differs from the profile's, or when the profile
 # names no resource group: it never invents one. The owner services are external and MUST be their real hosts
 # over https; production configuration refuses stubs and mocks (so `--profile mock` can only dry-run). Nothing here provisions a
-# database, runs migrations or builds any backend image: Manoj and Shobhit deploy their own services.
+# database, runs migrations or builds any backend image: Manoj deploys his operational service.
 #
 # Re-running is safe: resources that exist are kept, generated secrets are created once and then read
 # from Key Vault, the container gets the new image and exactly the rollout's current settings.
@@ -17,7 +17,7 @@
 #
 # Secrets in Key Vault (names): mcp-token (gateway bearer),
 # ops-client-id / ops-client-secret (Manoj machine client, supplied by the owner: set OPS_CLIENT_ID /
-# OPS_CLIENT_SECRET in the environment on first run), knowledge-token (Shobhit, same).
+# OPS_CLIENT_SECRET in the environment on first run).
 set -euo pipefail
 
 usage() { sed -n '2,22p' "$0" >&2; exit 2; }
@@ -67,10 +67,9 @@ while IFS= read -r line || [[ -n "$line" ]]; do ROLLOUT_ENV+=("$line"); done < <
 P="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^PROVIDER_ID=//p')"
 [[ -n "$P" ]] || { echo "rollout.env must set PROVIDER_ID" >&2; exit 2; }
 : "${OPS_BASE_URL:?the profile must set OPS_BASE_URL (the operational API base, https://host/api/v1)}"
-KNOWLEDGE_BASE_URL="${KNOWLEDGE_BASE_URL:-}"
 : "${AZ_SUBSCRIPTION_ID:?the profile must name the subscription}"
 : "${AZ_RESOURCE_GROUP:?the profile must name the resource group; this script never defaults to rg-frontdesk-<provider>}"
-for url in "$OPS_BASE_URL" "$KNOWLEDGE_BASE_URL"; do
+for url in "$OPS_BASE_URL"; do
   [[ -z "$url" ]] && continue
   [[ "$url" == https://* ]] || { echo "owner service URLs must be https: $url" >&2; exit 2; }
   case "$url" in *contract-mock*|*localhost*|*127.0.0.1*|*stub*|*prism*|*mock*)
@@ -81,7 +80,6 @@ done
 step "validate the adapter configuration offline (settings, pack, tool schema)"
 (cd "$ROOT/services/mcp" && env -i PATH="$PATH" HOME="$HOME" ENV=production "${ROLLOUT_ENV[@]}" \
   OPS_BASE_URL="$OPS_BASE_URL" OPS_CLIENT_ID=validate OPS_CLIENT_SECRET=validate \
-  KNOWLEDGE_BASE_URL="$KNOWLEDGE_BASE_URL" KNOWLEDGE_BEARER_TOKEN="${KNOWLEDGE_BASE_URL:+validate}" \
   MCP_BEARER_TOKEN=validate-a \
   uv run -q frontdesk-mcp schema >/dev/null)
 
@@ -155,12 +153,8 @@ supplied() {  # supplied VAR: the owner-provided credential from the environment
 MCP_TOKEN="$(secret mcp-token token)"
 OPS_ID_SECRET="${OPS_CLIENT_ID_SECRET_NAME:-ops-client-id}"
 OPS_PASSWORD_SECRET="${OPS_CLIENT_SECRET_SECRET_NAME:-ops-client-secret}"
-KNOWLEDGE_SECRET="${KNOWLEDGE_BEARER_TOKEN_SECRET_NAME:-knowledge-token}"
 secret "$OPS_ID_SECRET" supplied OPS_CLIENT_ID >/dev/null
 secret "$OPS_PASSWORD_SECRET" supplied OPS_CLIENT_SECRET >/dev/null
-if [[ -n "$KNOWLEDGE_BASE_URL" ]]; then
-  secret "$KNOWLEDGE_SECRET" supplied KNOWLEDGE_BEARER_TOKEN >/dev/null
-fi
 
 require "managed identity $ID_NAME" az identity show -g "$RG" -n "$ID_NAME"
 ID="$(out az identity show -g "$RG" -n "$ID_NAME" --query id -o tsv)"
@@ -176,15 +170,8 @@ step "container: $APP"
 SECRETS="$(kv mcp-token) $(kv "$OPS_ID_SECRET") $(kv "$OPS_PASSWORD_SECRET")"
 ENV_VARS=(ENV=production HOST=0.0.0.0 PORT=8100
   "OPS_BASE_URL=$OPS_BASE_URL" "OPS_CLIENT_ID=secretref:$OPS_ID_SECRET" "OPS_CLIENT_SECRET=secretref:$OPS_PASSWORD_SECRET"
-  "KNOWLEDGE_BASE_URL=$KNOWLEDGE_BASE_URL"
   MCP_BEARER_TOKEN=secretref:mcp-token
   "${ROLLOUT_ENV[@]}")
-if [[ -n "$KNOWLEDGE_BASE_URL" ]]; then
-  SECRETS="$SECRETS $(kv "$KNOWLEDGE_SECRET")"
-  ENV_VARS+=("KNOWLEDGE_BEARER_TOKEN=secretref:$KNOWLEDGE_SECRET")
-else
-  ENV_VARS+=("KNOWLEDGE_BEARER_TOKEN=")
-fi
 if exists az containerapp show -g "$RG" -n "$APP"; then
   # Upgrade path (AR-05): an app deployed by the legacy script carries only agent-token/mcp-token. Attach the
   # identity and registry access, then every Key Vault reference the new environment names, BEFORE switching the
@@ -194,15 +181,6 @@ if exists az containerapp show -g "$RG" -n "$APP"; then
   # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
   run az containerapp secret set -g "$RG" -n "$APP" --secrets $SECRETS -o none
   run az containerapp update -g "$RG" -n "$APP" --image "$MCP_IMAGE" --replace-env-vars "${ENV_VARS[@]}" -o none
-  if [[ -z "$KNOWLEDGE_BASE_URL" ]]; then
-    # Inspect names only; an already-absent reference is a no-op. Query/remove failures still stop release.
-    knowledge_ref="$(out az containerapp show -g "$RG" -n "$APP" \
-      --query "properties.configuration.secrets[?name=='$KNOWLEDGE_SECRET'].name" -o tsv)"
-    if [[ -n "$knowledge_ref" ]]; then
-      run az containerapp secret remove -g "$RG" -n "$APP" --secret-names "$KNOWLEDGE_SECRET" -o none
-    fi
-  fi
-  # Legacy secrets (agent-token for the retired API) stay attached until the retirement step removes them.
 else
   # shellcheck disable=SC2086  # the secrets list is space-separated on purpose
   run az containerapp create -g "$RG" -n "$APP" --environment "$ENV_NAME" --image "$MCP_IMAGE" \
@@ -242,22 +220,19 @@ wait_ready() {
   echo "$APP revision $revision did not become ready; inspect its Container Apps logs" >&2
   return 1
 }
-step "verify: latest revision ready, dependencies, authentication, four tools"
+step "verify: latest revision ready, dependencies, authentication, three tools"
 wait_ready
 MCP_HOST="$(out az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv)"
-LANG1="$(printf '%s\n' "${ROLLOUT_ENV[@]}" | sed -n 's/^TENANT_SUPPORTED_LANGUAGES=//p' | cut -d, -f1)"
-SMOKE_EXPECT_KNOWLEDGE=absent
-[[ -z "$KNOWLEDGE_BASE_URL" ]] || SMOKE_EXPECT_KNOWLEDGE=required
 if [[ -n "$DRY" ]]; then
-  show env "SMOKE_EXPECT_KNOWLEDGE=$SMOKE_EXPECT_KNOWLEDGE" uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
+  show uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 else
   MCP_URL="https://$MCP_HOST/mcp/" MCP_BEARER_TOKEN="$MCP_TOKEN" \
-    SMOKE_LANGUAGE="$LANG1" SMOKE_EXPECT_KNOWLEDGE="$SMOKE_EXPECT_KNOWLEDGE" uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
+    uv run --project "$ROOT/services/mcp" python "$ROOT/deploy/azure/smoke.py"
 fi
 
 step "done: $P"
 cat >&2 <<EOF2
 MCP adapter:      https://$APP.<environment domain>/mcp/
-Gateway bearer:   Key Vault $KV secret mcp-token            (ContextForge / voice agent, four tools)
+Gateway bearer:   Key Vault $KV secret mcp-token            (ContextForge / voice agent, three tools)
 Next:             register with ContextForge (deploy/contextforge/register.py), then AZURE.md §tests.
 EOF2

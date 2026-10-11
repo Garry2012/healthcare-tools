@@ -1,25 +1,24 @@
 # Front-desk MCP adapter — voice-agent tools for a hospital
 
-Four MCP tools for calling applications, implemented as a thin adapter over two owner services.
+Three MCP tools for calling applications, implemented as a thin adapter over Manoj's operational API.
 This repository contains the adapter only; it owns no data and runs no backend.
 
 ```
 Caller ⇄ LiveKit voice agent (STT, LLM, TTS)
              ⇅ MCP client (+ trusted call headers)
         IBM ContextForge gateway
-             ⇅
-        frontdesk-mcp (services/mcp): get_doctor_availability · manage_booking · search_knowledge
-                                       record_call_summary (same gateway bearer)
-            /                       \
-   HTTPS, machine OAuth              HTTPS, bearer
- Manoj's operational API           Shobhit's knowledge service
- (directory, live board,           (approved answers, symptom routing,
-  appointments, summaries)          red flags) — contract pending
+             ⇅                                      ⇅ separate registration
+        frontdesk-mcp (services/mcp)               Stratum (voice-team owned)
+        get_doctor_availability · manage_booking
+        record_call_summary (same gateway bearer)
+             ⇅ HTTPS, machine OAuth
+        Manoj's operational API
+        (directory, live board, slots, appointments, summaries)
 ```
 
 - **Plan, target and evidence:** `docs/handover/mcp-only/` (read its README first; implementation
   reports under `implementation/`).
-- **Owner contract:** `docs/handover/mcp-only/contracts/manoj-openapi-20260930.yaml` (pinned, hashed).
+- **Owner contract:** `docs/handover/mcp-only/contracts/manoj-openapi-20261007.yaml` (pinned, hashed).
 - **Adapter:** `services/mcp/README.md`.
 - **Integration:** `docs/handover/VOICE-TEAM.md` (tool interface, authentication and trusted headers),
   `docs/handover/CONTEXTFORGE.md`, `docs/handover/AZURE.md`, `docs/handover/TESTING.md`.
@@ -32,8 +31,8 @@ the image build. No database.
 ```bash
 uv sync --project services/mcp --frozen
 ./scripts/test.sh                 # lint, hermetic suites, process e2e, package/image build
-make demo                         # walk the four tools against the development stubs
-cp .env.example .env && make up   # adapter + stubs on 127.0.0.1:8100 / :8200 / :8300
+make demo                         # walk the three tools against the operational stub
+cp .env.example .env && make up   # adapter + operational stub on 127.0.0.1:8100 / :8200
 ```
 
 Environments: `eval "$(scripts/env.sh mock)"` (public contract mock, integration tests) or `live` (Manoj's API,
@@ -56,7 +55,7 @@ deploy/         docker-compose.yml, environments/{mock,live}.env, azure/deploy.s
 docs/           handover/mcp-only (plan, contracts, implementation evidence), handover/*.md, DECISIONS.md
 ```
 
-Scheduling tools call only Manoj; the LLM explicitly chooses `search_knowledge` for information or symptoms.
+All three front-desk tools call only Manoj. The voice agent uses Stratum through a separate ContextForge registration for knowledge, symptom and emergency journeys.
 Voice behaviour and prompts belong to the voice team; the published interface is [VOICE-TEAM.md](docs/handover/VOICE-TEAM.md).
 
 Availability policy: today uses Manoj's live board; future dates use usual working hours, with attendance

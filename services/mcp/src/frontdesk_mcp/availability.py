@@ -14,9 +14,10 @@ from .clock import Clock, Deadline, local_now
 from .config import Settings
 from .context import CallContext
 from .ops_client import InvalidIdentifier, OpsClient, Rejected, Unavailable
-from .schedule_reader import READ_ERRORS, ScheduleReader
+from .schedule_reader import READ_ERRORS, READ_FAILURE_STAGES, ScheduleReader, read_failure_detail
 
 logger = logging.getLogger(__name__)
+DIRECTORY_FAILURE_DETAIL = "DIRECTORY_UNAVAILABLE"
 
 
 class AvailabilityRequest(BaseModel):
@@ -28,7 +29,7 @@ class AvailabilityRequest(BaseModel):
     doctorId: str | None = Field(default=None, max_length=64)  # noqa: N815
     departmentName: str | None = Field(default=None, max_length=100)  # noqa: N815
     departmentId: str | None = Field(default=None, max_length=64)  # noqa: N815
-    session: str | None = Field(default=None, max_length=40)
+    session: outcomes.SessionChoice = Field(default=None, max_length=40)
     gender: Literal["FEMALE", "MALE"] | None = None
 
 
@@ -71,13 +72,14 @@ class AvailabilityService:
 
     def _service_error(self, exc: BaseException, base: dict) -> outcomes.AvailabilityResult:
         retry = exc.retry_after if isinstance(exc, Unavailable) else None
-        detail = {"board": "BOARD_UNAVAILABLE", "profile": "PROFILE_UNAVAILABLE"}.get(
-            getattr(exc, "stage", None), "DIRECTORY_UNAVAILABLE")
-        if isinstance(exc, Rejected) and exc.code == "NOT_FOUND":
-            return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="ASK_TO_REPHRASE", **base)
-        if isinstance(exc, (Rejected, InvalidIdentifier)):
-            return outcomes.AvailabilityResult(outcome="INVALID_REQUEST", nextStep="ASK_TO_REPHRASE", **base,
-                                               detail="DIRECTORY_REJECTED")
+        stage = getattr(exc, "stage", None)
+        detail = read_failure_detail(stage, DIRECTORY_FAILURE_DETAIL)
+        if stage not in READ_FAILURE_STAGES:
+            if isinstance(exc, Rejected) and exc.code == "NOT_FOUND":
+                return outcomes.AvailabilityResult(outcome="NOT_FOUND", nextStep="ASK_TO_REPHRASE", **base)
+            if isinstance(exc, (Rejected, InvalidIdentifier)):
+                return outcomes.AvailabilityResult(outcome="INVALID_REQUEST", nextStep="ASK_TO_REPHRASE", **base,
+                                                   detail="DIRECTORY_REJECTED")
         logger.warning("availability_could_not_check",
                        extra={"fields": {"error": type(exc).__name__, "detail": detail}})
         return outcomes.AvailabilityResult(outcome="COULD_NOT_CHECK", nextStep="SAY_COULD_NOT_CHECK", **base,
@@ -138,17 +140,22 @@ class AvailabilityService:
     @staticmethod
     def _single(d: policy.DoctorDecision, requested: policy.RequestedDate | None,
                 request: AvailabilityRequest, base: dict) -> outcomes.AvailabilityResult:
+        if isinstance(d.facts.slots, policy.SlotsNotRead):
+            return outcomes.AvailabilityResult(outcome="COULD_NOT_CHECK", nextStep="SAY_COULD_NOT_CHECK",
+                                               **base, detail="SLOTS_UNAVAILABLE")
         outcome, step = {
             policy.Decision.APPOINTMENT_REQUEST: ("AVAILABILITY", "ASK_WHICH_SESSION" if d.session_choice_required
                                                  else "OFFER_APPOINTMENT_REQUEST"),
             policy.Decision.CALLBACK_REQUIRED: ("CALLBACK_REQUIRED", "ASK_CALLBACK_DETAILS"),
             policy.Decision.NOT_AVAILABLE: ("NOT_AVAILABLE", "OFFER_OTHER_SESSION_OR_DATE"),
+            policy.Decision.HANDOFF_REQUIRED: ("HANDOFF_REQUIRED", "TRANSFER_DESK"),
             policy.Decision.COULD_NOT_CHECK: ("COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK"),
         }[d.decision]
         if request.purpose == policy.Purpose.WORKING_HOURS and d.decision == policy.Decision.APPOINTMENT_REQUEST:
             outcome, step = "WORKING_HOURS", "PRESENT_WORKING_HOURS"
         matched = any(s.label and policy.normalised(s.label) == policy.normalised(request.session)
-                      and (s.basis == policy.Basis.LIVE_BOARD or requested is None or requested.weekday in s.days)
+                      and (s.basis == policy.Basis.LIVE_BOARD or requested is None
+                           or policy.on_requested_date(s, requested))
                       for s in d.sessions) if request.session else None
         return outcomes.AvailabilityResult(outcome=outcome, nextStep=step, **base, basis=d.basis,
             doctors=[doctor_out(d, requested)], detail=d.reason, sessionMatched=matched,

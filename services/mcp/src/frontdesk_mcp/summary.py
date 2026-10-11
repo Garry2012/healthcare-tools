@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,9 +16,12 @@ from . import contract, identity, outcomes
 from .clock import Deadline
 from .config import Settings
 from .context import CallContext
-from .ops_client import Malformed, OpsClient, Rejected, Unavailable, UncertainWrite
+from .ops_client import Malformed, OpsClient, Rejected, Unavailable, UnavailableReason, UncertainWrite
 
 logger = logging.getLogger(__name__)
+
+SummaryFailureReason = Literal["CALL_ID_MISSING", "STARTED_AT_MISSING", "UNEXPECTED_STATUS",
+                               "NO_VERIFIED_RESPONSE", "MALFORMED_SUCCESS", "CALL_ID_MISMATCH"]
 
 SUMMARY_MAX = 500
 _ID = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
@@ -87,7 +90,7 @@ class SummaryService:
         return body
 
     @staticmethod
-    def _failure(ctx: CallContext, outcome: outcomes.SummaryOutcome, reason: str,
+    def _failure(ctx: CallContext, outcome: outcomes.SummaryOutcome, reason: SummaryFailureReason | UnavailableReason,
                  retry_after: int | None = None, *, status: int | None = None) -> outcomes.SummaryResult:
         event = "summary_call_id_mismatch" if reason == "CALL_ID_MISMATCH" else "summary_write_unverified"
         fields = {"callId": ctx.call_id, "outcome": outcome, "reason": reason, "retryAfterSeconds": retry_after}
