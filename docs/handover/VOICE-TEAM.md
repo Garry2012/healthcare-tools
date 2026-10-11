@@ -24,20 +24,23 @@ This is the single authoritative handover for calling the front-desk MCP tools.
 
 - **Endpoint:** streamable HTTP at `/mcp/`. The voice agent normally reaches it through the ContextForge virtual server `frontdesk-healthcare`. Its URL and scoped access come from the ContextForge owner.
 - **The direct adapter URL** is `https://<mcp-host>/mcp/`. `GET /health`, `GET /ready` and `GET /dependencies` need no authentication.
-- **Authentication:** every MCP request needs `Authorization: Bearer <MCP credential>`. Through ContextForge, the voice client authenticates to ContextForge with its own client token, and ContextForge sends its stored MCP credential upstream; the client's token is not forwarded. A direct client sends the MCP credential itself.
+- **Authentication: two calling paths, two different credentials.**
+  - **Through ContextForge (the normal path):** the voice client sends its scoped ContextForge client token in `Authorization` to ContextForge. ContextForge separately uses its stored MCP credential when it calls the front-desk MCP server. The client token is not forwarded upstream.
+  - **Directly to the adapter:** only a client calling the adapter's `/mcp/` itself sends the MCP credential, as `Authorization: Bearer <MCP credential>`.
+  - **No `X-Upstream-Authorization`:** the voice client must not send this header. ContextForge treats it as a special override of upstream authentication.
 - **Never tool arguments:** credentials, the trusted caller identity (`X-Caller-Number` with `X-Caller-Verification`) and the call start time. They come only from the request context (§3).
 - **Contact numbers are arguments:** `patientMobile` (CREATE) and `callerMobile` (callback summary) are numbers the caller gives. They are contact data and grant no authority.
 - **The hospital (tenant)** is fixed by the deployment, not by any argument.
 
 ## 3. Request context (trusted headers)
 
-The voice platform sets the five `X-` headers on each tool call. ContextForge forwards exactly these five (its passthrough allowlist); `Authorization` is set separately, as described in §2.
+The voice platform sets the five `X-` call-context headers below on each tool call, and ContextForge forwards exactly these five to the adapter. `Authorization` depends on the calling path (§2).
 - Header names are case-insensitive.
 - A malformed value is treated as absent.
 
 | Header | Format | Needed by |
 |---|---|---|
-| `Authorization` | `Bearer <MCP credential>`: ContextForge's stored credential, or the direct client's | every tool |
+| `Authorization` | ContextForge client token when calling ContextForge; MCP credential only when calling the adapter directly | every tool |
 | `X-Call-Id` | 1–64 characters: ASCII letters, digits, `.`, `_`, `:` or `-` | `manage_booking` CREATE, CANCEL, RESCHEDULE; `record_call_summary` |
 | `X-Operation-Id` | same syntax as `X-Call-Id`; one value per distinct confirmed write | `manage_booking` CREATE, CANCEL, RESCHEDULE |
 | `X-Caller-Number` | the platform's verified caller number, for example `+919000000101` | `manage_booking` LIST, CANCEL, RESCHEDULE |
@@ -214,7 +217,7 @@ MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
 **Summaries:**
 - A repeat for the same call returns `ALREADY_SAVED`, even with different text; the first summary stays.
 - `NOT_CONFIRMED` means saving could not be verified.
-- `NOT_SAVED` means the headers were missing or invalid, or the credentials were refused.
+- `NOT_SAVED` means the headers were missing or invalid, or the hospital service refused the adapter's own credentials.
 
 **Time budgets:**
 - Availability reads and booking reads and writes must finish within 0.30 seconds of adapter time (out of a 1-second voice budget). If the hospital service is slower, the result is `COULD_NOT_CHECK` or `COULD_NOT_RECORD`, not a guess. MCP makes at most one same-key retry inside that budget.
@@ -378,7 +381,7 @@ These are the expected results for testing a client end to end. Each one matches
 | `outcome.SAVED` | record_call_summary | A new summary was stored for this call |
 | `outcome.ALREADY_SAVED` | record_call_summary | This call already has a summary. Nothing changed, even if the new text differs |
 | `outcome.NOT_CONFIRMED` | record_call_summary | Saving couldn't be verified: no answer, malformed success, call-id mismatch, transport failure, rate limit or server error |
-| `outcome.NOT_SAVED` | record_call_summary | Missing or malformed `X-Call-Id`/`X-Call-Started-At`, or credentials definitively refused. If an earlier send may have committed, `NOT_CONFIRMED` takes precedence |
+| `outcome.NOT_SAVED` | record_call_summary | Missing or malformed `X-Call-Id`/`X-Call-Started-At`, or the hospital service definitively refused the adapter's own credentials. If an earlier send may have committed, `NOT_CONFIRMED` takes precedence |
 
 ## 13. nextStep codes
 
