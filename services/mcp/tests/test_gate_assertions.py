@@ -124,7 +124,6 @@ async def test_external_write_gate_checks_identity_before_proceeding(make_settin
     monkeypatch.setenv("OPS_E2E_ALLOW_WRITES", "1")
     monkeypatch.setenv("OPS_E2E_MODE", "live")
     monkeypatch.setenv("OPS_E2E_WRITE_TENANT", "synthetic")
-    monkeypatch.setenv("KNOWLEDGE_E2E_BASE_URL", "https://knowledge.example")
     payload = base64.urlsafe_b64encode(b'{"tenant":"production"}').decode()
     requests = []
 

@@ -11,12 +11,11 @@ profile="${1:?usage: env.sh <mock|live>}"
 dir="${DEPLOY_PROFILE_DIR:-$ROOT/deploy/environments}"
 file="$dir/$profile.env"
 [[ -f "$file" ]] || { echo "unknown profile '$profile' ($dir)" >&2; exit 2; }
-ops="" knowledge="" lines=()
+ops="" lines=()
 while IFS= read -r line || [[ -n "$line" ]]; do
   [[ -z "${line// }" || "$line" == \#* ]] && continue
   key="${line%%=*}" value="${line#*=}"
   [[ "$key" == OPS_BASE_URL ]] && ops="$value"
-  [[ "$key" == KNOWLEDGE_BASE_URL ]] && knowledge="$value"
   lines+=("$(printf 'export %s=%q' "$key" "$value")")
 done < "$file"
 if [[ -z "$ops" ]]; then
@@ -26,14 +25,4 @@ fi
 printf '%s\n' "${lines[@]}"
 printf 'export OPS_E2E_BASE_URL=%q\n' "$ops"
 printf 'export BENCH_OPS_BASE_URL=%q\n' "$ops"
-# Clear all three knowledge URLs when the selected profile has no host. Never retain a previous profile's host.
-printf 'export KNOWLEDGE_BASE_URL=%q\n' "$knowledge"
-printf 'export KNOWLEDGE_E2E_BASE_URL=%q\n' "$knowledge"
-printf 'export BENCH_KNOWLEDGE_BASE_URL=%q\n' "$knowledge"
 printf 'export DEPLOY_PROFILE=%q\n' "$profile"
-
-if [[ -n "$knowledge" ]]; then
-  printf 'export SMOKE_EXPECT_KNOWLEDGE=required\n'
-else
-  printf 'export SMOKE_EXPECT_KNOWLEDGE=absent\n'
-fi

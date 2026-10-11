@@ -179,7 +179,6 @@ def _profile_dir(tmp_path, ops_base_url: str) -> str:
     (tmp_path / "test.env").write_text(f"""PROFILE=test
 OPS_BASE_URL={ops_base_url}
 OPS_E2E_MODE=live
-KNOWLEDGE_BASE_URL=https://kb.example
 AZ_SUBSCRIPTION_ID=4e1c081a-9a6a-4e16-9da2-90217c22378b
 AZ_RESOURCE_GROUP=healthcare-rg
 AZ_CONTAINERAPPS_ENV=cae-frontdesk-demo-hospital
@@ -213,10 +212,10 @@ def test_upgrading_an_existing_app_attaches_the_new_secrets_before_switching_env
     update = log.index("az containerapp update -g")
     assert secret_set < update and identity < update and registry < update, "attach secrets/identity before env"
     secrets_line = [line for line in log.splitlines() if "az containerapp secret set" in line][0]
-    for name in ("mcp-token", "ops-client-id", "ops-client-secret", "knowledge-token"):
+    for name in ("mcp-token", "ops-client-id", "ops-client-secret"):
         assert f"{name}=keyvaultref:" in secrets_line, name
     assert "mcp-lifecycle-token" not in log and "MCP_LIFECYCLE" not in log
-    assert "SMOKE_EXPECT_KNOWLEDGE=required" in log
+    assert "SMOKE_EXPECT_KNOWLEDGE" not in log
     assert "az containerapp secret remove" not in log
     assert "az containerapp create" not in log  # the existing app is upgraded, not recreated
 
@@ -331,30 +330,13 @@ async def test_gateway_verifies_three_tools_and_refreshes_missing_discovery(h, m
     assert h.ops_state.summaries == {} and h.ops_state.appointments == {}
 
 
-def test_deploy_without_knowledge_needs_no_placeholder_or_knowledge_secret(tmp_path):
-    import os
-    import subprocess
-
-    profile_dir = _profile_dir(tmp_path, "https://ops.example/api/v1")
-    path = tmp_path / "test.env"
-    path.write_text(path.read_text().replace("KNOWLEDGE_BASE_URL=https://kb.example", "KNOWLEDGE_BASE_URL="))
-    result = subprocess.run([str(DEPLOY / "azure/deploy.sh"), str(DEPLOY.parent / "rollouts/demo-hospital"),
-                             "--profile", "test", "--dry-run"], capture_output=True, text=True, check=False,
-                            cwd=DEPLOY.parent, env={**os.environ, "DEPLOY_PROFILE_DIR": profile_dir,
-                                                   "DEPLOY_ASSUME_EXISTING": "1"})
+def test_deploy_does_not_configure_or_remove_retired_knowledge_secrets(tmp_path):
+    result = _dry_run(tmp_path, DEPLOY_ASSUME_EXISTING="1")
     assert result.returncode == 0, result.stderr[-2000:]
-    assert "knowledge-token=keyvaultref:" not in result.stderr
-    assert "KNOWLEDGE_BEARER_TOKEN=secretref:" not in result.stderr
-    assert "KNOWLEDGE_BASE_URL=" in result.stderr and "KNOWLEDGE_BEARER_TOKEN=" in result.stderr
     assert "az containerapp update" in result.stderr
-    removal = result.stderr.index("az containerapp secret remove")
-    assert result.stderr.index("--replace-env-vars") < removal
-    assert "--secret-names knowledge-token" in result.stderr
-    assert "SMOKE_EXPECT_KNOWLEDGE=absent" in result.stderr
-
-
-
-
+    assert "knowledge-token" not in result.stderr
+    assert "KNOWLEDGE_" not in result.stderr
+    assert "az containerapp secret remove" not in result.stderr
 
 
 @pytest.mark.parametrize("body", [[], "bad", None, {"operational": []},
@@ -374,16 +356,16 @@ async def test_smoke_rejects_malformed_dependencies_without_attribute_error(body
 
 
 
-@pytest.mark.parametrize("knowledge,expected", [("", "absent"), ("https://kb.example", "required")])
-def test_profile_exports_knowledge_expectation(tmp_path, knowledge, expected):
+def test_profile_exports_no_retired_knowledge_settings(tmp_path):
     import os
     import subprocess
 
-    (tmp_path / "fixture.env").write_text(f"OPS_BASE_URL=https://ops.example\nKNOWLEDGE_BASE_URL={knowledge}\n")
+    (tmp_path / "fixture.env").write_text("OPS_BASE_URL=https://ops.example\n")
     result = subprocess.run([str(DEPLOY.parent / "scripts/env.sh"), "fixture"], capture_output=True,
                             text=True, env={**os.environ, "DEPLOY_PROFILE_DIR": str(tmp_path)})
     assert result.returncode == 0
-    assert f"export SMOKE_EXPECT_KNOWLEDGE={expected}" in result.stdout.splitlines()
+    assert "export OPS_E2E_BASE_URL=https://ops.example" in result.stdout
+    assert "KNOWLEDGE_" not in result.stdout
 
 
 @pytest.mark.parametrize("probe", ["AVAILABILITY", "WORKING_HOURS"])
