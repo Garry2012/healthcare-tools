@@ -301,8 +301,7 @@ class BookingService:
             schedule = await self._reschedule_gate(mobile, request, requested, new_time, deadline, now)
             if isinstance(schedule, outcomes.BookingResult):
                 return schedule
-            if isinstance(schedule, policy.Write):
-                expected_slot = schedule.expected_slot
+            expected_slot = schedule.expected_slot
         body = _write_body(request, newVisitDate=new_date, newPreferredTime=new_time)
         body.update(callerMobile=mobile, callId=ctx.call_id)
         if request.action == "CANCEL":
@@ -324,7 +323,7 @@ class BookingService:
 
     async def _reschedule_gate(self, mobile: str, request: BookingRequest, requested: policy.RequestedDate,
                               new_time: str | None, deadline: Deadline, now: datetime
-                              ) -> outcomes.BookingResult | policy.Write | None:
+                              ) -> outcomes.BookingResult | policy.Write:
         try:
             listed = await self.ops.find_appointments(deadline, mobile=mobile)
         except (Rejected, Malformed, Unavailable) as exc:
@@ -335,7 +334,9 @@ class BookingService:
                                           detail="APPOINTMENT_UNAVAILABLE", retryAfterSeconds=retry)
         current = next((a for a in listed.items if a.id == request.appointmentId), None)
         if current is None:
-            return None  # preserve the owner's neutral NOT_FOUND for this verified caller
+            # The appointment must be in the verified caller's list, which starts today by owner contract.
+            # Another caller's or a past appointment gets the same neutral NOT_FOUND, with no write.
+            return outcomes.BookingResult(outcome="NOT_FOUND", nextStep="SAY_NOT_FOUND")
         if not current.doctorId:
             return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",
                                           detail="MALFORMED")

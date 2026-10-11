@@ -216,6 +216,15 @@ def test_appointment_slot_time_is_optional_and_validated():
             contract.Appointment.model_validate(APPT | {"slotTime": value})
 
 
+def test_appointment_expected_time_uses_the_contract_approx_time_format():
+    from .test_ops_client import APPT
+
+    with pytest.raises(ValueError):
+        contract.Appointment.model_validate(APPT | {"expectedTime": "9:30"})
+    assert contract.Appointment.model_validate(APPT | {"expectedTime": "09:30"}).expectedTime == "09:30"
+    assert contract.Appointment.model_validate(APPT | {"expectedTime": None}).expectedTime is None
+
+
 @pytest.mark.parametrize("name", ["SlotPlan", "SlotBlock", "SlotSession"])
 def test_slot_model_fields_match_the_contract_required_properties(name):
     schemas = load_overlay()["components"]["schemas"]

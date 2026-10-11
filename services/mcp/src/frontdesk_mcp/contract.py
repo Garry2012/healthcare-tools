@@ -177,7 +177,7 @@ class Appointment(_Model):
     doctorId: str | None = None  # noqa: N815
     department: str | None = None
     visitDate: date  # noqa: N815
-    expectedTime: str | None = None  # noqa: N815
+    expectedTime: str | None = Field(default=None, pattern=APPROX_TIME_PATTERN)  # noqa: N815
     slotTime: str | None = Field(default=None, pattern=APPROX_TIME_PATTERN)  # noqa: N815
     reasonVerbatim: str | None = None  # noqa: N815
     status: AppointmentStatus

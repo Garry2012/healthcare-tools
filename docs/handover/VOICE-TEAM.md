@@ -640,6 +640,7 @@ caller identity for CANCEL/RESCHEDULE (`IDENTITY_UNAVAILABLE`) → schedule poli
 (`INVALID_REQUEST` with `SESSION_REQUIRED` or `TIME_REQUIRED`, `CALLBACK_REQUIRED`, `NOT_AVAILABLE`,
 `HANDOFF_REQUIRED`, or `COULD_NOT_RECORD` after a failed read) → owner write.
 
+- RESCHEDULE applies only to an appointment in the verified caller's own list, which starts today; any other id, including the caller's past appointment, returns `NOT_FOUND`/`SAY_NOT_FOUND` with no write.
 - `callerConfirmed: true` represents the caller's agreement to the exact write details.
 - With slots disabled, today's booking window starts at the later of session start and facility now
   (strict, minute precision); future dates follow usual hours. With slots enabled, the time belongs within

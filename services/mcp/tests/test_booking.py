@@ -542,10 +542,85 @@ async def test_reschedule_future_uses_usual_schedule_and_preserves_owner_status(
     assert h.ops_paths().count("/availability") == before and len(sent(h, "/reschedule")) == 1
 
 
-async def test_reschedule_of_an_unknown_appointment_is_still_the_owners_neutral_not_found(h):
+async def test_reschedule_of_an_unknown_appointment_is_a_neutral_not_found_without_a_write(h):
     result = await run(h, h.ctx(operation_id="op-1"), action="RESCHEDULE", appointmentId="appt_9999",
                        newVisitDate="2026-10-02", callerConfirmed=True)
     assert result.outcome == "NOT_FOUND"
+    assert result.nextStep == "SAY_NOT_FOUND"
+    assert sent(h, "/reschedule") == []
+
+
+async def test_reschedule_of_a_past_own_appointment_onto_an_unknown_day_sends_no_write(h):
+    created = await run(h, **CREATE)
+    appointment_id = created.appointment.appointmentId
+    stored = h.ops_state.appointments[appointment_id]
+    stored["visitDate"] = "2026-09-30"
+    before = dict(stored)
+    h.ops_state.set_board("2026-10-01", [{"doctorId": "doc_garima", "session": "Morning",
+                                         "status": "UNKNOWN", "updatedMinutesAgo": 1}])
+    result = await run(h, h.ctx(operation_id="reschedule"), action="RESCHEDULE", appointmentId=appointment_id,
+                       newVisitDate="today", newPreferredTime="10:45", callerConfirmed=True)
+    assert (result.outcome, result.nextStep) == ("NOT_FOUND", "SAY_NOT_FOUND")
+    assert sent(h, "/reschedule") == []
+    assert h.ops_state.appointments[appointment_id] == before
+
+
+async def test_reschedule_of_a_past_own_appointment_onto_a_slot_day_without_time_sends_no_write(h):
+    created = await run(h, **CREATE)
+    appointment_id = created.appointment.appointmentId
+    h.ops_state.appointments[appointment_id]["visitDate"] = "2026-09-30"
+    h.ops_state.set_slots("doc_garima", "2026-10-01", harness.slot_plan())
+    result = await run(h, h.ctx(operation_id="reschedule"), action="RESCHEDULE", appointmentId=appointment_id,
+                       newVisitDate="today", callerConfirmed=True)
+    assert (result.outcome, result.nextStep) == ("NOT_FOUND", "SAY_NOT_FOUND")
+    assert sent(h, "/reschedule") == []
+
+
+async def test_reschedule_of_another_callers_appointment_looks_exactly_like_not_found(h):
+    created = await run(h, **CREATE)
+    appointment_id = created.appointment.appointmentId
+    before = dict(h.ops_state.appointments[appointment_id])
+    stranger = h.ctx(caller="+919000000102", operation_id="stranger")
+    result = await run(h, stranger, action="RESCHEDULE", appointmentId=appointment_id,
+                       newVisitDate="2026-10-05", callerConfirmed=True)
+    unknown = await run(h, h.ctx(caller="+919000000102", operation_id="unknown"), action="RESCHEDULE",
+                        appointmentId="appt_9999", newVisitDate="2026-10-05", callerConfirmed=True)
+    assert (result.outcome, result.nextStep) == ("NOT_FOUND", "SAY_NOT_FOUND")
+    assert result.model_dump() == unknown.model_dump()
+    assert sent(h, "/reschedule") == []
+    assert h.ops_state.appointments[appointment_id] == before
+
+
+@pytest.mark.parametrize("expected_time", ["9:30", ""])
+async def test_list_maps_malformed_owner_expected_time_to_could_not_check(h, expected_time):
+    created = await run(h, **CREATE)
+    stored = h.ops_state.appointments[created.appointment.appointmentId]
+    stored["expectedTime"] = expected_time
+    stored.pop("slotTime", None)
+    result = await run(h, action="LIST")
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "COULD_NOT_CHECK", "SAY_COULD_NOT_CHECK", "MALFORMED")
+
+
+async def test_create_maps_malformed_owner_expected_time_to_uncertain(h):
+    import httpx
+
+    from frontdesk_mcp.ops_client import OpsClient
+
+    async def owner(request):
+        response = await h.ops.http._transport.handle_async_request(request)
+        if request.method == "POST" and request.url.path.endswith("/appointments"):
+            payload = json.loads(await response.aread())
+            payload["expectedTime"] = "9:30"
+            payload.pop("slotTime", None)
+            return httpx.Response(200, json=payload)
+        return response
+
+    async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
+        result = await booking.BookingService(ops, h.settings, h.clock).manage(
+            h.ctx(operation_id="malformed"), booking.BookingRequest(**CREATE))
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "UNCERTAIN", "SAY_UNCERTAIN_AND_TRANSFER", "MALFORMED_SUCCESS")
 
 
 @pytest.mark.parametrize("reason", [None, "fever for three days", "chest pain, my left arm is numb"])
@@ -1252,7 +1327,7 @@ async def test_list_and_cancel_present_owner_slot_without_claiming_a_move(h):
     assert (cancelled.appointment.slotTime, cancelled.appointment.slotMoved) == ("11:00", False)
 
 
-async def test_reschedule_lookup_bypass_keeps_expected_slot_unknown(h):
+async def test_reschedule_lookup_miss_refuses_without_an_owner_write(h):
     import httpx
 
     from frontdesk_mcp.ops_client import OpsClient
@@ -1260,7 +1335,7 @@ async def test_reschedule_lookup_bypass_keeps_expected_slot_unknown(h):
     created = await run(h, **CREATE)
     appointment_id = created.appointment.appointmentId
     path = f"/appointments/{appointment_id}/reschedule"
-    h.ops_state.write_outcomes[path] = [{"slotTime": "11:00"}]
+    before = dict(h.ops_state.appointments[appointment_id])
     h.requests.clear()
 
     async def owner(request):
@@ -1273,8 +1348,10 @@ async def test_reschedule_lookup_bypass_keeps_expected_slot_unknown(h):
         result = await booking.BookingService(ops, h.settings, h.clock).manage(h.ctx(operation_id="bypass"),
             booking.BookingRequest(action="RESCHEDULE", appointmentId=appointment_id, newVisitDate="2026-10-05",
                                    newPreferredTime="10:45", callerConfirmed=True))
-    assert (result.outcome, result.appointment.slotTime, result.appointment.slotMoved) == ("NOTED", "11:00", False)
-    assert len(sent(h, path)) == 1 and not any(p.endswith("/slots") for p in h.ops_paths())
+    assert (result.outcome, result.nextStep) == ("NOT_FOUND", "SAY_NOT_FOUND")
+    assert result.appointment is None
+    assert sent(h, path) == [] and not any(p.endswith("/slots") for p in h.ops_paths())
+    assert h.ops_state.appointments[appointment_id] == before
 
 
 async def test_missing_owner_slot_and_expected_time_stay_null(h):
