@@ -6,9 +6,9 @@ its owner-service endpoints. Onboarding changes no code.
 1. **Tenant settings (non-secret).** `rollouts/<id>/rollout.env` with `PROVIDER_ID`, `DOMAIN_PACK=healthcare`,
    `TENANT_TIMEZONE` (IANA), `TENANT_COUNTRY_CALLING_CODE` (digits) and `TENANT_SUPPORTED_LANGUAGES`
    (e.g. `en,kn,hi`). A real hospital's rollout lives in a private repository; only `demo-*` is committed.
-2. **Owner services.** The hospital's operational API base URL (Manoj's deployment, including `/api/v1`
-   when it serves there) and knowledge service base URL (Shobhit's), both https. Machine credentials
-   are registered by each owner with the scopes the adapter needs (`appointments.write`, `calls.write`)
+2. **Operational service.** The hospital's HTTPS operational API base URL (Manoj's deployment, including
+   `/api/v1` when it serves there). Manoj registers machine credentials with the scopes the adapter
+   needs (`appointments.write`, `calls.write`)
    and stored in Key Vault by `deploy/azure/deploy.sh` on first run; never in files.
 3. **Verification policy.** Agree with Manoj and the voice platform which `X-Caller-Verification`
    assertions authorise appointment lookups/changes; set `ACCEPTED_CALLER_VERIFICATION` accordingly
@@ -16,8 +16,11 @@ its owner-service endpoints. Onboarding changes no code.
 4. **Deploy and register.** `deploy/azure/deploy.sh rollouts/<id> --profile live` then `deploy/contextforge/register.py`
    (`AZURE.md`, `CONTEXTFORGE.md`). The smoke must pass against the owners' designated test tenant
    before the hospital's own.
-5. **Voice platform.** The platform forwards trusted identity/operation/start-time headers. All four tools, including
+5. **Voice platform.** The platform forwards trusted identity/operation/start-time headers. All three tools, including
    LLM-called `record_call_summary`, share gateway authentication (`VOICE-TEAM.md`).
 
-Directory data, schedules, approved answers and routing rules are the owners': the adapter reads
-them through their contracts and holds none of them.
+Directory and schedule facts are Manoj's: this adapter reads his public contract and owns no data.
+The voice team configures Stratum separately in ContextForge for knowledge, symptoms and emergencies.
+Before deployment, Rajeev's team validates these journeys and transfers (gate 8). Before live traffic,
+refresh our three-tool registration and the voice cache and verify discovery (gate 9); see PLAN.md.
+This repository does not modify Stratum's registration or supply its credentials.

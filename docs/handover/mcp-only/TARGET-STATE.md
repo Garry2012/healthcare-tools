@@ -1,6 +1,6 @@
 # Target ownership, cleanup and voice performance
 
-Confirmed 1 October 2026. This document strengthens the [implementation plan](PLAN.md) following the user's handover review. It specifies the required future state; the migration and Azure cleanup have not been executed.
+Updated 11 October 2026 for the three-tool ownership decision K3. This document defines the [implementation plan](PLAN.md)'s target boundaries, not evidence of deployment or cloud cleanup.
 
 ## Architecture and ownership
 
@@ -10,28 +10,28 @@ The source migration removed the repository-owned REST API and database implemen
 flowchart TB
   P[Caller] <--> V[LiveKit voice agent: speech recognition, LLM, speech synthesis]
   V <-->|MCP tool calls and results| G[IBM ContextForge gateway]
-  G <--> M[Our MCP server: four tools, thin integration code]
+  G <--> M[Our MCP server: three tools, thin integration code]
   M <-->|HTTPS: published operational contract| O[Manoj service: his code, Docker image and Azure resources]
-  M <-->|HTTPS: published knowledge contract| K[Shobhit service: his code, Docker image and Azure resources]
+  G <--> K[Stratum: separate registration owned by the voice team]
   O <--> OD[Manoj-owned storage]
-  K <--> KD[Shobhit-owned storage]
+  K <--> KD[Stratum-owned storage]
 ```
 
-The LLM chooses a tool and arguments; the LiveKit runtime/MCP client executes the request through the gateway. Results return along that path for the voice agent to speak. The LLM can select `record_call_summary` through the same authenticated gateway as the other tools. The four tools remain `get_doctor_availability`, `manage_booking`, `search_knowledge`, and `record_call_summary`.
+The LLM chooses a tool and arguments; the LiveKit runtime/MCP client executes the request through the gateway. Results return along that path for the voice agent to speak. The LLM can select `record_call_summary` through the same authenticated gateway as the other tools. Our three tools are `get_doctor_availability`, `manage_booking` and `record_call_summary`. A combined gateway view may also contain Stratum's tools, managed separately by its owners.
 
-**External service dependencies remain; external implementation dependencies must not.** Calling their APIs requires available services, configured URLs and credentials. It must never require their source checkout, database access, migrations, server image, internal Python packages or implementation SDKs. Each owner supplies a versioned Swagger/OpenAPI interface as the integration authority. Required behavior, errors, auth/scopes and replay semantics must be documented there or in explicitly referenced contract documentation; an endpoint list alone does not establish those guarantees.
+**External service dependencies remain; external implementation dependencies must not.** Calling Manoj's API requires an available service, configured URL and credentials. Stratum integrates with the voice platform through its own registration, not through this adapter. It must never require their source checkout, database access, migrations, server image, internal Python packages or implementation SDKs. Each owner supplies a versioned Swagger/OpenAPI interface as the integration authority. Required behavior, errors, auth/scopes and replay semantics must be documented there or in explicitly referenced contract documentation; an endpoint list alone does not establish those guarantees.
 
 | Belongs here | Stays outside this repository |
 |---|---|
 | Our MCP tool definitions, descriptions, input/output validation and small HTTP adapters | Manoj's REST route handlers, booking/scheduling/name/date engines and database models |
-| Pinned owner contracts, client-side request/response types, consumer tests and synthetic fixtures | Shobhit's retrieval pipeline, embeddings, vector store, documents, classifiers and clinical rules |
+| Pinned owner contracts, client-side request/response types, consumer tests and synthetic fixtures | Stratum's retrieval pipeline, embeddings, vector store, documents, classifiers and clinical rules |
 | Authentication, trusted call-context forwarding, deadlines, safe replay handling and honest error mapping | Either team's source repository, Docker image build, deployment or database administration |
 | Bounded in-memory caches of allowed directory/profile data and tokens | Operational data persistence, database/Redis requirements, a local booking ledger or knowledge fallback |
 | MCP Dockerfile, CI, deployment, gateway registration and relevant observability | Provisioning either owner's cloud resources or retaining a hidden old backend for production fallback |
 
 Generated client types are acceptable if they represent the public interface only. Do not generate server scaffolding. Development stubs are contract fixtures excluded from production, not an alternative scheduling or knowledge implementation. A developer can install, build and run mandatory MCP tests without either owner's source or database. Live integration needs their designated test service or labelled fixture servers.
 
-MCP remains model-independent: there is no second LLM, agent loop, embedding call, database query or local interpretation/retrieval engine inside it. Its small orchestration layer combines the contracted facts needed for one caller request. Only search_knowledge forwards its verbatim question to the knowledge owner. Availability and booking call only Manoj. Voice-agent behaviour, prompts, guardrails and SDK wiring are owned by the voice team.
+MCP remains model-independent: there is no second LLM, agent loop, embedding call, database query or local interpretation/retrieval engine inside it. Its small orchestration layer combines the contracted facts needed for one caller request. All three front-desk tools call only Manoj. Knowledge, symptom and emergency journeys belong to the voice platform through Stratum. Voice-agent behaviour, prompts, guardrails and SDK wiring are owned by the voice team.
 
 ## Cleanup is part of completion
 
@@ -39,18 +39,18 @@ Code removal alone does not finish this migration. Follow the [Azure inventory a
 
 Completion requires:
 
-1. External integrations pass consumer and real-service checks; exactly four intended tools are registered with gateway authentication.
+1. External integrations pass consumer and real-service checks; exactly three front-desk tools are registered with gateway authentication. A combined voice view may additionally include Stratum's separately owned tools.
 2. The old backend source, dependency declarations, database/migration/seed tooling, active legacy setup instructions and automation are removed or explicitly historical as appropriate. No active fallback or import can reach them.
 3. A clean checkout builds and runs mandatory tests/CI without the old API, database or private workspace files. Required suites must not silently skip. Current legacy defects must have relevant consumer coverage after the old slot semantics are retired.
 4. Obsolete Azure API apps/revisions, backend jobs, images, database assets, credentials and access grants are retired after cutover and any required data handoff. Shared resources retain a named owner and purpose, or are separated before removal. Delete an obsolete resource group only after every contained resource is retired or relocated.
 5. The final resource inventory identifies what was deleted, what remains and why. Verify the MCP/voice path after cleanup, absence of obsolete references/jobs, applicable retained-data expiry and residual billing. A retention obligation has an owner and expiry; it must not become an undocumented permanent legacy service.
 6. Voice performance and failure behavior pass the measured gates below. A successful Docker build alone is insufficient.
 
-The user's requirement includes future cloud cleanup. This documentation update performs only read-only Azure inspection, not deletion or database modification. Before destructive execution, resolve ownership/data retention and prepare the exact scoped retirement list; never infer safe deletion from a resource name.
+The user's requirement includes future cloud cleanup. This source change performs no Azure inspection, deletion or database modification. Before destructive execution, resolve ownership/data retention and prepare the exact scoped retirement list; never infer safe deletion from a resource name.
 
 ## Tool contract boundary
 
-[VOICE-TEAM.md](../VOICE-TEAM.md) is the consumer interface: four tools, purpose and applicability,
+[VOICE-TEAM.md](../VOICE-TEAM.md) is the consumer interface: three tools, purpose and applicability,
 parameter formats and conditional requirements, output fields, outcome/nextStep meanings, transport,
 authentication and trusted headers. Its field tables are tested against the pinned MCP schema.
 
@@ -80,18 +80,17 @@ Real-host MCP measurements still require declared concurrency, cold/warm token s
 outcomes/failure rates. End-to-end audio measurement belongs to the voice platform. Publishing a tool
 contract or passing fixture tests does not establish application safety or the caller-response target.
 
-## Availability policy — source contract 2026-10-06.1
+## Current availability policy and release ordering
 
-Revision 6 is specified in [AVAILABILITY-POLICY-PLAN.md](implementation/AVAILABILITY-POLICY-PLAN.md).
-Today uses only live-board facts; future availability and WORKING_HOURS use usual schedules, with no
-claim of confirmed attendance. ON_CALL always yields callback. Department results lead to a doctor
-choice; CREATE requires doctorId and RESCHEDULE reads it from the caller's appointment. Same-decision
-sessions need no choice; differing decisions do. The owner board status remains unchanged alongside
-the MCP decision. Callback metadata contains no spoken script. No service ownership, secret, gateway
-header or authentication rule changes. Deployment and gateway/voice schema refresh require separate approval.
+SL1 in [DECISIONS.md](../../DECISIONS.md) governs scheduling. Selected-doctor AVAILABILITY reads
+slots alongside the applicable profile and today-only live board; owner `enabled` selects slot policy.
+Department availability uses cached capabilities without per-doctor slots fan-out. WORKING_HOURS
+reads no board or slots. Ordinary UNKNOWN in scope gives callback metadata; on-call uses confirmed
+usable evidence or handoff. Failed reads are failures, never unavailable facts. No capacity is computed.
 
-The 6 October review corrections are recorded in DECISIONS A13. Single-doctor WORKING_HOURS returns
-full callback metadata for on-call or empty schedules; ordinary hours use PRESENT_WORKING_HOURS.
-All hours-only results have bookableFound=0; department hours retain on-call facts within the cap.
-Future unmatched sessions preserve usual sessions on the requested day as alternatives. Sessions
-crossing midnight are unsupported; mixed-session choice behavior remains unchanged pending G-1.
+The three-tool source schema is `2026-10-11.1`. Gate 8 requires Rajeev's team to validate
+Stratum symptom/emergency journeys and transfers before deployment. Gate 9 prohibits live voice traffic
+until the adapter, our front-desk gateway entries and LiveKit cached tool view are refreshed and
+voice-client discovery proves exactly three front-desk tools. Combined views may also include Stratum.
+Our source change does not modify or verify Stratum's registration. Review, merge, deployment,
+gateway refresh and leftover cloud-setting/secret cleanup require separate approval.

@@ -1,8 +1,8 @@
 """Tool round-trip latency: agent → MCP (streamable HTTP over TCP) → owner service(s) → result.
 
 Default: the in-process development stubs (fixture timings, NOT production evidence). With
-BENCH_OPS_BASE_URL (and optionally BENCH_KNOWLEDGE_BASE_URL + credentials) the adapter is pointed at
-real hosts and the same scenarios are measured there. Reports p50/p95/p99, failures and the boundary.
+BENCH_OPS_BASE_URL and operational credentials the adapter is pointed at
+a real operational host and the same scenarios are measured there. Reports p50/p95/p99, failures and the boundary.
 
     uv run python dev/bench.py [--samples 50] [--concurrency 1]
 """

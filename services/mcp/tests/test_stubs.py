@@ -1,4 +1,4 @@
-"""The development stubs simulate the two owner contracts for tests and local demos. Their operational
+"""The operational development stub simulates Manoj's contract for tests and local demos. Its
 responses are validated against the pinned Manoj contract (via the quoting-only overlay).
 They are fixtures, never engines or production config."""
 
