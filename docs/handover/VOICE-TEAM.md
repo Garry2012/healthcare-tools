@@ -27,7 +27,7 @@ This is the single authoritative handover for calling the front-desk MCP tools.
 - **Authentication: two calling paths, two different credentials.**
   - **Through ContextForge (the normal path):** the voice client sends its scoped ContextForge client token in `Authorization` to ContextForge. ContextForge separately uses its stored MCP credential when it calls the front-desk MCP server. The client token is not forwarded upstream.
   - **Directly to the adapter:** only a client calling the adapter's `/mcp/` itself sends the MCP credential, as `Authorization: Bearer <MCP credential>`.
-  - **No `X-Upstream-Authorization`:** the voice client must not send this header. ContextForge treats it as a special override of upstream authentication.
+  - **No `X-Upstream-Authorization`:** the voice client must not send this header. ContextForge renames it to `Authorization` on the upstream call, replacing its stored MCP credential.
 - **Never tool arguments:** credentials, the trusted caller identity (`X-Caller-Number` with `X-Caller-Verification`) and the call start time. They come only from the request context (§3).
 - **Contact numbers are arguments:** `patientMobile` (CREATE) and `callerMobile` (callback summary) are numbers the caller gives. They are contact data and grant no authority.
 - **The hospital (tenant)** is fixed by the deployment, not by any argument.
