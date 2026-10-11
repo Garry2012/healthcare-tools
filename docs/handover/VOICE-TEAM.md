@@ -357,7 +357,8 @@ These are the expected results for testing a client end to end. Each one matches
 | `outcome.NOT_FOUND` | get_doctor_availability | No matching doctor name (`ASK_TO_REPHRASE`), or a department with no consultant or no doctors (`TRANSFER_DESK`) |
 | `outcome.NOT_FOUND` | manage_booking | No matching appointment in the verified caller's list (unknown, another caller's, or past). Nothing is written |
 | `outcome.CALLBACK_REQUIRED` | get_doctor_availability, manage_booking | Ordinary doctor with an unresolved schedule: UNKNOWN, `NOT_CONFIRMED` without slots, or no usual schedule. No write; the callback belongs only in a `CALLBACK_NOTED` summary |
-| `outcome.HANDOFF_REQUIRED` | get_doctor_availability, manage_booking | Desk assistance: an on-call doctor without a confirmed, usable entry, an incomplete search, or a time that can't be verified. No callback data; MCP doesn't transfer |
+| `outcome.HANDOFF_REQUIRED` | get_doctor_availability | Desk assistance: an on-call doctor without a confirmed, usable entry (`ON_CALL_DOCTOR`), or a department search that is incomplete with no match (`SEARCH_INCOMPLETE`). No callback data; MCP doesn't transfer |
+| `outcome.HANDOFF_REQUIRED` | manage_booking | Desk assistance, no write: an on-call doctor without a confirmed, usable entry (`ON_CALL_DOCTOR`), or a specific time in a session with no end time (`TIME_NOT_VERIFIABLE`). No callback data; MCP doesn't transfer |
 | `outcome.NOT_AVAILABLE` | get_doctor_availability, manage_booking | Valid request, but the facts exclude the requested date, session or time |
 | `outcome.COULD_NOT_CHECK` | get_doctor_availability, manage_booking | A read failed. This is not an empty or negative result |
 | `outcome.INVALID_REQUEST` | get_doctor_availability, manage_booking, record_call_summary | The request was refused before any write. `detail` (availability, booking) or `fields` (booking, summary) names the issue |
