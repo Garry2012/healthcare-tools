@@ -1,883 +1,550 @@
-# MCP tool interface
+# Front-desk MCP tools: voice-team handover
 
-Schema version: `2026-10-11.1`
+Schema version: `2026-10-11.2`
 
-## Endpoint and transport
+This is the single authoritative handover for calling the front-desk MCP tools.
+- **Part 1** explains how to use the tools safely.
+- **Part 2** is the complete reference for every field and code.
+- **The schema served by `tools/list` is authoritative.** If this document and `tools/list` ever disagree, `tools/list` wins.
 
-Streamable HTTP at `/mcp/` on the configured MCP host. The direct URL is the deployment's
-`MCP_PUBLIC_URL`; for example, `https://<mcp-host>/mcp/`. The ContextForge virtual-server URL is a
-separate gateway endpoint supplied by its owner; the voice agent normally calls tools through it.
+**Contents**
+- **Part 1, Using the tools:** 1 Status · 2 Connect · 3 Request context · 4 The tools · 5 Data between calls · 6 Reading a result · 7 What a result establishes · 8 Failures, retries and uncertainty · 9 Worked examples · 10 Acceptance scenarios · 11 Changes since `2026-10-06.1`
+- **Part 2, Reference:** 12 Outcome codes · 13 nextStep codes · 14 Decision, Reason and Detail codes · 15 Schedule rules · 16 Field reference
 
-Deployed: Azure canary `mcp-demo-hospital-canary`, image `frontdesk-mcp:36336aa`, schema `2026-10-06.1`
-(6 October 2026). This document describes schema `2026-10-11.1` for the slots release; the canary still runs
-`2026-10-06.1` until that release is deployed. `GET /ready` returns the served `schemaVersion`;
-`tools/list` describes the contract actually deployed.
+# Part 1: Using the tools
 
-## Authentication
+## 1. Status
 
-| Scope | Direct MCP bearer | Accessible tools |
+- **Three tools:** `get_doctor_availability`, `manage_booking` and `record_call_summary`. All data comes from the hospital's operational service, which is owned by Manoj's team.
+- **Knowledge, symptom routing and emergencies** are not handled by these tools. They are handled through Stratum's separate ContextForge registration.
+- **The canary** `mcp-demo-hospital-canary` runs schema `2026-10-11.1`. It was deployed on 11 October 2026.
+- **Schema `2026-10-11.2`,** described here, changes only description text: the availability tool description, the `doctorId`, `doctorName` and `date` parameters, and the `choices` and `departmentChoices` outputs. It goes live with the next deployment.
+- **Checking the served version:** `GET /ready` returns the served `schemaVersion`. ContextForge shows the schema from its last refresh of our entries, which may be older.
+
+## 2. Connect
+
+- **Endpoint:** streamable HTTP at `/mcp/`. The voice agent normally reaches it through the ContextForge virtual server `frontdesk-healthcare`. Its URL and scoped access come from the ContextForge owner.
+- **The direct adapter URL** is `https://<mcp-host>/mcp/`. `GET /health`, `GET /ready` and `GET /dependencies` need no authentication.
+- **Authentication:** every tool needs `Authorization: Bearer <gateway credential>`. A ContextForge client authenticates to ContextForge, and ContextForge holds the upstream bearer.
+- **Never tool arguments:** credentials, the caller's telephone number and the call start time. They come only from the request context (§3).
+- **The hospital (tenant)** is fixed by the deployment, not by any argument.
+
+## 3. Request context (trusted headers)
+
+The voice platform sets these headers on each MCP request; through ContextForge, they must be forwarded.
+- Header names are case-insensitive.
+- A malformed value is treated as absent.
+
+| Header | Format | Needed by |
 |---|---|---|
-| Gateway | MCP_BEARER_TOKEN | get_doctor_availability, manage_booking, record_call_summary |
+| `Authorization` | `Bearer <gateway credential>` | every tool |
+| `X-Call-Id` | 1–64 characters: ASCII letters, digits, `.`, `_`, `:` or `-` | `manage_booking` CREATE, CANCEL, RESCHEDULE; `record_call_summary` |
+| `X-Operation-Id` | same syntax as `X-Call-Id`; one value per distinct confirmed write | `manage_booking` CREATE, CANCEL, RESCHEDULE |
+| `X-Caller-Number` | the platform's verified caller number, for example `+919000000101` | `manage_booking` LIST, CANCEL, RESCHEDULE |
+| `X-Caller-Verification` | a label in the deployment's accepted set (default `SIP_CALLER_ID`) | with `X-Caller-Number` |
+| `X-Call-Started-At` | ISO 8601 timestamp with offset, for example `2026-10-01T09:55:00+05:30` | `record_call_summary` |
 
-The HTTP header is `Authorization: Bearer <credential>`. All three tools use gateway authentication.
-A ContextForge client authenticates with gateway-issued scoped access; its upstream MCP bearer is
-separate. Credentials, caller authority and call start time are not tool arguments.
+**What a missing header produces:**
+- missing call or operation headers on a write: `OPERATION_CONTEXT_MISSING`, with detail `CALL_ID_MISSING` or `OPERATION_ID_MISSING`;
+- a missing number or an unaccepted verification label on LIST, CANCEL or RESCHEDULE: `IDENTITY_UNAVAILABLE`;
+- missing summary headers: `NOT_SAVED`.
 
-## Trusted request headers
+**Caller authority:** permission to list, cancel or reschedule comes only from `X-Caller-Number` together with an accepted `X-Caller-Verification`. A number dictated by the caller (`patientMobile`) is contact data and gives no access.
 
-| Header | Meaning and format |
-|---|---|
-| X-Call-Id | Platform call identifier: 1–64 ASCII letters, digits, dots, underscores, colons or hyphens. Required for booking writes and summaries. |
-| X-Caller-Number | Trusted caller number under the configured calling-code rule. With accepted verification, authorizes LIST/CANCEL/RESCHEDULE. Distinct from contact fields. |
-| X-Caller-Verification | Verification label in ACCEPTED_CALLER_VERIFICATION; default SIP_CALLER_ID. A number alone does not establish authority. |
-| X-Operation-Id | Confirmed-write identifier with the same 1–64 character syntax as call ID. Required for CREATE/CANCEL/RESCHEDULE. Same call/action/operation identifies the same payload; changed payload conflicts. |
-| X-Call-Started-At | ISO timestamp with timezone offset; required for record_call_summary. |
+## 4. The tools
 
-Malformed identifiers/timing are treated as absent. Header names are case-insensitive. Tenant comes from deployment configuration; access is authenticated by the gateway bearer, not model arguments.
+**Formats:**
+- **Enums** are upper case.
+- **Dates** are `today` or `YYYY-MM-DD` on the facility calendar, never in the past. `facilityToday` in every availability result gives the reference date.
+- **Times** are 24-hour `HH:MM` (`00:00`–`23:59`).
+- **Mobile numbers** are exactly 10 digits, with no `+91`, spaces or dashes.
+- **`null`** is accepted wherever the schema allows it. It is not accepted for `purpose`, `action`, `callerConfirmed`, `intent`, `outcome` or `summaryText`.
+- **Unknown arguments** are rejected (§8).
 
-## Calling contract
+### 4.1 `get_doctor_availability`: can a doctor take an appointment request?
 
-These interface facts apply to every tool.
+- **Purpose:** whether a doctor, or a department's doctors, can take an appointment request on a date (`purpose` AVAILABILITY, the default), or their usual hours (`purpose` WORKING_HOURS).
+- **Safety:** read-only and safe to repeat.
+- **One request, one answer:** each request is evaluated only on its own arguments. Earlier requests are not remembered, so a different doctor or date means a new request.
 
-1. **The live schema is `tools/list`.** The MCP server publishes each tool's exact input schema, output
-   schema and description. The input schemas below are copied from the pinned snapshot for schema
-   `2026-10-11.1`. If `tools/list` and this document disagree, `tools/list` wins.
-2. **Unknown arguments are rejected.** An unknown argument (for example `doctorName` on
-   `manage_booking`, or `callerName` on `record_call_summary`) is rejected before the tool runs, even
-   though the published schema does not explicitly declare this boundary rule.
-3. **Optional fields may be absent.** `null` is accepted where the schema type includes `null`.
-   `purpose`, `callerConfirmed`, `action`, `intent`, `outcome`, `question`, `language` and `summaryText`
-   do not accept `null`.
-4. **Formats are exact.** Enums are upper case. Dates are `today` or `YYYY-MM-DD` (facility calendar,
-   not in the past); `tomorrow`, `next Monday` and similar are refused. `facilityToday` in an availability
-   result supplies the facility date reference. Times are 24-hour `HH:MM`
-   (`00:00`–`23:59`). Mobiles are exactly 10 digits, with no `+91`, spaces or dashes.
-5. **Identifiers refer to owner records.** `doctorId` comes from `doctors[].doctorId` or
-   `choices[].doctorId`; `departmentId` from `department.id` or `departmentChoices[].id`; `session` from
-   `board[].session` or `usualSessions[].label`; `appointmentId` from `appointment.appointmentId` or
-   `appointments[].appointmentId`. Fabricated identifiers do not establish a matching owner record.
-6. **Two kinds of failure.**
-   - `isError: true` with a text message and no structured result: the arguments were rejected before the
-     tool ran (unknown field, wrong type, enum mismatch, value over `maxLength`; `summaryText` over 500
-     characters is the exception and returns `INVALID_REQUEST`). An identical retry fails the same way. For `record_call_summary` the message is deliberately generic and
-     does not name the field.
-   - A normal structured result with `outcome` such as `INVALID_REQUEST`: the tool ran and refused the
-     request. `fields` (booking, summary) or `detail` (availability) names what to correct.
-7. **`outcome` and `nextStep` identify the result and disposition.** Every structured result has `outcome`; all except
-   `record_call_summary` also have `nextStep`. The meanings are in each tool's tables below.
-8. **Trusted headers come from the platform on the MCP request.** They are not tool
-   arguments. Which tool needs which header:
+| Argument | Source | When |
+|---|---|---|
+| `doctorId` | `doctors[].doctorId` or `choices[].doctorId` from an earlier result | gives a doctor-specific result; takes precedence over every other target |
+| `doctorName` | the caller's words | used if there's no `doctorId`. One directory match gives a doctor-specific result; several return `choices`; none returns `NOT_FOUND` |
+| `departmentId` / `departmentName` | `department.id` / `departmentChoices[].id`, or the caller's words | used if no doctor is given. One match gives a department result; none or several return `departmentChoices` |
+| `date` | the caller's date as `today` or `YYYY-MM-DD` (`facilityToday` is the reference) | **in every AVAILABILITY request**; optional for WORKING_HOURS. Words like "tomorrow" are refused (`ASK_EXPLICIT_DATE`) |
+| `purpose` | `AVAILABILITY` (default) or `WORKING_HOURS` | WORKING_HOURS returns usual hours only: no live board, no slots |
+| `session` | `board[].session` or `usualSessions[].label` from an earlier result | optional; limits the answer to that session |
+| `gender` | `FEMALE` or `MALE` | optional filter for name and department searches |
 
-| Tool and action | Authorization | X-Call-Id | X-Operation-Id | X-Caller-Number + X-Caller-Verification | X-Call-Started-At |
-|---|---|---|---|---|---|
-| get_doctor_availability | required | not used | not used | not used | not used |
-| manage_booking CREATE | required | required | required | not used | not used |
-| manage_booking LIST | required | not used | not used | required | not used |
-| manage_booking CANCEL, RESCHEDULE | required | required | required | required | not used |
-| record_call_summary | required | required | not used | not used | required |
+**Order of checks:**
+1. The date is checked first.
+2. Without a target, the result is `INVALID_REQUEST` with detail `TARGET_REQUIRED`.
+3. Only one target is evaluated, in the order above.
 
-Missing write headers return `OPERATION_CONTEXT_MISSING`; missing or unverified caller identity returns
-`IDENTITY_UNAVAILABLE`; missing summary headers return `NOT_SAVED`. Each distinct confirmed write
-has its own `X-Operation-Id`. An identical retry has the same id; different arguments with that id
-return `CONFLICT`. `UNCERTAIN` has desk handoff as its disposition, not retry. A later invocation with
-the same operation id re-runs the schedule check and can be refused; refusal does not prove that the
-earlier write failed. A new operation id identifies another write, not a replay of the uncertain write.
+**Doctor-specific versus department results:**
+- **A doctor-specific AVAILABILITY result reads that doctor's slot plan for the date.**
+  - If slots are enabled for that doctor and date, its sessions carry `openSlots`.
+  - Otherwise the slots-disabled rules apply (§15).
+- **A department result reads no slots.** With slots enabled, its doctors carry decision `SLOT_CHECK_REQUIRED`, and the outcome is `DOCTORS_MATCHED`: no open time is established and `bookableFound` is 0, even when only one doctor is listed.
+- **Department lists are capped** at 3 doctors (the configured limit), ordered by decision and then name.
 
-| Tool | Read-only | Changes data | Safe to retry with the same arguments |
+### 4.2 `manage_booking`: appointment requests
+
+Four actions: CREATE, LIST, CANCEL and RESCHEDULE. Only `action` is schema-required; the tool checks the rest and names any missing or invalid field in `fields`.
+
+| Action | Required | Optional | Headers |
 |---|---|---|---|
-| get_doctor_availability | yes | no | yes |
-| manage_booking | LIST only | CREATE, CANCEL, RESCHEDULE | same `X-Operation-Id` and identical arguments; a fresh schedule check can refuse the retry |
-| record_call_summary | no | stores one summary per call | yes; a repeat returns `ALREADY_SAVED` |
+| CREATE | `patientName`, `patientMobile` (10 digits), `doctorId`, `visitDate` (`today` or `YYYY-MM-DD`), `callerConfirmed: true`; `preferredTime` (`HH:MM`) when the doctor has slots for that date | `session`, `reasonVerbatim`; `preferredTime` without slots | X-Call-Id, X-Operation-Id |
+| LIST | none | `fromDate`, `toDate` (`YYYY-MM-DD`; `today` is refused), `status` | X-Caller-Number, X-Caller-Verification |
+| CANCEL | `appointmentId`, `callerConfirmed: true` | `reasonVerbatim` | all four write and caller headers |
+| RESCHEDULE | `appointmentId`, `newVisitDate`, `callerConfirmed: true`; `newPreferredTime` when the doctor has slots for that date | `session`; `newPreferredTime` without slots | all four write and caller headers |
 
-The tables below describe the pinned wire schema, including nested `$defs` types. “Required” means
-schema-required; action-specific requirements appear in the meaning column. Optional fields can have
-server defaults; the schema remains authoritative for those defaults. Callback metadata contains reason and summaryOutcome only, with no spoken script. Outcomes and nextStep are returned codes,
-not implementation instructions for the calling application.
+**Rules:**
+- **`callerConfirmed: true`** records the caller's agreement to the exact details being written.
+- **Doctor:** CREATE needs a `doctorId`, and department-level appointments don't exist. RESCHEDULE keeps the appointment's doctor; sending `doctorId` gives `INVALID_REQUEST` with detail `DOCTOR_CHANGE_UNSUPPORTED`.
+- **RESCHEDULE scope:** only an appointment in the verified caller's own list, which starts today, can be rescheduled. Any other id, including the caller's past appointment, returns `NOT_FOUND` with no write.
+- **LIST** returns the verified caller's appointments from today, unless `fromDate` is given.
+- **`reasonVerbatim`** is forwarded to the hospital unchanged and is never interpreted.
+- **Session label:** with slots, `session` is optional. If given, it must match the session that contains the chosen time; otherwise the result is `NOT_AVAILABLE` with detail `TIME_OUTSIDE_SESSION`.
 
-## get_doctor_availability
+**Order of checks for CREATE, CANCEL and RESCHEDULE.** The first failure is returned:
+1. field validation (`INVALID_REQUEST`);
+2. `callerConfirmed` (`CONFIRMATION_REQUIRED`);
+3. call and operation headers (`OPERATION_CONTEXT_MISSING`);
+4. caller identity for CANCEL and RESCHEDULE (`IDENTITY_UNAVAILABLE`);
+5. the schedule check for CREATE and RESCHEDULE: `INVALID_REQUEST` with `TIME_REQUIRED` or `SESSION_REQUIRED`, `CALLBACK_REQUIRED`, `NOT_AVAILABLE`, `HANDOFF_REQUIRED`, or `COULD_NOT_RECORD` after a failed read;
+6. the hospital write.
 
-Doctor or department availability for today or an explicit future date; WORKING_HOURS returns usual hours without board or slot checks. Today is LIVE_BOARD: status is Manoj's IN, LATE, CANCELLED, NOT_CONFIRMED or UNKNOWN; decision is the separate MCP result. With slots enabled, a selected doctor's date is checked against slots: openSlots lists the owner's open blocks when the session permits a request; [] means checked and no block is offered (none open, or the session does not permit a request), null means not checked. For ordinary doctors, UNKNOWN always requires callback, even if another source says CANCELLED; NOT_CONFIRMED with an open bookable block permits a request, noted for desk confirmation. CANCELLED is NOT_AVAILABLE; no open slot is NOT_AVAILABLE/NO_OPEN_SLOT. A supplied passed end time means NOT_AVAILABLE/SESSION_ENDED; a missing end time is not an ended session. An ON_CALL doctor needs a confirmed IN/LATE entry with a usable window or open block; otherwise HANDOFF_REQUIRED means desk assistance, without callback metadata. A cancelled on-call session remains NOT_AVAILABLE. Future dates rely on slots when enabled, including desk-added oneDay sessions for that date only; a one-day session with null hours has no bookable time. With slots disabled, IN/LATE permit a request today, ordinary NOT_CONFIRMED/UNKNOWN require callback, and future regular/visiting hours describe usual attendance days, attendance not confirmed. Several sessions with the same decision require no session choice; differing decisions may require one. Department searches with slots enabled return DOCTORS_MATCHED and SLOT_CHECK_REQUIRED when doctors match: doctors match the request, not yet available; slot availability is known after a doctor-specific check, with bookableFound=0 for these matches. With slots disabled, department AVAILABILITY lists bookable doctors when any exist; otherwise callback, handoff or unavailable facts. Results are capped by the configured limit. totalMatches is the directory count across all types and decisions; bookableFound counts bookable doctors found among those checked, potentially more than the returned list; complete means every directory candidate was evaluated, not that every doctor's slots were read. An incomplete search with no match is HANDOFF_REQUIRED/SEARCH_INCOMPLETE, not unavailability. WORKING_HOURS with hours returns PRESENT_WORKING_HOURS for one doctor and always bookableFound=0; an empty ordinary schedule returns CALLBACK_REQUIRED, while an on-call doctor requires HANDOFF_REQUIRED. Department WORKING_HOURS keeps on-call handoff facts within the list limit. Callback details are stored only in record_call_summary as CALLBACK_NOTED. Ambiguous names return choices.
+The schedule check is the same one `get_doctor_availability` applies, run again at write time.
 
-### How to call
+### 4.3 `record_call_summary`: one summary per call
 
-| Query | Parameters |
+- **Purpose:** stores one summary covering the whole call, including the last tool result.
+- **Final:** the first accepted summary for a call is final.
+- **Headers:** `X-Call-Id` and `X-Call-Started-At`.
+
+| Field | Rule |
 |---|---|
-| Target (exactly one kind) | `doctorId`, else `doctorName`, else `departmentId` or `departmentName`. If several are sent, the first in this order is used. None returns `INVALID_REQUEST` with detail `TARGET_REQUIRED`. |
-| Availability on a date | `purpose` omitted (or `AVAILABILITY`) and `date` = `today` or `YYYY-MM-DD`. Without `date`: `INVALID_REQUEST`/`ASK_EXPLICIT_DATE`, detail `DATE_REQUIRED`. Other words: `DATE_FORMAT`. Past dates: `PAST_DATE`. |
-| Usual working hours | `purpose` = `WORKING_HOURS`; `date` optional. No live-board or slot read. An on-call doctor has no usual hours and requires desk handoff. |
-| One session only | `session` = a label returned earlier (`board[].session` or `usualSessions[].label`). |
-| Female or male doctor | `gender` = `FEMALE` or `MALE`. |
-| After `ASK_WHICH_DOCTOR` / `ASK_WHICH_DEPARTMENT` | The chosen `doctorId` or `departmentId` identifies the target of a subsequent check for the same `date` and `purpose`. |
-| Before booking | `doctors[].doctorId` identifies the doctor. With slots enabled, the booking time belongs to that doctor's returned `openSlots`; `session` is optional and a supplied nonblank label must match that time's session. `sessionChoiceRequired` identifies unresolved session decisions. |
+| `intent`, `outcome`, `summaryText` | Always required. `summaryText` is non-blank, at most 500 characters, and never shortened. Longer text returns `INVALID_REQUEST` with `fields: ["summaryText"]` |
+| `callerMobile` | Required when `outcome` is `CALLBACK_NOTED`; exactly 10 digits |
+| `appointmentId` | Optional, from `manage_booking`; refused with `CALLBACK_NOTED` |
+| `transferredTo` | Only with `TRANSFERRED` or `EMERGENCY_TRANSFERRED` |
+| `doctorId`, `language` | Optional. `language` `en`, `kn` or `hi` is stored; other codes are dropped |
+| Caller name, symptoms, dates, sessions | Inside `summaryText` only. There are no separate fields for them, and such arguments are rejected |
 
-### Input schema (exact)
+## 5. Data between calls
 
-```json
-{
-  "properties": {
-    "date": {
-      "anyOf": [
-        {
-          "maxLength": 10,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "'today' or YYYY-MM-DD; required for AVAILABILITY, optional for WORKING_HOURS. Other relative dates are not accepted."
-    },
-    "departmentId": {
-      "anyOf": [
-        {
-          "maxLength": 64,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Directory identifier for a selected department; optional alternative to departmentName."
-    },
-    "departmentName": {
-      "anyOf": [
-        {
-          "maxLength": 100,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Department or speciality name for directory search; optional."
-    },
-    "doctorId": {
-      "anyOf": [
-        {
-          "maxLength": 64,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Directory identifier for a selected doctor; optional alternative to doctorName."
-    },
-    "doctorName": {
-      "anyOf": [
-        {
-          "maxLength": 100,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Doctor name for directory search, in the caller's original wording; optional."
-    },
-    "gender": {
-      "anyOf": [
-        {
-          "enum": [
-            "FEMALE",
-            "MALE"
-          ],
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional doctor gender filter: FEMALE or MALE."
-    },
-    "purpose": {
-      "default": "AVAILABILITY",
-      "description": "AVAILABILITY (default) checks a requested date; WORKING_HOURS returns normal working hours or attendance days, not live availability.",
-      "enum": [
-        "AVAILABILITY",
-        "WORKING_HOURS"
-      ],
-      "type": "string"
-    },
-    "session": {
-      "anyOf": [
-        {
-          "maxLength": 40,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional selected session label; limits requested-date or working-hours sessions. Blank means no selection."
-    }
-  },
-  "type": "object"
-}
+**Where identifiers come from.** Identifiers are only ever taken from earlier results. An invented identifier matches no record.
+
+| Argument | Comes from |
+|---|---|
+| `doctorId` | `doctors[].doctorId` or `choices[].doctorId` |
+| `departmentId` | `department.id` or `departmentChoices[].id` |
+| `session` | `board[].session` (today) or `usualSessions[].label` |
+| `preferredTime` / `newPreferredTime` | a time inside a returned `openSlots` block (`start` inclusive, `end` exclusive) |
+| `appointmentId` | `appointment.appointmentId` or `appointments[].appointmentId` |
+
+**Typical chains.** Callers can supply facts in any order. A chain step is simply the next request, carrying everything it needs.
+1. **Finding a time:**
+   - a department or name request gives `DOCTORS_MATCHED` or `CLARIFICATION_NEEDED`;
+   - an AVAILABILITY request with the chosen `doctorId` and a date gives that doctor's sessions and `openSlots`;
+   - CREATE with the same doctor and date, and `preferredTime` inside an open block, gives `NOTED`.
+2. **Changing an appointment:** LIST gives `appointmentId`, then CANCEL or RESCHEDULE.
+3. **Closing the call:** the last tool result goes into the summary:
+
+| Tool result | Summary `outcome` | Also send |
+|---|---|---|
+| CREATE `NOTED` | `APPOINTMENT_NOTED` | `appointmentId`, `doctorId` |
+| RESCHEDULE `NOTED` | `APPOINTMENT_RESCHEDULED` | `appointmentId` |
+| CANCEL `CANCELLED` | `APPOINTMENT_CANCELLED` | `appointmentId` |
+| `CALLBACK_REQUIRED` (`callback.summaryOutcome`) | `CALLBACK_NOTED` | `callerMobile`; no `appointmentId` |
+| Desk handoff, after the platform transferred the call | `TRANSFERRED` | `transferredTo` |
+
+MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
+
+## 6. Reading a result
+
+- **`outcome`, `nextStep` and `detail`:** `outcome` is the result category. `nextStep` is the disposition code; both are codes, not wording. `detail` names the cause of a non-success result. Meanings: §12–§14.
+- **`decision` versus `status`:** `decision` is MCP's verdict for a doctor or session. `status` is the hospital's own value: IN, LATE, CANCELLED, NOT_CONFIRMED or UNKNOWN on the board or slot plan, and NOTED, CONFIRMED_BY_DESK, CHANGED or CANCELLED on appointments. They are reported separately and never merged.
+- **Empty versus null:**
+  - `openSlots: null` means slots were not read (department result, WORKING_HOURS, or the doctor has no slots for that date);
+  - `openSlots: []` means slots were read and no block is offered;
+  - `usualSessions: null` means usual sessions were not fetched (today's live facts are in `board`);
+  - `slotTime: null` means no time was recorded;
+  - other `null` fields mean "not applicable or not supplied".
+- **Counts:**
+  - `totalMatches` is the directory count;
+  - `bookableFound` counts doctors whose facts permit a request, and is 0 for `DOCTORS_MATCHED` and WORKING_HOURS;
+  - `complete: false` means some candidates weren't checked, so absence is not established.
+
+## 7. What a result establishes, and what it doesn't
+
+- **`NOTED` records a request.** It is not a reservation or a confirmed time. After a `NOT_CONFIRMED` session, the desk confirms. The appointment's `status` keeps the hospital's value.
+- **`DOCTORS_MATCHED` / `SLOT_CHECK_REQUIRED`** establish no open time. Open times come only from a doctor-specific AVAILABILITY result for that doctor and date.
+- **WORKING_HOURS** returns usual hours, never current attendance, and offers no appointment.
+- **`COULD_NOT_CHECK` and `COULD_NOT_RECORD`** mean a read or write failed. They never mean "unavailable", "full" or "no appointment".
+- **`CALLBACK_REQUIRED`** means no appointment was written. The callback exists only as a `CALLBACK_NOTED` summary; MCP creates no callback task.
+- **`HANDOFF_REQUIRED` and `TRANSFER_DESK`** mean desk assistance. MCP doesn't transfer calls, and these results carry no callback data.
+- **`NOT_AVAILABLE` alternatives** are only the `sessions` and `openSlots` in that same result. An empty list says nothing about other times, and an owner `SLOT_FULL` rejection carries no alternatives.
+- **`slotTime` and `slotMoved`:**
+  - `slotTime` is the time the hospital recorded, normally the block start; choosing 10:45 in the 10:30–11:00 block gives `slotTime` 10:30 with `slotMoved: false`;
+  - `slotMoved` is true only when the hospital recorded a different block;
+  - LIST and CANCEL always return `slotMoved: false`.
+- **Booking `NOT_FOUND` is neutral:** an unknown id, another caller's id and a past appointment all look the same.
+- **Private data in results:** results never contain caller numbers, reasons or upstream error text. The only exceptions are `patientName` on the verified caller's own appointments, and the desk-written board `note` (at most 200 characters, written for callers).
+
+## 8. Failures, retries and uncertainty
+
+**Two kinds of failure:**
+1. **`isError: true` with text and no structured result:** the arguments were rejected before the tool ran (unknown field, wrong type or enum, value too long). Repeating the same arguments fails the same way. Summary rejections deliberately name no field.
+2. **A structured result** such as `INVALID_REQUEST`: the tool ran and refused, and `fields` or `detail` names what to correct.
+
+**Writes and `X-Operation-Id`:**
+- Each distinct confirmed write has its own operation id.
+- Repeating with the same id and identical arguments is a safe retry. The schedule is checked again, so the retry can be refused, and a refusal doesn't prove the earlier attempt failed.
+- The same id with different arguments returns `CONFLICT`.
+- A new id is a new write.
+
+**`UNCERTAIN`:** the write may have been recorded, but no verified answer came back. The disposition is desk handoff (`SAY_UNCERTAIN_AND_TRANSFER`), not a new write under a new id. An owner rejection that arrives after an unanswered attempt also stays `UNCERTAIN`.
+
+**`retryAfterSeconds`:** when the hospital service asks for a delay, `COULD_NOT_CHECK` and `COULD_NOT_RECORD` carry it.
+
+**Summaries:**
+- A repeat for the same call returns `ALREADY_SAVED`, even with different text; the first summary stays.
+- `NOT_CONFIRMED` means saving could not be verified.
+- `NOT_SAVED` means the headers were missing or invalid, or the credentials were refused.
+
+**Time budgets:**
+- Availability reads and booking reads and writes must finish within 0.30 seconds of adapter time (out of a 1-second voice budget). If the hospital service is slower, the result is `COULD_NOT_CHECK` or `COULD_NOT_RECORD`, not a guess. MCP makes at most one same-key retry inside that budget.
+- Summaries have their own 8-second budget.
+
+| Tool | Read-only | Changes data | Safe to repeat with the same arguments |
+|---|---|---|---|
+| `get_doctor_availability` | yes | no | yes |
+| `manage_booking` | LIST only | CREATE, CANCEL, RESCHEDULE | with the same `X-Operation-Id`; the schedule is re-checked |
+| `record_call_summary` | no | one summary per call | yes; a repeat returns `ALREADY_SAVED` |
+
+## 9. Worked examples
+
+These are real results from the development stubs: fixture data, facility date Thursday 2026-10-01 at 10:00 IST, with slots enabled. Results are trimmed to the decisive fields; "…" marks omitted fields.
+
+**Example 1: department → doctor → appointment request**
+
+```text
+get_doctor_availability {"departmentName": "General Medicine", "date": "2026-10-05"}
+→ {"outcome": "DOCTORS_MATCHED", "nextStep": "ASK_WHICH_DOCTOR", "requestedDate": "2026-10-05", "bookableFound": 0,
+   "doctors": [{"doctorId": "doc_arjun_menon", "decision": "SLOT_CHECK_REQUIRED", …},
+               {"doctorId": "doc_garima", "decision": "SLOT_CHECK_REQUIRED",
+                "usualSessions": [{"label": "Morning", "start": "09:00", "end": "12:00", "openSlots": null, …}, …]}], …}
+
+get_doctor_availability {"doctorId": "doc_garima", "date": "2026-10-05"}
+→ {"outcome": "AVAILABILITY", "nextStep": "OFFER_APPOINTMENT_REQUEST", "bookableFound": 1,
+   "doctors": [{"doctorId": "doc_garima", "decision": "APPOINTMENT_REQUEST", "usualSessions": [
+     {"label": "Morning", "status": "IN", "decision": "APPOINTMENT_REQUEST",
+      "openSlots": [{"start": "10:30", "end": "11:00", "available": 2}], …},
+     {"label": "Afternoon", "status": "NOT_CONFIRMED", "decision": "APPOINTMENT_REQUEST",
+      "openSlots": [{"start": "15:00", "end": "15:30", "available": 3}], …}]}], …}
+
+manage_booking {"action": "CREATE", "patientName": "Asha Rao", "patientMobile": "9000000101", "doctorId": "doc_garima",
+                "visitDate": "2026-10-05", "callerConfirmed": true}        headers: X-Call-Id, X-Operation-Id op-1
+→ {"outcome": "INVALID_REQUEST", "nextStep": "ASK_WHICH_TIME", "detail": "TIME_REQUIRED", "fields": ["preferredTime"],
+   "sessions": [{"label": "Morning", "openSlots": [{"start": "10:30", "end": "11:00", "available": 2}], …}, …]}
+
+manage_booking {… the same, "preferredTime": "10:45"}                      X-Operation-Id op-2
+→ {"outcome": "NOTED", "nextStep": "SAY_REQUEST_NOTED", "appointment": {"appointmentId": "appt_0001", "status": "NOTED",
+   "visitDate": "2026-10-05", "expectedTime": "10:45", "slotTime": "10:30", "slotMoved": false, …}}
+
+manage_booking {… the same, "preferredTime": "11:10"}                      X-Operation-Id op-4
+→ {"outcome": "NOT_AVAILABLE", "nextStep": "OFFER_OTHER_SESSION_OR_TIME", "detail": "SLOT_FULL", "sessions": [ …open blocks… ]}
 ```
 
-### Parameters
+- **10:45 → 10:30:** the hospital recorded the start of the 10:30–11:00 block, which isn't a move.
+- **11:10:** the 11:00–11:30 block is full, so it isn't offered in `openSlots`, and a time inside it gives `SLOT_FULL`.
 
-| Field path | Type / constraints (JSON Schema) | Presence | Meaning |
+**Example 2: unresolved attendance → callback summary**
+
+```text
+get_doctor_availability {"doctorId": "doc_garima", "date": "today"}       (board status UNKNOWN)
+→ {"outcome": "CALLBACK_REQUIRED", "nextStep": "ASK_CALLBACK_DETAILS", "detail": "BOARD_UNKNOWN", "basis": "LIVE_BOARD",
+   "callback": {"reason": "BOARD_UNKNOWN", "summaryOutcome": "CALLBACK_NOTED"}, …}
+
+record_call_summary {"intent": "AVAILABILITY", "outcome": "CALLBACK_NOTED", "callerMobile": "9000000101", "doctorId": "doc_garima",
+                     "summaryText": "Caller asked for Dr. Garima today; attendance unknown. Callback requested for Morning."}
+                                                                          headers: X-Call-Id, X-Call-Started-At
+→ {"outcome": "SAVED"}
+record_call_summary {another summary for the same call}  → {"outcome": "ALREADY_SAVED"}
+
+get_doctor_availability {"doctorId": "doc_vikram_desai", "date": "today"}   (on-call doctor, not confirmed)
+→ {"outcome": "HANDOFF_REQUIRED", "nextStep": "TRANSFER_DESK", "detail": "ON_CALL_DOCTOR", "callback": null, …}
+```
+
+**Example 3: list and reschedule**
+
+```text
+manage_booking {"action": "LIST"}                                         headers: X-Caller-Number, X-Caller-Verification
+→ {"outcome": "FOUND", "nextStep": "OFFER_CHOICES",
+   "appointments": [{"appointmentId": "appt_0001", "visitDate": "2026-10-05", "slotTime": "10:30", "slotMoved": false, …}]}
+
+manage_booking {"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "2026-10-05",
+                "newPreferredTime": "15:10", "callerConfirmed": true}      + X-Call-Id, X-Operation-Id op-3
+→ {"outcome": "NOTED", "nextStep": "SAY_REQUEST_NOTED",
+   "appointment": {"status": "CHANGED", "expectedTime": "15:10", "slotTime": "15:00", "slotMoved": false, …}}
+
+The same RESCHEDULE from another verified number
+→ {"outcome": "NOT_FOUND", "nextStep": "SAY_NOT_FOUND"}                    (no write)
+```
+
+**Rejected before the tool runs:**
+
+```text
+get_doctor_availability {"doctorName": "Garima", "date": "tomorrow"}
+→ {"outcome": "INVALID_REQUEST", "nextStep": "ASK_EXPLICIT_DATE", "detail": "DATE_FORMAT", "facilityToday": "2026-10-01", …}
+get_doctor_availability {"doctorId": "doc_garima", "date": "today", "foo": 1}
+→ isError: true, text "1 validation error … foo … Unexpected keyword argument", no structured result
+```
+
+## 10. Acceptance scenarios
+
+These are the expected results for testing a client end to end. Each one matches current adapter behaviour.
+
+| # | Situation | Expected `outcome` / `nextStep` | Key fact |
 |---|---|---|---|
-| `get_doctor_availability.input.date` | `{"anyOf":[{"maxLength":10,"type":"string"},{"type":"null"}]}` | optional | 'today' or YYYY-MM-DD; required for AVAILABILITY, optional for WORKING_HOURS. Other relative dates are not accepted. |
+| 1 | Department and date, slots enabled | `DOCTORS_MATCHED` / `ASK_WHICH_DOCTOR` | `bookableFound` 0; no `openSlots` |
+| 2 | The same date with a listed `doctorId` | `AVAILABILITY` / `OFFER_APPOINTMENT_REQUEST` | sessions carry `openSlots` |
+| 3 | Doctor name only, no date | `INVALID_REQUEST` / `ASK_EXPLICIT_DATE` | no lookup happens |
+| 4 | A name with several matches | `CLARIFICATION_NEEDED` / `ASK_WHICH_DOCTOR` | `choices[].doctorId` |
+| 5 | An unknown department name | `CLARIFICATION_NEEDED` / `ASK_WHICH_DEPARTMENT` | `departmentChoices` |
+| 6 | "tomorrow" as the date | `INVALID_REQUEST` / `ASK_EXPLICIT_DATE` | detail `DATE_FORMAT` |
+| 7 | CREATE on a slot day without a time | `INVALID_REQUEST` / `ASK_WHICH_TIME` | `sessions` with `openSlots`; no write |
+| 8 | CREATE at a time in a full block | `NOT_AVAILABLE` / `OFFER_OTHER_SESSION_OR_TIME` | detail `SLOT_FULL` |
+| 9 | CREATE in a `NOT_CONFIRMED` session with an open block | `NOTED` / `SAY_REQUEST_NOTED` | a request; the desk confirms |
+| 10 | Ordinary doctor UNKNOWN today | `CALLBACK_REQUIRED` / `ASK_CALLBACK_DETAILS` | no write; `callback` present |
+| 11 | On-call doctor not confirmed | `HANDOFF_REQUIRED` / `TRANSFER_DESK` | no callback data |
+| 12 | A cancelled session | `NOT_AVAILABLE` | reason `CANCELLED` |
+| 13 | WORKING_HOURS for one doctor | `WORKING_HOURS` / `PRESENT_WORKING_HOURS` | `bookableFound` 0 |
+| 14 | A write without `callerConfirmed` | `CONFIRMATION_REQUIRED` / `ASK_CONFIRMATION` | no write |
+| 15 | A write without `X-Operation-Id` | `OPERATION_CONTEXT_MISSING` | no write |
+| 16 | LIST without verification | `IDENTITY_UNAVAILABLE` | a dictated number gives no access |
+| 17 | RESCHEDULE of another caller's or a past appointment | `NOT_FOUND` / `SAY_NOT_FOUND` | no write |
+| 18 | The same operation id with different arguments | `CONFLICT` | no second write |
+| 19 | A write with no verified answer | `UNCERTAIN` / `SAY_UNCERTAIN_AND_TRANSFER` | the desk handles it |
+| 20 | The hospital service is slow or down | `COULD_NOT_CHECK` / `SAY_COULD_NOT_CHECK` | not "unavailable" |
+| 21 | The owner records a different block | `NOTED` | `slotMoved: true` |
+| 22 | A second summary for the call | `ALREADY_SAVED` | the first stays |
+| 23 | `CALLBACK_NOTED` without `callerMobile` | `INVALID_REQUEST` | `fields: ["callerMobile"]` |
+| 24 | An unknown argument | `isError: true` | no structured result |
+
+## 11. Changes since schema `2026-10-06.1`
+
+- **Slots:** `openSlots`, `oneDay` sessions, `slotTime` and `slotMoved`; `DOCTORS_MATCHED` and `SLOT_CHECK_REQUIRED` for department results; `ASK_WHICH_TIME` (a time is required with slots); `NO_OPEN_SLOT`; `SLOT_FULL`.
+- **On-call doctors** without a confirmed, usable entry get `HANDOFF_REQUIRED` (desk), no longer callback.
+- **Our front-desk `search_knowledge` was removed,** leaving three tools. Knowledge goes through Stratum.
+- **RESCHEDULE** applies only to appointments in the verified caller's own list, from today.
+- **Owner appointment times** that aren't `HH:MM` now give `UNCERTAIN` after a write and `COULD_NOT_CHECK` on LIST, never an unexpected error.
+- **`2026-10-11.2`:** clearer descriptions for doctor-specific versus department results and for the choice lists. There are no wire changes.
+
+# Part 2: Reference
+
+## 12. Outcome codes
+
+| Code | Tools | Meaning |
+|---|---|---|
+| `outcome.AVAILABILITY` | get_doctor_availability | Facts for the requested date, with each doctor's and session's decision and any required selection |
+| `outcome.DOCTORS_MATCHED` | get_doctor_availability | Department result with slots enabled: the listed doctors match, but slots were not read. No open time is established, and `bookableFound` is 0 |
+| `outcome.CLARIFICATION_NEEDED` | get_doctor_availability | Several doctor matches (`choices`), or a department that matched none or several (`departmentChoices`) |
+| `outcome.WORKING_HOURS` | get_doctor_availability | Usual hours or attendance days; no live attendance check |
+| `outcome.NOT_FOUND` | get_doctor_availability | No matching doctor name (`ASK_TO_REPHRASE`), or a department with no consultant or no doctors (`TRANSFER_DESK`) |
+| `outcome.NOT_FOUND` | manage_booking | No matching appointment in the verified caller's list (unknown, another caller's, or past). Nothing is written |
+| `outcome.CALLBACK_REQUIRED` | get_doctor_availability, manage_booking | Ordinary doctor with an unresolved schedule: UNKNOWN, `NOT_CONFIRMED` without slots, or no usual schedule. No write; the callback belongs only in a `CALLBACK_NOTED` summary |
+| `outcome.HANDOFF_REQUIRED` | get_doctor_availability | Desk assistance: an on-call doctor without a confirmed, usable entry (`ON_CALL_DOCTOR`), or a department search that is incomplete with no match (`SEARCH_INCOMPLETE`). No callback data; MCP doesn't transfer |
+| `outcome.HANDOFF_REQUIRED` | manage_booking | Desk assistance, no write: an on-call doctor without a confirmed, usable entry (`ON_CALL_DOCTOR`), or a specific time in a session with no end time (`TIME_NOT_VERIFIABLE`). No callback data; MCP doesn't transfer |
+| `outcome.NOT_AVAILABLE` | get_doctor_availability, manage_booking | Valid request, but the facts exclude the requested date, session or time |
+| `outcome.COULD_NOT_CHECK` | get_doctor_availability, manage_booking | A read failed. This is not an empty or negative result |
+| `outcome.INVALID_REQUEST` | get_doctor_availability, manage_booking, record_call_summary | The request was refused before any write. `detail` (availability, booking) or `fields` (booking, summary) names the issue |
+| `outcome.NOTED` | manage_booking | CREATE or RESCHEDULE request recorded. No time is confirmed or reserved; `appointment.status` keeps the hospital's value |
+| `outcome.CHANGED` | manage_booking | The hospital returned a verified change |
+| `outcome.CANCELLED` | manage_booking | The hospital returned a verified cancellation |
+| `outcome.FOUND` | manage_booking | The verified caller's appointments are in `appointments` |
+| `outcome.REJECTED` | manage_booking | The hospital rejected the request definitively; `detail` is its code, and `fields` lists any tool arguments it named |
+| `outcome.CONFLICT` | manage_booking | The same operation id was used with different arguments (`IDEMPOTENCY_CONFLICT`), or the appointment's state doesn't allow it, for example it's already cancelled (`STATE_CONFLICT`) |
+| `outcome.UNCERTAIN` | manage_booking | The write may have been recorded, with no verified result. Desk handoff, not a retry; a later invocation with the same operation id re-checks the schedule and can be refused |
+| `outcome.IDENTITY_UNAVAILABLE` | manage_booking | No verified caller number for LIST, CANCEL or RESCHEDULE |
+| `outcome.CONFIRMATION_REQUIRED` | manage_booking | `callerConfirmed` was not true for a write |
+| `outcome.OPERATION_CONTEXT_MISSING` | manage_booking | `X-Call-Id` or `X-Operation-Id` is missing or malformed for a write |
+| `outcome.COULD_NOT_RECORD` | manage_booking | The write wasn't attempted or couldn't be recorded (failed schedule read, owner unavailable); `detail` names the cause |
+| `outcome.SAVED` | record_call_summary | A new summary was stored for this call |
+| `outcome.ALREADY_SAVED` | record_call_summary | This call already has a summary. Nothing changed, even if the new text differs |
+| `outcome.NOT_CONFIRMED` | record_call_summary | Saving couldn't be verified: no answer, malformed success, call-id mismatch, transport failure, rate limit or server error |
+| `outcome.NOT_SAVED` | record_call_summary | Missing or malformed `X-Call-Id`/`X-Call-Started-At`, or credentials definitively refused. If an earlier send may have committed, `NOT_CONFIRMED` takes precedence |
+
+## 13. nextStep codes
+
+`record_call_summary` has no `nextStep`.
+
+| Code | Tools | Meaning |
+|---|---|---|
+| `nextStep.OFFER_APPOINTMENT_REQUEST` | get_doctor_availability | An appointment request is possible for the returned scope; not a reservation |
+| `nextStep.ASK_WHICH_DOCTOR` | get_doctor_availability | A doctor selection is needed: several name matches, a department result, or WORKING_HOURS for a department. Slot facts need a doctor-specific request, even when one doctor is listed |
+| `nextStep.ASK_WHICH_DEPARTMENT` | get_doctor_availability | The department matched none or several; see `departmentChoices` |
+| `nextStep.ASK_TO_REPHRASE` | get_doctor_availability | The name or department couldn't be resolved, or no target was given |
+| `nextStep.ASK_EXPLICIT_DATE` | get_doctor_availability | AVAILABILITY needs `today` or `YYYY-MM-DD` that isn't in the past |
+| `nextStep.PRESENT_WORKING_HOURS` | get_doctor_availability | Usual hours are returned, without an appointment offer or a date-specific claim |
+| `nextStep.ASK_WHICH_SESSION` | get_doctor_availability | The doctor's sessions have different decisions; a session or time selection resolves them |
+| `nextStep.ASK_WHICH_SESSION` | manage_booking | Without slots only: differing session decisions need a session or time. With slots, a mismatched session label is `TIME_OUTSIDE_SESSION` instead |
+| `nextStep.ASK_CALLBACK_DETAILS` | get_doctor_availability, manage_booking | Callback applies: no appointment is written; the callback belongs in a `CALLBACK_NOTED` summary |
+| `nextStep.TRANSFER_DESK` | get_doctor_availability, manage_booking | Desk assistance is the disposition; MCP doesn't transfer calls |
+| `nextStep.SAY_COULD_NOT_CHECK` | get_doctor_availability, manage_booking | The requested information couldn't be checked |
+| `nextStep.OFFER_OTHER_SESSION_OR_DATE` | get_doctor_availability, manage_booking | The requested session or date is unavailable; checked alternatives may be in the same result |
+| `nextStep.SAY_REQUEST_NOTED` | manage_booking | The request is recorded, without a guaranteed time |
+| `nextStep.SAY_CHANGED` | manage_booking | A change is verified |
+| `nextStep.SAY_CANCELLED` | manage_booking | A cancellation is verified |
+| `nextStep.OFFER_CHOICES` | manage_booking | The verified caller's appointments are listed |
+| `nextStep.SAY_NOT_FOUND` | manage_booking | No matching appointment in the verified caller's list |
+| `nextStep.ASK_TO_CORRECT` | manage_booking | `fields` names arguments that need correcting |
+| `nextStep.ASK_CONFIRMATION` | manage_booking | The write lacks `callerConfirmed: true` |
+| `nextStep.ASK_WHICH_TIME` | manage_booking | With slots, a time is required; `sessions` carry the `openSlots` |
+| `nextStep.OFFER_OTHER_SESSION_OR_TIME` | manage_booking | `sessions`/`openSlots` are the checked alternatives. An owner `SLOT_FULL` rejection carries none |
+| `nextStep.SAY_UNCERTAIN_AND_TRANSFER` | manage_booking | Write completion is uncertain; desk assistance |
+| `nextStep.SAY_COULD_NOT_RECORD` | manage_booking | The write couldn't be recorded |
+
+## 14. Decision, Reason and Detail codes
+
+| Decision | Meaning |
+|---|---|
+| APPOINTMENT_REQUEST | The facts permit an appointment request (not a reservation) |
+| SLOT_CHECK_REQUIRED | Department result with slots enabled: the doctor matches, and the date's known facts permit a request subject to slots. No open time is established |
+| CALLBACK_REQUIRED | Ordinary doctor with an unresolved schedule |
+| HANDOFF_REQUIRED | Desk assistance; on-call doctor without a confirmed, usable entry |
+| NOT_AVAILABLE | The facts exclude the session, date or time |
+| COULD_NOT_CHECK | A required read failed; no negative claim |
+
+| Reason | Meaning |
+|---|---|
+| ON_CALL_DOCTOR | On-call doctor with no confirmed, usable entry. Desk handoff, also for working hours (no usual schedule) |
+| BOARD_UNKNOWN | The board or slot session status is UNKNOWN. Callback for ordinary doctors, handoff for on-call doctors |
+| BOARD_STALE | The hospital marked today's row stale |
+| BOARD_ENTRY_MISSING | No board entry today for this doctor |
+| SESSION_NOT_ON_BOARD | The requested session isn't on today's board |
+| BOARD_NOT_CONFIRMED | Ordinary attendance `NOT_CONFIRMED` without slots. With slots, an open block can instead permit a request |
+| CANCELLED | The hospital cancelled this session |
+| SESSION_ENDED | The session's supplied end time has passed (facility time) |
+| NOT_USUAL_DAY | No usual session on that future weekday |
+| SESSION_NOT_USUAL | The requested session isn't a usual session on that date |
+| NO_USUAL_SCHEDULE | No usual schedule is supplied for this doctor |
+| PROFILE_UNAVAILABLE | The doctor's profile couldn't be read |
+| TIME_OUTSIDE_SESSION | The time is outside the known windows, or (with slots) no open or full block contains it, the block is closed or ended, or the session label doesn't match |
+| SESSION_REQUIRED | Differing session decisions need a session or time selection |
+| TIME_NOT_VERIFIABLE | A specific time can't be checked because the session has no end time; no write |
+| SEARCH_INCOMPLETE | Some candidates are unchecked or failed; absence isn't established |
+| NO_OPEN_SLOT | The session has no open block |
+| SLOT_FULL | The chosen time's block is full |
+
+| Detail | Where | Meaning |
+|---|---|---|
+| DATE_REQUIRED, DATE_FORMAT, PAST_DATE | availability | Date missing, not `today`/`YYYY-MM-DD`, or in the past |
+| TARGET_REQUIRED | availability | No doctor or department was given |
+| DEPARTMENT_UNMATCHED, DEPARTMENT_AMBIGUOUS | availability | The department matched none or several (`departmentChoices`) |
+| NO_CONSULTANT, NO_DOCTORS | availability | The department has no consultant or no doctors |
+| DIRECTORY_REJECTED | availability | The directory refused the query |
+| DIRECTORY_UNAVAILABLE, CAPABILITIES_UNAVAILABLE | availability | The directory or slot-capability read failed; no negative claim |
+| BOARD_UNAVAILABLE, PROFILE_UNAVAILABLE, SLOTS_UNAVAILABLE | availability, booking | That read failed or returned invalid data; no negative claim and no write |
+| TIME_REQUIRED | booking | With slots, `preferredTime`/`newPreferredTime` is required |
+| SESSION_REQUIRED | booking | Without slots, differing session decisions need a session or time |
+| DOCTOR_CHANGE_UNSUPPORTED | booking | RESCHEDULE can't change the doctor |
+| CALL_ID_MISSING, OPERATION_ID_MISSING | booking | With `OPERATION_CONTEXT_MISSING` |
+| IDEMPOTENCY_CONFLICT, STATE_CONFLICT | booking | With `CONFLICT` |
+| NO_VERIFIED_RESPONSE, MALFORMED_SUCCESS | booking | With `UNCERTAIN`: no answer, or an invalid success answer after a write attempt |
+| APPOINTMENT_UNAVAILABLE | booking | The caller's appointments couldn't be read before a RESCHEDULE |
+| MALFORMED | booking | The hospital's data was invalid (LIST, or an appointment with no doctor) |
+| DEADLINE, TIMEOUT, TRANSPORT, AUTH, UPSTREAM | booking | Why the hospital service was unavailable (`COULD_NOT_CHECK`/`COULD_NOT_RECORD`) |
+| the hospital's error code | booking | With `REJECTED`: the hospital's own code |
+
+## 15. Schedule rules
+
+**Which facts apply:**
+- **Today** uses the live board (`basis` LIVE_BOARD) plus slots when enabled.
+- **Future dates** use slots when enabled, otherwise usual hours (USUAL_SCHEDULE); attendance on a future date is never confirmed.
+- **WORKING_HOURS** reads neither the board nor slots.
+
+**Ordinary doctors** (REGULAR, VISITING):
+- **UNKNOWN** always means callback, even if another source says CANCELLED.
+- **CANCELLED** is `NOT_AVAILABLE`.
+- **NOT_CONFIRMED:** with an open bookable block, a request is permitted and noted for desk confirmation; without slots, today's NOT_CONFIRMED means callback.
+- **A supplied end time that has passed** is `SESSION_ENDED`. A missing end time is not an ended session.
+
+**On-call doctors:**
+- The ordinary rules apply only with a confirmed IN or LATE entry plus either a usable window (both times, not ended) or an open bookable block.
+- Otherwise the result is `HANDOFF_REQUIRED`/`ON_CALL_DOCTOR`, without callback.
+- A cancelled on-call session is `NOT_AVAILABLE`.
+- WORKING_HOURS for one on-call doctor is always `HANDOFF_REQUIRED`.
+
+**With slots** (enabled per doctor and date):
+- MCP uses the hospital's capacity and never computes its own.
+- A time must fall inside a returned open block: `start` inclusive, `end` exclusive.
+- Today, a block can be booked only until it ends.
+- `session` is optional, but if given it must match the session that contains the time.
+- A `oneDay` session was added by the desk for that date only: `daysOfWeek` is empty and `onRequestedDate` is true. With null `start`/`end` it has no bookable time.
+
+**Without slots:**
+- Today's window starts at the later of the session start and the current facility time (minute precision).
+- Future dates follow usual hours, and the time is optional.
+- Differing session decisions need a session or time (`SESSION_REQUIRED`); equal decisions permit a day-level request.
+- A specific time in a session with no end time gives `HANDOFF_REQUIRED`/`TIME_NOT_VERIFIABLE`, with no write.
+
+**Session choices:** several sessions with the same decision need no session choice. With slots, a booking still needs a time.
+
+**Today's slot-only sessions** (on the hospital's slot plan but not on the board) appear in `board` format, with no `oneDay` field.
+
+**Not supported:** sessions that cross midnight.
+
+**Department WORKING_HOURS** includes on-call facts within the list cap. An ordinary doctor with an empty schedule gets `CALLBACK_REQUIRED`.
+
+## 16. Field reference
+
+These tables list each tool's top-level input and output fields, followed by the shared output types.
+- Each shared type is described once, and it's identical in every tool that returns it.
+- "Required" means schema-required; requirements that depend on the action are in Part 1 §4.
+- Input meanings are the published descriptions.
+
+### get_doctor_availability input
+
+| Field | Wire type | Required | Meaning |
+|---|---|---|---|
+| `get_doctor_availability.input.date` | `{"anyOf":[{"maxLength":10,"type":"string"},{"type":"null"}]}` | optional | 'today' or YYYY-MM-DD; required in each AVAILABILITY request, optional for WORKING_HOURS. Other relative dates are not accepted. |
 | `get_doctor_availability.input.departmentId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Directory identifier for a selected department; optional alternative to departmentName. |
 | `get_doctor_availability.input.departmentName` | `{"anyOf":[{"maxLength":100,"type":"string"},{"type":"null"}]}` | optional | Department or speciality name for directory search; optional. |
-| `get_doctor_availability.input.doctorId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Directory identifier for a selected doctor; optional alternative to doctorName. |
-| `get_doctor_availability.input.doctorName` | `{"anyOf":[{"maxLength":100,"type":"string"},{"type":"null"}]}` | optional | Doctor name for directory search, in the caller's original wording; optional. |
+| `get_doctor_availability.input.doctorId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Directory identifier for a selected doctor, from doctors[] or choices[]; gives a doctor-specific result and takes precedence over doctorName and department fields; optional. |
+| `get_doctor_availability.input.doctorName` | `{"anyOf":[{"maxLength":100,"type":"string"},{"type":"null"}]}` | optional | Doctor name for directory search, in the caller's original wording; optional. Exactly one match gives a doctor-specific result; several matches return choices. |
 | `get_doctor_availability.input.gender` | `{"anyOf":[{"enum":["FEMALE","MALE"],"type":"string"},{"type":"null"}]}` | optional | Optional doctor gender filter: FEMALE or MALE. |
 | `get_doctor_availability.input.purpose` | `{"enum":["AVAILABILITY","WORKING_HOURS"],"type":"string"}` | optional | AVAILABILITY (default) checks a requested date; WORKING_HOURS returns normal working hours or attendance days, not live availability. |
 | `get_doctor_availability.input.session` | `{"anyOf":[{"maxLength":40,"type":"string"},{"type":"null"}]}` | optional | Optional selected session label; limits requested-date or working-hours sessions. Blank means no selection. |
 
-### Output fields
+### get_doctor_availability output
 
-| Field path | Type / constraints (JSON Schema) | Presence | Meaning |
+| Field | Wire type | Required | Meaning |
 |---|---|---|---|
-| `get_doctor_availability.output.basis` | `{"anyOf":[{"$ref":"#/$defs/Basis"},{"type":"null"}]}` | optional | Source used for this answer: LIVE_BOARD for today, USUAL_SCHEDULE for future dates or working hours. |
+| `get_doctor_availability.output.basis` | `{"anyOf":[{"$ref":"#/$defs/Basis"},{"type":"null"}]}` | optional | LIVE_BOARD for today's AVAILABILITY; USUAL_SCHEDULE for future dates and WORKING_HOURS. |
 | `get_doctor_availability.output.bookableFound` | `{"type":"integer"}` | optional | Bookable doctors found among those checked; may exceed the capped list. Always zero for WORKING_HOURS. |
-| `get_doctor_availability.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Callback reason and call-summary category; no separate callback action. |
-| `get_doctor_availability.output.choices` | `{"items":{"$ref":"#/$defs/DoctorChoice"},"type":"array"}` | optional | Ambiguous doctor-directory matches. |
+| `get_doctor_availability.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Present only with CALLBACK_REQUIRED: the callback reason and summaryOutcome CALLBACK_NOTED. No callback task is created. |
+| `get_doctor_availability.output.choices` | `{"items":{"$ref":"#/$defs/DoctorChoice"},"type":"array"}` | optional | Doctors matching a doctorName with several directory matches, capped by the configured limit; a doctorId from here gives a doctor-specific result. |
 | `get_doctor_availability.output.complete` | `{"type":"boolean"}` | optional | Every directory candidate was evaluated; no failed or unchecked reads. |
-| `get_doctor_availability.output.department` | `{"anyOf":[{"$ref":"#/$defs/DepartmentChoice"},{"type":"null"}]}` | optional | Resolved department object; within AppointmentOut, the operational department identifier. |
-| `get_doctor_availability.output.departmentChoices` | `{"items":{"$ref":"#/$defs/DepartmentChoice"},"type":"array"}` | optional | Ambiguous department-directory matches. |
-| `get_doctor_availability.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for non-success outcomes. |
-| `get_doctor_availability.output.doctors` | `{"items":{"$ref":"#/$defs/DoctorAvailability"},"type":"array"}` | optional | Resolved doctors with requested-date session facts or usual working hours, plus slot facts when checked. |
+| `get_doctor_availability.output.department` | `{"anyOf":[{"$ref":"#/$defs/DepartmentChoice"},{"type":"null"}]}` | optional | Resolved department (id and name) for a department request; null for doctor requests. |
+| `get_doctor_availability.output.departmentChoices` | `{"items":{"$ref":"#/$defs/DepartmentChoice"},"type":"array"}` | optional | Departments with consultants, returned when departmentName or departmentId matched none or several; a departmentId from here gives a department result. |
+| `get_doctor_availability.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable cause for a non-success result: a Reason code (Reason table) or a validation or read-failure detail (Detail table). |
+| `get_doctor_availability.output.doctors` | `{"items":{"$ref":"#/$defs/DoctorAvailability"},"type":"array"}` | optional | Resolved doctors with their decisions and session facts (capped for department requests). |
 | `get_doctor_availability.output.facilityToday` | `{"type":"string"}` | required | Current calendar date in the configured facility timezone (YYYY-MM-DD). |
-| `get_doctor_availability.output.nextStep` | `{"enum":["OFFER_APPOINTMENT_REQUEST","ASK_WHICH_DOCTOR","ASK_WHICH_DEPARTMENT","ASK_CALLBACK_DETAILS","TRANSFER_DESK","ASK_TO_REPHRASE","SAY_COULD_NOT_CHECK","ASK_EXPLICIT_DATE","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_DATE","PRESENT_WORKING_HOURS"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
-| `get_doctor_availability.output.outcome` | `{"enum":["AVAILABILITY","CLARIFICATION_NEEDED","CALLBACK_REQUIRED","NOT_FOUND","COULD_NOT_CHECK","INVALID_REQUEST","NOT_AVAILABLE","WORKING_HOURS","HANDOFF_REQUIRED","DOCTORS_MATCHED"],"type":"string"}` | required | Result category, defined below. |
+| `get_doctor_availability.output.nextStep` | `{"enum":["OFFER_APPOINTMENT_REQUEST","ASK_WHICH_DOCTOR","ASK_WHICH_DEPARTMENT","ASK_CALLBACK_DETAILS","TRANSFER_DESK","ASK_TO_REPHRASE","SAY_COULD_NOT_CHECK","ASK_EXPLICIT_DATE","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_DATE","PRESENT_WORKING_HOURS"],"type":"string"}` | required | Disposition code; see nextStep codes. |
+| `get_doctor_availability.output.outcome` | `{"enum":["AVAILABILITY","CLARIFICATION_NEEDED","CALLBACK_REQUIRED","NOT_FOUND","COULD_NOT_CHECK","INVALID_REQUEST","NOT_AVAILABLE","WORKING_HOURS","HANDOFF_REQUIRED","DOCTORS_MATCHED"],"type":"string"}` | required | Result category; see Outcome codes. |
 | `get_doctor_availability.output.requestedDate` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Resolved availability date (YYYY-MM-DD), or null when unresolved. |
-| `get_doctor_availability.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Upstream retry delay in seconds when supplied; optional. |
-| `get_doctor_availability.output.sessionMatched` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | optional | Whether the requested session matched; null when not evaluated. |
+| `get_doctor_availability.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Delay in seconds requested by the owner service after a temporary failure; null otherwise. |
+| `get_doctor_availability.output.sessionMatched` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | optional | With a session argument: whether that label matched a session for the requested date; null without a session argument. |
 | `get_doctor_availability.output.totalMatches` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Directory count across all attendance types and decisions. |
 | `get_doctor_availability.output.weekday` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Weekday of the requested date, or null when unresolved. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision, distinct from owner status: APPOINTMENT_REQUEST, SLOT_CHECK_REQUIRED, CALLBACK_REQUIRED, HANDOFF_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK. Decision meanings are listed below. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.delayMinutes` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Board delay in minutes when supplied. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.expectedEndTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected end time in facility local time when supplied. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.expectedTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected start time or requested appointment time; not a guaranteed reservation. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.isStale` | `{"type":"boolean"}` | required | Owner-supplied board staleness flag; not an adapter-computed age threshold. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.note` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Owner-authored caller-facing board note, limited to 200 characters. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.openSlots` | `{"anyOf":[{"items":{"$ref":"#/$defs/SlotOut"},"type":"array"},{"type":"null"}]}` | optional | Open blocks offered for this session and date: the owner's open blocks when the session permits a request. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked and no block is offered (none open, or the session does not permit a request). When slots apply, CREATE or RESCHEDULE times outside these blocks are refused. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.session` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Board session label when present. |
-| `get_doctor_availability.output.$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Manoj's board or slot-only session status; MCP decision is separate. |
-| `get_doctor_availability.output.$defs.Callback.reason` | `{"$ref":"#/$defs/Reason"}` | required | Required machine-readable reason for callback. |
-| `get_doctor_availability.output.$defs.Callback.summaryOutcome` | `{"const":"CALLBACK_NOTED","type":"string"}` | optional | CALLBACK_NOTED identifies the callback call-summary category. |
-| `get_doctor_availability.output.$defs.DepartmentChoice.id` | `{"type":"string"}` | required | Department directory identifier. |
-| `get_doctor_availability.output.$defs.DepartmentChoice.name` | `{"type":"string"}` | required | Doctor or department display name, according to its containing type. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.attendanceType` | `{"enum":["REGULAR","VISITING","ON_CALL"],"type":"string"}` | required | Operational attendance classification: REGULAR, VISITING or ON_CALL. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.board` | `{"items":{"$ref":"#/$defs/BoardSessionOut"},"type":"array"}` | required | Date/session-specific board rows. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.dataConfirmed` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | optional | Owner confirmation metadata; null means unspecified. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision, distinct from owner status: APPOINTMENT_REQUEST, SLOT_CHECK_REQUIRED, CALLBACK_REQUIRED, HANDOFF_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK. Decision meanings are listed below. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.departments` | `{"items":{"type":"string"},"type":"array"}` | required | Department names associated with the doctor. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.doctorId` | `{"type":"string"}` | required | Operational doctor identifier. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.gender` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Doctor gender when available. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.name` | `{"type":"string"}` | required | Doctor or department display name, according to its containing type. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.sessionChoiceRequired` | `{"type":"boolean"}` | optional | Whether differing session decisions require a session choice. |
-| `get_doctor_availability.output.$defs.DoctorAvailability.usualSessions` | `{"anyOf":[{"items":{"$ref":"#/$defs/UsualSessionOut"},"type":"array"},{"type":"null"}]}` | required | Requested-date sessions with their slot status and desk-added one-day sessions, or usual working hours for WORKING_HOURS. null when these session facts were not fetched. |
-| `get_doctor_availability.output.$defs.DoctorChoice.departments` | `{"items":{"type":"string"},"type":"array"}` | required | Department names associated with the doctor. |
-| `get_doctor_availability.output.$defs.DoctorChoice.doctorId` | `{"type":"string"}` | required | Operational doctor identifier. |
-| `get_doctor_availability.output.$defs.DoctorChoice.gender` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Doctor gender when available. |
-| `get_doctor_availability.output.$defs.DoctorChoice.name` | `{"type":"string"}` | required | Doctor or department display name, according to its containing type. |
-| `get_doctor_availability.output.$defs.SlotOut.available` | `{"minimum":0,"type":"integer"}` | required | Remaining places reported by the owner for this block; MCP does not compute capacity or reserve a place. |
-| `get_doctor_availability.output.$defs.SlotOut.end` | `{"pattern":"^([01][0-9]|2[0-3]):[0-5][0-9]$","type":"string"}` | required | Open block end in HH:MM facility local time, exclusive. |
-| `get_doctor_availability.output.$defs.SlotOut.start` | `{"pattern":"^([01][0-9]|2[0-3]):[0-5][0-9]$","type":"string"}` | required | Open block start in HH:MM facility local time, inclusive. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.daysOfWeek` | `{"items":{"type":"string"},"type":"array"}` | required | Weekday codes for a usual session; empty for a desk-added one-day session. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision, distinct from owner status: APPOINTMENT_REQUEST, SLOT_CHECK_REQUIRED, CALLBACK_REQUIRED, HANDOFF_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK. Decision meanings are listed below. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.end` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Session end in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.label` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Usual or one-day session label, possibly null. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.onRequestedDate` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | required | Whether the session belongs to the requested date; true for a one-day session, null when no date was supplied. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.oneDay` | `{"type":"boolean"}` | optional | A session the desk added for the requested date only; not part of the regular schedule. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.openSlots` | `{"anyOf":[{"items":{"$ref":"#/$defs/SlotOut"},"type":"array"},{"type":"null"}]}` | optional | Open blocks offered for this session and date: the owner's open blocks when the session permits a request. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked and no block is offered (none open, or the session does not permit a request). When slots apply, CREATE or RESCHEDULE times outside these blocks are refused. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.start` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Session start in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time. |
-| `get_doctor_availability.output.$defs.UsualSessionOut.status` | `{"anyOf":[{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"},{"type":"null"}]}` | optional | Owner's slot status for this session on the requested date; null when slots were not checked. |
 
-### Outcomes and nextStep meanings
+### manage_booking input
 
-| Code | Meaning |
-|---|---|
-| `get_doctor_availability.outcome.AVAILABILITY` | Requested-date facts are returned, with each doctor/session decision and any required selection. |
-| `get_doctor_availability.outcome.DOCTORS_MATCHED` | Doctors match the department request; their slots have not been checked. Slot availability is known only after a doctor-specific check. This is not an availability claim; bookableFound is zero. |
-| `get_doctor_availability.outcome.CLARIFICATION_NEEDED` | Multiple directory matches require a doctor or department selection. |
-| `get_doctor_availability.outcome.CALLBACK_REQUIRED` | An ordinary doctor has an unresolved schedule: UNKNOWN, or NOT_CONFIRMED with slots disabled, or no usual schedule. No appointment write; callback details belong only to a CALLBACK_NOTED summary. On-call doctors have desk handoff as their disposition. |
-| `get_doctor_availability.outcome.NOT_FOUND` | No matching doctor or department was found. |
-| `get_doctor_availability.outcome.COULD_NOT_CHECK` | A read could not be completed; this is not an empty or negative result. |
-| `get_doctor_availability.outcome.INVALID_REQUEST` | Request validation failed; fields or detail identify the issue when available. |
-| `get_doctor_availability.outcome.NOT_AVAILABLE` | Valid request, but the selected schedule or session is unavailable. |
-| `get_doctor_availability.outcome.WORKING_HOURS` | Normal working hours or attendance days; no live attendance check. |
-| `get_doctor_availability.outcome.HANDOFF_REQUIRED` | Desk assistance is the disposition for an on-call doctor without a confirmed, usable entry, or incomplete search/time validation. No callback metadata; MCP does not perform the telephone transfer. |
-| `get_doctor_availability.nextStep.OFFER_APPOINTMENT_REQUEST` | An appointment request is possible for the returned scope; this is not a reservation. |
-| `get_doctor_availability.nextStep.ASK_WHICH_DOCTOR` | Doctor selection is required; a department match with slots enabled needs a doctor-specific slot check even when only one match is returned. |
-| `get_doctor_availability.nextStep.ASK_WHICH_DEPARTMENT` | Multiple department matches require a selection. |
-| `get_doctor_availability.nextStep.ASK_CALLBACK_DETAILS` | Callback policy requires contact details and a call summary; no appointment is written. |
-| `get_doctor_availability.nextStep.TRANSFER_DESK` | Desk assistance is the returned disposition; MCP does not execute a telephone transfer. |
-| `get_doctor_availability.nextStep.ASK_TO_REPHRASE` | The supplied name, department or question could not resolve the request. |
-| `get_doctor_availability.nextStep.SAY_COULD_NOT_CHECK` | The requested information could not be checked. |
-| `get_doctor_availability.nextStep.ASK_EXPLICIT_DATE` | An accepted calendar-date value is required. |
-| `get_doctor_availability.nextStep.ASK_WHICH_SESSION` | Sessions have different decisions; a session selection is required. |
-| `get_doctor_availability.nextStep.OFFER_OTHER_SESSION_OR_DATE` | The requested session or date is unavailable; alternatives may be returned. |
-| `get_doctor_availability.nextStep.PRESENT_WORKING_HOURS` | Usual hours are returned for presentation, without an appointment offer or date-specific availability claim. |
-
-### Examples
-
-Examples come from the development stubs (facility date 2026-10-01, Thursday, 10:00); names and
-identifiers are fixtures, with slots disabled. The new optional fields are shown at their defaults.
-Slots-enabled behaviour is described above and will be activated in the complete release.
-
-**1. Doctor today, two sessions with different decisions**
-
-Arguments:
-
-```json
-{
-  "doctorName": "garima",
-  "date": "today"
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "AVAILABILITY",
-  "nextStep": "ASK_WHICH_SESSION",
-  "facilityToday": "2026-10-01",
-  "requestedDate": "2026-10-01",
-  "weekday": "THU",
-  "department": null,
-  "doctors": [
-    {
-      "doctorId": "doc_garima",
-      "name": "Dr. Garima",
-      "departments": [
-        "General Medicine"
-      ],
-      "attendanceType": "REGULAR",
-      "gender": "FEMALE",
-      "dataConfirmed": null,
-      "usualSessions": null,
-      "board": [
-        {
-          "session": "Morning",
-          "status": "IN",
-          "expectedTime": "09:10",
-          "expectedEndTime": "12:00",
-          "delayMinutes": null,
-          "note": null,
-          "isStale": false,
-          "decision": "APPOINTMENT_REQUEST",
-          "reason": null,
-          "openSlots": null
-        },
-        {
-          "session": "Afternoon",
-          "status": "NOT_CONFIRMED",
-          "expectedTime": "15:00",
-          "expectedEndTime": "17:00",
-          "delayMinutes": null,
-          "note": null,
-          "isStale": false,
-          "decision": "CALLBACK_REQUIRED",
-          "reason": "BOARD_NOT_CONFIRMED",
-          "openSlots": null
-        }
-      ],
-      "decision": "APPOINTMENT_REQUEST",
-      "reason": null,
-      "sessionChoiceRequired": true
-    }
-  ],
-  "choices": [],
-  "departmentChoices": [],
-  "complete": true,
-  "totalMatches": null,
-  "bookableFound": 1,
-  "basis": "LIVE_BOARD",
-  "sessionMatched": null,
-  "callback": null,
-  "detail": null,
-  "retryAfterSeconds": null
-}
-```
-
-`sessionChoiceRequired` is true: Morning permits a request, Afternoon needs a callback. The session selection remains unresolved in this slots-disabled example.
-
-**2. Usual working hours, no date**
-
-Arguments:
-
-```json
-{
-  "doctorName": "garima",
-  "purpose": "WORKING_HOURS"
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "WORKING_HOURS",
-  "nextStep": "PRESENT_WORKING_HOURS",
-  "facilityToday": "2026-10-01",
-  "requestedDate": null,
-  "weekday": null,
-  "department": null,
-  "doctors": [
-    {
-      "doctorId": "doc_garima",
-      "name": "Dr. Garima",
-      "departments": [
-        "General Medicine"
-      ],
-      "attendanceType": "REGULAR",
-      "gender": "FEMALE",
-      "dataConfirmed": true,
-      "usualSessions": [
-        {
-          "label": "Morning",
-          "daysOfWeek": [
-            "MON",
-            "THU",
-            "FRI"
-          ],
-          "start": "09:00",
-          "end": "12:00",
-          "onRequestedDate": null,
-          "decision": "APPOINTMENT_REQUEST",
-          "reason": null,
-          "openSlots": null,
-          "status": null,
-          "oneDay": false
-        },
-        {
-          "label": "Afternoon",
-          "daysOfWeek": [
-            "MON",
-            "THU",
-            "FRI"
-          ],
-          "start": "15:00",
-          "end": "17:00",
-          "onRequestedDate": null,
-          "decision": "APPOINTMENT_REQUEST",
-          "reason": null,
-          "openSlots": null,
-          "status": null,
-          "oneDay": false
-        }
-      ],
-      "board": [],
-      "decision": "APPOINTMENT_REQUEST",
-      "reason": null,
-      "sessionChoiceRequired": false
-    }
-  ],
-  "choices": [],
-  "departmentChoices": [],
-  "complete": true,
-  "totalMatches": null,
-  "bookableFound": 0,
-  "basis": "USUAL_SCHEDULE",
-  "sessionMatched": null,
-  "callback": null,
-  "detail": null,
-  "retryAfterSeconds": null
-}
-```
-
-**3. Callback required**
-
-Arguments:
-
-```json
-{
-  "doctorName": "kiran",
-  "date": "today"
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "CALLBACK_REQUIRED",
-  "nextStep": "ASK_CALLBACK_DETAILS",
-  "facilityToday": "2026-10-01",
-  "requestedDate": "2026-10-01",
-  "weekday": "THU",
-  "department": null,
-  "doctors": [
-    {
-      "doctorId": "doc_kiran_hegde",
-      "name": "Dr. Kiran Hegde",
-      "departments": [
-        "Urology"
-      ],
-      "attendanceType": "REGULAR",
-      "gender": "MALE",
-      "dataConfirmed": null,
-      "usualSessions": null,
-      "board": [
-        {
-          "session": "Evening",
-          "status": "UNKNOWN",
-          "expectedTime": null,
-          "expectedEndTime": null,
-          "delayMinutes": null,
-          "note": null,
-          "isStale": true,
-          "decision": "CALLBACK_REQUIRED",
-          "reason": "BOARD_STALE",
-          "openSlots": null
-        }
-      ],
-      "decision": "CALLBACK_REQUIRED",
-      "reason": "BOARD_STALE",
-      "sessionChoiceRequired": false
-    }
-  ],
-  "choices": [],
-  "departmentChoices": [],
-  "complete": true,
-  "totalMatches": null,
-  "bookableFound": 0,
-  "basis": "LIVE_BOARD",
-  "sessionMatched": null,
-  "callback": {
-    "reason": "BOARD_STALE",
-    "summaryOutcome": "CALLBACK_NOTED"
-  },
-  "detail": "BOARD_STALE",
-  "retryAfterSeconds": null
-}
-```
-
-`CALLBACK_NOTED` summaries require the callback number; no appointment or separate callback task is created.
-
-**4. Date missing**
-
-Arguments:
-
-```json
-{
-  "doctorName": "garima"
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "INVALID_REQUEST",
-  "nextStep": "ASK_EXPLICIT_DATE",
-  "facilityToday": "2026-10-01",
-  "requestedDate": null,
-  "weekday": null,
-  "department": null,
-  "doctors": [],
-  "choices": [],
-  "departmentChoices": [],
-  "complete": true,
-  "totalMatches": null,
-  "bookableFound": 0,
-  "basis": null,
-  "sessionMatched": null,
-  "callback": null,
-  "detail": "DATE_REQUIRED",
-  "retryAfterSeconds": null
-}
-```
-
-**5. Unknown argument (rejected before the tool runs)**
-
-Arguments:
-
-```json
-{
-  "doctorName": "garima",
-  "date": "today",
-  "foo": "x"
-}
-```
-
-Result (`isError: true`, text content; no structured result):
-
-```text
-1 validation error for call[get_doctor_availability]
-foo
-  Unexpected keyword argument [type=unexpected_keyword_argument, input_value='x', input_type=str]
-    For further information visit https://errors.pydantic.dev/2.13/v/unexpected_keyword_argument
-```
-
-## manage_booking
-
-Appointment request operations: CREATE, LIST, CANCEL and RESCHEDULE. Writes require callerConfirmed=true and trusted call/operation headers. CREATE requires patientName, patientMobile, doctorId and visitDate; department-level appointments are unsupported. LIST/CANCEL/RESCHEDULE require verified caller identity. With slots enabled, CREATE requires preferredTime and RESCHEDULE requires newPreferredTime: the time belongs within returned openSlots. Missing time returns TIME_REQUIRED/ASK_WHICH_TIME with choices. session is optional; a supplied nonblank label must match the session containing that time. Blank means no selection; session is internal MCP context, absent from the owner request. Today uses the live board and slots; future dates rely on slots when enabled. Ordinary UNKNOWN requires CALLBACK_REQUIRED and no write; NOT_CONFIRMED with an open bookable block can be NOTED: noted, the desk will confirm. ON_CALL without a confirmed IN/LATE entry and a usable window or open block requires HANDOFF_REQUIRED/TRANSFER_DESK without callback metadata; cancelled sessions are NOT_AVAILABLE. With slots disabled, today uses the board and future regular/visiting dates follow usual hours, attendance not confirmed; time is optional, differing decisions without session/time selection yield SESSION_REQUIRED/ASK_WHICH_SESSION, and a specific time without a known end yields HANDOFF_REQUIRED/TIME_NOT_VERIFIABLE. NOTED records a create or reschedule request, not a confirmed or reserved time; appointment.status preserves the owner status. slotTime is the time recorded for this request: the owner's slotTime (block start), otherwise expectedTime, otherwise null. slotMoved is true only if the owner returned a different block, such as for a late doctor or passed time; choosing 10:45 and receiving its 10:30 block start is not moved. CALLBACK_REQUIRED means no write and callback facts belong only in a call summary. NOT_AVAILABLE means the selected session/time is unavailable; NO_OPEN_SLOT means the session has no open slot, SLOT_FULL means that time is full, and TIME_OUTSIDE_SESSION means outside known bounds or, with slots, no block contains the time, the containing block is closed or ended, or a supplied session label does not match its session. With slots, the selected session is the supplied one, otherwise the one containing the time. When it is not bookable or has no open block, its session reason applies (NO_OPEN_SLOT or SESSION_ENDED); otherwise a time in one of its full blocks is SLOT_FULL, and a time in none of its open or full blocks is TIME_OUTSIDE_SESSION. Checked alternatives are the sessions/openSlots in this result; an owner SLOT_FULL write rejection carries none and establishes no availability at other times. UNCERTAIN means a write may have committed without a verified result; desk handoff is the disposition, not retry. A later invocation with the same operation id re-runs the schedule check and can be refused; refusal does not prove the earlier write failed.
-
-### How to call
-
-Required fields per action (beyond `action`). The schema marks only `action` as required; the tool checks
-the rest and returns `INVALID_REQUEST` with `fields` naming each missing or malformed field.
-
-| Action | Required | Optional | Unsupported or inapplicable | Headers |
-|---|---|---|---|---|
-| CREATE | `patientName`, `patientMobile` (10 digits), `doctorId`, `visitDate` (`today` or `YYYY-MM-DD`), `callerConfirmed: true`; `preferredTime` (`HH:MM`) when slots enabled | `session`, `reasonVerbatim`; `preferredTime` when slots disabled | `departmentId`, `doctorName` (unknown fields) | X-Call-Id, X-Operation-Id |
-| LIST | none | `fromDate`, `toDate` (`YYYY-MM-DD`; `today` is refused), `status` | write fields | X-Caller-Number, X-Caller-Verification |
-| CANCEL | `appointmentId`, `callerConfirmed: true` | `reasonVerbatim` | | X-Call-Id, X-Operation-Id, X-Caller-Number, X-Caller-Verification |
-| RESCHEDULE | `appointmentId`, `newVisitDate` (`today` or `YYYY-MM-DD`), `callerConfirmed: true`; `newPreferredTime` (`HH:MM`) when slots enabled | `session`; `newPreferredTime` when slots disabled | `doctorId` (returns `INVALID_REQUEST`, detail `DOCTOR_CHANGE_UNSUPPORTED`) | X-Call-Id, X-Operation-Id, X-Caller-Number, X-Caller-Verification |
-
-For CREATE, CANCEL and RESCHEDULE, checks run in this order and the first failure is returned: field validation (`INVALID_REQUEST`) →
-`callerConfirmed` (`CONFIRMATION_REQUIRED`) → call and operation headers (`OPERATION_CONTEXT_MISSING`) →
-caller identity for CANCEL/RESCHEDULE (`IDENTITY_UNAVAILABLE`) → schedule policy for CREATE/RESCHEDULE
-(`INVALID_REQUEST` with `SESSION_REQUIRED` or `TIME_REQUIRED`, `CALLBACK_REQUIRED`, `NOT_AVAILABLE`,
-`HANDOFF_REQUIRED`, or `COULD_NOT_RECORD` after a failed read) → owner write.
-
-- RESCHEDULE applies only to an appointment in the verified caller's own list, which starts today; any other id, including the caller's past appointment, returns `NOT_FOUND`/`SAY_NOT_FOUND` with no write.
-- `callerConfirmed: true` represents the caller's agreement to the exact write details.
-- With slots disabled, today's booking window starts at the later of session start and facility now
-  (strict, minute precision); future dates follow usual hours. With slots enabled, the time belongs within
-  returned `openSlots`; today, ended blocks have no bookable time.
-- Booking rejection `fields` contain tool argument names only; owner names are translated and names without a tool argument are dropped.
-- With slots enabled, `preferredTime` / `newPreferredTime` is required; `session` stays optional. A supplied
-  nonblank label must match the session containing the chosen time. An unlabelled session cannot match
-  a supplied name. A request for an unlabelled session has no session label; blank means no selection.
-- `ASK_WHICH_TIME` means a time is required when slots apply; `sessions` carry `openSlots`.
-  Booking `ASK_WHICH_SESSION` is a slots-disabled result. With slots enabled, a supplied session label
-  that does not match the chosen time's session is refused as `TIME_OUTSIDE_SESSION`.
-- `appointment.slotTime` is the time recorded for the request: the owner's `slotTime` (block start),
-  otherwise the request's `expectedTime`, otherwise `null`. `slotMoved` means the owner recorded CREATE
-  or RESCHEDULE in a different block (for example a late doctor or passed time). A chosen 10:45 recorded
-  at its 10:30 block start is not moved. LIST and CANCEL have `slotMoved: false`.
-- `NOTED` after a `NOT_CONFIRMED` session means "noted, the desk will confirm". NOT_CONFIRMED is a
-  session status, not a new appointment status; NOTED is not a reserved or confirmed time.
-- For `NOT_AVAILABLE`, `sessions` contains the checked alternatives on that date, when any exist
-  (`OFFER_OTHER_SESSION_OR_TIME`). An empty list establishes no availability at other times; that
-  information requires a new availability check. `OFFER_OTHER_SESSION_OR_DATE` means the requested
-  session or date is unavailable.
-- Booking `detail: SLOT_FULL` means the chosen time's block is full. An owner's definite write rejection
-  returns empty `sessions` and `fields`; it establishes no availability at other times. Checked
-  alternatives require a new availability result. A rejection after an unanswered write attempt
-  remains `UNCERTAIN`, with desk handoff as the disposition.
-- `patientMobile` is contact data only. Permission to list, cancel or reschedule comes from the trusted
-  caller-number headers, not a dictated number.
-
-### Input schema (exact)
-
-```json
-{
-  "properties": {
-    "action": {
-      "description": "Required action: CREATE, LIST, CANCEL or RESCHEDULE.",
-      "enum": [
-        "CREATE",
-        "LIST",
-        "CANCEL",
-        "RESCHEDULE"
-      ],
-      "type": "string"
-    },
-    "appointmentId": {
-      "anyOf": [
-        {
-          "maxLength": 64,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Required for CANCEL/RESCHEDULE: identifier of the appointment request."
-    },
-    "callerConfirmed": {
-      "default": false,
-      "description": "Boolean declaring the caller's approval of this write; true is required for CREATE/CANCEL/RESCHEDULE.",
-      "type": "boolean"
-    },
-    "doctorId": {
-      "anyOf": [
-        {
-          "maxLength": 64,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Required for CREATE: identifier of the selected doctor. Department-level appointments are unsupported."
-    },
-    "fromDate": {
-      "anyOf": [
-        {
-          "maxLength": 10,
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional LIST lower date filter in YYYY-MM-DD format; past dates are accepted."
-    },
-    "newPreferredTime": {
-      "anyOf": [
-        {
-          "maxLength": 5,
-          "pattern": "^\\d{2}:\\d{2}$",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "RESCHEDULE time in HH:MM 24-hour format; required when slots are enabled, chosen within returned openSlots. Optional when slots are disabled."
-    },
-    "newVisitDate": {
-      "anyOf": [
-        {
-          "maxLength": 10,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Required for RESCHEDULE: 'today' or YYYY-MM-DD, on or after the facility date."
-    },
-    "patientMobile": {
-      "anyOf": [
-        {
-          "maxLength": 20,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Required for CREATE: 10-digit contact mobile. This is contact data, not caller authority."
-    },
-    "patientName": {
-      "anyOf": [
-        {
-          "maxLength": 100,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Required for CREATE: patient name; nonblank, at most 100 characters."
-    },
-    "preferredTime": {
-      "anyOf": [
-        {
-          "maxLength": 5,
-          "pattern": "^\\d{2}:\\d{2}$",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "CREATE time in HH:MM 24-hour format; required when slots are enabled, chosen within returned openSlots. Optional when slots are disabled; a request, not a reservation."
-    },
-    "reasonVerbatim": {
-      "anyOf": [
-        {
-          "maxLength": 500,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional CREATE/CANCEL reason in the caller's original words; forwarded without interpretation."
-    },
-    "session": {
-      "anyOf": [
-        {
-          "maxLength": 40,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional CREATE or RESCHEDULE session label; blank means no selection. With slots enabled, a supplied label must match the session containing the chosen time; an unlabelled session cannot match it. Internal MCP context, absent from the owner request. With slots disabled, a session or time selection resolves differing decisions."
-    },
-    "status": {
-      "anyOf": [
-        {
-          "enum": [
-            "NOTED",
-            "CONFIRMED_BY_DESK",
-            "CHANGED",
-            "CANCELLED"
-          ],
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional LIST appointment-status filter."
-    },
-    "toDate": {
-      "anyOf": [
-        {
-          "maxLength": 10,
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional LIST upper date filter in YYYY-MM-DD format; past dates are accepted."
-    },
-    "visitDate": {
-      "anyOf": [
-        {
-          "maxLength": 10,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Required for CREATE: 'today' or YYYY-MM-DD, on or after the facility date."
-    }
-  },
-  "required": [
-    "action"
-  ],
-  "type": "object"
-}
-```
-
-### Parameters
-
-| Field path | Type / constraints (JSON Schema) | Presence | Meaning |
+| Field | Wire type | Required | Meaning |
 |---|---|---|---|
 | `manage_booking.input.action` | `{"enum":["CREATE","LIST","CANCEL","RESCHEDULE"],"type":"string"}` | required | Required action: CREATE, LIST, CANCEL or RESCHEDULE. |
 | `manage_booking.input.appointmentId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Required for CANCEL/RESCHEDULE: identifier of the appointment request. |
@@ -895,467 +562,23 @@ caller identity for CANCEL/RESCHEDULE (`IDENTITY_UNAVAILABLE`) → schedule poli
 | `manage_booking.input.toDate` | `{"anyOf":[{"maxLength":10,"pattern":"^\\d{4}-\\d{2}-\\d{2}$","type":"string"},{"type":"null"}]}` | optional | Optional LIST upper date filter in YYYY-MM-DD format; past dates are accepted. |
 | `manage_booking.input.visitDate` | `{"anyOf":[{"maxLength":10,"type":"string"},{"type":"null"}]}` | optional | Required for CREATE: 'today' or YYYY-MM-DD, on or after the facility date. |
 
-### Output fields
+### manage_booking output
 
-| Field path | Type / constraints (JSON Schema) | Presence | Meaning |
+| Field | Wire type | Required | Meaning |
 |---|---|---|---|
-| `manage_booking.output.appointment` | `{"anyOf":[{"$ref":"#/$defs/AppointmentOut"},{"type":"null"}]}` | optional | Single appointment request returned by a write. |
-| `manage_booking.output.appointments` | `{"items":{"$ref":"#/$defs/AppointmentOut"},"type":"array"}` | optional | Appointment requests belonging to the verified caller. |
-| `manage_booking.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Callback reason and call-summary category; no separate callback action. |
-| `manage_booking.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable reason for a non-success result; optional. |
-| `manage_booking.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Request fields that were invalid or rejected. |
-| `manage_booking.output.nextStep` | `{"enum":["SAY_REQUEST_NOTED","SAY_CHANGED","SAY_CANCELLED","OFFER_CHOICES","SAY_NOT_FOUND","ASK_TO_CORRECT","SAY_UNCERTAIN_AND_TRANSFER","TRANSFER_DESK","ASK_CALLBACK_DETAILS","ASK_CONFIRMATION","SAY_COULD_NOT_RECORD","SAY_COULD_NOT_CHECK","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_TIME","OFFER_OTHER_SESSION_OR_DATE","ASK_WHICH_TIME"],"type":"string"}` | required | Machine-readable disposition code, defined below. |
-| `manage_booking.output.outcome` | `{"enum":["NOTED","CHANGED","CANCELLED","FOUND","NOT_FOUND","REJECTED","CONFLICT","UNCERTAIN","IDENTITY_UNAVAILABLE","CALLBACK_REQUIRED","NOT_AVAILABLE","HANDOFF_REQUIRED","CONFIRMATION_REQUIRED","OPERATION_CONTEXT_MISSING","COULD_NOT_RECORD","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category, defined below. |
-| `manage_booking.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Upstream retry delay in seconds when supplied; optional. |
-| `manage_booking.output.sessions` | `{"items":{"anyOf":[{"$ref":"#/$defs/BoardSessionOut"},{"$ref":"#/$defs/UsualSessionOut"}]},"type":"array"}` | optional | Returned session alternatives and their checked openSlots when available; no reservation or invented capacity. |
-| `manage_booking.output.$defs.AppointmentOut.appointmentId` | `{"type":"string"}` | required | Operational appointment request identifier. |
-| `manage_booking.output.$defs.AppointmentOut.department` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Resolved department object; within AppointmentOut, the operational department identifier. |
-| `manage_booking.output.$defs.AppointmentOut.doctorId` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Operational doctor identifier. |
-| `manage_booking.output.$defs.AppointmentOut.expectedTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected start time or requested appointment time; not a guaranteed reservation. |
-| `manage_booking.output.$defs.AppointmentOut.patientName` | `{"type":"string"}` | required | Name on the appointment request; LIST is restricted to the verified caller’s own records. |
-| `manage_booking.output.$defs.AppointmentOut.slotMoved` | `{"type":"boolean"}` | optional | True only when the owner moved CREATE or RESCHEDULE to a different block, for example for a late doctor or a passed time. Choosing 10:45 and receiving its 10:30 block start is not moved. False for LIST and CANCEL. |
-| `manage_booking.output.$defs.AppointmentOut.slotTime` | `{"anyOf":[{"pattern":"^([01][0-9]|2[0-3]):[0-5][0-9]$","type":"string"},{"type":"null"}]}` | optional | Time recorded for this request in HH:MM facility local time: the owner's slotTime (block start), otherwise the request's expectedTime, otherwise null. |
-| `manage_booking.output.$defs.AppointmentOut.status` | `{"enum":["NOTED","CONFIRMED_BY_DESK","CHANGED","CANCELLED"],"type":"string"}` | required | Manoj's appointment status, unchanged (including CHANGED after reschedule). |
-| `manage_booking.output.$defs.AppointmentOut.visitDate` | `{"type":"string"}` | required | Appointment visit date (YYYY-MM-DD). |
-| `manage_booking.output.$defs.BoardSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision, distinct from owner status: APPOINTMENT_REQUEST, SLOT_CHECK_REQUIRED, CALLBACK_REQUIRED, HANDOFF_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK. Decision meanings are listed below. |
-| `manage_booking.output.$defs.BoardSessionOut.delayMinutes` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Board delay in minutes when supplied. |
-| `manage_booking.output.$defs.BoardSessionOut.expectedEndTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected end time in facility local time when supplied. |
-| `manage_booking.output.$defs.BoardSessionOut.expectedTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected start time or requested appointment time; not a guaranteed reservation. |
-| `manage_booking.output.$defs.BoardSessionOut.isStale` | `{"type":"boolean"}` | required | Owner-supplied board staleness flag; not an adapter-computed age threshold. |
-| `manage_booking.output.$defs.BoardSessionOut.note` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Owner-authored caller-facing board note, limited to 200 characters. |
-| `manage_booking.output.$defs.BoardSessionOut.openSlots` | `{"anyOf":[{"items":{"$ref":"#/$defs/SlotOut"},"type":"array"},{"type":"null"}]}` | optional | Open blocks offered for this session and date: the owner's open blocks when the session permits a request. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked and no block is offered (none open, or the session does not permit a request). When slots apply, CREATE or RESCHEDULE times outside these blocks are refused. |
-| `manage_booking.output.$defs.BoardSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
-| `manage_booking.output.$defs.BoardSessionOut.session` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Board session label when present. |
-| `manage_booking.output.$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Manoj's board or slot-only session status; MCP decision is separate. |
-| `manage_booking.output.$defs.Callback.reason` | `{"$ref":"#/$defs/Reason"}` | required | Required machine-readable reason for callback. |
-| `manage_booking.output.$defs.Callback.summaryOutcome` | `{"const":"CALLBACK_NOTED","type":"string"}` | optional | CALLBACK_NOTED identifies the callback call-summary category. |
-| `manage_booking.output.$defs.SlotOut.available` | `{"minimum":0,"type":"integer"}` | required | Remaining places reported by the owner for this block; MCP does not compute capacity or reserve a place. |
-| `manage_booking.output.$defs.SlotOut.end` | `{"pattern":"^([01][0-9]|2[0-3]):[0-5][0-9]$","type":"string"}` | required | Open block end in HH:MM facility local time, exclusive. |
-| `manage_booking.output.$defs.SlotOut.start` | `{"pattern":"^([01][0-9]|2[0-3]):[0-5][0-9]$","type":"string"}` | required | Open block start in HH:MM facility local time, inclusive. |
-| `manage_booking.output.$defs.UsualSessionOut.daysOfWeek` | `{"items":{"type":"string"},"type":"array"}` | required | Weekday codes for a usual session; empty for a desk-added one-day session. |
-| `manage_booking.output.$defs.UsualSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision, distinct from owner status: APPOINTMENT_REQUEST, SLOT_CHECK_REQUIRED, CALLBACK_REQUIRED, HANDOFF_REQUIRED, NOT_AVAILABLE or COULD_NOT_CHECK. Decision meanings are listed below. |
-| `manage_booking.output.$defs.UsualSessionOut.end` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Session end in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time. |
-| `manage_booking.output.$defs.UsualSessionOut.label` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Usual or one-day session label, possibly null. |
-| `manage_booking.output.$defs.UsualSessionOut.onRequestedDate` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | required | Whether the session belongs to the requested date; true for a one-day session, null when no date was supplied. |
-| `manage_booking.output.$defs.UsualSessionOut.oneDay` | `{"type":"boolean"}` | optional | A session the desk added for the requested date only; not part of the regular schedule. |
-| `manage_booking.output.$defs.UsualSessionOut.openSlots` | `{"anyOf":[{"items":{"$ref":"#/$defs/SlotOut"},"type":"array"},{"type":"null"}]}` | optional | Open blocks offered for this session and date: the owner's open blocks when the session permits a request. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked and no block is offered (none open, or the session does not permit a request). When slots apply, CREATE or RESCHEDULE times outside these blocks are refused. |
-| `manage_booking.output.$defs.UsualSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Machine-readable reason for this decision; null when no qualification applies. |
-| `manage_booking.output.$defs.UsualSessionOut.start` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Session start in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time. |
-| `manage_booking.output.$defs.UsualSessionOut.status` | `{"anyOf":[{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"},{"type":"null"}]}` | optional | Owner's slot status for this session on the requested date; null when slots were not checked. |
+| `manage_booking.output.appointment` | `{"anyOf":[{"$ref":"#/$defs/AppointmentOut"},{"type":"null"}]}` | optional | The appointment returned by a successful CREATE, CANCEL or RESCHEDULE. |
+| `manage_booking.output.appointments` | `{"items":{"$ref":"#/$defs/AppointmentOut"},"type":"array"}` | optional | The verified caller's appointments returned by LIST (from today unless fromDate is given). |
+| `manage_booking.output.callback` | `{"anyOf":[{"$ref":"#/$defs/Callback"},{"type":"null"}]}` | optional | Present only with CALLBACK_REQUIRED: the callback reason and summaryOutcome CALLBACK_NOTED. No callback task is created. |
+| `manage_booking.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable cause for a non-success result (Reason or Detail table); null on success. |
+| `manage_booking.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Tool argument names that were missing, invalid or rejected; owner field names are translated, and names with no tool argument are dropped. |
+| `manage_booking.output.nextStep` | `{"enum":["SAY_REQUEST_NOTED","SAY_CHANGED","SAY_CANCELLED","OFFER_CHOICES","SAY_NOT_FOUND","ASK_TO_CORRECT","SAY_UNCERTAIN_AND_TRANSFER","TRANSFER_DESK","ASK_CALLBACK_DETAILS","ASK_CONFIRMATION","SAY_COULD_NOT_RECORD","SAY_COULD_NOT_CHECK","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_TIME","OFFER_OTHER_SESSION_OR_DATE","ASK_WHICH_TIME"],"type":"string"}` | required | Disposition code; see nextStep codes. |
+| `manage_booking.output.outcome` | `{"enum":["NOTED","CHANGED","CANCELLED","FOUND","NOT_FOUND","REJECTED","CONFLICT","UNCERTAIN","IDENTITY_UNAVAILABLE","CALLBACK_REQUIRED","NOT_AVAILABLE","HANDOFF_REQUIRED","CONFIRMATION_REQUIRED","OPERATION_CONTEXT_MISSING","COULD_NOT_RECORD","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category; see Outcome codes. |
+| `manage_booking.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Delay in seconds requested by the owner service after a temporary failure; null otherwise. |
+| `manage_booking.output.sessions` | `{"items":{"anyOf":[{"$ref":"#/$defs/BoardSessionOut"},{"$ref":"#/$defs/UsualSessionOut"}]},"type":"array"}` | optional | Checked sessions with openSlots for that doctor and date, returned with ASK_WHICH_TIME, ASK_WHICH_SESSION and NOT_AVAILABLE; empty otherwise. An empty list establishes nothing about other times. |
 
-### Outcomes and nextStep meanings
+### record_call_summary input
 
-| Code | Meaning |
-|---|---|
-| `manage_booking.outcome.NOTED` | Appointment request recorded; no time is confirmed or reserved. |
-| `manage_booking.outcome.CHANGED` | The owner returned a verified appointment change. |
-| `manage_booking.outcome.CANCELLED` | The owner returned a verified cancellation. |
-| `manage_booking.outcome.FOUND` | Verified-caller appointment requests are returned. |
-| `manage_booking.outcome.NOT_FOUND` | No matching verified-caller appointment was found. |
-| `manage_booking.outcome.REJECTED` | The owner rejected the request. |
-| `manage_booking.outcome.CONFLICT` | The owner reported an operation or idempotency conflict. |
-| `manage_booking.outcome.UNCERTAIN` | A write may have committed without a verified result; desk handoff is the disposition, not retry. A later invocation with the same operation id re-runs the schedule check and can be refused. |
-| `manage_booking.outcome.IDENTITY_UNAVAILABLE` | Verified caller authority is unavailable for appointment lookup or modification. |
-| `manage_booking.outcome.CALLBACK_REQUIRED` | An ordinary doctor has an unresolved schedule: UNKNOWN, or NOT_CONFIRMED with slots disabled, or no usual schedule. No appointment write; callback details belong only to a CALLBACK_NOTED summary. On-call doctors have desk handoff as their disposition. |
-| `manage_booking.outcome.NOT_AVAILABLE` | Valid request, but the selected schedule or session is unavailable. |
-| `manage_booking.outcome.HANDOFF_REQUIRED` | Desk assistance is the disposition for an on-call doctor without a confirmed, usable entry, or incomplete search/time validation. No callback metadata; MCP does not perform the telephone transfer. |
-| `manage_booking.outcome.CONFIRMATION_REQUIRED` | callerConfirmed is not true for the requested write. |
-| `manage_booking.outcome.OPERATION_CONTEXT_MISSING` | Trusted call or operation identity required for the write is absent or invalid. |
-| `manage_booking.outcome.COULD_NOT_RECORD` | The write could not be recorded; detail identifies the failure when available. |
-| `manage_booking.outcome.COULD_NOT_CHECK` | A read could not be completed; this is not an empty or negative result. |
-| `manage_booking.outcome.INVALID_REQUEST` | Request validation failed; fields or detail identify the issue when available. |
-| `manage_booking.nextStep.SAY_REQUEST_NOTED` | The appointment request is recorded without a guaranteed time. |
-| `manage_booking.nextStep.SAY_CHANGED` | An appointment change is verified. |
-| `manage_booking.nextStep.SAY_CANCELLED` | An appointment cancellation is verified. |
-| `manage_booking.nextStep.OFFER_CHOICES` | Verified-caller appointment choices are available. |
-| `manage_booking.nextStep.SAY_NOT_FOUND` | No matching verified-caller appointment was found. |
-| `manage_booking.nextStep.ASK_TO_CORRECT` | Request fields need correction. |
-| `manage_booking.nextStep.SAY_UNCERTAIN_AND_TRANSFER` | Write completion is uncertain and desk assistance is the disposition; no telephone transfer is executed by MCP. |
-| `manage_booking.nextStep.TRANSFER_DESK` | Desk assistance is the returned disposition; MCP does not execute a telephone transfer. |
-| `manage_booking.nextStep.ASK_CALLBACK_DETAILS` | Callback policy requires contact details and a call summary; no appointment is written. |
-| `manage_booking.nextStep.ASK_CONFIRMATION` | The write lacks callerConfirmed=true. |
-| `manage_booking.nextStep.SAY_COULD_NOT_RECORD` | The requested write could not be recorded. |
-| `manage_booking.nextStep.SAY_COULD_NOT_CHECK` | The requested information could not be checked. |
-| `manage_booking.nextStep.ASK_WHICH_SESSION` | Slots-disabled booking only: differing session decisions require a session selection. With slots enabled, a mismatched supplied session label is TIME_OUTSIDE_SESSION instead. |
-| `manage_booking.nextStep.ASK_WHICH_TIME` | A time is required for CREATE or RESCHEDULE when slots apply; sessions carry the openSlots for preferredTime or newPreferredTime. |
-| `manage_booking.nextStep.OFFER_OTHER_SESSION_OR_TIME` | sessions/openSlots are the checked alternatives. An owner SLOT_FULL write rejection carries none; availability at other times requires a new check. |
-| `manage_booking.nextStep.OFFER_OTHER_SESSION_OR_DATE` | The requested session or date is unavailable; alternatives may be returned. |
-
-### Examples
-
-Examples come from the development stubs (facility date 2026-10-01, Thursday, 10:00); names and
-identifiers are fixtures, with slots disabled. The new optional fields are shown at their defaults.
-Slots-enabled behaviour is described above and will be activated in the complete release.
-
-**1. CREATE recorded**
-
-Arguments:
-
-```json
-{
-  "action": "CREATE",
-  "patientName": "Lakshmi Rao",
-  "patientMobile": "9000000101",
-  "doctorId": "doc_garima",
-  "visitDate": "2026-10-02",
-  "preferredTime": "09:30",
-  "reasonVerbatim": "ಜ್ವರ ಮೂರು ದಿನದಿಂದ",
-  "callerConfirmed": true
-}
-```
-
-Structured result:
-
-```json
-{
-  "sessions": [],
-  "outcome": "NOTED",
-  "nextStep": "SAY_REQUEST_NOTED",
-  "appointment": {
-    "appointmentId": "appt_0001",
-    "status": "NOTED",
-    "visitDate": "2026-10-02",
-    "expectedTime": "09:30",
-    "doctorId": "doc_garima",
-    "department": null,
-    "patientName": "Lakshmi Rao",
-    "slotTime": null,
-    "slotMoved": false
-  },
-  "appointments": [],
-  "fields": [],
-  "callback": null,
-  "detail": null,
-  "retryAfterSeconds": null
-}
-```
-
-`NOTED` means the request is recorded; the time is not confirmed or reserved.
-
-**2. LIST the verified caller's appointments**
-
-Arguments:
-
-```json
-{
-  "action": "LIST"
-}
-```
-
-Structured result:
-
-```json
-{
-  "sessions": [],
-  "outcome": "FOUND",
-  "nextStep": "OFFER_CHOICES",
-  "appointment": null,
-  "appointments": [
-    {
-      "appointmentId": "appt_0001",
-      "status": "NOTED",
-      "visitDate": "2026-10-02",
-      "expectedTime": "09:30",
-      "doctorId": "doc_garima",
-      "department": null,
-      "patientName": "Lakshmi Rao",
-      "slotTime": null,
-      "slotMoved": false
-    }
-  ],
-  "fields": [],
-  "callback": null,
-  "detail": null,
-  "retryAfterSeconds": null
-}
-```
-
-**3. CREATE without caller confirmation**
-
-Arguments:
-
-```json
-{
-  "action": "CREATE",
-  "patientName": "A",
-  "patientMobile": "9000000101",
-  "doctorId": "doc_garima",
-  "visitDate": "2026-10-02"
-}
-```
-
-Structured result:
-
-```json
-{
-  "sessions": [],
-  "outcome": "CONFIRMATION_REQUIRED",
-  "nextStep": "ASK_CONFIRMATION",
-  "appointment": null,
-  "appointments": [],
-  "fields": [],
-  "callback": null,
-  "detail": null,
-  "retryAfterSeconds": null
-}
-```
-
-**4. CREATE when sessions differ and none was chosen**
-
-Arguments:
-
-```json
-{
-  "action": "CREATE",
-  "patientName": "A",
-  "patientMobile": "9000000101",
-  "doctorId": "doc_garima",
-  "visitDate": "today",
-  "callerConfirmed": true
-}
-```
-
-Structured result:
-
-```json
-{
-  "sessions": [
-    {
-      "session": "Morning",
-      "status": "IN",
-      "expectedTime": "09:10",
-      "expectedEndTime": "12:00",
-      "delayMinutes": null,
-      "note": null,
-      "isStale": false,
-      "decision": "APPOINTMENT_REQUEST",
-      "reason": null,
-      "openSlots": null
-    },
-    {
-      "session": "Afternoon",
-      "status": "NOT_CONFIRMED",
-      "expectedTime": "15:00",
-      "expectedEndTime": "17:00",
-      "delayMinutes": null,
-      "note": null,
-      "isStale": false,
-      "decision": "CALLBACK_REQUIRED",
-      "reason": "BOARD_NOT_CONFIRMED",
-      "openSlots": null
-    }
-  ],
-  "outcome": "INVALID_REQUEST",
-  "nextStep": "ASK_WHICH_SESSION",
-  "appointment": null,
-  "appointments": [],
-  "fields": [
-    "session"
-  ],
-  "callback": null,
-  "detail": "SESSION_REQUIRED",
-  "retryAfterSeconds": null
-}
-```
-
-This slots-disabled result leaves the session unresolved; `"session": "Morning"` identifies the morning choice.
-
-**5. Mobile in the wrong format**
-
-Arguments:
-
-```json
-{
-  "action": "CREATE",
-  "patientName": "A",
-  "patientMobile": "+919000000101",
-  "doctorId": "doc_garima",
-  "visitDate": "today"
-}
-```
-
-Structured result:
-
-```json
-{
-  "sessions": [],
-  "outcome": "INVALID_REQUEST",
-  "nextStep": "ASK_TO_CORRECT",
-  "appointment": null,
-  "appointments": [],
-  "fields": [
-    "patientMobile"
-  ],
-  "callback": null,
-  "detail": null,
-  "retryAfterSeconds": null
-}
-```
-
-The accepted mobile format is 10 digits without `+91`.
-
-**6. Unknown argument (rejected before the tool runs)**
-
-Arguments:
-
-```json
-{
-  "action": "CREATE",
-  "doctorName": "garima"
-}
-```
-
-Result (`isError: true`, text content; no structured result):
-
-```text
-1 validation error for call[manage_booking]
-doctorName
-  Unexpected keyword argument [type=unexpected_keyword_argument, input_value='garima', input_type=str]
-    For further information visit https://errors.pydantic.dev/2.13/v/unexpected_keyword_argument
-```
-
-## record_call_summary
-
-Stores one summary per call, covering the whole conversation. The first accepted summary for a call is final. Call identity and start time come from trusted headers. One intent and outcome represent the call; other results are described in summaryText. CALLBACK_NOTED records callback details and creates no appointment or callback task. SAVED: a new summary was stored. ALREADY_SAVED: a summary for this call is already stored and nothing was changed, including when the submitted text differs. INVALID_REQUEST: input validation failed; fields identifies rejected fields. NOT_CONFIRMED: persistence is unverified or temporarily unavailable. NOT_SAVED: trusted call context is missing or invalid, or the operational service refused credentials.
-
-### How to call
-
-One summary covers the whole call, including the last tool result. The first accepted summary is final.
-
-| Field | Rule |
-|---|---|
-| `intent`, `outcome`, `summaryText` | Always required. `summaryText` is nonblank, at most 500 characters, and is never shortened by MCP; longer text returns `INVALID_REQUEST` with `fields: ["summaryText"]`. |
-| `callerMobile` | Required when `outcome` is `CALLBACK_NOTED`. When sent, exactly 10 digits. |
-| `appointmentId` | Optional identifier returned by manage_booking; rejected with CALLBACK_NOTED. |
-| `transferredTo` | Only with `TRANSFERRED` or `EMERGENCY_TRANSFERRED`; refused with any other outcome. |
-| `doctorId`, `language` | Optional. `language` `en`, `kn` or `hi` is stored; other codes are dropped. |
-| Caller name, symptoms, dates, sessions | These facts belong within summaryText. There are no separate fields for them; any such argument is rejected. |
-
-Headers: X-Call-Id and X-Call-Started-At (ISO timestamp with offset). Without them the result is
-`NOT_SAVED` and nothing is sent.
-
-### Input schema (exact)
-
-```json
-{
-  "properties": {
-    "appointmentId": {
-      "anyOf": [
-        {
-          "maxLength": 64,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional identifier of the appointment request associated with the call."
-    },
-    "callerMobile": {
-      "anyOf": [
-        {
-          "maxLength": 20,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID."
-    },
-    "doctorId": {
-      "anyOf": [
-        {
-          "maxLength": 64,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional identifier of the doctor associated with the call."
-    },
-    "intent": {
-      "description": "Required call-intent category.",
-      "enum": [
-        "AVAILABILITY",
-        "BOOKING",
-        "RESCHEDULE",
-        "CANCEL",
-        "GENERAL_INFO",
-        "LAB",
-        "INSURANCE",
-        "EMERGENCY",
-        "AMBULANCE",
-        "SYMPTOM_ROUTING",
-        "COMPLAINT",
-        "ADMIN",
-        "OTHER"
-      ],
-      "type": "string"
-    },
-    "language": {
-      "anyOf": [
-        {
-          "maxLength": 16,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional call language; en, kn and hi primary codes map to the operational contract. Other codes are omitted upstream."
-    },
-    "outcome": {
-      "description": "Required hospital-facing call outcome category.",
-      "enum": [
-        "RESOLVED_BY_AGENT",
-        "APPOINTMENT_NOTED",
-        "APPOINTMENT_CANCELLED",
-        "APPOINTMENT_RESCHEDULED",
-        "TRANSFERRED",
-        "EMERGENCY_TRANSFERRED",
-        "AMBULANCE_NUMBER_GIVEN",
-        "CALLBACK_NOTED",
-        "ABANDONED"
-      ],
-      "type": "string"
-    },
-    "summaryText": {
-      "description": "Required. Summary of the whole call in plain sentences, up to 500 characters: what the caller asked, what was explained or done, and any follow-up promised. Contains all relevant information mentioned in the call, including: the caller's name, the callback phone number, the symptoms or reason the caller described, the doctor's name, the department, and the requested date, time, session and callback reason. Not a transcript.",
-      "maxLength": 500,
-      "type": "string"
-    },
-    "transferredTo": {
-      "anyOf": [
-        {
-          "maxLength": 64,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Optional destination associated with a transfer outcome."
-    }
-  },
-  "required": [
-    "intent",
-    "outcome",
-    "summaryText"
-  ],
-  "type": "object"
-}
-```
-
-### Parameters
-
-| Field path | Type / constraints (JSON Schema) | Presence | Meaning |
+| Field | Wire type | Required | Meaning |
 |---|---|---|---|
 | `record_call_summary.input.appointmentId` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Optional identifier of the appointment request associated with the call. |
 | `record_call_summary.input.callerMobile` | `{"anyOf":[{"maxLength":20,"type":"string"},{"type":"null"}]}` | optional | Callback number the caller gave; required for CALLBACK_NOTED; distinct from caller ID. |
@@ -1366,231 +589,65 @@ Headers: X-Call-Id and X-Call-Started-At (ISO timestamp with offset). Without th
 | `record_call_summary.input.summaryText` | `{"maxLength":500,"type":"string"}` | required | Required. Summary of the whole call in plain sentences, up to 500 characters: what the caller asked, what was explained or done, and any follow-up promised. Contains all relevant information mentioned in the call, including: the caller's name, the callback phone number, the symptoms or reason the caller described, the doctor's name, the department, and the requested date, time, session and callback reason. Not a transcript. |
 | `record_call_summary.input.transferredTo` | `{"anyOf":[{"maxLength":64,"type":"string"},{"type":"null"}]}` | optional | Optional destination associated with a transfer outcome. |
 
-### Output fields
+### record_call_summary output
 
-| Field path | Type / constraints (JSON Schema) | Presence | Meaning |
+| Field | Wire type | Required | Meaning |
 |---|---|---|---|
 | `record_call_summary.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Names of rejected fields; present only on INVALID_REQUEST, possibly empty when no safe field names are available. |
-| `record_call_summary.output.outcome` | `{"enum":["SAVED","ALREADY_SAVED","INVALID_REQUEST","NOT_CONFIRMED","NOT_SAVED"],"type":"string"}` | required | Result category, defined below. |
+| `record_call_summary.output.outcome` | `{"enum":["SAVED","ALREADY_SAVED","INVALID_REQUEST","NOT_CONFIRMED","NOT_SAVED"],"type":"string"}` | required | Result category; see Outcome codes. |
 
-### Outcomes and nextStep meanings
+### Shared output types (each described once; identical in every tool that returns it)
 
-| Code | Meaning |
-|---|---|
-| `record_call_summary.outcome.SAVED` | A new summary was stored, verified by a valid 201 response for this call. |
-| `record_call_summary.outcome.ALREADY_SAVED` | A valid 200 returned this call's existing summary; nothing changed, even if the new input differs. |
-| `record_call_summary.outcome.INVALID_REQUEST` | Local validation or the owner's definite 400 rejected the request; fields contains safe field names. |
-| `record_call_summary.outcome.NOT_CONFIRMED` | Persistence is unverified or temporarily unavailable, including unanswered writes, malformed success, call-ID mismatch, transport failures, rate limits and server failures. |
-| `record_call_summary.outcome.NOT_SAVED` | Trusted call ID/start is missing or malformed, or credentials were definitely refused. A previous possibly committed send takes precedence and remains NOT_CONFIRMED. |
-
-### Examples
-
-Examples come from the development stubs (facility date 2026-10-01, Thursday, 10:00); names and
-identifiers are fixtures. Live values differ; field names and shapes do not.
-
-**1. Appointment call saved**
-
-Arguments:
-
-```json
-{
-  "intent": "BOOKING",
-  "outcome": "APPOINTMENT_NOTED",
-  "doctorId": "doc_garima",
-  "appointmentId": "appt_0001",
-  "language": "en",
-  "summaryText": "Lakshmi Rao (9000000101) has had fever for three days and asked for Dr. Garima, General Medicine. Appointment request noted for 2026-10-02, Morning session, preferred 09:30; told it is a request, not a confirmed time."
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "SAVED"
-}
-```
-
-**2. Callback call saved**
-
-Arguments:
-
-```json
-{
-  "intent": "AVAILABILITY",
-  "outcome": "CALLBACK_NOTED",
-  "callerMobile": "9000000101",
-  "doctorId": "doc_kiran_hegde",
-  "language": "kn",
-  "summaryText": "Lakshmi Rao, 9000000101, asked for Dr. Kiran Hegde this evening; board UNKNOWN; callback promised."
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "SAVED"
-}
-```
-
-**3. Second summary for the same call**
-
-Arguments:
-
-```json
-{
-  "intent": "BOOKING",
-  "outcome": "APPOINTMENT_NOTED",
-  "summaryText": "second attempt"
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "ALREADY_SAVED"
-}
-```
-
-Nothing was changed; the first summary stays.
-
-**4. CALLBACK_NOTED without callerMobile**
-
-Arguments:
-
-```json
-{
-  "intent": "AVAILABILITY",
-  "outcome": "CALLBACK_NOTED",
-  "summaryText": "x"
-}
-```
-
-Structured result:
-
-```json
-{
-  "outcome": "INVALID_REQUEST",
-  "fields": [
-    "callerMobile"
-  ]
-}
-```
-
-**5. Unknown argument (rejected before the tool runs)**
-
-Arguments:
-
-```json
-{
-  "intent": "AVAILABILITY",
-  "outcome": "RESOLVED_BY_AGENT",
-  "summaryText": "x",
-  "callerName": "A"
-}
-```
-
-Result (`isError: true`, text content; no structured result):
-
-```text
-Invalid call summary arguments. Check required fields, types and limits.
-```
-
-## Availability policy reason codes
-
-These codes describe owner facts or an incomplete check; they are not clinical routing decisions.
-
-| Reason | Meaning |
-|---|---|
-| ON_CALL_DOCTOR | On-call doctor has no confirmed, usable entry; desk assistance is the disposition, without callback metadata. Working hours also require handoff because on-call doctors have no usual schedule. |
-| BOARD_UNKNOWN | Owner board or slot session status is UNKNOWN; ordinary doctors require callback, on-call doctors require handoff. |
-| BOARD_STALE | Owner marks today's row stale. |
-| BOARD_ENTRY_MISSING | Today has no board entry for this doctor. |
-| SESSION_NOT_ON_BOARD | Requested session is absent from today's board. |
-| BOARD_NOT_CONFIRMED | Ordinary attendance is NOT_CONFIRMED with slots disabled. With enabled slots an open bookable block can instead permit a request. |
-| CANCELLED | Owner cancelled this session. |
-| SESSION_ENDED | Supplied end time has passed in facility time. |
-| NOT_USUAL_DAY | Usual schedule has no session on this future weekday. |
-| SESSION_NOT_USUAL | Requested session is not a usual session on that future date. |
-| NO_USUAL_SCHEDULE | No usual schedule is supplied for this doctor. |
-| PROFILE_UNAVAILABLE | Required profile could not be read. |
-| TIME_OUTSIDE_SESSION | Requested time is outside known windows; with slots, no block contains the time, the containing block is closed or ended, or a supplied session label does not match its session. With slots, the selected session is the supplied one, otherwise the one containing the time. When it is not bookable or has no open block, its session reason applies (NO_OPEN_SLOT or SESSION_ENDED); otherwise a time in one of its full blocks is SLOT_FULL, and a time in none of its open or full blocks is TIME_OUTSIDE_SESSION. |
-| SESSION_REQUIRED | Differing session decisions need a session/time selection. |
-| TIME_NOT_VERIFIABLE | Specific time cannot be checked against an incomplete window. |
-| SEARCH_INCOMPLETE | Some candidates remain unchecked or failed; absence is not established. |
-| NO_OPEN_SLOT | This session has no open slot. |
-| SLOT_FULL | The chosen time's block is full. Checked alternatives are sessions/openSlots in the same result; an owner write rejection carries none. |
-
-AVAILABILITY is date-specific and requires a target and date. WORKING_HOURS permits no date and
-returns usual hours, never current attendance. Date errors are DATE_REQUIRED, DATE_FORMAT and PAST_DATE.
-Same-decision sessions require no session selection; with slots enabled a booking time is still required.
-Future REGULAR/VISITING dates use slot facts when enabled and usual hours otherwise, attendance not
-confirmed. `status` retains Manoj's value, while `decision` is MCP's.
-
-| Decision | Meaning |
-|---|---|
-| APPOINTMENT_REQUEST | Supplied facts permit an appointment request, not a reservation. |
-| SLOT_CHECK_REQUIRED | Doctor matches the request; slots have not been checked. Slot availability is known only after a doctor-specific check. |
-| CALLBACK_REQUIRED | Ordinary unresolved schedule; callback details belong to a summary only. |
-| HANDOFF_REQUIRED | Desk assistance is the disposition; an on-call doctor has no confirmed, usable entry. No callback metadata. |
-| NOT_AVAILABLE | Facts exclude the requested session/date/time. |
-| COULD_NOT_CHECK | A required read failed; no negative availability claim. |
-
-`openSlots` lists the owner's open blocks when the session permits a request. `openSlots: null` means
-not checked (disabled, WORKING_HOURS or department selection pending); `[]` means checked and no block
-is offered (none open, or the session does not permit a request). When slots apply, CREATE or RESCHEDULE
-times outside the returned blocks are refused. A `oneDay` session was desk-added for this requested date, not part of the regular
-schedule: `daysOfWeek` is empty and `onRequestedDate` is true. Null `start`/`end` mean the owner supplied
-no hours; such a session has no bookable time. Today's slot-only sessions use the date-specific board format without
-an extra oneDay field.
-
-| Detail | Meaning |
-|---|---|
-| TIME_REQUIRED | With slots enabled, preferredTime (CREATE) or newPreferredTime (RESCHEDULE) is required; ASK_WHICH_TIME includes sessions with openSlots. |
-| SLOT_FULL | The chosen time's block is full; checked alternatives are sessions/openSlots in this result. An owner write rejection carries none. |
-| SLOTS_UNAVAILABLE | Required slot facts could not be obtained or validated; no booking is submitted. |
-| CAPABILITIES_UNAVAILABLE | Required department capability facts could not be obtained or validated; availability could not be checked. |
-
-Callback names, requested dates/sessions and reason may be placed in summaryText, but their presence
-is not enforced; callerMobile remains required for CALLBACK_NOTED. Summary-quality acceptance belongs
-to voice integration. No new headers or credentials are introduced by this policy.
-
-## Changes in schema 2026-10-05.1
-
-- Doctor `journey` became `decision`; owner board `status` remained unchanged.
-- CALLBACK_ONLY/DESK decisions, `expired`, `unknownSessions`, and `callback.ask`/`say` were removed.
-- `purpose` was added; `date` became schema-optional, required in-band for AVAILABILITY.
-- `manage_booking.departmentId` was removed; CREATE requires a doctor.
-- Known limitation: sessions crossing midnight are unsupported.
-
-## Changes in schema 2026-10-06.1
-
-- In this older release, working hours for a single on-call doctor or empty schedule used the full
-  CALLBACK_REQUIRED result, including reason and summaryOutcome. The on-call rule is superseded by
-  HANDOFF_REQUIRED in the slots release; ordinary empty schedules still require callback. ON_CALL_DOCTOR
-  replaced NO_REGULAR_HOURS (emitted in schema 2026-10-05.1 for on-call working hours).
-- A single doctor with hours returns WORKING_HOURS/PRESENT_WORKING_HOURS, without an appointment offer.
-  bookableFound is always zero for WORKING_HOURS, including department queries; schedule matches still
-  bound the profile search. Department hours include on-call facts within the existing capped list.
-- Future-session mismatches preserve same-day alternatives; sessionMatched checks the requested weekday.
-- When the doctor is unavailable for the whole requested scope, booking reports the doctor's own reason
-  (CANCELLED, SESSION_ENDED, NOT_USUAL_DAY or SESSION_NOT_USUAL), even when a preferred time was given;
-  TIME_OUTSIDE_SESSION applies only when the doctor has bookable sessions and the chosen time falls outside them.
-- The existing mixed-session choice rule remains unchanged pending a separate decision (G-1).
-
-Schema 2026-10-06.1 is deployed (canary image `frontdesk-mcp:36336aa`, 6 October 2026). A gateway that
-discovered 2026-10-05.1 retains an older schema until rediscovery; registration verifies input schemas
-only, so it does not establish output-schema compatibility through the voice virtual server.
-
-
-## Changes in schema 2026-10-11.1 (slots release, not yet deployed)
-
-- Published the complete slot response contract: openSlots, oneDay, nullable required session hours,
-  owner slot status, slotTime/slotMoved, DOCTORS_MATCHED, SLOT_CHECK_REQUIRED, HANDOFF_REQUIRED as a
-  decision, NO_OPEN_SLOT, SLOT_FULL and ASK_WHICH_TIME.
-- Descriptions and this guide specify the final release behaviour. Publication alone does not activate
-  it; no partial phase is approved for deployment. The canary remains on schema 2026-10-06.1.
-- ContextForge discovery can retain the previous schema until refreshed after deployment. Voice
-  integration compatibility depends on both input and output schemas exposed by the virtual server.
+| Field | Wire type | Required | Meaning |
+|---|---|---|---|
+| `$defs.AppointmentOut.appointmentId` | `{"type":"string"}` | required | Operational appointment request identifier. |
+| `$defs.AppointmentOut.department` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Owner department identifier when the owner supplies one; null otherwise. |
+| `$defs.AppointmentOut.doctorId` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Operational doctor identifier. |
+| `$defs.AppointmentOut.expectedTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Time requested for the appointment (HH:MM), as recorded by the owner; not a reservation. |
+| `$defs.AppointmentOut.patientName` | `{"type":"string"}` | required | Name on the appointment request; LIST is restricted to the verified caller’s own records. |
+| `$defs.AppointmentOut.slotMoved` | `{"type":"boolean"}` | optional | True only when the owner moved CREATE or RESCHEDULE to a different block, for example for a late doctor or a passed time. Choosing 10:45 and receiving its 10:30 block start is not moved. False for LIST and CANCEL. |
+| `$defs.AppointmentOut.slotTime` | `{"anyOf":[{"pattern":"^([01][0-9]|2[0-3]):[0-5][0-9]$","type":"string"},{"type":"null"}]}` | optional | Time recorded for this request in HH:MM facility local time: the owner's slotTime (block start), otherwise the request's expectedTime, otherwise null. |
+| `$defs.AppointmentOut.status` | `{"enum":["NOTED","CONFIRMED_BY_DESK","CHANGED","CANCELLED"],"type":"string"}` | required | Manoj's appointment status, unchanged (including CHANGED after reschedule). |
+| `$defs.AppointmentOut.visitDate` | `{"type":"string"}` | required | Appointment visit date (YYYY-MM-DD). |
+| `$defs.BoardSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision for this session; see Decision table. Separate from the owner status. |
+| `$defs.BoardSessionOut.delayMinutes` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Board delay in minutes when supplied. |
+| `$defs.BoardSessionOut.expectedEndTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected end time in facility local time when supplied. |
+| `$defs.BoardSessionOut.expectedTime` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Board expected start time (HH:MM) when supplied. |
+| `$defs.BoardSessionOut.isStale` | `{"type":"boolean"}` | required | Owner-supplied board staleness flag; not an adapter-computed age threshold. |
+| `$defs.BoardSessionOut.note` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Owner-authored caller-facing board note, limited to 200 characters. |
+| `$defs.BoardSessionOut.openSlots` | `{"anyOf":[{"items":{"$ref":"#/$defs/SlotOut"},"type":"array"},{"type":"null"}]}` | optional | Open blocks offered for this session and date: the owner's open blocks when the session permits a request. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked and no block is offered (none open, or the session does not permit a request). When slots apply, CREATE or RESCHEDULE times outside these blocks are refused. |
+| `$defs.BoardSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Reason code qualifying the decision (Reason table); null when none applies. |
+| `$defs.BoardSessionOut.session` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Board session label when present. |
+| `$defs.BoardSessionOut.status` | `{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"}` | required | Manoj's board or slot-only session status; MCP decision is separate. |
+| `$defs.Callback.reason` | `{"$ref":"#/$defs/Reason"}` | required | Required machine-readable reason for callback. |
+| `$defs.Callback.summaryOutcome` | `{"const":"CALLBACK_NOTED","type":"string"}` | optional | CALLBACK_NOTED identifies the callback call-summary category. |
+| `$defs.DepartmentChoice.id` | `{"type":"string"}` | required | Department directory identifier. |
+| `$defs.DepartmentChoice.name` | `{"type":"string"}` | required | Department display name. |
+| `$defs.DoctorAvailability.attendanceType` | `{"enum":["REGULAR","VISITING","ON_CALL"],"type":"string"}` | required | Operational attendance classification: REGULAR, VISITING or ON_CALL. |
+| `$defs.DoctorAvailability.board` | `{"items":{"$ref":"#/$defs/BoardSessionOut"},"type":"array"}` | required | Today's board rows for this doctor (LIVE_BOARD); empty for future dates and WORKING_HOURS. |
+| `$defs.DoctorAvailability.dataConfirmed` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | optional | Owner confirmation metadata; null means unspecified. |
+| `$defs.DoctorAvailability.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision for this doctor on the requested scope; see Decision table. |
+| `$defs.DoctorAvailability.departments` | `{"items":{"type":"string"},"type":"array"}` | required | Department names associated with the doctor. |
+| `$defs.DoctorAvailability.doctorId` | `{"type":"string"}` | required | Operational doctor identifier. |
+| `$defs.DoctorAvailability.gender` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Doctor gender when the directory supplies it. |
+| `$defs.DoctorAvailability.name` | `{"type":"string"}` | required | Doctor display name. |
+| `$defs.DoctorAvailability.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Reason code qualifying the doctor decision (Reason table); null when none applies. |
+| `$defs.DoctorAvailability.sessionChoiceRequired` | `{"type":"boolean"}` | optional | Whether differing session decisions require a session choice. |
+| `$defs.DoctorAvailability.usualSessions` | `{"anyOf":[{"items":{"$ref":"#/$defs/UsualSessionOut"},"type":"array"},{"type":"null"}]}` | required | Requested-date sessions (with slot facts when read) and desk-added one-day sessions for future dates, or usual working hours for WORKING_HOURS; null when not fetched (today's live board is in board). |
+| `$defs.DoctorChoice.departments` | `{"items":{"type":"string"},"type":"array"}` | required | Department names associated with the doctor. |
+| `$defs.DoctorChoice.doctorId` | `{"type":"string"}` | required | Operational doctor identifier. |
+| `$defs.DoctorChoice.gender` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Doctor gender when the directory supplies it. |
+| `$defs.DoctorChoice.name` | `{"type":"string"}` | required | Doctor display name. |
+| `$defs.SlotOut.available` | `{"minimum":0,"type":"integer"}` | required | Remaining places reported by the owner for this block; MCP does not compute capacity or reserve a place. |
+| `$defs.SlotOut.end` | `{"pattern":"^([01][0-9]|2[0-3]):[0-5][0-9]$","type":"string"}` | required | Open block end in HH:MM facility local time, exclusive. |
+| `$defs.SlotOut.start` | `{"pattern":"^([01][0-9]|2[0-3]):[0-5][0-9]$","type":"string"}` | required | Open block start in HH:MM facility local time, inclusive. |
+| `$defs.UsualSessionOut.daysOfWeek` | `{"items":{"type":"string"},"type":"array"}` | required | Weekday codes for a usual session; empty for a desk-added one-day session. |
+| `$defs.UsualSessionOut.decision` | `{"$ref":"#/$defs/Decision"}` | required | MCP decision for this session; see Decision table. Separate from the owner status. |
+| `$defs.UsualSessionOut.end` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Session end in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time. |
+| `$defs.UsualSessionOut.label` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Usual or one-day session label, possibly null. |
+| `$defs.UsualSessionOut.onRequestedDate` | `{"anyOf":[{"type":"boolean"},{"type":"null"}]}` | required | Whether the session belongs to the requested date; true for a one-day session, null when no date was supplied. |
+| `$defs.UsualSessionOut.oneDay` | `{"type":"boolean"}` | optional | A session the desk added for the requested date only; not part of the regular schedule. |
+| `$defs.UsualSessionOut.openSlots` | `{"anyOf":[{"items":{"$ref":"#/$defs/SlotOut"},"type":"array"},{"type":"null"}]}` | optional | Open blocks offered for this session and date: the owner's open blocks when the session permits a request. null means slots were not checked (disabled, WORKING_HOURS, or a department search pending doctor selection); [] means checked and no block is offered (none open, or the session does not permit a request). When slots apply, CREATE or RESCHEDULE times outside these blocks are refused. |
+| `$defs.UsualSessionOut.reason` | `{"anyOf":[{"$ref":"#/$defs/Reason"},{"type":"null"}]}` | optional | Reason code qualifying the decision (Reason table); null when none applies. |
+| `$defs.UsualSessionOut.start` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | required | Session start in facility local time. null only for a one-day session whose hours the owner did not supply. Such a session has no bookable time. |
+| `$defs.UsualSessionOut.status` | `{"anyOf":[{"enum":["IN","LATE","CANCELLED","NOT_CONFIRMED","UNKNOWN"],"type":"string"},{"type":"null"}]}` | optional | Owner's slot status for this session on the requested date; null when slots were not checked. |

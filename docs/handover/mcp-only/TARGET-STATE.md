@@ -88,8 +88,8 @@ Department availability uses cached capabilities without per-doctor slots fan-ou
 reads no board or slots. Ordinary UNKNOWN in scope gives callback metadata; on-call uses confirmed
 usable evidence or handoff. Failed reads are failures, never unavailable facts. No capacity is computed.
 
-The three-tool source schema is `2026-10-11.1`. Gate 8 requires Rajeev's team to validate
-Stratum symptom/emergency journeys and transfers before deployment. Gate 9 prohibits live voice traffic
+The three-tool source schema is `2026-10-11.2`. Gate 8 (Rajeev's team validating Stratum
+symptom/emergency journeys and transfers before deployment) was approved by Garima on 11 October 2026. Gate 9 prohibits live voice traffic
 until the adapter, our front-desk gateway entries and LiveKit cached tool view are refreshed and
 voice-client discovery proves exactly three front-desk tools. Combined views may also include Stratum.
 Our source change does not modify or verify Stratum's registration. Review, merge, deployment,

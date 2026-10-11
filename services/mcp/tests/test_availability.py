@@ -264,6 +264,50 @@ async def test_availability_missing_date_is_an_in_band_request_error(h):
     assert h.ops_paths() == []
 
 
+async def test_doctor_name_without_date_is_refused_before_directory_read(h):
+    result = await service(h).get(h.ctx(), availability.AvailabilityRequest(doctorName="garima"))
+    assert (result.outcome, result.nextStep, result.detail) == (
+        "INVALID_REQUEST", "ASK_EXPLICIT_DATE", "DATE_REQUIRED")
+    assert h.ops_paths() == []
+
+
+async def test_doctor_id_takes_precedence_over_department_name_without_department_read(h):
+    day = "2026-10-05"
+    h.ops_state.set_slots("doc_garima", day, harness.slot_plan(date=day))
+    result = await ask(h, doctorId="doc_garima", departmentName="Cardiology", date=day)
+    assert result.outcome == "AVAILABILITY" and result.department is None
+    [doctor] = result.doctors
+    assert doctor.doctorId == "doc_garima"
+    assert any(s.openSlots for s in doctor.usualSessions)
+    assert "/departments" not in h.ops_paths() and "/doctors" not in h.ops_paths()
+    assert "/availability/doc_garima/slots" in h.ops_paths()
+
+
+async def test_single_doctor_name_match_returns_that_dates_open_slots(h):
+    day = "2026-10-05"
+    h.ops_state.set_slots("doc_garima", day, harness.slot_plan(date=day))
+    result = await ask(h, doctorName="garima", date=day)
+    assert result.outcome == "AVAILABILITY" and result.requestedDate == day and result.choices == []
+    [doctor] = result.doctors
+    assert doctor.doctorId == "doc_garima" and result.department is None
+    assert [(b.start, b.end, b.available) for s in doctor.usualSessions for b in (s.openSlots or [])] == [
+        ("10:30", "11:00", 3), ("11:00", "11:30", 3)]
+    assert "/doctors" in h.ops_paths() and "/availability/doc_garima/slots" in h.ops_paths()
+
+
+@pytest.mark.parametrize("day,outcome", [("2026-10-05", "AVAILABILITY"), ("2026-10-06", "NOT_AVAILABLE")])
+async def test_doctor_disabled_slot_plan_uses_usual_days_with_null_open_slots(h, day, outcome):
+    doctor = next(d for d in h.ops_state.data["doctors"] if d["id"] == "doc_garima")
+    doctor["usualSchedule"] = [{"label": "Morning", "daysOfWeek": ["MON"], "start": "09:00", "end": "12:00"}]
+    h.ops_state.set_slots("doc_garima", day, {
+        "doctorId": "doc_garima", "date": day, "enabled": False, "blockMinutes": 30, "sessions": []})
+    result = await ask(h, doctorId="doc_garima", date=day)
+    assert result.outcome == outcome and result.basis == "USUAL_SCHEDULE"
+    [doctor] = result.doctors
+    assert doctor.usualSessions and all(s.openSlots is None for s in doctor.usualSessions)
+    assert "/availability/doc_garima/slots" in h.ops_paths() and "/availability" not in h.ops_paths()
+
+
 @pytest.mark.parametrize("target", [{"doctorId": "doc_vikram_desai"}, {"doctorName": "Vikram"}])
 async def test_working_hours_on_call_hands_off_without_callback(h, target):
     result = await ask(h, purpose="WORKING_HOURS", date=None, **target)
