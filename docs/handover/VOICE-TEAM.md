@@ -35,14 +35,15 @@ This is the single authoritative handover for calling the front-desk MCP tools.
 
 ## 3. Request context (trusted headers)
 
-The voice platform sets the five `X-` call-context headers below on each tool call, and ContextForge forwards exactly these five to the adapter. `Authorization` depends on the calling path (§2).
+The voice platform sets the trusted headers below; the table shows which tools need each, and `X-Call-Id` goes on every tool call. ContextForge forwards exactly these five `X-` headers to the adapter when present. `Authorization` depends on the calling path (§2).
 - Header names are case-insensitive.
 - A malformed value is treated as absent.
+- **`X-Call-Id`:** the voice platform generates one stable value per voice call and sends it on every tool call in that call: availability, LIST, booking writes and the summary. A new voice call gets a new id. It is a trusted header, never a tool argument or a value chosen by the LLM, and it must not contain a phone number, patient details or secrets. On reads it serves only to correlate the request with the call, so a read without it still runs; leaving it out is an integration defect, because the adapter's logs for that request can no longer be tied to the call.
 
 | Header | Format | Needed by |
 |---|---|---|
 | `Authorization` | ContextForge client token when calling ContextForge; MCP credential only when calling the adapter directly | every tool |
-| `X-Call-Id` | 1–64 characters: ASCII letters, digits, `.`, `_`, `:` or `-` | `manage_booking` CREATE, CANCEL, RESCHEDULE; `record_call_summary` |
+| `X-Call-Id` | 1–64 characters: ASCII letters, digits, `.`, `_`, `:` or `-` | every tool call, for correlation; required by `manage_booking` CREATE, CANCEL, RESCHEDULE and `record_call_summary` |
 | `X-Operation-Id` | same syntax as `X-Call-Id`; one value per distinct confirmed write | `manage_booking` CREATE, CANCEL, RESCHEDULE |
 | `X-Caller-Number` | the platform's verified caller number, for example `+919000000101` | `manage_booking` LIST, CANCEL, RESCHEDULE |
 | `X-Caller-Verification` | a label in the deployment's accepted set (default `SIP_CALLER_ID`) | with `X-Caller-Number` |
@@ -103,7 +104,7 @@ Four actions: CREATE, LIST, CANCEL and RESCHEDULE. Only `action` is schema-requi
 | Action | Required | Optional | Headers |
 |---|---|---|---|
 | CREATE | `patientName`, `patientMobile` (10 digits), `doctorId`, `visitDate` (`today` or `YYYY-MM-DD`), `callerConfirmed: true`; `preferredTime` (`HH:MM`) when the doctor has slots for that date | `session`, `reasonVerbatim`; `preferredTime` without slots | X-Call-Id, X-Operation-Id |
-| LIST | none | `fromDate`, `toDate` (`YYYY-MM-DD`; `today` is refused), `status` | X-Caller-Number, X-Caller-Verification |
+| LIST | none | `fromDate`, `toDate` (`YYYY-MM-DD`; `today` is refused), `status` | X-Call-Id, X-Caller-Number, X-Caller-Verification |
 | CANCEL | `appointmentId`, `callerConfirmed: true` | `reasonVerbatim` | all four write and caller headers |
 | RESCHEDULE | `appointmentId`, `newVisitDate`, `callerConfirmed: true`; `newPreferredTime` when the doctor has slots for that date | `session`; `newPreferredTime` without slots | all four write and caller headers |
 
@@ -240,7 +241,7 @@ MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
 
 ## 9. Worked examples
 
-These are real results from the development stubs: fixture data, facility date Thursday 2026-10-01 at 10:00 IST, with slots enabled. Results are trimmed to the decisive fields; "…" marks omitted fields.
+These are real results from the development stubs: fixture data, facility date Thursday 2026-10-01 at 10:00 IST, with slots enabled. Results are trimmed to the decisive fields; "…" marks omitted fields. Headers shown are those the result depends on; every call also carries `X-Call-Id` (§3).
 
 **Example 1: department → doctor → appointment request**
 
