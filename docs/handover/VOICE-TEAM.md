@@ -213,7 +213,7 @@ MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
 
 **Writes and `X-Operation-Id`:**
 - Each distinct confirmed write has its own operation id.
-- Repeating with the same id and identical arguments is a safe retry. If the hospital already recorded the first attempt, it returns that original result, and nothing is written twice.
+- Repeating with the same id and identical arguments is a safe retry: nothing is written twice. When the retry reaches the hospital and the first attempt was recorded, the hospital returns that original result.
 - For CREATE and RESCHEDULE, the schedule is checked again before the hospital is called. A refused retry (for example `NOT_AVAILABLE`, because the first attempt took the last place) doesn't show whether the first attempt was recorded. LIST may help: it shows the appointment's current state (for RESCHEDULE, its current date and time; for CREATE, the new appointment only when `patientMobile` is the verified caller's number). It can't prove which attempt recorded it, because LIST results carry no call or operation id.
 - CANCEL has no schedule re-check. After the usual field, confirmation, header and identity checks (§4.2), its retry is sent to the hospital with the same idempotency key.
 - The same id with different arguments returns `CONFLICT`.
