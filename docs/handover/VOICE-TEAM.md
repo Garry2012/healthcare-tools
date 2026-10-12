@@ -18,6 +18,7 @@ This is the single authoritative handover for calling the front-desk MCP tools.
 - **Three tools:** `get_doctor_availability`, `manage_booking` and `record_call_summary`. All data comes from the hospital's operational service, which is owned by Manoj's team.
 - **Knowledge, symptom routing and emergencies** are not handled by these tools. They are handled through Stratum's separate ContextForge registration.
 - **The canary** `mcp-demo-hospital-canary` runs schema `2026-10-11.2`, deployed on 12 October 2026 (revision `--0000005`, image `01b9dcc`).
+- **Slots:** the hospital (Jayashree) has capacity slots switched on, so results normally follow the "with slots" rules. Slots are still decided per doctor and date (§15): a doctor-specific result for a doctor whose slot plan for that date is disabled follows the "without slots" rules.
 - **Checking the served version:** `GET /ready` returns the served `schemaVersion`. ContextForge shows the schema from its last refresh of our entries, which may be older.
 
 ## 2. Connect
@@ -89,7 +90,10 @@ The voice platform sets the five `X-` call-context headers below on each tool ca
 - **A doctor-specific AVAILABILITY result reads that doctor's slot plan for the date.**
   - If slots are enabled for that doctor and date, its sessions carry `openSlots`.
   - Otherwise the slots-disabled rules apply (§15).
-- **A department result reads no slots.** With slots enabled, its doctors carry decision `SLOT_CHECK_REQUIRED`, and the outcome is `DOCTORS_MATCHED`: no open time is established and `bookableFound` is 0, even when only one doctor is listed.
+- **A department result reads no slots.** With slots enabled, each doctor whose known facts for the date permit a request carries decision `SLOT_CHECK_REQUIRED`.
+  - When at least one doctor has `SLOT_CHECK_REQUIRED`, the outcome is `DOCTORS_MATCHED` and only those doctors are listed. No open time is established and `bookableFound` is 0, even when only one doctor is listed.
+  - When none has it, the outcome is `CALLBACK_REQUIRED`, `HANDOFF_REQUIRED` or `NOT_AVAILABLE`, from the listed doctors' decisions.
+  - With slots disabled, a department result lists bookable doctors as `AVAILABILITY`; `DOCTORS_MATCHED` does not occur.
 - **Department lists are capped** at 3 doctors (the configured limit), ordered by decision and then name.
 
 ### 4.2 `manage_booking`: appointment requests
