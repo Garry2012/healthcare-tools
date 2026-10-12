@@ -105,7 +105,7 @@ Four actions: CREATE, LIST, CANCEL and RESCHEDULE. Only `action` is schema-requi
 
 **Rules:**
 - **`callerConfirmed: true`** records the caller's agreement to the exact details being written.
-- **Doctor:** CREATE needs a `doctorId`, and department-level appointments don't exist. RESCHEDULE keeps the appointment's doctor; sending `doctorId` gives `INVALID_REQUEST` with detail `DOCTOR_CHANGE_UNSUPPORTED`.
+- **Doctor:** CREATE needs a `doctorId`, and department-level appointments don't exist. RESCHEDULE keeps the appointment's doctor; sending `doctorId` gives `INVALID_REQUEST` / `ASK_TO_CORRECT` with detail `DOCTOR_CHANGE_UNSUPPORTED` and `fields` including `doctorId`; nothing is written.
 - **RESCHEDULE scope:** only an appointment in the verified caller's own list, which starts today, can be rescheduled. Any other id, including the caller's past appointment, returns `NOT_FOUND` with no write.
 - **LIST** returns the verified caller's appointments from today, unless `fromDate` is given.
 - **`reasonVerbatim`** is forwarded to the hospital unchanged and is never interpreted.
@@ -368,7 +368,7 @@ These are the expected results for testing a client end to end. Each one matches
 | `outcome.COULD_NOT_CHECK` | get_doctor_availability, manage_booking | A read failed. This is not an empty or negative result |
 | `outcome.INVALID_REQUEST` | get_doctor_availability, manage_booking, record_call_summary | The request was refused before any write. `detail` (availability, booking) or `fields` (booking, summary) names the issue |
 | `outcome.NOTED` | manage_booking | CREATE or RESCHEDULE request recorded. No time is confirmed or reserved; `appointment.status` keeps the hospital's value |
-| `outcome.CHANGED` | manage_booking | The hospital returned a verified change |
+| `outcome.CHANGED` | manage_booking | Not returned by RESCHEDULE, which returns `NOTED` with the hospital's `CHANGED` in `appointment.status`. Returned only if the hospital answers a CREATE or CANCEL with status `CHANGED`, which Manoj's contract does not describe |
 | `outcome.CANCELLED` | manage_booking | The hospital returned a verified cancellation |
 | `outcome.FOUND` | manage_booking | The verified caller's appointments are in `appointments` |
 | `outcome.REJECTED` | manage_booking | The hospital rejected the request definitively; `detail` is its code, and `fields` lists any tool arguments it named |
@@ -402,7 +402,7 @@ These are the expected results for testing a client end to end. Each one matches
 | `nextStep.SAY_COULD_NOT_CHECK` | get_doctor_availability, manage_booking | The requested information couldn't be checked |
 | `nextStep.OFFER_OTHER_SESSION_OR_DATE` | get_doctor_availability, manage_booking | The requested session or date is unavailable; checked alternatives may be in the same result |
 | `nextStep.SAY_REQUEST_NOTED` | manage_booking | The request is recorded, without a guaranteed time |
-| `nextStep.SAY_CHANGED` | manage_booking | A change is verified |
+| `nextStep.SAY_CHANGED` | manage_booking | Comes only with `outcome.CHANGED` |
 | `nextStep.SAY_CANCELLED` | manage_booking | A cancellation is verified |
 | `nextStep.OFFER_CHOICES` | manage_booking | The verified caller's appointments are listed |
 | `nextStep.SAY_NOT_FOUND` | manage_booking | No matching appointment in the verified caller's list |
