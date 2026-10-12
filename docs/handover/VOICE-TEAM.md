@@ -119,7 +119,7 @@ Four actions: CREATE, LIST, CANCEL and RESCHEDULE. Only `action` is schema-requi
 5. the schedule check for CREATE and RESCHEDULE: `INVALID_REQUEST` with `TIME_REQUIRED` or `SESSION_REQUIRED`, `CALLBACK_REQUIRED`, `NOT_AVAILABLE`, `HANDOFF_REQUIRED`, or `COULD_NOT_RECORD` after a failed read;
 6. the hospital write.
 
-The schedule check is the same one `get_doctor_availability` applies, run again at write time.
+The schedule check is the same one `get_doctor_availability` applies, run again at write time. A schedule `NOT_AVAILABLE` (for example `NO_OPEN_SLOT`, `SESSION_ENDED` or `TIME_OUTSIDE_SESSION`) comes with `OFFER_OTHER_SESSION_OR_TIME` when other sessions on that date permit a request, listed in `sessions`; otherwise with `OFFER_OTHER_SESSION_OR_DATE` and no alternatives. The hospital's own `SLOT_FULL` refusal at write time comes with `OFFER_OTHER_SESSION_OR_TIME` and no `sessions`.
 
 ### 4.3 `record_call_summary`: one summary per call
 
