@@ -347,8 +347,9 @@ then the complete reference, with shared fields and codes described once.
 ## A17 — Summary outcome for a desk handoff without a transfer (12 October 2026)
 
 The voice team asked which summary outcome records a desk handoff when no transfer happened. Manoj's
-`CallOutcome` list has no value for it. Garima decided: with a callback number, `CALLBACK_NOTED`; with
-no transfer and no callback number, `ABANDONED` as an interim value, with what happened in
-`summaryText`, until the hospital defines one. `TRANSFERRED` and `RESOLVED_BY_AGENT` are not used,
+`CallOutcome` list has no value for it. Garima decided: when a callback was agreed and the caller
+gave a callback number, `CALLBACK_NOTED`; when no callback was arranged, `ABANDONED` as an interim
+value, with what happened in `summaryText`, until the hospital defines one. Having the caller's
+number alone does not make a callback. `TRANSFERRED` and `RESOLVED_BY_AGENT` are not used,
 because they would report something that did not happen. Documentation only; the published schema
 and summary validation are unchanged.

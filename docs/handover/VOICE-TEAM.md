@@ -167,8 +167,8 @@ The schedule check is the same one `get_doctor_availability` applies, run again 
 | CANCEL `CANCELLED` | `APPOINTMENT_CANCELLED` | `appointmentId` |
 | `CALLBACK_REQUIRED` (`callback.summaryOutcome`) | `CALLBACK_NOTED` | `callerMobile`; no `appointmentId` |
 | Desk handoff, after the platform transferred the call | `TRANSFERRED` | `transferredTo` |
-| Desk handoff, no transfer completed, caller gave a callback number | `CALLBACK_NOTED` | `callerMobile`; no `transferredTo` |
-| Desk handoff, no transfer completed, no callback number | `ABANDONED` (interim, until the hospital defines a value) | what happened, in `summaryText` |
+| Desk handoff, no transfer completed, a callback was agreed and the caller gave a callback number | `CALLBACK_NOTED` | `callerMobile`; no `transferredTo` |
+| Desk handoff, no transfer completed, no callback arranged | `ABANDONED` (interim, until the hospital defines a value) | what happened, in `summaryText` |
 | Caller ended the call before it was settled | `ABANDONED` | |
 
 MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
