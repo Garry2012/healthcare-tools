@@ -343,3 +343,12 @@ that date follows the slots-disabled rules. `doctorId`, `doctorName`, `date`, `c
 `departmentChoices` descriptions carry precedence and match rules. Schema `2026-10-11.2` changes
 description text only. `VOICE-TEAM.md` became one authoritative handover: a practical guide first,
 then the complete reference, with shared fields and codes described once.
+
+## A17 — Summary outcome for a desk handoff without a transfer (12 October 2026)
+
+The voice team asked which summary outcome records a desk handoff when no transfer happened. Manoj's
+`CallOutcome` list has no value for it. Garima decided: with a callback number, `CALLBACK_NOTED`; with
+no transfer and no callback number, `ABANDONED` as an interim value, with what happened in
+`summaryText`, until the hospital defines one. `TRANSFERRED` and `RESOLVED_BY_AGENT` are not used,
+because they would report something that did not happen. Documentation only; the published schema
+and summary validation are unchanged.
