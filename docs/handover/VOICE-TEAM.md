@@ -18,6 +18,7 @@ This is the single authoritative handover for calling the front-desk MCP tools.
 - **Three tools:** `get_doctor_availability`, `manage_booking` and `record_call_summary`. All data comes from the hospital's operational service, which is owned by Manoj's team.
 - **Knowledge, symptom routing and emergencies** are not handled by these tools. They are handled through Stratum's separate ContextForge registration.
 - **The canary** `mcp-demo-hospital-canary` runs schema `2026-10-11.2`, deployed on 12 October 2026 (revision `--0000005`, image `01b9dcc`).
+- **Slots:** the hospital (Jayashree) has capacity slots switched on, so results normally follow the "with slots" rules. Slots are still decided per doctor and date (§15): a doctor-specific result for a doctor whose slot plan for that date is disabled follows the "without slots" rules.
 - **Checking the served version:** `GET /ready` returns the served `schemaVersion`. ContextForge shows the schema from its last refresh of our entries, which may be older.
 
 ## 2. Connect
@@ -89,7 +90,10 @@ The voice platform sets the five `X-` call-context headers below on each tool ca
 - **A doctor-specific AVAILABILITY result reads that doctor's slot plan for the date.**
   - If slots are enabled for that doctor and date, its sessions carry `openSlots`.
   - Otherwise the slots-disabled rules apply (§15).
-- **A department result reads no slots.** With slots enabled, its doctors carry decision `SLOT_CHECK_REQUIRED`, and the outcome is `DOCTORS_MATCHED`: no open time is established and `bookableFound` is 0, even when only one doctor is listed.
+- **A department result reads no slots.** With slots enabled, each doctor whose known facts for the date permit a request carries decision `SLOT_CHECK_REQUIRED`.
+  - When at least one doctor has `SLOT_CHECK_REQUIRED`, the outcome is `DOCTORS_MATCHED` and only those doctors are listed. No open time is established and `bookableFound` is 0, even when only one doctor is listed.
+  - When none has it, the outcome is `CALLBACK_REQUIRED`, `HANDOFF_REQUIRED` or `NOT_AVAILABLE`, from the listed doctors' decisions.
+  - With slots disabled, a department result lists bookable doctors as `AVAILABILITY`; `DOCTORS_MATCHED` does not occur.
 - **Department lists are capped** at 3 doctors (the configured limit), ordered by decision and then name.
 
 ### 4.2 `manage_booking`: appointment requests
@@ -105,7 +109,7 @@ Four actions: CREATE, LIST, CANCEL and RESCHEDULE. Only `action` is schema-requi
 
 **Rules:**
 - **`callerConfirmed: true`** records the caller's agreement to the exact details being written.
-- **Doctor:** CREATE needs a `doctorId`, and department-level appointments don't exist. RESCHEDULE keeps the appointment's doctor; sending `doctorId` gives `INVALID_REQUEST` with detail `DOCTOR_CHANGE_UNSUPPORTED`.
+- **Doctor:** CREATE needs a `doctorId`, and department-level appointments don't exist. RESCHEDULE keeps the appointment's doctor; sending `doctorId` gives `INVALID_REQUEST` / `ASK_TO_CORRECT` with detail `DOCTOR_CHANGE_UNSUPPORTED` and `fields` including `doctorId`; nothing is written.
 - **RESCHEDULE scope:** only an appointment in the verified caller's own list, which starts today, can be rescheduled. Any other id, including the caller's past appointment, returns `NOT_FOUND` with no write.
 - **LIST** returns the verified caller's appointments from today, unless `fromDate` is given.
 - **`reasonVerbatim`** is forwarded to the hospital unchanged and is never interpreted.
@@ -119,7 +123,7 @@ Four actions: CREATE, LIST, CANCEL and RESCHEDULE. Only `action` is schema-requi
 5. the schedule check for CREATE and RESCHEDULE: `INVALID_REQUEST` with `TIME_REQUIRED` or `SESSION_REQUIRED`, `CALLBACK_REQUIRED`, `NOT_AVAILABLE`, `HANDOFF_REQUIRED`, or `COULD_NOT_RECORD` after a failed read;
 6. the hospital write.
 
-The schedule check is the same one `get_doctor_availability` applies, run again at write time.
+The schedule check is the same one `get_doctor_availability` applies, run again at write time. A schedule `NOT_AVAILABLE` (for example `NO_OPEN_SLOT`, `SESSION_ENDED` or `TIME_OUTSIDE_SESSION`) comes with `OFFER_OTHER_SESSION_OR_TIME` when other sessions on that date permit a request, listed in `sessions`; otherwise with `OFFER_OTHER_SESSION_OR_DATE` and no alternatives. The hospital's own `SLOT_FULL` refusal at write time comes with `OFFER_OTHER_SESSION_OR_TIME` and no `sessions`.
 
 ### 4.3 `record_call_summary`: one summary per call
 
@@ -163,6 +167,9 @@ The schedule check is the same one `get_doctor_availability` applies, run again 
 | CANCEL `CANCELLED` | `APPOINTMENT_CANCELLED` | `appointmentId` |
 | `CALLBACK_REQUIRED` (`callback.summaryOutcome`) | `CALLBACK_NOTED` | `callerMobile`; no `appointmentId` |
 | Desk handoff, after the platform transferred the call | `TRANSFERRED` | `transferredTo` |
+| Desk handoff, no transfer completed, a callback was agreed and the caller gave a callback number | `CALLBACK_NOTED` | `callerMobile`; no `transferredTo` |
+| Desk handoff, no transfer completed, no callback arranged | `ABANDONED` (interim, until the hospital defines a value) | what happened, in `summaryText` |
+| Caller ended the call before it was settled | `ABANDONED` | |
 
 MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
 
@@ -206,7 +213,9 @@ MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
 
 **Writes and `X-Operation-Id`:**
 - Each distinct confirmed write has its own operation id.
-- Repeating with the same id and identical arguments is a safe retry. The schedule is checked again, so the retry can be refused, and a refusal doesn't prove the earlier attempt failed.
+- Repeating with the same id and identical arguments is a safe retry: nothing is written twice. When the retry reaches the hospital and the first attempt was recorded, the hospital returns that original result.
+- For CREATE and RESCHEDULE, the schedule is checked again before the hospital is called. A refused retry (for example `NOT_AVAILABLE`, because the first attempt took the last place) doesn't show whether the first attempt was recorded. LIST may help: it shows the appointment's current state (for RESCHEDULE, its current date and time; for CREATE, the new appointment only when `patientMobile` is the verified caller's number). It can't prove which attempt recorded it, because LIST results carry no call or operation id.
+- CANCEL has no schedule re-check. After the usual field, confirmation, header and identity checks (§4.2), its retry is sent to the hospital with the same idempotency key.
 - The same id with different arguments returns `CONFLICT`.
 - A new id is a new write.
 
@@ -368,7 +377,7 @@ These are the expected results for testing a client end to end. Each one matches
 | `outcome.COULD_NOT_CHECK` | get_doctor_availability, manage_booking | A read failed. This is not an empty or negative result |
 | `outcome.INVALID_REQUEST` | get_doctor_availability, manage_booking, record_call_summary | The request was refused before any write. `detail` (availability, booking) or `fields` (booking, summary) names the issue |
 | `outcome.NOTED` | manage_booking | CREATE or RESCHEDULE request recorded. No time is confirmed or reserved; `appointment.status` keeps the hospital's value |
-| `outcome.CHANGED` | manage_booking | The hospital returned a verified change |
+| `outcome.CHANGED` | manage_booking | Not returned by RESCHEDULE, which returns `NOTED` with the hospital's `CHANGED` in `appointment.status`. Returned only if the hospital answers a CREATE or CANCEL with status `CHANGED`, which Manoj's contract does not describe |
 | `outcome.CANCELLED` | manage_booking | The hospital returned a verified cancellation |
 | `outcome.FOUND` | manage_booking | The verified caller's appointments are in `appointments` |
 | `outcome.REJECTED` | manage_booking | The hospital rejected the request definitively; `detail` is its code, and `fields` lists any tool arguments it named |
@@ -402,7 +411,7 @@ These are the expected results for testing a client end to end. Each one matches
 | `nextStep.SAY_COULD_NOT_CHECK` | get_doctor_availability, manage_booking | The requested information couldn't be checked |
 | `nextStep.OFFER_OTHER_SESSION_OR_DATE` | get_doctor_availability, manage_booking | The requested session or date is unavailable; checked alternatives may be in the same result |
 | `nextStep.SAY_REQUEST_NOTED` | manage_booking | The request is recorded, without a guaranteed time |
-| `nextStep.SAY_CHANGED` | manage_booking | A change is verified |
+| `nextStep.SAY_CHANGED` | manage_booking | Comes only with `outcome.CHANGED` |
 | `nextStep.SAY_CANCELLED` | manage_booking | A cancellation is verified |
 | `nextStep.OFFER_CHOICES` | manage_booking | The verified caller's appointments are listed |
 | `nextStep.SAY_NOT_FOUND` | manage_booking | No matching appointment in the verified caller's list |
