@@ -508,7 +508,15 @@ These are the expected results for testing a client end to end. Each one matches
 
 **Session choices:** several sessions with the same decision need no session choice. With slots, a booking still needs a time.
 
-**Today's slot-only sessions** (on the hospital's slot plan but not on the board) appear in `board` format, with no `oneDay` field.
+**Session names: today versus other dates.** For AVAILABILITY and booking, the session shape follows the requested date; WORKING_HOURS always uses the usual-session shape.
+
+| Request | Where sessions appear | Session name field | Based on |
+|---|---|---|---|
+| AVAILABILITY or booking for today | `board[]` (availability), `sessions[]` (booking) | `session` | today's board and that date's slots |
+| AVAILABILITY or booking for a future date | `usualSessions[]` (availability), `sessions[]` (booking) | `label` | the usual schedule and that date's slots |
+| WORKING_HOURS | `usualSessions[]` | `label` | the usual schedule only |
+
+Today's slot-only sessions (on the slot plan but not on the board) also use the today shape: the name is in `session`, with no `label` or `oneDay` field. A non-empty name from either field can be passed back as the optional `session` argument. If the name is empty or null, omit `session`; with slots, the chosen time from `openSlots` identifies the session.
 
 **Not supported:** sessions that cross midnight.
 
