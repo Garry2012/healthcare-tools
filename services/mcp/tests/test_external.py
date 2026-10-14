@@ -54,10 +54,11 @@ def settings() -> Settings:
     return Settings(**ROLLOUT, env="test", ops_base_url=required("OPS_E2E_BASE_URL"),
                     ops_client_id=required("OPS_E2E_CLIENT_ID"), ops_client_secret=required("OPS_E2E_CLIENT_SECRET"),
                     mcp_bearer_token="external-gateway",
-                    # diagnostic overrides: the laptop → Azure path is far slower than the in-region budget; these are
-                    # explicitly allowed here and never become production defaults
-                    allow_budget_overrides=True, read_deadline_seconds=6.0, write_deadline_seconds=8.0,
-                    summary_deadline_seconds=12.0, request_timeout_seconds=5.0)
+                    # Local test voice allocation accommodates the laptop network; no production bypass.
+                    voice_response_budget_seconds=(6.0 + Settings.model_fields["reserved_stage_seconds"].default
+                                                   + Settings.model_fields["gateway_overhead_seconds"].default),
+                    write_deadline_seconds=8.0, write_exchange_timeout_seconds=5.0,
+                    summary_deadline_seconds=12.0, summary_exchange_timeout_seconds=12.0)
 
 
 @pytest.fixture
@@ -81,12 +82,12 @@ async def ops(settings):
 async def test_machine_token_is_issued_and_reads_work(ops, settings):
     """Verifies: token endpoint at <base>/auth/token, bearer accepted on reads, contract-shaped bodies."""
     mode()
-    deadline = Deadline(settings.read_deadline_seconds)
+    deadline = Deadline(settings.read_budget)
     departments = await ops.list_departments(deadline)
     assert departments.items, "the service returned no departments"
-    doctors = await ops.search_doctors(Deadline(settings.read_deadline_seconds), query="a")
+    doctors = await ops.search_doctors(Deadline(settings.read_budget), query="a")
     assert doctors.total >= 0 and all(d.id for d in doctors.items)
-    board = await ops.get_availability(Deadline(settings.read_deadline_seconds), date="today",
+    board = await ops.get_availability(Deadline(settings.read_budget), date="today",
                                        department=departments.items[0].id)
     assert all(e.status in ("IN", "LATE", "CANCELLED", "NOT_CONFIRMED", "UNKNOWN") for e in board.items)
     assert ops.tokens.usable, "no machine token cached after the reads"
@@ -138,7 +139,7 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
     ops = OpsClient(settings)
     try:
         await _write_gate(ops)
-        slots_enabled = (await ops.get_capabilities(Deadline(settings.read_deadline_seconds))).slots.enabled
+        slots_enabled = (await ops.get_capabilities(Deadline(settings.read_budget))).slots.enabled
         record_property("slots_path", "enabled" if slots_enabled else "disabled")
         svc = booking.BookingService(ops, settings, SystemClock())
         availability_service = availability.AvailabilityService(ops, DirectoryCache(settings), settings, SystemClock())

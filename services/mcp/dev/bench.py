@@ -241,6 +241,17 @@ async def main() -> int:
     if args.log_level in {"DEBUG", "INFO"} and not args.log_file:
         parser.error("--log-level below WARNING requires --log-file")
     real_ops = os.environ.get("BENCH_OPS_BASE_URL")
+    local_budgets = {}
+    if real_ops:
+        read = float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))
+        summary = max(8.0, read)
+        local_budgets = {
+            "voice_response_budget_seconds": (read + Settings.model_fields["reserved_stage_seconds"].default
+                                             + Settings.model_fields["gateway_overhead_seconds"].default),
+            "read_exchange_timeout_seconds": read,
+            "write_deadline_seconds": max(4.0, read), "write_exchange_timeout_seconds": read,
+            "summary_deadline_seconds": summary, "summary_exchange_timeout_seconds": summary,
+        }
     settings = Settings(
         env="development", log_level=args.log_level, provider_id="demo-hospital", domain_pack="healthcare",
         tenant_supported_languages="en,kn,hi",
@@ -249,11 +260,7 @@ async def main() -> int:
         ops_client_id=os.environ.get("BENCH_OPS_CLIENT_ID") or os.environ.get("OPS_E2E_CLIENT_ID", "mcp-dev"),
         ops_client_secret=(os.environ.get("BENCH_OPS_CLIENT_SECRET")
                            or os.environ.get("OPS_E2E_CLIENT_SECRET", "dev-secret")),
-        mcp_bearer_token="gateway",
-        allow_budget_overrides=bool(real_ops),  # only distant real-host diagnostics exceed the in-call budget
-        read_deadline_seconds=float(os.environ.get("BENCH_READ_DEADLINE", "2.0")) if real_ops else None,
-        write_deadline_seconds=max(4.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))) if real_ops else None,
-        summary_deadline_seconds=max(8.0, float(os.environ.get("BENCH_READ_DEADLINE", "2.0"))))
+        mcp_bearer_token="gateway", **local_budgets)
     if real_ops:
         boundary = f"laptop → MCP (local TCP) → {real_ops} (real network)"
         ops_transport = None
@@ -308,7 +315,7 @@ async def main() -> int:
             async with Client(StreamableHttpTransport(
                     f"{base}/mcp/", headers={"Authorization": "Bearer gateway"})) as c:
                 await c.list_tools()
-            capabilities = await app.state.services.ops.get_capabilities(Deadline(settings.read_deadline_seconds))
+            capabilities = await app.state.services.ops.get_capabilities(Deadline(settings.read_budget))
             enabled = capabilities.slots.enabled
             mode = "enabled" if enabled else "disabled"
             if enabled:

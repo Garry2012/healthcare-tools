@@ -357,8 +357,9 @@ async def test_known_doctor_profile_and_board_overlap(make_settings):
     """Profile and board overlap when the doctor is already known."""
     import time
 
-    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
-                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
+    hh = harness.build(make_settings(voice_response_budget_seconds=2.7, read_deadline_seconds=2.0,
+                                     write_deadline_seconds=2.5, read_exchange_timeout_seconds=1.5,
+                                     write_exchange_timeout_seconds=1.5))
     try:
         hh.ops_state.delay_seconds = 0.3
         started = time.monotonic()
@@ -449,8 +450,9 @@ async def test_profile_failure_with_no_board_row_is_could_not_check_not_not_foun
 async def test_single_match_search_then_profile_and_board_overlap(make_settings):
     import time
 
-    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
-                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
+    hh = harness.build(make_settings(voice_response_budget_seconds=2.7, read_deadline_seconds=2.0,
+                                     write_deadline_seconds=2.5, read_exchange_timeout_seconds=1.5,
+                                     write_exchange_timeout_seconds=1.5))
     try:
         hh.ops_state.delay_seconds = 0.2  # search 0.2 then profile ∥ board 0.2 = 0.4, independent reads
         started = time.monotonic()

@@ -137,7 +137,7 @@ async def test_benchmark_slot_modes_verify_paths_times_and_workload_bound(sample
     assert report["booking_preparation"]["enabled"]["selected_time"] == "10:30"
     assert scenarios["booking_create"]["slots_observed"] == "disabled"
     assert "GET /availability/doc_garima/slots" in scenarios["availability_known_doctor"]["observed_owner_calls"]
-    assert report["watchdog_limit_seconds"] == samples * report["workload_scenarios"] * .3 + 30
+    assert report["watchdog_limit_seconds"] == samples * report["workload_scenarios"] * 3.0 + 30
     assert report["workload_scenarios"] == len(scenarios)
 
 

@@ -224,7 +224,7 @@ async def test_untrusted_owner_field_names_are_not_reflected(h):
 
 async def test_summary_works_with_a_slow_healthy_owner(h):
     h.ops_state.delay_for_prefix["/call-summaries"] = 0.4
-    assert h.settings.request_timeout_seconds == pytest.approx(0.30)
+    assert h.settings.read_exchange_timeout_seconds == pytest.approx(0.30)
     assert (await record(h, **CALLBACK)).outcome == "SAVED"
 
 

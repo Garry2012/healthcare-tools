@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from frontdesk_mcp.cache import DirectoryCache
-from frontdesk_mcp.clock import Deadline
+from frontdesk_mcp.clock import Budget, Deadline
 from frontdesk_mcp.ops_client import OpsClient
 
 from .test_availability_policy import NOW, policy
@@ -69,12 +69,12 @@ async def run_search(make_settings, *, statuses, delays=None, budget=0.3, repeat
     try:
         start = time.monotonic()
         found = await reader.department("dept", None, requested, p.Purpose.AVAILABILITY,
-                                        Deadline(budget), evaluate)
+                                        Deadline(Budget(budget, .3)), evaluate)
         elapsed = time.monotonic() - start
         first_requests = list(requests)
         if repeat:
             found = await reader.department("dept", None, requested, p.Purpose.AVAILABILITY,
-                                            Deadline(budget), evaluate)
+                                            Deadline(Budget(budget, .3)), evaluate)
         assert not active
         return found, first_requests, requests, peak[0], elapsed
     finally:
@@ -183,7 +183,8 @@ async def test_selected_doctor_slot_reads_start_together(make_settings, date, wi
     try:
         async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
             reader = ScheduleReader(ops, h.cache, h.settings)
-            facts = await reader.doctor("doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(.3), summary)
+            facts = await reader.doctor("doc_garima", requested, p.Purpose.AVAILABILITY,
+                                        Deadline(Budget(.3, .3)), summary)
         assert started == paths and facts.slots is None
         [slot] = [r for r in h.requests if r.url.path.endswith("/slots")]
         assert slot.method == "GET" and dict(slot.url.params) == {"date": requested.value.isoformat()}
@@ -200,13 +201,13 @@ async def test_selected_slots_are_uncached_and_enabled_plan_is_preserved(make_se
     requested = p.resolve_date("today", NOW, p.Purpose.AVAILABILITY)
     reader = ScheduleReader(h.ops, h.cache, h.settings)
     try:
-        first = await reader.doctor("doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(.3))
+        first = await reader.doctor("doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(Budget(.3, .3)))
         assert first.slots is None
         plan = harness.slot_plan()
         # Deliberately reverse the session list: only blocks within a session need ordered input.
         plan["sessions"].reverse()
         h.ops_state.set_slots("doc_garima", "2026-10-01", plan)
-        second = await reader.doctor("doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(.3))
+        second = await reader.doctor("doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(Budget(.3, .3)))
         assert second.slots.model_dump(mode="json") == plan
         assert h.ops_paths().count("/availability/doc_garima/slots") == 2
         assert h.ops_paths().count("/doctors/doc_garima") == 1
@@ -227,7 +228,7 @@ async def test_slot_consistency_is_checked_before_disabled_plan_is_discarded(mak
     h.ops_state.set_slots("doc_garima", "2026-10-01", harness.inconsistent_slot_plan(issue) | {"enabled": enabled})
     try:
         with pytest.raises(Malformed) as caught:
-            await ScheduleReader(h.ops, h.cache, h.settings).slots("doc_garima", requested, Deadline(.3))
+            await ScheduleReader(h.ops, h.cache, h.settings).slots("doc_garima", requested, Deadline(Budget(.3, .3)))
         assert caught.value.stage == "slots"
     finally:
         await h.aclose()
@@ -258,7 +259,7 @@ async def test_slot_parallel_failure_order_preserves_profile_then_board(make_set
         async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
             with pytest.raises(Unavailable) as caught:
                 await ScheduleReader(ops, h.cache, h.settings).doctor(
-                    "doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(.3))
+                    "doc_garima", requested, p.Purpose.AVAILABILITY, Deadline(Budget(.3, .3)))
         assert caught.value.stage == winner and seen == set(failed_paths)
     finally:
         await h.aclose()
@@ -296,7 +297,7 @@ async def test_department_capabilities_share_first_parallel_step_and_mark_every_
     try:
         async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
             found = await ScheduleReader(ops, h.cache, h.settings).department(
-                "dept_genmed", None, requested, p.Purpose.AVAILABILITY, Deadline(.3),
+                "dept_genmed", None, requested, p.Purpose.AVAILABILITY, Deadline(Budget(.3, .3)),
                 lambda f: p.decide_doctor(f, requested, session=None, now=NOW))
         assert started == paths and found.total == 3 and len(found.facts) == 3
         assert all(isinstance(f.slots, p.SlotsNotRead) if enabled else f.slots is None for f in found.facts)
@@ -319,7 +320,8 @@ async def test_department_sequential_capability_cache_reuse_and_zero_ttl(make_se
     try:
         assert "/capabilities" not in h.ops_paths(), "constructing a reader does not fetch capabilities"
         for _ in range(2):
-            found = await reader.department("dept_genmed", None, requested, p.Purpose.AVAILABILITY, Deadline(.3),
+            found = await reader.department("dept_genmed", None, requested, p.Purpose.AVAILABILITY,
+                                            Deadline(Budget(.3, .3)),
                                             lambda f: p.decide_doctor(f, requested, session=None, now=NOW))
             assert found.search.matches_found == 2
         assert h.ops_paths().count("/capabilities") == reads
@@ -335,14 +337,14 @@ async def test_capability_cache_expiry_and_eviction_refetch_current_owner_flag(m
     tick = [0.0]
     reader = ScheduleReader(h.ops, DirectoryCache(h.settings, monotonic=lambda: tick[0]), h.settings)
     try:
-        assert not (await reader.capabilities(Deadline(.3))).slots.enabled
+        assert not (await reader.capabilities(Deadline(Budget(.3, .3)))).slots.enabled
         h.ops_state.capabilities["slots"]["enabled"] = True
-        assert not (await reader.capabilities(Deadline(.3))).slots.enabled
+        assert not (await reader.capabilities(Deadline(Budget(.3, .3)))).slots.enabled
         tick[0] = 10.0
-        assert (await reader.capabilities(Deadline(.3))).slots.enabled
-        await reader.departments(Deadline(.3))  # the other directory entry evicts the capability value
+        assert (await reader.capabilities(Deadline(Budget(.3, .3)))).slots.enabled
+        await reader.departments(Deadline(Budget(.3, .3)))  # the other directory entry evicts the capability value
         h.ops_state.capabilities["slots"]["enabled"] = False
-        assert not (await reader.capabilities(Deadline(.3))).slots.enabled
+        assert not (await reader.capabilities(Deadline(Budget(.3, .3)))).slots.enabled
         assert h.ops_paths().count("/capabilities") == 3
     finally:
         await h.aclose()
@@ -370,7 +372,7 @@ async def test_concurrent_cold_department_searches_may_each_read_capabilities(ma
         async with OpsClient(h.settings, transport=httpx.MockTransport(owner)) as ops:
             reader = ScheduleReader(ops, h.cache, h.settings)
             results = await asyncio.gather(*(reader.department(
-                "dept_genmed", None, requested, p.Purpose.AVAILABILITY, Deadline(.3),
+                "dept_genmed", None, requested, p.Purpose.AVAILABILITY, Deadline(Budget(.3, .3)),
                 lambda f: p.decide_doctor(f, requested, session=None, now=NOW)) for _ in range(2)))
         assert len(entered) == 2 and all(r.search.matches_found == 2 for r in results)
     finally:

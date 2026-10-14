@@ -246,9 +246,9 @@ async def test_credential_rejection_never_reaches_the_caller(make_settings):
 
 
 async def test_total_deadline_bounds_a_slow_write(make_settings):
-    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=0.3,
+    hh = harness.build(make_settings(read_deadline_seconds=0.3,
                                      write_deadline_seconds=0.4, summary_deadline_seconds=0.5,
-                                     request_timeout_seconds=0.2))
+                                     read_exchange_timeout_seconds=0.2, write_exchange_timeout_seconds=0.2))
     try:
         hh.ops_state.delay_for_prefix["/appointments"] = 2  # only the write is slow; the board check is fast
         result = await run(hh, **CREATE)
@@ -408,8 +408,9 @@ async def test_a_failed_board_read_blocks_the_create_honestly(h):
 async def test_create_owner_calls_fit_the_diagnostic_budget(make_settings):
     import time
 
-    hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
-                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
+    hh = harness.build(make_settings(voice_response_budget_seconds=2.7, read_deadline_seconds=2.0,
+                                     write_deadline_seconds=2.5, read_exchange_timeout_seconds=1.5,
+                                     write_exchange_timeout_seconds=1.5))
     try:
         hh.ops_state.delay_seconds = 0.3
         started = time.monotonic()
@@ -677,7 +678,8 @@ async def test_cancelled_create_cancels_all_owner_reads_without_writing(make_set
     from frontdesk_mcp.tools import Services
     from frontdesk_stubs import ops as ops_stub
 
-    h = harness.build(make_settings(allow_budget_overrides=True, write_deadline_seconds=2, request_timeout_seconds=2))
+    h = harness.build(make_settings(write_deadline_seconds=2,
+                                    write_exchange_timeout_seconds=2))
     started = {kind: asyncio.Event() for kind in ("profile", "board", "slots")}
     cancelled = {kind: asyncio.Event() for kind in started}
     writes = []
@@ -1358,3 +1360,121 @@ async def test_missing_owner_slot_and_expected_time_stay_null(h):
     result = await run(h, **{**CREATE, "preferredTime": None, "session": "Morning"})
     assert result.outcome == "NOTED"
     assert result.appointment.slotTime is None and result.appointment.slotMoved is False
+
+
+@pytest.mark.parametrize("action,want", [("CREATE", "NOTED"), ("RESCHEDULE", "NOTED"), ("CANCEL", "CANCELLED")])
+@pytest.mark.parametrize("delay", [0.0, 0.5])
+async def test_successful_booking_uses_own_budget_without_added_owner_calls(h, monkeypatch, action, want, delay):
+    import httpx
+
+    from frontdesk_mcp.clock import Deadline
+
+    created = await run(h, **{**CREATE, "visitDate": "2026-10-05"})
+    assert created.outcome == "NOTED"
+    appointment_id = created.appointment.appointmentId
+    h.requests.clear()
+    tick = [0.0]
+    caps = []
+    deadlines = []
+
+    def deadline_for(budget):
+        deadline = Deadline(budget, monotonic=lambda: tick[0])
+        deadlines.append(deadline)
+        return deadline
+    inner = h.ops.http._transport
+
+    async def owner(request):
+        cap = request.extensions["timeout"]["read"]
+        caps.append(cap)
+        cost = delay if request.method == "POST" else 0.0
+        tick[0] += cost
+        if cost > cap:
+            raise httpx.ReadTimeout("test exchange cap")
+        return await inner.handle_async_request(request)
+
+    async def forbidden_sleep(*args, **kwargs):
+        raise AssertionError("booking must not add a sleep")
+
+    monkeypatch.setattr(booking, "Deadline", deadline_for)
+    monkeypatch.setattr(asyncio, "sleep", forbidden_sleep)
+    h.ops.http._transport = httpx.MockTransport(owner)
+    args = ({**CREATE, "visitDate": "2026-10-05"} if action == "CREATE" else
+            {"action": action, "appointmentId": appointment_id, "callerConfirmed": True,
+             **({"newVisitDate": "2026-10-05", "newPreferredTime": "10:45"} if action == "RESCHEDULE" else {})})
+    result = await run(h, ctx=h.ctx(operation_id="budget-test"), **args)
+    assert result.outcome == want
+    assert tick[0] == delay
+    expected = (["/doctors/doc_garima", "/availability/doc_garima/slots", "/appointments"] if action == "CREATE"
+                else ["/appointments", "/doctors/doc_garima", "/availability/doc_garima/slots",
+                      f"/appointments/{appointment_id}/reschedule"] if action == "RESCHEDULE"
+                else [f"/appointments/{appointment_id}/cancel"])
+    assert h.ops_paths() == expected
+    assert not any(r.url.path.endswith("/auth/token") for r in h.requests)
+    assert sum(r.method == "POST" for r in h.requests) == 1
+    assert all(cap == 1.0 for cap in caps)
+    assert len(deadlines) == 1
+    assert deadlines[0].cap == 1.0 and deadlines[0].remaining() == 3.0 - delay
+
+
+async def test_write_schedule_and_caller_list_share_one_total(h, monkeypatch):
+    from frontdesk_mcp.clock import Deadline
+
+    created = await run(h, **{**CREATE, "visitDate": "2026-10-05"})
+    assert created.outcome == "NOTED"
+    svc = service(h)
+    original = svc.reader.doctor
+    seen = []
+    original_find = h.ops.find_appointments
+
+    async def listing(deadline, **kwargs):
+        seen.append(deadline)
+        return await original_find(deadline, **kwargs)
+
+    async def schedule(*args, **kwargs):
+        seen.append(args[3])
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(h.ops, "find_appointments", listing)
+    monkeypatch.setattr(svc.reader, "doctor", schedule)
+    result = await svc.manage(h.ctx(operation_id="reschedule-budget"), booking.BookingRequest(
+        action="RESCHEDULE", appointmentId=created.appointment.appointmentId, callerConfirmed=True,
+        newVisitDate="2026-10-05", newPreferredTime="10:45"))
+    assert result.outcome == "NOTED"
+    assert len(seen) == 2 and isinstance(seen[0], Deadline) and seen[0] is seen[1]
+    assert seen[0].cap == 1.0
+
+
+async def test_create_beyond_exchange_cap_retries_frozen_write_then_is_uncertain(h, monkeypatch, caplog):
+    import httpx
+
+    from frontdesk_mcp.clock import Deadline
+
+    await h.ops.refresh_if_due()
+    h.requests.clear()
+    tick = [0.0]
+    posts = []
+    inner = h.ops.http._transport
+
+    async def owner(request):
+        if request.method == "POST":
+            posts.append(request)
+            tick[0] += 1.0
+            raise httpx.ReadTimeout("unanswered")
+        return await inner.handle_async_request(request)
+
+    monkeypatch.setattr(booking, "Deadline", lambda budget: Deadline(budget, monotonic=lambda: tick[0]))
+    h.ops.http._transport = httpx.MockTransport(owner)
+    result = await run(h, **{**CREATE, "visitDate": "2026-10-05"})
+    assert (result.outcome, result.detail) == ("UNCERTAIN", "NO_VERIFIED_RESPONSE")
+    assert len(posts) == 2
+    assert posts[0].content == posts[1].content
+    assert posts[0].headers["idempotency-key"] == posts[1].headers["idempotency-key"]
+    assert not any(r.url.path.endswith("/auth/token") for r in h.requests + posts)
+    records = [r for r in caplog.records if r.msg == "ops_write_unanswered"]
+    assert len(records) == 2
+    assert [r.fields for r in records] == [
+        {"path": "/appointments", "attempt": 1, "error": "ReadTimeout",
+         "elapsedMs": 1000, "remainingMs": 2000, "retry": True},
+        {"path": "/appointments", "attempt": 2, "error": "ReadTimeout",
+         "elapsedMs": 1000, "remainingMs": 1000, "retry": False},
+    ]

@@ -98,64 +98,67 @@ def test_unknown_pack_is_refused(make_settings):
         make_settings(domain_pack="nonexistent")
 
 
-def test_default_deadlines_fit_inside_a_one_second_turn_budget(make_settings):
-    s = make_settings()
-    assert s.read_deadline_seconds <= 0.3 and s.write_deadline_seconds <= 0.3 and s.request_timeout_seconds <= 0.3
-
-
-# ------------------------------------------------------------------ architect review AR-06
-
-
-def test_tool_deadlines_derive_from_the_voice_budget(make_settings):
-    s = make_settings()
-    assert s.voice_response_budget_seconds == 1.0 and s.reserved_stage_seconds == 0.65
-    assert s.read_deadline_seconds == pytest.approx(0.30)  # 1.0 - 0.65 - 0.05 gateway: the tool's share
-    assert s.request_timeout_seconds <= s.read_deadline_seconds
-    assert s.write_deadline_seconds == pytest.approx(0.30)  # a confirmed write is an in-call turn too
-    tighter = make_settings(voice_response_budget_seconds=0.8)
-    assert tighter.read_deadline_seconds == pytest.approx(0.10)
-    explicit = make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0, write_deadline_seconds=2.0,
-                             request_timeout_seconds=1.5)
-    assert explicit.read_deadline_seconds == 2.0  # diagnostic override stays explicit
+def test_budget_defaults_keep_reads_fast_and_writes_independent(make_settings):
+    settings = make_settings()
+    assert (settings.read_budget.total, settings.read_budget.exchange) == (0.3, 0.3)
+    assert (settings.write_budget.total, settings.write_budget.exchange) == (3.0, 1.0)
+    assert (settings.summary_budget.total, settings.summary_budget.exchange) == (8.0, 8.0)
+    assert make_settings(voice_response_budget_seconds=0.8).read_budget.total == 0.1
     with pytest.raises(ValueError, match="reserved"):
         make_settings(voice_response_budget_seconds=0.6)
 
 
-# ------------------------------------------------------------------ architect follow-up 2
-
-
-def test_every_in_call_tool_deadline_fits_the_voice_budget_including_the_gateway(make_settings):
-    s = make_settings()
-    assert s.gateway_overhead_seconds == 0.05
-    tool_share = s.voice_response_budget_seconds - s.reserved_stage_seconds - s.gateway_overhead_seconds
-    assert s.read_deadline_seconds == pytest.approx(tool_share) == pytest.approx(0.30)
-    assert s.write_deadline_seconds == pytest.approx(tool_share)  # a confirmed write is an in-call turn too
-    assert s.request_timeout_seconds <= s.read_deadline_seconds
-    longest_tool = max(s.read_deadline_seconds, s.write_deadline_seconds)
-    total = s.reserved_stage_seconds + s.gateway_overhead_seconds + longest_tool
-    assert total <= s.voice_response_budget_seconds + 1e-9
-    assert s.summary_deadline_seconds > s.voice_response_budget_seconds  # summaries retain their own budget
+def test_read_share_has_no_bypass_and_write_may_exceed_voice_share(make_settings):
     with pytest.raises(ValueError, match="budget"):
-        make_settings(write_deadline_seconds=0.9)  # an in-call override cannot exceed the tool's share
-    assert make_settings(write_deadline_seconds=0.9, allow_budget_overrides=True).write_deadline_seconds == 0.9
+        make_settings(read_deadline_seconds=0.4)
+    try:
+        settings = make_settings(write_deadline_seconds=4, write_exchange_timeout_seconds=2)
+    except ValueError:
+        pytest.fail("independent write budget was refused", pytrace=False)
+    assert settings.write_budget.total == 4 and settings.read_budget.total == 0.3
 
 
-# ------------------------------------------------------------------ re-review (config)
+def test_only_per_budget_exchange_fields_and_voice_budget_remain():
+    assert {key for key in Settings.model_fields if "budget" in key} == {"voice_response_budget_seconds"}
+    assert {key for key in Settings.model_fields if key.endswith("timeout_seconds")} == {
+        "read_exchange_timeout_seconds", "write_exchange_timeout_seconds",
+        "summary_exchange_timeout_seconds", "token_refresh_timeout_seconds"}
 
 
-def test_budget_override_flag_is_parsed_as_a_boolean_from_the_environment(monkeypatch):
+@pytest.mark.parametrize("name,value,want", [
+    ("READ_DEADLINE_SECONDS", "0.2", ((0.2, 0.2), (3.0, 1.0), (8.0, 8.0))),
+    ("READ_EXCHANGE_TIMEOUT_SECONDS", "0.1", ((0.3, 0.1), (3.0, 1.0), (8.0, 8.0))),
+    ("WRITE_DEADLINE_SECONDS", "4", ((0.3, 0.3), (4.0, 1.0), (8.0, 8.0))),
+    ("WRITE_EXCHANGE_TIMEOUT_SECONDS", "2", ((0.3, 0.3), (3.0, 2.0), (8.0, 8.0))),
+    ("SUMMARY_DEADLINE_SECONDS", "9", ((0.3, 0.3), (3.0, 1.0), (9.0, 9.0))),
+    ("SUMMARY_EXCHANGE_TIMEOUT_SECONDS", "4", ((0.3, 0.3), (3.0, 1.0), (8.0, 4.0))),
+])
+def test_each_budget_environment_value_changes_only_its_owner(monkeypatch, name, value, want):
     from .conftest import ENDPOINTS, ROLLOUT
 
-    for key in ("READ_DEADLINE_SECONDS", "WRITE_DEADLINE_SECONDS", "ALLOW_BUDGET_OVERRIDES"):
-        monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("READ_DEADLINE_SECONDS", "2")
-    monkeypatch.setenv("WRITE_DEADLINE_SECONDS", "2")
-    for falsy in ("false", "0", "no", "False"):
-        monkeypatch.setenv("ALLOW_BUDGET_OVERRIDES", falsy)
-        with pytest.raises(ValueError, match="budget"):
-            Settings(**ROLLOUT, **ENDPOINTS, env="test")
-    monkeypatch.setenv("ALLOW_BUDGET_OVERRIDES", "true")
-    assert Settings(**ROLLOUT, **ENDPOINTS, env="test").read_deadline_seconds == 2.0
+    monkeypatch.setenv(name, value)
+    try:
+        settings = Settings(**ROLLOUT, **ENDPOINTS, env="test")
+    except ValueError:
+        pytest.fail("independent budget environment setting was refused", pytrace=False)
+    assert tuple((budget.total, budget.exchange) for budget in (
+        settings.read_budget, settings.write_budget, settings.summary_budget)) == want
+
+
+@pytest.mark.parametrize("values,match", [
+    ({"read_deadline_seconds": 2, "write_deadline_seconds": 1, "voice_response_budget_seconds": 3},
+     "read <= write <= summary"),
+    ({"write_deadline_seconds": 9}, "read <= write <= summary"),
+    ({"summary_deadline_seconds": 0}, "greater than 0"),
+    ({"write_deadline_seconds": 31}, "less than or equal to 30"),
+    ({"summary_deadline_seconds": 61}, "less than or equal to 60"),
+    ({"read_exchange_timeout_seconds": 0}, "greater than 0"),
+    ({"write_exchange_timeout_seconds": 0}, "greater than 0"),
+    ({"summary_exchange_timeout_seconds": 0}, "greater than 0"),
+])
+def test_invalid_budget_totals_and_nesting_are_refused(make_settings, values, match):
+    with pytest.raises(ValueError, match=match):
+        make_settings(**values)
 
 
 async def test_production_serves_scheduling(make_settings):
@@ -192,3 +195,17 @@ def test_production_ignores_retired_knowledge_environment(monkeypatch, url, toke
                         ops_client_id="client", ops_client_secret="secret", mcp_bearer_token="gateway")
     assert settings.ops_token_url == "https://ops.example/api/v1/auth/token"
     assert not any(name.startswith("knowledge_") for name in settings.model_dump())
+
+
+@pytest.mark.parametrize("kind", ["read", "write", "summary"])
+def test_budget_pairs_own_total_and_exchange_cap(make_settings, kind):
+    settings = make_settings(**{f"{kind}_exchange_timeout_seconds": None})
+    budget = getattr(settings, f"{kind}_budget")
+    assert budget.total == getattr(settings, f"{kind}_deadline_seconds")
+    assert budget.exchange == budget.total
+
+
+@pytest.mark.parametrize("kind", ["read", "write", "summary"])
+def test_exchange_cap_cannot_exceed_own_total(make_settings, kind):
+    with pytest.raises(ValueError, match="exchange"):
+        make_settings(**{f"{kind}_exchange_timeout_seconds": 9.0})

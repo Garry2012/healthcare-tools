@@ -38,3 +38,30 @@ The tool interface, parameters and result meanings are documented in `docs/hando
 Profiles use the existing 300 s cache; boards never do. `complete=false` exposes unevaluated candidates.
 No new endpoint, credential, secret or rollout identity is needed for this policy. The live owner must
 supply usable usual schedules for future requests; no future board is fetched.
+
+## Operation budgets
+
+| Operation | Total setting (default seconds) | Exchange setting (default seconds) |
+|---|---|---|
+| Availability and LIST | READ_DEADLINE_SECONDS (0.30, derived from voice allocation) | READ_EXCHANGE_TIMEOUT_SECONDS (read total) |
+| CREATE, CANCEL, RESCHEDULE | WRITE_DEADLINE_SECONDS (3.0) | WRITE_EXCHANGE_TIMEOUT_SECONDS (1.0) |
+| Call summary | SUMMARY_DEADLINE_SECONDS (8.0) | SUMMARY_EXCHANGE_TIMEOUT_SECONDS (summary total) |
+
+Each exchange cap must be positive and at most its total; read <= write <= summary. Explicit reads must
+fit the voice budget minus reserved stages and gateway. Writes and summaries are independent of that share.
+A write total below 1.0 s also needs a matching WRITE_EXCHANGE_TIMEOUT_SECONDS; each cap must not exceed its total.
+The same write deadline covers schedule checks, caller appointment lookup, authentication, POST and any retry.
+The ceiling adds no wait: successful responses return immediately. A possibly committed write without a verified
+response remains UNCERTAIN; a summary remains NOT_CONFIRMED. At most one same-body retry fits the remaining budget.
+
+Any unexpired machine token is used immediately. Background renewal handles the refresh margin; absent/expired
+tokens and the existing 401 flow use bounded single-flight refresh.
+The existing tool_result log carries durationMs; write failure logs carry safe attempt timing and retry facts.
+Whole-tool duration includes schedule and authentication work, so compare it with the total deadline, not just the
+exchange cap. No patient data is logged.
+
+Deployment values are explicit in rollouts/demo-hospital/rollout.env; change them there and redeploy after approval.
+Local compose reads the six settings from rollout.env. Laptop benchmarks/external tests allocate their own local
+voice budget. No new credentials or secrets are required. These changes leave schema 2026-10-11.2 unchanged.
+Before deployment, verify real latency and confirm the voice platform's timeouts cover the write deadline plus
+gateway time and margin (8–10 seconds is the recommendation for 3-second writes, not a measured requirement).

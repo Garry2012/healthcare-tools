@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
@@ -82,13 +82,17 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
     def ctx() -> context.CallContext:
         return context.from_headers(get_http_headers(), settings)
 
-    def observed(name: str, result: BaseModel) -> ToolResult:
+    async def observed(name: str, operation: Awaitable[BaseModel]) -> ToolResult:
         """One line per tool call: tool, outcome, next step. Never arguments, names or numbers.
 
         The result is pydantic-validated already; returning a ToolResult with `meta` makes FastMCP hand the SDK a
         CallToolResult, which the SDK does not re-validate against the (large) output schema on every call."""
+        started = time.monotonic()
+        result = await operation
+        duration_ms = max(0, int((time.monotonic() - started) * 1000))
         logger.info("tool_result", extra={"fields": {"tool": name, "outcome": result.outcome,
-                                                     "nextStep": getattr(result, "nextStep", None)}})
+                                                     "nextStep": getattr(result, "nextStep", None),
+                                                     "durationMs": duration_ms}})
         return ToolResult(structured_content=result.model_dump(mode="json"),
                           meta={"schemaVersion": prompt.SCHEMA_VERSION})
 
@@ -111,7 +115,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         request = availability.AvailabilityRequest(date=date, purpose=purpose, doctorName=doctorName, doctorId=doctorId,
                                                    departmentName=departmentName, departmentId=departmentId,
                                                    session=session, gender=gender)
-        return observed("get_doctor_availability", await services.availability.get(ctx(), request))
+        return await observed("get_doctor_availability", services.availability.get(ctx(), request))
 
     _apply_pack_text(get_doctor_availability, pack.tools["get_doctor_availability"])
 
@@ -146,7 +150,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
             reasonVerbatim=reasonVerbatim,
             appointmentId=appointmentId, newVisitDate=newVisitDate, newPreferredTime=newPreferredTime,
             fromDate=fromDate, toDate=toDate, status=status, callerConfirmed=callerConfirmed)
-        return observed("manage_booking", await services.booking.manage(ctx(), request))
+        return await observed("manage_booking", services.booking.manage(ctx(), request))
 
     _apply_pack_text(manage_booking, pack.tools["manage_booking"])
 
@@ -170,7 +174,7 @@ def register(mcp: FastMCP, services: Services, pack: Pack) -> None:
         request = summary.SummaryRequest(intent=intent, outcome=outcome, summaryText=summaryText,
                                          callerMobile=callerMobile, language=language, doctorId=doctorId,
                                          appointmentId=appointmentId, transferredTo=transferredTo)
-        return observed("record_call_summary", await services.summary.record(ctx(), request))
+        return await observed("record_call_summary", services.summary.record(ctx(), request))
 
     _apply_pack_text(record_call_summary, pack.tools["record_call_summary"])
     # Advertise the accepted limit; the outer 2000 cap lets service validation return INVALID_REQUEST.

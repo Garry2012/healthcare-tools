@@ -1649,7 +1649,7 @@ async def test_log1_all_observed_owner_routes_are_templated(served):
 
 async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings):
     from frontdesk_mcp import availability, context, contract, summary
-    from frontdesk_mcp.clock import Deadline
+    from frontdesk_mcp.clock import Budget, Deadline
     from frontdesk_mcp.ops_client import Malformed, Unavailable, UncertainWrite
 
     h = harness.build(make_settings(log_level="INFO"))
@@ -1680,7 +1680,7 @@ async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings
             assert result.outcome == "COULD_NOT_CHECK"
             h.ops_state.fail_next.append(("/appointments", 500, {}))
             with pytest.raises(UncertainWrite):
-                await ops.create_appointment({}, "log1-test", Deadline(1))
+                await ops.create_appointment({}, "log1-test", Deadline(Budget(1, .3)))
             original = ops.http._transport
 
             async def unavailable(request):
@@ -1689,7 +1689,7 @@ async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings
             ops.http._transport = httpx.MockTransport(unavailable)
             try:
                 with pytest.raises(Unavailable):
-                    await ops.list_departments(Deadline(1))
+                    await ops.list_departments(Deadline(Budget(1, .3)))
             finally:
                 ops.http._transport = original
     finally:
@@ -1752,3 +1752,74 @@ def test_log1_shared_scheduling_values_stay_permitted(field, value):
     body = json.loads(JsonFormatter().format(_log1_record(fields={field: value})))
     assert body[field] == value
     assert "omittedFields" not in body
+
+
+async def test_dependency_probe_has_its_own_one_second_exchange_cap(make_settings):
+    from frontdesk_mcp.server import DependencyStatus
+    from frontdesk_mcp.tools import Services
+
+    seen = []
+
+    def owner(request):
+        seen.append(request.extensions["timeout"]["read"])
+        if request.url.path.endswith("/auth/token"):
+            return httpx.Response(200, json={"access_token": "probe", "token_type": "Bearer", "expires_in": 3600})
+        return httpx.Response(200, json={"items": []})
+
+    services = Services.build(make_settings(), ops_transport=httpx.MockTransport(owner))
+    try:
+        body, status = await DependencyStatus(services).check()
+        assert status == 200 and body["operational"]["status"] == "ok"
+        assert len(seen) == 2 and all(0.9 < value <= 1.0 for value in seen)
+    finally:
+        await services.aclose()
+
+
+@pytest.mark.parametrize("field", ["elapsedMs", "remainingMs", "durationMs"])
+@pytest.mark.parametrize("value,accepted", [(0, True), (600000, True), (-1, False),
+                                         (600001, False), (True, False), (1.2, False), ("123", False)])
+def test_timing_fields_accept_only_bounded_integers(field, value, accepted):
+    line = json.loads(JsonFormatter().format(_log1_record(fields={field: value})))
+    assert (field in line) is accepted
+
+
+@pytest.mark.parametrize("value,accepted", [(True, True), (False, True), (0, False), (1, False), ("true", False)])
+def test_retry_field_accepts_only_a_boolean(value, accepted):
+    line = json.loads(JsonFormatter().format(_log1_record(fields={"retry": value})))
+    assert ("retry" in line) is accepted
+
+
+@pytest.mark.parametrize("name,args,service,method,result", [
+    ("get_doctor_availability", {}, "availability", "get", "availability"),
+    ("manage_booking", {"action": "LIST"}, "booking", "manage", "booking"),
+    ("record_call_summary", {"intent": "OTHER", "outcome": "ABANDONED", "summaryText": "Call ended."},
+     "summary", "record", "summary"),
+])
+async def test_tool_duration_includes_awaited_service_once(make_settings, monkeypatch, caplog,
+                                                         name, args, service, method, result):
+    from types import SimpleNamespace
+
+    from frontdesk_mcp import outcomes, server, tools
+
+    tick = [10.0]
+    services = tools.Services.build(make_settings())
+    results = {"availability": outcomes.AvailabilityResult(
+        outcome="INVALID_REQUEST", nextStep="ASK_TO_REPHRASE", facilityToday="2026-10-01"),
+               "booking": outcomes.BookingResult(outcome="NOT_FOUND", nextStep="SAY_NOT_FOUND"),
+               "summary": outcomes.SummaryResult(outcome="SAVED")}
+
+    async def operation(*args):
+        tick[0] += 0.125
+        return results[result]
+
+    monkeypatch.setattr(getattr(services, service), method, operation)
+    monkeypatch.setattr(tools, "time", SimpleNamespace(monotonic=lambda: tick[0]))
+    caplog.set_level(logging.INFO, logger="frontdesk_mcp.tools")
+    try:
+        async with Client(server.build_mcp(services)) as c:
+            await c.call_tool(name, args)
+    finally:
+        await services.aclose()
+    records = [r for r in caplog.records if r.name == "frontdesk_mcp.tools"]
+    assert len(records) == 1 and records[0].msg == "tool_result"
+    assert records[0].fields.get("durationMs") == 125

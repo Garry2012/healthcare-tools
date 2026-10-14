@@ -41,7 +41,7 @@ from . import (
     summary,
     tools,
 )
-from .clock import Clock, Deadline
+from .clock import Budget, Clock, Deadline
 from .config import Settings, get_settings
 from .ops_client import UnavailableReason, UpstreamError
 
@@ -103,6 +103,10 @@ SAFE_LOG_FIELDS = {
     "status": _integer_between(100, 599),
     "httpStatus": _integer_between(100, 599),
     "attempt": _integer_between(1, 10),
+    "elapsedMs": _integer_between(0, 600_000),
+    "remainingMs": _integer_between(0, 600_000),
+    "durationMs": _integer_between(0, 600_000),
+    "retry": lambda value: type(value) is bool,
     "retryAfterSeconds": _integer_between(0, 86_400),
     "env": _known(get_args(Settings.model_fields["env"].annotation)),
     "pack": _known(p.name.removesuffix(".json") for p in resources.files("frontdesk_mcp").joinpath("packs").iterdir()
@@ -261,7 +265,8 @@ class DependencyStatus:
     async def _probe(self, now: float) -> tuple[dict, int]:
         status = 200
         try:
-            await self.services.ops.list_departments(Deadline(DEPENDENCY_CHECK_SECONDS))
+            await self.services.ops.list_departments(
+                Deadline(Budget(DEPENDENCY_CHECK_SECONDS, DEPENDENCY_CHECK_SECONDS)))
             operational = {"status": "ok", "check": "listDepartments"}
         except UpstreamError as exc:
             operational = {"status": "unavailable", "reason": getattr(exc, "reason", type(exc).__name__)}

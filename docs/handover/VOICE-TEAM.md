@@ -230,8 +230,11 @@ MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
 - `NOT_SAVED` means the headers were missing or invalid, or the hospital service refused the adapter's own credentials.
 
 **Time budgets:**
-- Availability reads and booking reads and writes must finish within 0.30 seconds of adapter time (out of a 1-second voice budget). If the hospital service is slower, the result is `COULD_NOT_CHECK` or `COULD_NOT_RECORD`, not a guess. MCP makes at most one same-key retry inside that budget.
-- Summaries have their own 8-second budget.
+- Availability and LIST have a default 0.30-second adapter deadline. Read failures return COULD_NOT_CHECK.
+- Confirmed CREATE, CANCEL and RESCHEDULE have a default 3.0-second total deadline and 1.0-second per-exchange cap, including schedule checks, caller appointment lookup, authentication and any retry. Responses return when received; the ceiling adds no delay. Failures before a write can be COULD_NOT_RECORD; a sent write without a verified response is UNCERTAIN.
+- Summaries retain an independent 8.0-second total and exchange cap; uncertain saving is NOT_CONFIRMED. A same-body retry happens at most once within the operation's deadline.
+- Before deployment, the voice team must confirm both LiveKit timeout and client_session_timeout_seconds cover the write deadline plus gateway time and margin. The recommendation for 3-second writes is 8–10 seconds. These values are not assumed to be configured. The voice team owns any acknowledgement while waiting; filler is not a useful-result latency measurement.
+- The six values in rollout.env control these ceilings. Tool schema 2026-10-11.2 is unchanged; this budget change does not require tool discovery refresh.
 
 | Tool | Read-only | Changes data | Safe to repeat with the same arguments |
 |---|---|---|---|

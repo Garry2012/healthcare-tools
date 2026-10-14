@@ -40,7 +40,7 @@ These release gates are not closed by this source change:
 
 1. Garima approves the pull request to `main` and separately authorises deployment. **Done for `2026-10-11.1`, 11 October 2026** (pull request #17 squash-merged; canary deployment authorised). Each later release needs the same approvals.
 2. Authorised live verification on Manoj's HTTPS synthetic tenant: the external write journey recording `slots_path`, open blocks on both journey dates, the negative UNKNOWN-today test and read gates. **Local evidence, 10 October 2026:** with Garima's authorisation, a run against tenant `jayashree` passed the read gates, the slot-aware write journey (create refused without a time, then created with a time, listed, rescheduled, cancelled, summary saved and replay recognised as already saved) and the negative UNKNOWN-today test. It left one cancelled synthetic appointment and one summary. The run used `42dae2c`, before the knowledge removal, which did not change these scheduling paths. **The gate stays open** until Manoj confirms the tenant as a designated synthetic tenant.
-3. Authorised live bench against the 0.30 s tool budget, including the extra on-call by-name read group.
+3. Authorised live bench against the 0.30 s read budget, including the extra on-call by-name read group, and confirmed writes under the independent 3.0 s total / 1.0 s exchange ceilings. Before deployment, the before/after stub bench must show unchanged owner calls and no unexplained latency regression. Canary measurements decide whether the provisional write values need tuning in rollout.env. The voice team must confirm both LiveKit timeout and client_session_timeout_seconds cover the write deadline plus gateway time and margin (8–10 s recommended for 3-second writes).
 4. Deployed-adapter credentials, followed by deployed-transport gates and release smoke against the canary. **11 October 2026:** the release smoke passed on revision `--0000004`; the deployed-transport gates are still open.
 5. Separately approved ContextForge refresh of our front-desk registration `frontdesk-healthcare-canary` and virtual server `frontdesk-healthcare` to schema `2026-10-11.2`, with our `search_knowledge` removed, then the LiveKit cached tool view. Stratum's registration and tools are not touched. **12 October 2026:** Garima reported our entries refreshed while the canary served `2026-10-11.1` (three tools); a second refresh follows the `2026-10-11.2` deployment.
 6. Voice-team readiness for SL1's fields/outcomes and the three-tool front-desk server: the agent no longer calls our front-desk `search_knowledge`.
@@ -143,7 +143,7 @@ Corrections before dispatch can replace the pending payload. After a definite re
 
 Use explicit consumer outcomes that distinguish validated success, definite validation/auth rejection, state conflict, idempotency conflict and uncertain write completion. The final envelope names are an MCP schema choice; do not change Manoj's statuses. Do not claim success for a malformed 2xx body, or definite failure after an ambiguous post-send timeout. A replay response describes the original write and may need current-state checking after later changes. A list-by-mobile is not guaranteed to identify a particular lost write uniquely.
 
-Apply one total deadline covering pool wait, OAuth, all downstream calls and any retry. Remove the legacy unconditional timeout/504 retry. Permit at most one same-key retry within the remaining turn budget when the owner's replay semantics make it safe; otherwise return an uncertain or unavailable outcome promptly. Do not sleep through Retry-After during the voice turn or multiply retries across gateway/MCP/platform layers. Finalization retries outside the voice turn keep their original operation identity and fixed payload. Agree replay TTL, scope and atomic commit/result persistence with Manoj before claiming recovery guarantees.
+Apply one total deadline covering pool wait, OAuth, all downstream calls and any retry. Remove the legacy unconditional timeout/504 retry. Permit at most one same-key retry within the remaining operation deadline when the owner's replay semantics make it safe; otherwise return an uncertain or unavailable outcome promptly. Do not sleep through Retry-After during the voice turn or multiply retries across gateway/MCP/platform layers. Finalization retries outside the voice turn keep their original operation identity and fixed payload. Agree replay TTL, scope and atomic commit/result persistence with Manoj before claiming recovery guarantees.
 
 Validate successes and errors at each service boundary. Preserve optional fields as unknown; map known error codes into minimal MCP outcomes, and keep raw error prose/PII out of model output and logs. Failure or malformed data is not an empty successful availability result. Correlate logs with opaque call/operation IDs and timing, not phone query strings, patient names, reasons or credentials.
 
@@ -236,11 +236,30 @@ Measure end of caller speech to first audible useful result at the caller. Fille
 | Headroom | 100 ms |
 | Total planning allocation | 1,000 ms |
 
-These allocations are engineering hypotheses, not measurements or a proof obtained by adding stage percentiles. Derive an absolute tool deadline from the remaining turn budget, reserving response/TTS time, and measure the complete journey directly. Availability may require doctor search followed by parallel profile/board/slots reads as applicable, without a knowledge call. Known IDs and cached profiles remove directory hops; board and slots stay fresh. Garima accepted the additional on-call by-name read group on 8 October (SL1); live verification against the configured 0.30 s tool budget remains pending. CREATE uses caller confirmation and the shared slot-aware schedule gate; the voice platform owns its safety state before dispatch.
+These allocations are engineering hypotheses, not measurements or a proof obtained by adding stage percentiles. Derive the read deadline from the remaining turn budget, reserving response/TTS time, and measure the complete journey directly. Availability may require doctor search followed by parallel profile/board/slots reads as applicable, without a knowledge call. Known IDs and cached profiles remove directory hops; board and slots stay fresh. Garima accepted the additional on-call by-name read group on 8 October (SL1); live verification against the configured 0.30 s read budget remains pending. CREATE uses caller confirmation and the shared slot-aware schedule gate; the voice platform owns its safety state before dispatch.
 
 Cache tenant-bound department/profile data with bounded TTL and agreed invalidation; cache neither live-board truth across turns nor knowledge results across changed caller questions. Preserve persistent connections and warm OAuth tokens. Bound directory pagination and profile fan-out; show incomplete results explicitly rather than claim no match. Keep one model-facing availability invocation for the internal composition. Add an early latency spike as soon as the real service hosts exist, from the intended MCP region; if the downstream critical path cannot fit, discuss service placement or owner-provided aggregation then, not speculative aggregation endpoints now.
 
-Measure p50/p95/p99 with cold/warm token, DNS/TLS, process/model state, English/Kannada/Hindi inputs and realistic concurrency. Trace call/turn/operation IDs through speech end, gateway/MCP spans, downstreams, model response and first audible result without logging patient data. Inject latency/errors in stubs to verify deadline behavior, then measure real Manoj/Shobhit/gateway/voice paths. Contract-mock timing is not production evidence. LLM-called summaries and their retries have a separate default 8-second deadline; their timing belongs to the voice application and is not part of the 300 ms scheduling promise.
+Measure p50/p95/p99 with cold/warm token, DNS/TLS, process/model state, English/Kannada/Hindi inputs and realistic concurrency. Trace call/turn/operation IDs through speech end, gateway/MCP spans, downstreams, model response and first audible result without logging patient data. Inject latency/errors in stubs to verify deadline behavior, then measure real Manoj/Shobhit/gateway/voice paths. Contract-mock timing is not production evidence. LLM-called summaries and their retries have a separate default 8-second deadline; their timing belongs to the voice application and is not part of the 300 ms read allocation.
+
+**Confirmed booking write budgets (14 October 2026)**
+
+Confirmed writes have independent defaults of 3.0 seconds total and 1.0 second per exchange, including schedule
+re-checks, caller appointment lookup, authentication and retry. Reads retain 0.30/0.30; summaries retain 8/8.
+Every cap fits its own total, read <= write <= summary, and explicit reads must fit the voice share.
+The six settings are recorded in rollout.env; tuning needs no code or schema change. Successful replies return
+immediately, with no extra owner calls, waits or success-path retries.
+
+An unexpired token is used immediately; background refresh owns proactive renewal. The missing/expired-token
+and existing 401 paths retain bounded single-flight refresh. Frozen bodies, operation keys and UNCERTAIN remain.
+tool_result durationMs covers the full service operation. Failed attempts record elapsedMs and, for unanswered
+writes, remainingMs and retry. Whole-operation duration does not isolate POST transport time.
+
+Merge, canary measurement, voice timeout confirmation and deployment remain separate approvals.
+Keep the temporary working canary revision until permanent deployment is approved. Before deployment record its
+immutable image digest and full environment (secret references only). The preferred rollback restores that recorded
+image/environment; rebuilding old source with its old rollout values would restore the short write budget.
+No schema change or new ContextForge discovery refresh is required by this budget change.
 
 **Updated development and retirement phases**
 
