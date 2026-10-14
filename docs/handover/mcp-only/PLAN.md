@@ -256,9 +256,13 @@ tool_result durationMs covers the full service operation. Failed attempts record
 writes, remainingMs and retry. Whole-operation duration does not isolate POST transport time.
 
 Merge, canary measurement, voice timeout confirmation and deployment remain separate approvals.
-Keep the temporary working canary revision until permanent deployment is approved. Before deployment record its
-immutable image digest and full environment (secret references only). The preferred rollback restores that recorded
-image/environment; rebuilding old source with its old rollout values would restore the short write budget.
+**Deployed 14 October 2026** from `main` `42f9873` (PR #23) to revision `--0000007`; the temporary diagnostic settings
+are gone. Rollback target recorded before deployment: revision `--0000006`, image `01b9dcc`
+(`sha256:5d7624b6…df86`) with its environment; restoring that image/environment is the preferred rollback, while
+rebuilding old source with its old rollout values would restore the short write budget. Synthetic canary check:
+5 of 5 CREATE and 1 of 1 RESCHEDULE `NOTED`, all cancelled; server `durationMs` 0.21–0.29 s for writes, no write
+warnings (`implementation/evidence/booking-write-budget/`). Open: the voice team's LiveKit timeout confirmation and
+one end-to-end voice booking.
 No schema change or new ContextForge discovery refresh is required by this budget change.
 
 **Updated development and retirement phases**
