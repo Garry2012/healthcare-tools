@@ -146,6 +146,7 @@ Schema `2026-10-11.1` was deployed to the canary on 11 October 2026 (revision `-
 `2026-10-11.1` (three tools, no front-desk `search_knowledge`). `2026-10-11.2` changes description text only;
 refresh our entries again after `2026-10-11.2` is deployed.
 `2026-10-11.2` was deployed to the canary on 12 October 2026 (revision `--0000005`, image `01b9dcc`); the second refresh of our entries is pending.
+The 14 October booking write budget release (revision `--0000007`, image `42f9873`) kept schema `2026-10-11.2` and needs no refresh of its own.
 
 The helper checks our three names and complete input schemas only; manually compare every
 `outputSchema`, nested definition and required field through the voice-facing virtual-server URL
