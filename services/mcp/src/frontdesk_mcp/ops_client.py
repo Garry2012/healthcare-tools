@@ -17,7 +17,7 @@ import httpx
 from pydantic import ValidationError
 
 from . import contract
-from .clock import Deadline, DeadlineExceeded
+from .clock import Budget, Deadline, DeadlineExceeded
 from .config import Settings
 
 logger = logging.getLogger(__name__)
@@ -116,22 +116,16 @@ class TokenCache:
         self._token = None
 
     async def get(self, deadline: Deadline) -> str:
-        if self._fresh():
+        if self.usable:
             return self._token  # type: ignore[return-value]
-        if self.usable and self._lock.locked():
-            return self._token  # type: ignore[return-value]  # a refresh is in flight; the current token still works
         try:
-            async with asyncio.timeout(deadline.timeout(self._settings.request_timeout_seconds)):
+            async with asyncio.timeout(deadline.timeout()):
                 await self._lock.acquire()  # single flight: concurrent cold callers wait for one exchange
-        except TimeoutError as exc:
-            raise Unavailable("DEADLINE") from exc
-        except DeadlineExceeded as exc:
+        except (TimeoutError, DeadlineExceeded) as exc:
             raise Unavailable("DEADLINE") from exc
         try:
-            if self._fresh():
+            if self.usable:
                 return self._token  # type: ignore[return-value]
-            if self.usable and deadline.remaining() < self._settings.request_timeout_seconds:
-                return self._token  # type: ignore[return-value]  # no time to refresh: the current token still works
             return await self._refresh(deadline)
         finally:
             self._lock.release()
@@ -147,14 +141,14 @@ class TokenCache:
                 return
             try:
                 budget = self._settings.token_refresh_timeout_seconds  # background work: not the in-call cap
-                await self._refresh(Deadline(budget, self._monotonic, cap=budget))
+                await self._refresh(Deadline(Budget(budget, budget), self._monotonic))
             except Unavailable as exc:
                 logger.warning("ops_token_refresh_deferred", extra={"fields": {"reason": exc.reason}})
 
     async def _refresh(self, deadline: Deadline) -> str:
         settings = self._settings
         try:
-            budget = deadline.timeout(settings.request_timeout_seconds)
+            budget = deadline.timeout()
             async with asyncio.timeout(budget):
                 response = await self._http.post(
                     settings.ops_token_url,
@@ -237,7 +231,7 @@ class OpsClient:
                         headers: dict[str, str] | None = None, token: str) -> httpx.Response:
         """One HTTP exchange under a wall-clock cap. httpx's timeout is per phase (and per read chunk), so a
         server that keeps dribbling bytes would never trip it; asyncio.timeout makes the cap total."""
-        budget = deadline.timeout(self.settings.request_timeout_seconds)
+        budget = deadline.timeout()
         try:
             async with asyncio.timeout(budget):
                 return await self.http.request(

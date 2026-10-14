@@ -8,7 +8,7 @@ import binascii
 import json
 
 from frontdesk_mcp import outcomes
-from frontdesk_mcp.clock import Deadline
+from frontdesk_mcp.clock import Budget, Deadline
 from frontdesk_mcp.ops_client import OpsClient, Unavailable
 
 LIST_SUCCESS = {"FOUND", "NOT_FOUND"}
@@ -29,7 +29,7 @@ async def assert_authenticated_write_tenant(ops: OpsClient, expected: str) -> No
     if not expected.strip() or not ops.settings.ops_base_url.startswith("https://"):
         raise GateFailure("BLOCKED: write tests require an expected tenant and an HTTPS owner endpoint")
     try:
-        token = await ops.tokens.get(Deadline(5.0, cap=5.0))
+        token = await ops.tokens.get(Deadline(Budget(5.0, 5.0)))
     except Unavailable as exc:
         raise GateFailure("BLOCKED: could not authenticate the write-test tenant") from exc
     try:

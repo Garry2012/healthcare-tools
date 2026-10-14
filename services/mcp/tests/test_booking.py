@@ -248,7 +248,7 @@ async def test_credential_rejection_never_reaches_the_caller(make_settings):
 async def test_total_deadline_bounds_a_slow_write(make_settings):
     hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=0.3,
                                      write_deadline_seconds=0.4, summary_deadline_seconds=0.5,
-                                     request_timeout_seconds=0.2))
+                                     read_exchange_timeout_seconds=0.2, write_exchange_timeout_seconds=0.2))
     try:
         hh.ops_state.delay_for_prefix["/appointments"] = 2  # only the write is slow; the board check is fast
         result = await run(hh, **CREATE)
@@ -409,7 +409,8 @@ async def test_create_owner_calls_fit_the_diagnostic_budget(make_settings):
     import time
 
     hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
-                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
+                                     write_deadline_seconds=2.5, read_exchange_timeout_seconds=1.5,
+                                     write_exchange_timeout_seconds=1.5))
     try:
         hh.ops_state.delay_seconds = 0.3
         started = time.monotonic()
@@ -677,7 +678,8 @@ async def test_cancelled_create_cancels_all_owner_reads_without_writing(make_set
     from frontdesk_mcp.tools import Services
     from frontdesk_stubs import ops as ops_stub
 
-    h = harness.build(make_settings(allow_budget_overrides=True, write_deadline_seconds=2, request_timeout_seconds=2))
+    h = harness.build(make_settings(allow_budget_overrides=True, write_deadline_seconds=2,
+                                    write_exchange_timeout_seconds=2))
     started = {kind: asyncio.Event() for kind in ("profile", "board", "slots")}
     cancelled = {kind: asyncio.Event() for kind in started}
     writes = []

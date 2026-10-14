@@ -358,7 +358,8 @@ async def test_known_doctor_profile_and_board_overlap(make_settings):
     import time
 
     hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
-                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
+                                     write_deadline_seconds=2.5, read_exchange_timeout_seconds=1.5,
+                                     write_exchange_timeout_seconds=1.5))
     try:
         hh.ops_state.delay_seconds = 0.3
         started = time.monotonic()
@@ -450,7 +451,8 @@ async def test_single_match_search_then_profile_and_board_overlap(make_settings)
     import time
 
     hh = harness.build(make_settings(allow_budget_overrides=True, read_deadline_seconds=2.0,
-                                     write_deadline_seconds=2.5, request_timeout_seconds=1.5))
+                                     write_deadline_seconds=2.5, read_exchange_timeout_seconds=1.5,
+                                     write_exchange_timeout_seconds=1.5))
     try:
         hh.ops_state.delay_seconds = 0.2  # search 0.2 then profile ∥ board 0.2 = 0.4, independent reads
         started = time.monotonic()

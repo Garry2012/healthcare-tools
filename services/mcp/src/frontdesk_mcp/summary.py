@@ -106,7 +106,7 @@ class SummaryService:
             return outcomes.SummaryResult(outcome="INVALID_REQUEST", fields=fields)
         body = self.build_body(ctx, request)
         # Separate summary budget and per-exchange cap, including auth and any same-request retry.
-        deadline = Deadline(self.settings.summary_deadline_seconds, cap=self.settings.summary_deadline_seconds)
+        deadline = Deadline(self.settings.summary_budget)
         try:
             status, stored = await self.ops.create_call_summary(body, deadline)
         except Rejected as exc:

@@ -12,6 +12,7 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from . import packs
+from .clock import Budget
 
 # Hostname fragments that identify contract mocks and development stubs. Production never talks to them.
 STUB_MARKERS = ("healthcare-contract-mock", "localhost", "127.0.0.1", ":4010", "stub", "prism", "mock")
@@ -61,7 +62,9 @@ class Settings(BaseSettings):
     read_deadline_seconds: float | None = Field(default=None, gt=0, le=30)
     write_deadline_seconds: float | None = Field(default=None, gt=0, le=30)
     summary_deadline_seconds: float = Field(default=8.0, gt=0, le=60)  # summaries have their own budget
-    request_timeout_seconds: float | None = Field(default=None, gt=0, le=30)  # cap per exchange; default: read
+    read_exchange_timeout_seconds: float | None = Field(default=None, gt=0, le=30)
+    write_exchange_timeout_seconds: float | None = Field(default=None, gt=0, le=30)
+    summary_exchange_timeout_seconds: float | None = Field(default=None, gt=0, le=60)
     allow_budget_overrides: bool = False
     token_refresh_margin_seconds: int = Field(default=60, ge=0, le=3600)
     token_refresh_check_seconds: float = Field(default=15.0, gt=0, le=3600)  # background refresher cadence
@@ -150,8 +153,9 @@ class Settings(BaseSettings):
         for name in ("read_deadline_seconds", "write_deadline_seconds"):
             if data.get(name) is None:
                 data[name] = tool_share
-        if data.get("request_timeout_seconds") is None:
-            data["request_timeout_seconds"] = data["read_deadline_seconds"]
+        for kind, default in (("read", tool_share), ("write", tool_share), ("summary", 8.0)):
+            if data.get(f"{kind}_exchange_timeout_seconds") is None:
+                data[f"{kind}_exchange_timeout_seconds"] = data.get(f"{kind}_deadline_seconds", default)
         return data
 
     @model_validator(mode="after")
@@ -164,6 +168,25 @@ class Settings(BaseSettings):
             if value > tool_share + 1e-9 and not self.allow_budget_overrides:
                 raise ValueError(f"{name.upper()}={value} exceeds the in-call tool budget of {tool_share} s "
                                  "(set ALLOW_BUDGET_OVERRIDES=true only for diagnostics)")
+        return self
+
+    @property
+    def read_budget(self) -> Budget:
+        return Budget(self.read_deadline_seconds, self.read_exchange_timeout_seconds)
+
+    @property
+    def write_budget(self) -> Budget:
+        return Budget(self.write_deadline_seconds, self.write_exchange_timeout_seconds)
+
+    @property
+    def summary_budget(self) -> Budget:
+        return Budget(self.summary_deadline_seconds, self.summary_exchange_timeout_seconds)
+
+    @model_validator(mode="after")
+    def _exchange_caps(self) -> Settings:
+        for kind in ("read", "write", "summary"):
+            if getattr(self, f"{kind}_exchange_timeout_seconds") > getattr(self, f"{kind}_deadline_seconds"):
+                raise ValueError(f"{kind} exchange cap must not exceed its total deadline")
         return self
 
     @model_validator(mode="after")

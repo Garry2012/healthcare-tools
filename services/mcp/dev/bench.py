@@ -308,7 +308,7 @@ async def main() -> int:
             async with Client(StreamableHttpTransport(
                     f"{base}/mcp/", headers={"Authorization": "Bearer gateway"})) as c:
                 await c.list_tools()
-            capabilities = await app.state.services.ops.get_capabilities(Deadline(settings.read_deadline_seconds))
+            capabilities = await app.state.services.ops.get_capabilities(Deadline(settings.read_budget))
             enabled = capabilities.slots.enabled
             mode = "enabled" if enabled else "disabled"
             if enabled:

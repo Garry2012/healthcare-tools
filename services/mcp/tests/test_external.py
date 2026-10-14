@@ -57,7 +57,8 @@ def settings() -> Settings:
                     # diagnostic overrides: the laptop → Azure path is far slower than the in-region budget; these are
                     # explicitly allowed here and never become production defaults
                     allow_budget_overrides=True, read_deadline_seconds=6.0, write_deadline_seconds=8.0,
-                    summary_deadline_seconds=12.0, request_timeout_seconds=5.0)
+                    summary_deadline_seconds=12.0, read_exchange_timeout_seconds=5.0,
+                    write_exchange_timeout_seconds=5.0)
 
 
 @pytest.fixture
@@ -81,12 +82,12 @@ async def ops(settings):
 async def test_machine_token_is_issued_and_reads_work(ops, settings):
     """Verifies: token endpoint at <base>/auth/token, bearer accepted on reads, contract-shaped bodies."""
     mode()
-    deadline = Deadline(settings.read_deadline_seconds)
+    deadline = Deadline(settings.read_budget)
     departments = await ops.list_departments(deadline)
     assert departments.items, "the service returned no departments"
-    doctors = await ops.search_doctors(Deadline(settings.read_deadline_seconds), query="a")
+    doctors = await ops.search_doctors(Deadline(settings.read_budget), query="a")
     assert doctors.total >= 0 and all(d.id for d in doctors.items)
-    board = await ops.get_availability(Deadline(settings.read_deadline_seconds), date="today",
+    board = await ops.get_availability(Deadline(settings.read_budget), date="today",
                                        department=departments.items[0].id)
     assert all(e.status in ("IN", "LATE", "CANCELLED", "NOT_CONFIRMED", "UNKNOWN") for e in board.items)
     assert ops.tokens.usable, "no machine token cached after the reads"
@@ -138,7 +139,7 @@ async def test_positive_write_journey_create_list_reschedule_cancel_summary(sett
     ops = OpsClient(settings)
     try:
         await _write_gate(ops)
-        slots_enabled = (await ops.get_capabilities(Deadline(settings.read_deadline_seconds))).slots.enabled
+        slots_enabled = (await ops.get_capabilities(Deadline(settings.read_budget))).slots.enabled
         record_property("slots_path", "enabled" if slots_enabled else "disabled")
         svc = booking.BookingService(ops, settings, SystemClock())
         availability_service = availability.AvailabilityService(ops, DirectoryCache(settings), settings, SystemClock())

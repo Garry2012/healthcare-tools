@@ -187,7 +187,7 @@ class BookingService:
         to_date = _list_date(request.toDate, "toDate", issues)
         if issues:
             return self._invalid(issues)
-        deadline = Deadline(self.settings.read_deadline_seconds)
+        deadline = Deadline(self.settings.read_budget)
         try:
             found = await self.ops.find_appointments(deadline, mobile=mobile, from_date=from_date, to_date=to_date,
                                                      status=request.status)
@@ -216,7 +216,7 @@ class BookingService:
             return self._invalid(sorted(set(issues)))
         if gate := self._write_gate(ctx, request):
             return gate
-        deadline = Deadline(self.settings.write_deadline_seconds)
+        deadline = Deadline(self.settings.write_budget)
         schedule = await self._schedule_gate(request.doctorId, requested, request.session, preferred, deadline, now,
                                               request.action)
         if isinstance(schedule, outcomes.BookingResult):
@@ -295,7 +295,7 @@ class BookingService:
         mobile = identity.authorised_mobile(ctx, self.settings)
         if mobile is None:
             return self._identity_unavailable()
-        deadline = Deadline(self.settings.write_deadline_seconds)
+        deadline = Deadline(self.settings.write_budget)
         expected_slot = None
         if request.action == "RESCHEDULE":
             schedule = await self._reschedule_gate(mobile, request, requested, new_time, deadline, now)

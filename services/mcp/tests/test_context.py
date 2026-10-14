@@ -12,11 +12,11 @@ from frontdesk_mcp import clock, context, identity
 
 def test_deadline_counts_down_and_caps_each_request():
     ticks = iter([0.0, 0.5, 1.9, 2.5])
-    deadline = clock.Deadline(2.0, monotonic=lambda: next(ticks))
+    deadline = clock.Deadline(clock.Budget(2.0, 1.0), monotonic=lambda: next(ticks))
     assert deadline.remaining() == pytest.approx(1.5)
-    assert deadline.timeout(cap=1.0) == pytest.approx(0.1)  # remaining 0.1 < cap
+    assert deadline.timeout() == pytest.approx(0.1)  # remaining 0.1 < cap
     with pytest.raises(clock.DeadlineExceeded):
-        deadline.timeout(cap=1.0)  # 2.5 > 2.0
+        deadline.timeout()  # 2.5 > 2.0
 
 
 def test_fixed_clock_reports_facility_local_date(make_settings):

@@ -1649,7 +1649,7 @@ async def test_log1_all_observed_owner_routes_are_templated(served):
 
 async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings):
     from frontdesk_mcp import availability, context, contract, summary
-    from frontdesk_mcp.clock import Deadline
+    from frontdesk_mcp.clock import Budget, Deadline
     from frontdesk_mcp.ops_client import Malformed, Unavailable, UncertainWrite
 
     h = harness.build(make_settings(log_level="INFO"))
@@ -1680,7 +1680,7 @@ async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings
             assert result.outcome == "COULD_NOT_CHECK"
             h.ops_state.fail_next.append(("/appointments", 500, {}))
             with pytest.raises(UncertainWrite):
-                await ops.create_appointment({}, "log1-test", Deadline(1))
+                await ops.create_appointment({}, "log1-test", Deadline(Budget(1, .3)))
             original = ops.http._transport
 
             async def unavailable(request):
@@ -1689,7 +1689,7 @@ async def test_log1_real_adapter_events_keep_every_permitted_value(make_settings
             ops.http._transport = httpx.MockTransport(unavailable)
             try:
                 with pytest.raises(Unavailable):
-                    await ops.list_departments(Deadline(1))
+                    await ops.list_departments(Deadline(Budget(1, .3)))
             finally:
                 ops.http._transport = original
     finally:
@@ -1752,3 +1752,24 @@ def test_log1_shared_scheduling_values_stay_permitted(field, value):
     body = json.loads(JsonFormatter().format(_log1_record(fields={field: value})))
     assert body[field] == value
     assert "omittedFields" not in body
+
+
+async def test_dependency_probe_has_its_own_one_second_exchange_cap(make_settings):
+    from frontdesk_mcp.server import DependencyStatus
+    from frontdesk_mcp.tools import Services
+
+    seen = []
+
+    def owner(request):
+        seen.append(request.extensions["timeout"]["read"])
+        if request.url.path.endswith("/auth/token"):
+            return httpx.Response(200, json={"access_token": "probe", "token_type": "Bearer", "expires_in": 3600})
+        return httpx.Response(200, json={"items": []})
+
+    services = Services.build(make_settings(), ops_transport=httpx.MockTransport(owner))
+    try:
+        body, status = await DependencyStatus(services).check()
+        assert status == 200 and body["operational"]["status"] == "ok"
+        assert len(seen) == 2 and all(0.9 < value <= 1.0 for value in seen)
+    finally:
+        await services.aclose()

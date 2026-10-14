@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from frontdesk_mcp import ops_client
-from frontdesk_mcp.clock import Deadline
+from frontdesk_mcp.clock import Budget, Deadline
 
 TOKEN = {"access_token": "tok-1", "token_type": "Bearer", "expires_in": 3600}
 DOCTOR = {"id": "doc_1", "name": "Dr Garima", "departments": [{"id": "dept_gen", "name": "General Medicine"}],
@@ -51,7 +51,7 @@ def client_for(settings, upstream: Upstream, monotonic=None) -> ops_client.OpsCl
 
 
 def dl(seconds=2.0, monotonic=None) -> Deadline:
-    return Deadline(seconds, monotonic=monotonic) if monotonic else Deadline(seconds)
+    return Deadline(Budget(seconds, .3), monotonic=monotonic) if monotonic else Deadline(Budget(seconds, .3))
 
 
 async def test_machine_token_is_fetched_once_with_basic_auth_and_reused(make_settings):
@@ -86,13 +86,14 @@ async def test_concurrent_cold_requests_share_a_single_token_fetch(make_settings
     assert len(up.api_requests()) == 10
 
 
-async def test_token_is_refreshed_before_it_expires(make_settings):
+async def test_background_refresh_renews_before_token_expiry(make_settings):
     now = [1000.0]
     up = Upstream(token_responses=[{**TOKEN, "expires_in": 120}, {**TOKEN, "access_token": "tok-2"}],
                   responses=[httpx.Response(200, json={"items": []})] * 2)
     async with client_for(make_settings(token_refresh_margin_seconds=60), up, monotonic=lambda: now[0]) as client:
         await client.list_departments(dl(monotonic=lambda: now[0]))
         now[0] += 70  # 50 s left < 60 s margin
+        await client.refresh_if_due()
         await client.list_departments(dl(monotonic=lambda: now[0]))
     assert [r.headers["authorization"] for r in up.api_requests()] == ["Bearer tok-1", "Bearer tok-2"]
 
@@ -143,11 +144,11 @@ async def test_one_deadline_covers_auth_and_the_call(make_settings):
             return httpx.Response(200, json=TOKEN)
         return httpx.Response(200, json={"items": []})
 
-    client = ops_client.OpsClient(make_settings(allow_budget_overrides=True, request_timeout_seconds=1.5),
+    client = ops_client.OpsClient(make_settings(),
                                   transport=httpx.MockTransport(slow_handler), monotonic=lambda: now[0])
     async with client:
         with pytest.raises(ops_client.Unavailable) as exc:
-            await client.list_departments(Deadline(2.0, monotonic=lambda: now[0]))
+            await client.list_departments(Deadline(Budget(2.0, 1.5), monotonic=lambda: now[0]))
     assert exc.value.reason == "TIMEOUT"
     assert seen == [pytest.approx(1.5), pytest.approx(0.5)]  # the call got only what the token left
 
@@ -156,7 +157,7 @@ async def test_an_expired_deadline_sends_nothing(make_settings):
     up = Upstream()
     async with client_for(make_settings(), up) as client:
         with pytest.raises(ops_client.Unavailable):
-            await client.list_departments(Deadline(-1))
+            await client.list_departments(Deadline(Budget(-1, .3)))
     assert up.requests == []
 
 
@@ -252,7 +253,7 @@ async def test_no_retry_when_the_budget_is_spent(make_settings):
     client = ops_client.OpsClient(make_settings(), transport=httpx.MockTransport(handler), monotonic=lambda: now[0])
     async with client:
         with pytest.raises(ops_client.UncertainWrite):
-            await client.create_appointment({"x": 1}, "key", Deadline(4.0, monotonic=lambda: now[0]))
+            await client.create_appointment({"x": 1}, "key", Deadline(Budget(4.0, .3), monotonic=lambda: now[0]))
     assert len(up.api_requests()) == 1
 
 
@@ -368,17 +369,17 @@ async def test_the_deadline_is_a_wall_clock_total_even_against_a_dribbling_serve
     port = server.sockets[0].getsockname()[1]
     settings = make_settings(ops_base_url=f"http://127.0.0.1:{port}/api/v1", allow_budget_overrides=True,
                              read_deadline_seconds=1.0, write_deadline_seconds=1.0, summary_deadline_seconds=1.0,
-                             request_timeout_seconds=1.0)
+                             read_exchange_timeout_seconds=1.0, write_exchange_timeout_seconds=1.0)
     client = ops_client.OpsClient(settings)
     client.tokens._token, client.tokens._expires_at = "warm", time.monotonic() + 3600
     try:
         started = time.monotonic()
         with pytest.raises(ops_client.Unavailable) as exc:
-            await client.list_departments(Deadline(1.0))
+            await client.list_departments(Deadline(Budget(1.0, 1.0)))
         assert time.monotonic() - started < 2.0 and exc.value.reason in ("DEADLINE", "TIMEOUT")
         started = time.monotonic()
         with pytest.raises(ops_client.UncertainWrite):
-            await client.create_appointment({"x": 1}, "k", Deadline(1.0))
+            await client.create_appointment({"x": 1}, "k", Deadline(Budget(1.0, 1.0)))
         assert time.monotonic() - started < 2.5
     finally:
         await client.aclose()
@@ -421,7 +422,7 @@ async def test_waiting_for_the_token_lock_is_bounded_by_the_callers_deadline(mak
     await client.tokens._lock.acquire()  # someone else is refreshing and never finishes
     try:
         with pytest.raises(ops_client.Unavailable) as exc:
-            await asyncio.wait_for(client.list_departments(Deadline(0.3)), timeout=2)
+            await asyncio.wait_for(client.list_departments(Deadline(Budget(0.3, .3))), timeout=2)
         assert exc.value.reason == "DEADLINE"
     finally:
         client.tokens._lock.release()
@@ -449,9 +450,9 @@ async def test_summary_writes_use_their_own_cap_not_the_in_call_share(make_setti
             return await slow(request)
 
     settings = make_settings()
-    assert settings.request_timeout_seconds == pytest.approx(0.30)
+    assert settings.read_exchange_timeout_seconds == pytest.approx(0.30)
     async with ops_client.OpsClient(settings, transport=SlowTransport()) as client:
-        deadline = Deadline(settings.summary_deadline_seconds, cap=settings.summary_deadline_seconds)
+        deadline = Deadline(settings.summary_budget)
         status, stored = await client.create_call_summary({"x": 1}, deadline)
     assert status == 201 and stored.id == "cs_1"
 
@@ -481,7 +482,7 @@ async def test_a_usable_token_is_returned_without_waiting_for_a_refresh_in_progr
     client.tokens._token, client.tokens._expires_at = "still-valid", time.monotonic() + 30  # inside the margin
     await client.tokens._lock.acquire()  # a refresh is running elsewhere
     try:
-        result = await asyncio.wait_for(client.list_departments(Deadline(0.3)), timeout=1)
+        result = await asyncio.wait_for(client.list_departments(Deadline(Budget(0.3, .3))), timeout=1)
         assert result.items == [] and up.api_requests()[0].headers["authorization"] == "Bearer still-valid"
     finally:
         client.tokens._lock.release()
@@ -492,7 +493,7 @@ async def test_same_key_retry_happens_when_the_first_attempt_failed_instantly(ma
     """A stale keep-alive connection fails in a millisecond; with 0.30 s left the same-key retry must run."""
     up = Upstream(responses=[httpx.RemoteProtocolError("stale connection"), httpx.Response(201, json=APPT)])
     async with client_for(make_settings(), up) as client:
-        status, appt = await client.create_appointment({"x": 1}, "key", Deadline(0.30))
+        status, appt = await client.create_appointment({"x": 1}, "key", Deadline(Budget(0.30, .3)))
     assert status == 201 and len(up.api_requests()) == 2
     assert {r.headers["idempotency-key"] for r in up.api_requests()} == {"key"}
 
@@ -622,3 +623,13 @@ async def test_slot_invariant_violations_use_existing_malformed_failure(make_set
         with pytest.raises(ops_client.Malformed):
             await client.get_slots(dl(), doctor_id="doc_001", date="today")
     assert len(up.api_requests()) == 1
+
+
+@pytest.mark.parametrize("total,cap", [(0.3, 0.3), (3.0, 1.0), (8.0, 8.0)])
+async def test_valid_in_margin_token_never_refreshes_in_call(make_settings, total, cap):
+    up = Upstream(responses=[httpx.Response(200, json={"items": []})])
+    async with client_for(make_settings(), up, monotonic=lambda: 100.0) as client:
+        client.tokens._token, client.tokens._expires_at = "still-valid", 130.0
+        deadline = Deadline(Budget(total, cap), monotonic=lambda: 100.0)
+        await client.list_departments(deadline)
+    assert len([r for r in up.requests if r.url.path.endswith("/auth/token")]) == 0

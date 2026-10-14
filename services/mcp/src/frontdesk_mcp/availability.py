@@ -64,7 +64,7 @@ class AvailabilityService:
         base = {"facilityToday": now.date().isoformat(),
                 "requestedDate": requested.value.isoformat() if requested else None,
                 "weekday": requested.weekday if requested else None}
-        deadline = Deadline(self.settings.read_deadline_seconds)
+        deadline = Deadline(self.settings.read_budget)
         try:
             return await self._resolve(request, requested, now, deadline, base)
         except READ_ERRORS as exc:

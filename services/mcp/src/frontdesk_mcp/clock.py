@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -37,16 +38,19 @@ class DeadlineExceeded(Exception):
     """The invocation's total budget (pool wait, auth, every call, any retry) is spent."""
 
 
-class Deadline:
-    """One wall-clock budget for an invocation. `cap` is the ceiling for any single exchange; when None the
-    caller's default (the in-call per-exchange cap) applies. Summaries and background work
-    (token refresh) pass their own cap so the in-call share never throttles them."""
+@dataclass(frozen=True)
+class Budget:
+    total: float
+    exchange: float
 
-    def __init__(self, seconds: float, monotonic: Callable[[], float] = time.monotonic,
-                 cap: float | None = None) -> None:
+
+class Deadline:
+    """One invocation deadline carrying its own per-exchange cap."""
+
+    def __init__(self, budget: Budget, monotonic: Callable[[], float] = time.monotonic) -> None:
         self._monotonic = monotonic
-        self._end = monotonic() + seconds
-        self.cap = cap
+        self._end = monotonic() + budget.total
+        self.cap = budget.exchange
 
     def remaining(self) -> float:
         return self._end - self._monotonic()
@@ -55,10 +59,9 @@ class Deadline:
     def expired(self) -> bool:
         return self.remaining() <= 0
 
-    def timeout(self, cap: float) -> float:
-        """Timeout for the next HTTP exchange: never more than the cap (the deadline's own cap wins when set),
-        never past the deadline."""
+    def timeout(self) -> float:
+        """The next exchange cannot exceed either its cap or the remaining total."""
         left = self.remaining()
         if left <= 0:
             raise DeadlineExceeded
-        return min(left, self.cap if self.cap is not None else cap)
+        return min(left, self.cap)
