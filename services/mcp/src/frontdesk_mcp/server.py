@@ -103,6 +103,10 @@ SAFE_LOG_FIELDS = {
     "status": _integer_between(100, 599),
     "httpStatus": _integer_between(100, 599),
     "attempt": _integer_between(1, 10),
+    "elapsedMs": _integer_between(0, 600_000),
+    "remainingMs": _integer_between(0, 600_000),
+    "durationMs": _integer_between(0, 600_000),
+    "retry": lambda value: type(value) is bool,
     "retryAfterSeconds": _integer_between(0, 86_400),
     "env": _known(get_args(Settings.model_fields["env"].annotation)),
     "pack": _known(p.name.removesuffix(".json") for p in resources.files("frontdesk_mcp").joinpath("packs").iterdir()

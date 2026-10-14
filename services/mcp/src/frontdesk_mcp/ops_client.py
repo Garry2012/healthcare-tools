@@ -292,22 +292,32 @@ class OpsClient:
                 continue
             except httpx.RequestError as exc:  # timeouts, read/decoding errors: the request left
                 sent = True
-                logger.warning("ops_write_unanswered", extra={"fields": {"path": path, "attempt": attempt}})
-                if attempt == 2 or not self._can_retry(deadline, started):
+                retry = attempt == 1 and self._can_retry(deadline, started)
+                remaining = deadline.remaining()
+                logger.warning("ops_write_unanswered", extra={"fields": {
+                    "path": path, "attempt": attempt, "error": type(exc).__name__,
+                    "elapsedMs": max(0, int((started - remaining) * 1000)),
+                    "remainingMs": max(0, int(remaining * 1000)), "retry": retry}})
+                if not retry:
                     raise UncertainWrite from exc
                 continue
+            elapsed_ms = max(0, int((started - deadline.remaining()) * 1000))
             if response.status_code in (502, 504):
+                logger.warning("ops_write_gateway_error", extra={"fields": {
+                    "path": path, "status": response.status_code, "elapsedMs": elapsed_ms}})
                 raise UncertainWrite  # an intermediary answered; the owner may have committed
             if sent and response.status_code >= 400:
                 # The retry was refused or failed, but attempt 1 may already have committed.
                 logger.warning("ops_write_retry_inconclusive", extra={"fields": {"path": path,
-                                                                                 "status": response.status_code}})
+                                                                                 "status": response.status_code,
+                                                                                 "elapsedMs": elapsed_ms}})
                 raise UncertainWrite
             if response.status_code >= 500:
                 # The owner answered with a server error after receiving the write: nothing in the contract says
                 # it did not commit first. Uncertain, never a definite failure.
                 logger.warning("ops_write_server_error",
-                               extra={"fields": {"path": path, "status": response.status_code}})
+                               extra={"fields": {"path": path, "status": response.status_code,
+                                                 "elapsedMs": elapsed_ms}})
                 raise UncertainWrite
             return response.status_code, self._body(response, path)
         raise UncertainWrite  # unreachable: the loop always returns or raises

@@ -633,3 +633,61 @@ async def test_valid_in_margin_token_never_refreshes_in_call(make_settings, tota
         deadline = Deadline(Budget(total, cap), monotonic=lambda: 100.0)
         await client.list_departments(deadline)
     assert len([r for r in up.requests if r.url.path.endswith("/auth/token")]) == 0
+
+
+@pytest.mark.parametrize("status,event", [(502, "ops_write_gateway_error"), (504, "ops_write_gateway_error"),
+                                         (500, "ops_write_server_error"), (503, "ops_write_server_error")])
+async def test_write_warning_records_elapsed_time(make_settings, caplog, status, event):
+    tick = [0.0]
+
+    def owner(request):
+        tick[0] += 0.125
+        return httpx.Response(status)
+
+    async with ops_client.OpsClient(make_settings(), transport=httpx.MockTransport(owner),
+                                   monotonic=lambda: tick[0]) as client:
+        client.tokens._token, client.tokens._expires_at = "warm", 100.0
+        with pytest.raises(ops_client.UncertainWrite):
+            await client.create_appointment({}, "key", Deadline(Budget(3, 1), monotonic=lambda: tick[0]))
+    records = [r for r in caplog.records if r.msg == event]
+    assert len(records) == 1
+    assert records[0].fields["elapsedMs"] == 125 and records[0].fields["status"] == status
+
+
+async def test_unanswered_write_records_safe_timing_and_retry_decision(make_settings, caplog):
+    tick = [0.0]
+
+    def owner(request):
+        tick[0] += 1.0
+        raise httpx.ReadTimeout("unanswered")
+
+    async with ops_client.OpsClient(make_settings(), transport=httpx.MockTransport(owner),
+                                   monotonic=lambda: tick[0]) as client:
+        client.tokens._token, client.tokens._expires_at = "warm", 100.0
+        with pytest.raises(ops_client.UncertainWrite):
+            await client.create_appointment({}, "key", Deadline(Budget(3, 1), monotonic=lambda: tick[0]))
+    records = [r for r in caplog.records if r.msg == "ops_write_unanswered"]
+    assert len(records) == 2
+    assert [r.fields for r in records] == [
+        {"path": "/appointments", "attempt": 1, "error": "ReadTimeout",
+         "elapsedMs": 1000, "remainingMs": 2000, "retry": True},
+        {"path": "/appointments", "attempt": 2, "error": "ReadTimeout",
+         "elapsedMs": 1000, "remainingMs": 1000, "retry": False},
+    ]
+
+
+async def test_inconclusive_retry_records_its_elapsed_time(make_settings, caplog):
+    tick = [0.0]
+    up = Upstream(responses=[httpx.ReadError("lost"), httpx.Response(409)])
+
+    def owner(request):
+        tick[0] += 0.125
+        return up.handler(request)
+
+    async with ops_client.OpsClient(make_settings(), transport=httpx.MockTransport(owner),
+                                   monotonic=lambda: tick[0]) as client:
+        client.tokens._token, client.tokens._expires_at = "warm", 100.0
+        with pytest.raises(ops_client.UncertainWrite):
+            await client.create_appointment({}, "key", Deadline(Budget(3, 1), monotonic=lambda: tick[0]))
+    [record] = [r for r in caplog.records if r.msg == "ops_write_retry_inconclusive"]
+    assert record.fields.get("elapsedMs") == 125

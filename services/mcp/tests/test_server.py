@@ -1773,3 +1773,53 @@ async def test_dependency_probe_has_its_own_one_second_exchange_cap(make_setting
         assert len(seen) == 2 and all(0.9 < value <= 1.0 for value in seen)
     finally:
         await services.aclose()
+
+
+@pytest.mark.parametrize("field", ["elapsedMs", "remainingMs", "durationMs"])
+@pytest.mark.parametrize("value,accepted", [(0, True), (600000, True), (-1, False),
+                                         (600001, False), (True, False), (1.2, False), ("123", False)])
+def test_timing_fields_accept_only_bounded_integers(field, value, accepted):
+    line = json.loads(JsonFormatter().format(_log1_record(fields={field: value})))
+    assert (field in line) is accepted
+
+
+@pytest.mark.parametrize("value,accepted", [(True, True), (False, True), (0, False), (1, False), ("true", False)])
+def test_retry_field_accepts_only_a_boolean(value, accepted):
+    line = json.loads(JsonFormatter().format(_log1_record(fields={"retry": value})))
+    assert ("retry" in line) is accepted
+
+
+@pytest.mark.parametrize("name,args,service,method,result", [
+    ("get_doctor_availability", {}, "availability", "get", "availability"),
+    ("manage_booking", {"action": "LIST"}, "booking", "manage", "booking"),
+    ("record_call_summary", {"intent": "OTHER", "outcome": "ABANDONED", "summaryText": "Call ended."},
+     "summary", "record", "summary"),
+])
+async def test_tool_duration_includes_awaited_service_once(make_settings, monkeypatch, caplog,
+                                                         name, args, service, method, result):
+    from types import SimpleNamespace
+
+    from frontdesk_mcp import outcomes, server, tools
+
+    tick = [10.0]
+    services = tools.Services.build(make_settings())
+    results = {"availability": outcomes.AvailabilityResult(
+        outcome="INVALID_REQUEST", nextStep="ASK_TO_REPHRASE", facilityToday="2026-10-01"),
+               "booking": outcomes.BookingResult(outcome="NOT_FOUND", nextStep="SAY_NOT_FOUND"),
+               "summary": outcomes.SummaryResult(outcome="SAVED")}
+
+    async def operation(*args):
+        tick[0] += 0.125
+        return results[result]
+
+    monkeypatch.setattr(getattr(services, service), method, operation)
+    monkeypatch.setattr(tools, "time", SimpleNamespace(monotonic=lambda: tick[0]))
+    caplog.set_level(logging.INFO, logger="frontdesk_mcp.tools")
+    try:
+        async with Client(server.build_mcp(services)) as c:
+            await c.call_tool(name, args)
+    finally:
+        await services.aclose()
+    records = [r for r in caplog.records if r.name == "frontdesk_mcp.tools"]
+    assert len(records) == 1 and records[0].msg == "tool_result"
+    assert records[0].fields.get("durationMs") == 125
