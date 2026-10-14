@@ -50,22 +50,19 @@ class Settings(BaseSettings):
     # --- one total deadline per tool invocation (pool wait + auth + every call + any retry) -------
     # The caller's response budget (TARGET-STATE.md): end of speech → first useful audio. The other stages
     # (endpointing/STT, model tool choice, model answer, TTS start, headroom) are reserved; what remains is the
-    # whole tool round trip including the gateway, so the adapter's own deadline is derived from it unless a
-    # diagnostic override sets READ_DEADLINE_SECONDS explicitly. These are design allocations to validate on
+    # whole read round trip including the gateway. The read deadline derives from that share; an explicit
+    # read deadline must still fit it. These are design allocations to validate on
     # the real path, not measured guarantees.
     voice_response_budget_seconds: float = Field(default=1.0, gt=0, le=10)
     reserved_stage_seconds: float = Field(default=0.65, ge=0, le=10)
     gateway_overhead_seconds: float = Field(default=0.05, ge=0, le=5)  # ContextForge hop, outside the adapter
-    # Scheduling tools (reads AND confirmed booking writes) get the same share:
-    # budget − reserved − gateway. Explicit values are diagnostic overrides; one that exceeds the share is refused
-    # unless ALLOW_BUDGET_OVERRIDES=true is set deliberately (bench/external runs from a distant laptop).
+    # Reads fit the voice share; confirmed booking writes and summaries have independent budgets.
     read_deadline_seconds: float | None = Field(default=None, gt=0, le=30)
-    write_deadline_seconds: float | None = Field(default=None, gt=0, le=30)
+    write_deadline_seconds: float = Field(default=3.0, gt=0, le=30)
     summary_deadline_seconds: float = Field(default=8.0, gt=0, le=60)  # summaries have their own budget
     read_exchange_timeout_seconds: float | None = Field(default=None, gt=0, le=30)
-    write_exchange_timeout_seconds: float | None = Field(default=None, gt=0, le=30)
+    write_exchange_timeout_seconds: float | None = Field(default=1.0, gt=0, le=30)
     summary_exchange_timeout_seconds: float | None = Field(default=None, gt=0, le=60)
-    allow_budget_overrides: bool = False
     token_refresh_margin_seconds: int = Field(default=60, ge=0, le=3600)
     token_refresh_check_seconds: float = Field(default=15.0, gt=0, le=3600)  # background refresher cadence
     token_refresh_timeout_seconds: float = Field(default=5.0, gt=0, le=60)  # background/start-up refresh: not in-call
@@ -143,31 +140,28 @@ class Settings(BaseSettings):
     def _derive_deadlines(cls, data):
         if not isinstance(data, dict):
             return data
-        budget = float(data.get("voice_response_budget_seconds", 1.0))
-        reserved = float(data.get("reserved_stage_seconds", 0.65))
-        gateway = float(data.get("gateway_overhead_seconds", 0.05))
-        tool_share = round(budget - reserved - gateway, 3)
+        def value(name):
+            return data.get(name, cls.model_fields[name].default)
+
+        tool_share = round(float(value("voice_response_budget_seconds")) - float(value("reserved_stage_seconds"))
+                           - float(value("gateway_overhead_seconds")), 3)
         if tool_share < 0.1:
             raise ValueError("voice budget minus reserved stages and gateway leaves no time for the tool "
                              "(reserved too large)")
-        for name in ("read_deadline_seconds", "write_deadline_seconds"):
-            if data.get(name) is None:
-                data[name] = tool_share
-        for kind, default in (("read", tool_share), ("write", tool_share), ("summary", 8.0)):
-            if data.get(f"{kind}_exchange_timeout_seconds") is None:
-                data[f"{kind}_exchange_timeout_seconds"] = data.get(f"{kind}_deadline_seconds", default)
+        if data.get("read_deadline_seconds") is None:
+            data["read_deadline_seconds"] = tool_share
+        for kind in ("read", "write", "summary"):
+            cap = f"{kind}_exchange_timeout_seconds"
+            if value(cap) is None:
+                data[cap] = value(f"{kind}_deadline_seconds")
         return data
 
     @model_validator(mode="after")
-    def _guard_budget_overrides(self) -> Settings:
-        """After validation the flag is a real bool (an environment string "false" is false, not truthy)."""
+    def _read_fits_voice_share(self) -> Settings:
         tool_share = round(self.voice_response_budget_seconds - self.reserved_stage_seconds
                            - self.gateway_overhead_seconds, 3)
-        for name in ("read_deadline_seconds", "write_deadline_seconds"):
-            value = getattr(self, name)
-            if value > tool_share + 1e-9 and not self.allow_budget_overrides:
-                raise ValueError(f"{name.upper()}={value} exceeds the in-call tool budget of {tool_share} s "
-                                 "(set ALLOW_BUDGET_OVERRIDES=true only for diagnostics)")
+        if self.read_deadline_seconds > tool_share + 1e-9:
+            raise ValueError(f"READ_DEADLINE_SECONDS exceeds the in-call tool budget of {tool_share} s")
         return self
 
     @property

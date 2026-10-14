@@ -54,11 +54,11 @@ def settings() -> Settings:
     return Settings(**ROLLOUT, env="test", ops_base_url=required("OPS_E2E_BASE_URL"),
                     ops_client_id=required("OPS_E2E_CLIENT_ID"), ops_client_secret=required("OPS_E2E_CLIENT_SECRET"),
                     mcp_bearer_token="external-gateway",
-                    # diagnostic overrides: the laptop → Azure path is far slower than the in-region budget; these are
-                    # explicitly allowed here and never become production defaults
-                    allow_budget_overrides=True, read_deadline_seconds=6.0, write_deadline_seconds=8.0,
-                    summary_deadline_seconds=12.0, read_exchange_timeout_seconds=5.0,
-                    write_exchange_timeout_seconds=5.0)
+                    # Local test voice allocation accommodates the laptop network; no production bypass.
+                    voice_response_budget_seconds=(6.0 + Settings.model_fields["reserved_stage_seconds"].default
+                                                   + Settings.model_fields["gateway_overhead_seconds"].default),
+                    write_deadline_seconds=8.0, write_exchange_timeout_seconds=5.0,
+                    summary_deadline_seconds=12.0, summary_exchange_timeout_seconds=12.0)
 
 
 @pytest.fixture

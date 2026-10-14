@@ -367,7 +367,7 @@ async def test_the_deadline_is_a_wall_clock_total_even_against_a_dribbling_serve
 
     server = await asyncio.start_server(dribble, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
-    settings = make_settings(ops_base_url=f"http://127.0.0.1:{port}/api/v1", allow_budget_overrides=True,
+    settings = make_settings(ops_base_url=f"http://127.0.0.1:{port}/api/v1", voice_response_budget_seconds=1.7,
                              read_deadline_seconds=1.0, write_deadline_seconds=1.0, summary_deadline_seconds=1.0,
                              read_exchange_timeout_seconds=1.0, write_exchange_timeout_seconds=1.0)
     client = ops_client.OpsClient(settings)
@@ -691,3 +691,101 @@ async def test_inconclusive_retry_records_its_elapsed_time(make_settings, caplog
             await client.create_appointment({}, "key", Deadline(Budget(3, 1), monotonic=lambda: tick[0]))
     [record] = [r for r in caplog.records if r.msg == "ops_write_retry_inconclusive"]
     assert record.fields.get("elapsedMs") == 125
+
+
+@pytest.mark.parametrize("kind,total,cap", [("read", .3, .3), ("write", 3, 1), ("summary", 8, 8)])
+@pytest.mark.parametrize("state", ["valid", "absent", "expired"])
+async def test_each_budget_uses_valid_tokens_or_single_flight_refresh(make_settings, kind, total, cap, state):
+    now = [100.0]
+    response = (httpx.Response(200, json={"items": []}) if kind == "read" else
+                httpx.Response(201, json=APPT) if kind == "write" else
+                httpx.Response(201, json={"id": "cs_test", "callId": "call-test",
+                    "startedAt": "2026-10-01T10:00:00+05:30", "intent": "OTHER", "outcome": "ABANDONED",
+                    "createdAt": "2026-10-01T10:03:00+05:30"}))
+    up = Upstream(responses=[response] * 3)
+    async with client_for(make_settings(), up, monotonic=lambda: now[0]) as client:
+        if state != "absent":
+            client.tokens._token, client.tokens._expires_at = "cached", 130 if state == "valid" else 99
+
+        async def invoke():
+            deadline = Deadline(Budget(total, cap), monotonic=lambda: now[0])
+            if kind == "read":
+                return await client.list_departments(deadline)
+            if kind == "write":
+                return await client.create_appointment({}, "key", deadline)
+            return await client.create_call_summary({}, deadline)
+
+        await asyncio.gather(*(invoke() for _ in range(3)))
+    tokens = [r for r in up.requests if r.url.path.endswith("/auth/token")]
+    assert len(tokens) == (0 if state == "valid" else 1)
+    assert len(up.api_requests()) == 3
+    assert all(r.extensions["timeout"]["read"] == pytest.approx(cap) for r in up.requests)
+
+
+async def test_write_401_refresh_keeps_frozen_body_and_key(make_settings):
+    up = Upstream(responses=[httpx.Response(401), httpx.Response(201, json=APPT)])
+    async with client_for(make_settings(), up) as client:
+        import time
+
+        client.tokens._token, client.tokens._expires_at = "warm", time.monotonic() + 30
+        status, _ = await client.create_appointment({"x": 1}, "unchanged", Deadline(Budget(3, 1)))
+    assert status == 201 and len(up.api_requests()) == 2
+    first, second = up.api_requests()
+    assert first.content == second.content
+    assert first.headers["idempotency-key"] == second.headers["idempotency-key"]
+    assert len([r for r in up.requests if r.url.path.endswith("/auth/token")]) == 1
+
+
+@pytest.mark.parametrize("pre,auth,exchange,retries", [
+    (.5, 0, 1, 1), (.501, 0, 1, 0),
+    (.1875, .125, 1, 1), (.1885, .125, 1, 0),
+    (2.949, 0, 0, 1), (2.951, 0, 0, 0),
+    (.5, 1, 0, 1), (.501, 1, 0, 0),
+])
+async def test_retry_boundaries_include_auth_schedule_and_floor(make_settings, pre, auth, exchange, retries):
+    tick = [0.0]
+    requests = []
+
+    def owner(request):
+        requests.append(request)
+        if request.url.path.endswith("/auth/token"):
+            tick[0] += auth
+            return httpx.Response(200, json=TOKEN)
+        posts = [r for r in requests if not r.url.path.endswith("/auth/token")]
+        if len(posts) == 1:
+            tick[0] += exchange
+            raise httpx.ReadTimeout("unanswered")
+        return httpx.Response(201, json=APPT)
+
+    async with ops_client.OpsClient(make_settings(), transport=httpx.MockTransport(owner),
+                                   monotonic=lambda: tick[0]) as client:
+        if not auth:
+            client.tokens._token, client.tokens._expires_at = "warm", 100.0
+        deadline = Deadline(Budget(3, 1), monotonic=lambda: tick[0])
+        tick[0] += pre
+        if retries:
+            status, _ = await client.create_appointment({"x": 1}, "same", deadline)
+            assert status == 201
+        else:
+            with pytest.raises(ops_client.UncertainWrite):
+                await client.create_appointment({"x": 1}, "same", deadline)
+    posts = [r for r in requests if not r.url.path.endswith("/auth/token")]
+    assert len(posts) == 1 + retries
+    assert all(r.content == posts[0].content and r.headers["idempotency-key"] == "same" for r in posts)
+    assert all(r.extensions["timeout"]["read"] <= 1 for r in requests)
+
+
+async def test_expired_read_does_not_consume_write_or_summary_budget(make_settings):
+    settings = make_settings()
+    now = [0.0]
+    read = Deadline(settings.read_budget, monotonic=lambda: now[0])
+    now[0] = 0.5
+    up = Upstream(responses=[httpx.Response(201, json=APPT)])
+    async with client_for(settings, up, monotonic=lambda: now[0]) as client:
+        client.tokens._token, client.tokens._expires_at = "warm", 100.0
+        with pytest.raises(ops_client.Unavailable):
+            await client.list_departments(read)
+        status, _ = await client.create_appointment({}, "key", Deadline(settings.write_budget,
+                                                                      monotonic=lambda: now[0]))
+    assert status == 201 and len(up.api_requests()) == 1
+    assert up.api_requests()[0].extensions["timeout"]["read"] == 1.0

@@ -353,3 +353,20 @@ value, with what happened in `summaryText`, until the hospital defines one. Havi
 number alone does not make a callback. `TRANSFERRED` and `RESOLVED_BY_AGENT` are not used,
 because they would report something that did not happen. Documentation only; the published schema
 and summary validation are unchanged.
+
+## Booking write budgets — 14 October 2026
+
+Supersedes AR-06's rule that confirmed booking writes share the in-call read deadline.
+Availability and LIST remain within the voice allocation (default 0.30 seconds total and per exchange).
+Confirmed CREATE, CANCEL and RESCHEDULE have an independent 3.0-second total and 1.0-second exchange ceiling;
+their schedule re-check and caller appointment lookup consume the same write deadline.
+Summaries retain an independent 8.0/8.0 budget. Six explicit settings govern these three budgets.
+
+REQUEST_TIMEOUT_SECONDS and ALLOW_BUDGET_OVERRIDES are removed, with no compatibility path.
+Extended laptop tests supply a local voice allocation for their reads. Any unexpired machine token is used
+immediately; background renewal handles the refresh margin. Missing/expired tokens and existing 401 handling
+retain bounded single-flight refresh. Frozen write bodies, keys and uncertainty semantics stay unchanged.
+
+These ceilings do not delay successful responses. Safe timing fields and before/after stub benchmarks provide
+implementation evidence; real canary latency, voice timeout confirmation, merge and deployment remain separate
+gates. The 3.0/1.0 deployment values are provisional and tuned through rollout.env after approved live measurement.
