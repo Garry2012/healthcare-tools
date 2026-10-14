@@ -49,6 +49,7 @@ supply usable usual schedules for future requests; no future board is fetched.
 
 Each exchange cap must be positive and at most its total; read <= write <= summary. Explicit reads must
 fit the voice budget minus reserved stages and gateway. Writes and summaries are independent of that share.
+A write total below 1.0 s also needs a matching WRITE_EXCHANGE_TIMEOUT_SECONDS; each cap must not exceed its total.
 The same write deadline covers schedule checks, caller appointment lookup, authentication, POST and any retry.
 The ceiling adds no wait: successful responses return immediately. A possibly committed write without a verified
 response remains UNCERTAIN; a summary remains NOT_CONFIRMED. At most one same-body retry fits the remaining budget.
@@ -60,7 +61,7 @@ Whole-tool duration includes schedule and authentication work, so compare it wit
 exchange cap. No patient data is logged.
 
 Deployment values are explicit in rollouts/demo-hospital/rollout.env; change them there and redeploy after approval.
-Local compose forwards the six settings from .env. Laptop benchmarks/external tests allocate their own local
+Local compose reads the six settings from rollout.env. Laptop benchmarks/external tests allocate their own local
 voice budget. No new credentials or secrets are required. These changes leave schema 2026-10-11.2 unchanged.
 Before deployment, verify real latency and confirm the voice platform's timeouts cover the write deadline plus
 gateway time and margin (8–10 seconds is the recommendation for 3-second writes, not a measured requirement).
