@@ -1,6 +1,6 @@
 # Front-desk MCP tools: voice-team handover
 
-Schema version: `2026-10-11.2`
+Schema version: `2026-10-16.1`
 
 This is the single authoritative handover for calling the front-desk MCP tools.
 - **Part 1** explains how to use the tools safely.
@@ -387,7 +387,6 @@ These are the expected results for testing a client end to end. Each one matches
 | `outcome.REJECTED` | manage_booking | The hospital rejected the request definitively; `detail` is its code, and `fields` lists any tool arguments it named |
 | `outcome.CONFLICT` | manage_booking | The same operation id was used with different arguments (`IDEMPOTENCY_CONFLICT`), or the appointment's state doesn't allow it, for example it's already cancelled (`STATE_CONFLICT`) |
 | `outcome.UNCERTAIN` | manage_booking | The write may have been recorded, with no verified result. Desk handoff, not a retry; a later invocation with the same operation id re-checks the schedule and can be refused |
-| `outcome.IDENTITY_UNAVAILABLE` | manage_booking | No verified caller number for LIST, CANCEL or RESCHEDULE |
 | `outcome.CONFIRMATION_REQUIRED` | manage_booking | `callerConfirmed` was not true for a write |
 | `outcome.OPERATION_CONTEXT_MISSING` | manage_booking | `X-Call-Id` or `X-Operation-Id` is missing or malformed for a write |
 | `outcome.COULD_NOT_RECORD` | manage_booking | The write wasn't attempted or couldn't be recorded (failed schedule read, owner unavailable); `detail` names the cause |
@@ -579,7 +578,7 @@ These tables list each tool's top-level input and output fields, followed by the
 | `manage_booking.input.fromDate` | `{"anyOf":[{"maxLength":10,"pattern":"^\\d{4}-\\d{2}-\\d{2}$","type":"string"},{"type":"null"}]}` | optional | Optional LIST lower date filter in YYYY-MM-DD format; past dates are accepted. |
 | `manage_booking.input.newPreferredTime` | `{"anyOf":[{"maxLength":5,"pattern":"^\\d{2}:\\d{2}$","type":"string"},{"type":"null"}]}` | optional | RESCHEDULE time in HH:MM 24-hour format; required when slots are enabled, chosen within returned openSlots. Optional when slots are disabled. |
 | `manage_booking.input.newVisitDate` | `{"anyOf":[{"maxLength":10,"type":"string"},{"type":"null"}]}` | optional | Required for RESCHEDULE: 'today' or YYYY-MM-DD, on or after the facility date. |
-| `manage_booking.input.patientMobile` | `{"anyOf":[{"maxLength":20,"type":"string"},{"type":"null"}]}` | optional | Required for CREATE: 10-digit contact mobile. This is contact data, not caller authority. |
+| `manage_booking.input.patientMobile` | `{"anyOf":[{"maxLength":20,"type":"string"},{"type":"null"}]}` | optional | Required for CREATE: 10-digit contact mobile. For LIST/CANCEL/RESCHEDULE: the 10-digit booking mobile; optional when a verified calling number exists. Absent or blank defaults to that verified number. |
 | `manage_booking.input.patientName` | `{"anyOf":[{"maxLength":100,"type":"string"},{"type":"null"}]}` | optional | Required for CREATE: patient name; nonblank, at most 100 characters. |
 | `manage_booking.input.preferredTime` | `{"anyOf":[{"maxLength":5,"pattern":"^\\d{2}:\\d{2}$","type":"string"},{"type":"null"}]}` | optional | CREATE time in HH:MM 24-hour format; required when slots are enabled, chosen within returned openSlots. Optional when slots are disabled; a request, not a reservation. |
 | `manage_booking.input.reasonVerbatim` | `{"anyOf":[{"maxLength":500,"type":"string"},{"type":"null"}]}` | optional | Optional CREATE/CANCEL reason in the caller's original words; forwarded without interpretation. |
@@ -598,7 +597,7 @@ These tables list each tool's top-level input and output fields, followed by the
 | `manage_booking.output.detail` | `{"anyOf":[{"type":"string"},{"type":"null"}]}` | optional | Machine-readable cause for a non-success result (Reason or Detail table); null on success. |
 | `manage_booking.output.fields` | `{"items":{"type":"string"},"type":"array"}` | optional | Tool argument names that were missing, invalid or rejected; owner field names are translated, and names with no tool argument are dropped. |
 | `manage_booking.output.nextStep` | `{"enum":["SAY_REQUEST_NOTED","SAY_CHANGED","SAY_CANCELLED","OFFER_CHOICES","SAY_NOT_FOUND","ASK_TO_CORRECT","SAY_UNCERTAIN_AND_TRANSFER","TRANSFER_DESK","ASK_CALLBACK_DETAILS","ASK_CONFIRMATION","SAY_COULD_NOT_RECORD","SAY_COULD_NOT_CHECK","ASK_WHICH_SESSION","OFFER_OTHER_SESSION_OR_TIME","OFFER_OTHER_SESSION_OR_DATE","ASK_WHICH_TIME"],"type":"string"}` | required | Disposition code; see nextStep codes. |
-| `manage_booking.output.outcome` | `{"enum":["NOTED","CHANGED","CANCELLED","FOUND","NOT_FOUND","REJECTED","CONFLICT","UNCERTAIN","IDENTITY_UNAVAILABLE","CALLBACK_REQUIRED","NOT_AVAILABLE","HANDOFF_REQUIRED","CONFIRMATION_REQUIRED","OPERATION_CONTEXT_MISSING","COULD_NOT_RECORD","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category; see Outcome codes. |
+| `manage_booking.output.outcome` | `{"enum":["NOTED","CHANGED","CANCELLED","FOUND","NOT_FOUND","REJECTED","CONFLICT","UNCERTAIN","CALLBACK_REQUIRED","NOT_AVAILABLE","HANDOFF_REQUIRED","CONFIRMATION_REQUIRED","OPERATION_CONTEXT_MISSING","COULD_NOT_RECORD","COULD_NOT_CHECK","INVALID_REQUEST"],"type":"string"}` | required | Result category; see Outcome codes. |
 | `manage_booking.output.retryAfterSeconds` | `{"anyOf":[{"type":"integer"},{"type":"null"}]}` | optional | Delay in seconds requested by the owner service after a temporary failure; null otherwise. |
 | `manage_booking.output.sessions` | `{"items":{"anyOf":[{"$ref":"#/$defs/BoardSessionOut"},{"$ref":"#/$defs/UsualSessionOut"}]},"type":"array"}` | optional | Checked sessions with openSlots for that doctor and date, returned with ASK_WHICH_TIME, ASK_WHICH_SESSION and NOT_AVAILABLE; empty otherwise. An empty list establishes nothing about other times. |
 

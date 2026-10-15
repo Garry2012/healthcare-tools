@@ -1864,3 +1864,32 @@ async def test_booking_mobile_records_names_and_reasons_stay_out_of_logs(served)
     for private in ("9000000999", "9000000101", "Synthetic Privacy Patient", "synthetic private reason",
                     '"patientName"', '"appointments"'):
         assert private not in "\n".join(lines)
+
+
+def test_booking_mobile_surface_version(make_settings):
+    document = cli.schema_document(make_settings())
+    assert document["schemaVersion"] == "2026-10-16.1"
+    assert "Tool schema 2026-10-16.1." in document["instructions"]
+
+
+def test_booking_mobile_surface_describes_the_lookup_key(make_settings):
+    document = cli.schema_document(make_settings())
+    tool = next(t for t in document["tools"] if t["name"] == "manage_booking")
+    assert (
+        "LIST/CANCEL/RESCHEDULE act on the booking mobile "
+        "(patientMobile; default: the verified calling number). "
+        "LIST returns the records under it, which may belong to several patients, each with patientName. "
+        "CANCEL and RESCHEDULE succeed only for an appointment under that mobile."
+    ) in tool["description"]
+    assert tool["inputSchema"]["properties"]["patientMobile"]["description"] == (
+        "Required for CREATE: 10-digit contact mobile. For LIST/CANCEL/RESCHEDULE: the 10-digit booking mobile; "
+        "optional when a verified calling number exists. Absent or blank defaults to that verified number.")
+
+
+def test_booking_mobile_surface_outcomes_match_the_available_results(make_settings):
+    document = cli.schema_document(make_settings())
+    tool = next(t for t in document["tools"] if t["name"] == "manage_booking")
+    assert tool["outputSchema"]["properties"]["outcome"]["enum"] == [
+        "NOTED", "CHANGED", "CANCELLED", "FOUND", "NOT_FOUND", "REJECTED", "CONFLICT", "UNCERTAIN",
+        "CALLBACK_REQUIRED", "NOT_AVAILABLE", "HANDOFF_REQUIRED", "CONFIRMATION_REQUIRED",
+        "OPERATION_CONTEXT_MISSING", "COULD_NOT_RECORD", "COULD_NOT_CHECK", "INVALID_REQUEST"]
