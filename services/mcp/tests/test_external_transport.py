@@ -39,8 +39,8 @@ async def test_release_smoke_against_the_deployed_adapter():
 
 
 async def test_trusted_headers_are_forwarded_by_the_deployed_transport():
-    """Transport layer only: a verified caller is not refused and a bare call is. Says nothing about the owner
-    (COULD_NOT_CHECK is accepted here and rejected by the backend gate below)."""
+    """Transport only: verified headers provide the default booking mobile; a bare LIST lacks it.
+    Says nothing about the owner (COULD_NOT_CHECK is accepted here and rejected by the backend gate below)."""
     url, bearer = required("MCP_E2E_URL"), required("MCP_E2E_BEARER")
     with_identity = {"Authorization": f"Bearer {bearer}", **harness.headers(call_id=f"gate-{uuid.uuid4().hex[:8]}")}
     async with Client(StreamableHttpTransport(url, headers=with_identity)) as c:
@@ -48,7 +48,7 @@ async def test_trusted_headers_are_forwarded_by_the_deployed_transport():
     without = {"Authorization": f"Bearer {bearer}", "X-Call-Id": f"gate-{uuid.uuid4().hex[:8]}"}
     async with Client(StreamableHttpTransport(url, headers=without)) as c:
         refused = (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content
-    gates.assert_identity_forwarded(listed, refused)
+    gates.assert_booking_mobile_default_forwarded(listed, refused)
 
 
 async def test_backend_lookup_succeeds_through_the_deployed_adapter():

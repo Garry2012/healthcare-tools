@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     mcp_bearer_token: SecretStr = SecretStr("")
     # Dev only: used when the gateway forwards no X-Caller-Number.
     mcp_dev_caller_number: str = ""
-    # Which X-Caller-Verification assertions authorise appointment lookups/changes (agreed with Manoj).
+    # Which X-Caller-Verification assertions permit the default booking mobile when none is supplied.
     accepted_caller_verification: str = "SIP_CALLER_ID"
 
     # --- one total deadline per tool invocation (pool wait + auth + every call + any retry) -------

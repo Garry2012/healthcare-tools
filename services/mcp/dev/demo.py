@@ -73,7 +73,8 @@ async def main() -> None:
                      "action": "CREATE", "patientName": "Lakshmi Rao", "patientMobile": "9000000101",
                      "doctorId": "doc_garima", "visitDate": "2026-10-02", "preferredTime": "09:30",
                      "reasonVerbatim": "ಜ್ವರ ಮೂರು ದಿನದಿಂದ", "callerConfirmed": True})
-            await call(c, "manage_booking LIST (trusted caller number only)", "manage_booking", {"action": "LIST"})
+            await call(c, "manage_booking LIST (verified number as default booking mobile)",
+                       "manage_booking", {"action": "LIST"})
         async with Client(StreamableHttpTransport(f"{base}/mcp/", headers={
                 **gateway,
                 "X-Call-Started-At": "2026-10-01T09:58:00+05:30"})) as c:

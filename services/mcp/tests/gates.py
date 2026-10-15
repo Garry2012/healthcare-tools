@@ -65,12 +65,13 @@ def assert_no_new_appointment(before: list[outcomes.AppointmentOut], after: list
         raise GateFailure(f"an appointment was created for {doctor_id} on {visit_date}: {ids}")
 
 
-def assert_identity_forwarded(with_identity: dict, without_identity: dict) -> None:
-    """Transport check only: the verified caller is not refused and the bare call is. Says nothing about the owner."""
-    if with_identity.get("outcome") == "IDENTITY_UNAVAILABLE":
-        raise GateFailure("trusted identity headers did not reach the adapter")
-    if without_identity.get("outcome") != "IDENTITY_UNAVAILABLE":
-        raise GateFailure("a request without identity was not refused")
+def assert_booking_mobile_default_forwarded(with_identity: dict, without_identity: dict) -> None:
+    """Transport only: verified headers supply the default booking mobile; the bare LIST lacks it."""
+    if with_identity.get("outcome") == "INVALID_REQUEST":
+        raise GateFailure("trusted default booking mobile did not reach the adapter")
+    if (without_identity.get("outcome") != "INVALID_REQUEST"
+            or without_identity.get("fields") != ["patientMobile"]):
+        raise GateFailure("a request without a booking mobile was not refused")
 
 
 def assert_backend_lookup_succeeded(result: dict) -> None:

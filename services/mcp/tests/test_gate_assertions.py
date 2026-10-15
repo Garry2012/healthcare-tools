@@ -37,7 +37,7 @@ async def test_a_failed_list_cannot_satisfy_the_negative_gate(h):
 
 async def test_a_refused_list_cannot_satisfy_the_gate(h):
     result = await run(h, h.ctx(verification=None), action="LIST")
-    assert result.outcome == "IDENTITY_UNAVAILABLE"
+    assert result.outcome == "INVALID_REQUEST" and result.fields == ["patientMobile"]
     with pytest.raises(gates.GateFailure):
         gates.assert_list_succeeded(result)
 
@@ -54,13 +54,16 @@ async def test_the_negative_gate_needs_a_successful_baseline_and_detects_a_creat
     gates.assert_no_new_appointment(before, after, "doc_garima", "2026-10-02")  # another date: nothing created
 
 
-def test_identity_forwarding_is_not_backend_verification():
-    gates.assert_identity_forwarded({"outcome": "COULD_NOT_CHECK"}, {"outcome": "IDENTITY_UNAVAILABLE"})
+def test_default_booking_mobile_forwarding_is_not_backend_verification():
+    refused = {"outcome": "INVALID_REQUEST", "fields": ["patientMobile"]}
+    gates.assert_booking_mobile_default_forwarded({"outcome": "COULD_NOT_CHECK"}, refused)
     with pytest.raises(gates.GateFailure, match="did not reach"):
-        gates.assert_identity_forwarded({"outcome": "IDENTITY_UNAVAILABLE"}, {"outcome": "IDENTITY_UNAVAILABLE"})
-    with pytest.raises(gates.GateFailure, match="not refused"):
-        gates.assert_identity_forwarded({"outcome": "NOT_FOUND"}, {"outcome": "NOT_FOUND"})
-    for bad in ({"outcome": "COULD_NOT_CHECK", "detail": "TRANSPORT"}, {"outcome": "IDENTITY_UNAVAILABLE"},
+        gates.assert_booking_mobile_default_forwarded(refused, refused)
+    for bad in ({"outcome": "NOT_FOUND"}, {"outcome": "INVALID_REQUEST", "fields": ["fromDate"]},
+                {"outcome": "INVALID_REQUEST", "fields": ["patientMobile", "fromDate"]}):
+        with pytest.raises(gates.GateFailure, match="not refused"):
+            gates.assert_booking_mobile_default_forwarded({"outcome": "NOT_FOUND"}, bad)
+    for bad in ({"outcome": "COULD_NOT_CHECK", "detail": "TRANSPORT"}, refused,
                 {"outcome": "UNKNOWN_OUTCOME"}, {}):
         with pytest.raises(gates.GateFailure):
             gates.assert_backend_lookup_succeeded(bad)

@@ -37,10 +37,10 @@ clock, so a result never depends on when you run it.
   confirmed usable evidence or handoff. Failed reads never become unavailable facts.
   Date, session matching, end-time expiry, bounded department batches and incompleteness are covered.
   Directory/profile data may be cached; board and slots remain fresh.
-- **Booking:** doctor-only CREATE; RESCHEDULE derives the verified appointment's doctor. Shared policy
+- **Booking:** doctor-only CREATE; RESCHEDULE derives the doctor from the appointment under the booking mobile. Shared policy
   before writes; no end time plus a specific requested time is handoff, no write. Future usual days
-  can record NOTED; nested owner status is preserved. LIST/CANCEL, caller confirmation, verification,
-  stable frozen operation identity and uncertainty are regression-covered. No new operation on an
+  can record NOTED; nested owner status is preserved. LIST/CANCEL, explicit booking-mobile precedence, the optional verified default, no-call invalid fields,
+  shared-family records, caller confirmation, stable frozen operation identity and uncertainty are regression-covered. No new operation on an
   uncertain result; failed reads never become negative attendance facts.
 - **Summaries:** trusted call/start headers; exact whole-call text; nonblank/500 boundary and in-band
   501–2000 refusal; CALLBACK_NOTED mobile/ID rules; language/transfer rules; five compact outcomes;

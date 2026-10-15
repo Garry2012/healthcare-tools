@@ -1,5 +1,5 @@
 """Model-facing result envelopes: compact, typed, complete. They preserve status, ambiguity, completeness
-and the next step; they never carry raw upstream prose, patient contact data from other callers, or
+and the next step; they never carry raw upstream prose, patient contact data, or
 invented slots/capacity. These are MCP schema choices; the owner contracts' statuses are untouched."""
 
 from __future__ import annotations
@@ -185,7 +185,7 @@ class AppointmentOut(_Out):
 
 BookingOutcome = Literal[
     "NOTED", "CHANGED", "CANCELLED", "FOUND", "NOT_FOUND", "REJECTED", "CONFLICT", "UNCERTAIN",
-    "IDENTITY_UNAVAILABLE", "CALLBACK_REQUIRED", "NOT_AVAILABLE", "HANDOFF_REQUIRED",
+    "CALLBACK_REQUIRED", "NOT_AVAILABLE", "HANDOFF_REQUIRED",
     "CONFIRMATION_REQUIRED", "OPERATION_CONTEXT_MISSING", "COULD_NOT_RECORD", "COULD_NOT_CHECK", "INVALID_REQUEST",
 ]
 BookingNextStep = Literal[
