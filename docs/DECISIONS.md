@@ -370,3 +370,22 @@ retain bounded single-flight refresh. Frozen write bodies, keys and uncertainty 
 These ceilings do not delay successful responses. Safe timing fields and before/after stub benchmarks provide
 implementation evidence; real canary latency, voice timeout confirmation, merge and deployment remain separate
 gates. The 3.0/1.0 deployment values are provisional and tuned through rollout.env after approved live measurement.
+
+## Existing appointments by booking mobile — 15 October 2026
+
+LIST, CANCEL and RESCHEDULE use the booking mobile supplied by the caller instead of requiring the verified caller
+number. When none is supplied, the verified calling number is the default (`ACCEPTED_CALLER_VERIFICATION` now gates
+only this default); with neither, the result is `INVALID_REQUEST` naming `patientMobile`, without calling the owner;
+a supplied invalid mobile never falls back. CREATE is unchanged. LIST returns the existing safe records under that
+mobile, including `patientName`; mobiles and reason text stay out of tool results. **Name verification and
+family-member selection are voice-agent responsibilities and are not enforced by MCP:** the agent keeps the records
+private, asks the caller for the patient's name, and discloses or changes only the matching patient's appointment.
+MCP performs no patient-name matching or check. Garima accepted that the records under any supplied booking mobile
+reach the voice model before its name check, that nothing verifies the caller is entitled to the supplied mobile,
+and that MCP has no name-based safeguard if the agent selects the wrong family member's appointment. Writes stay scoped to the booking mobile by Manoj's mobile-to-appointment check and, for
+RESCHEDULE, MCP's existing list check from today; CANCEL remains one owner call and past cancellations remain the
+owner's decision. `IDENTITY_UNAVAILABLE` is removed; the schema version is bumped, our ContextForge entries
+refreshed and the voice handover updated. Trusted headers and forwarding are unchanged. This supersedes the
+verified-caller authority rule, `PLAN.md` "Trusted caller identity and appointment access" and A15's "verified
+caller's own list" wording. Manoj's questions remain follow-ups; proceeding without his written agreement is a
+knowing departure from the earlier rule for caller-number changes.

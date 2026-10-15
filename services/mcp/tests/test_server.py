@@ -932,12 +932,18 @@ async def test_the_model_cannot_supply_booking_identity_fields(served):
     base, h = served
     async with client(base) as c:
         for extra in ({"callId": "other"}, {"callerNumber": "+919000000999"}, {"operationId": "x"},
-                      {"X-Caller-Number": "+919000000999"}, {"patientMobile": "9000000999"}):
+                      {"X-Caller-Number": "+919000000999"}):
             result = await c.call_tool("manage_booking", {"action": "LIST", **extra}, raise_on_error=False)
             assert result.is_error or result.structured_content["outcome"] in ("NOT_FOUND", "FOUND"), extra
         assert (await c.call_tool("manage_booking", {"action": "LIST"})).structured_content["outcome"] == "NOT_FOUND"
     queries = [r for r in h.requests if r.url.path.endswith("/appointments") and r.method == "GET"]
     assert queries and all(r.url.params["mobile"] == "9000000101" for r in queries)
+    h.requests.clear()
+    async with client(base) as c:
+        result = await c.call_tool("manage_booking", {"action": "LIST", "patientMobile": "9000000999"})
+        assert result.structured_content["outcome"] == "NOT_FOUND"
+    assert h.ops_paths() == ["/appointments"]
+    assert h.requests[0].url.params["mobile"] == "9000000999"
 
 
 async def test_summary_arguments_cannot_override_trusted_headers(served):
@@ -1823,3 +1829,38 @@ async def test_tool_duration_includes_awaited_service_once(make_settings, monkey
     records = [r for r in caplog.records if r.name == "frontdesk_mcp.tools"]
     assert len(records) == 1 and records[0].msg == "tool_result"
     assert records[0].fields.get("durationMs") == 125
+
+
+async def test_booking_mobile_records_names_and_reasons_stay_out_of_logs(served):
+    base, _ = served
+    lines = []
+
+    class Capture(logging.Handler):
+        def emit(self, record):
+            lines.append(JsonFormatter("demo-hospital").format(record))
+
+    root = logging.getLogger()
+    handler = Capture()
+    root.addHandler(handler)
+    try:
+        async with client(base, operation_id="privacy-create") as c:
+            created = (await c.call_tool("manage_booking", {
+                "action": "CREATE", "patientName": "Synthetic Privacy Patient", "patientMobile": "9000000999",
+                "doctorId": "doc_garima", "visitDate": "2026-10-01", "preferredTime": "10:45",
+                "reasonVerbatim": "synthetic private reason", "callerConfirmed": True})).structured_content
+            assert created["outcome"] == "NOTED"
+            listed = (await c.call_tool("manage_booking", {
+                "action": "LIST", "patientMobile": "9000000999"})).structured_content
+            assert listed["appointments"][0]["patientName"] == "Synthetic Privacy Patient"
+        async with client(base, operation_id="privacy-cancel") as c:
+            cancelled = (await c.call_tool("manage_booking", {
+                "action": "CANCEL", "appointmentId": created["appointment"]["appointmentId"],
+                "patientMobile": "9000000999", "reasonVerbatim": "synthetic private reason",
+                "callerConfirmed": True})).structured_content
+            assert cancelled["outcome"] == "CANCELLED"
+    finally:
+        root.removeHandler(handler)
+    assert any(json.loads(line)["msg"] == "tool_result" for line in lines)
+    for private in ("9000000999", "9000000101", "Synthetic Privacy Patient", "synthetic private reason",
+                    '"patientName"', '"appointments"'):
+        assert private not in "\n".join(lines)

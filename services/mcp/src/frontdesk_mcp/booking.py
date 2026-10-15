@@ -1,7 +1,8 @@
 """manage_booking: create/list/cancel/reschedule on Manoj's appointment contract.
 
-Authority to list or change comes from the trusted caller identity; the dictated patient mobile is
-contact data only. A write needs the caller's confirmation, trusted call and operation context and
+Existing appointments are scoped to the supplied booking mobile, defaulting to the verified caller
+number when absent. Patient-name checks belong to the voice agent. A write needs the caller's
+confirmation, trusted call and operation context and
 the shared today/future schedule policy before CREATE or RESCHEDULE. The outgoing body is
 frozen and keyed by sha256(tenant|call|action|operation) so a retry replays and any changed payload,
 including a changed target, conflicts at the owner.
@@ -111,6 +112,13 @@ def _time(value: str | None, field: str, issues: list[str]) -> str | None:
     return value
 
 
+def booking_mobile(request: BookingRequest, ctx: CallContext, settings: Settings) -> str | None:
+    """Resolve the booking mobile; invalid explicit input has no verified-number fallback."""
+    if request.patientMobile is not None and request.patientMobile.strip():
+        return request.patientMobile if identity.is_contract_mobile(request.patientMobile) else None
+    return identity.authorised_mobile(ctx, settings)
+
+
 class BookingService:
     def __init__(self, ops: OpsClient, settings: Settings, clock: Clock,
                  cache: DirectoryCache | None = None, reader: ScheduleReader | None = None) -> None:
@@ -142,10 +150,6 @@ class BookingService:
             return outcomes.BookingResult(outcome="OPERATION_CONTEXT_MISSING", nextStep="SAY_COULD_NOT_RECORD",
                                           detail="CALL_ID_MISSING" if not ctx.call_id else "OPERATION_ID_MISSING")
         return None
-
-    @staticmethod
-    def _identity_unavailable() -> outcomes.BookingResult:
-        return outcomes.BookingResult(outcome="IDENTITY_UNAVAILABLE", nextStep="TRANSFER_DESK")
 
     def _failure(self, exc: Exception, action: Action) -> outcomes.BookingResult:
         write = action != "LIST"
@@ -179,14 +183,12 @@ class BookingService:
         raise exc
 
     async def _list(self, ctx: CallContext, request: BookingRequest) -> outcomes.BookingResult:
-        mobile = identity.authorised_mobile(ctx, self.settings)
-        if mobile is None:
-            return self._identity_unavailable()
-        issues: list[str] = []
+        mobile = booking_mobile(request, ctx, self.settings)
+        issues: list[str] = ["patientMobile"] if mobile is None else []
         from_date = _list_date(request.fromDate, "fromDate", issues)
         to_date = _list_date(request.toDate, "toDate", issues)
         if issues:
-            return self._invalid(issues)
+            return self._invalid(sorted(set(issues)))
         deadline = Deadline(self.settings.read_budget)
         try:
             found = await self.ops.find_appointments(deadline, mobile=mobile, from_date=from_date, to_date=to_date,
@@ -275,7 +277,8 @@ class BookingService:
 
     async def _change(self, ctx: CallContext, request: BookingRequest) -> outcomes.BookingResult:
         now = local_now(self.clock, self.settings.zone)
-        issues: list[str] = []
+        mobile = booking_mobile(request, ctx, self.settings)
+        issues: list[str] = ["patientMobile"] if mobile is None else []
         if not request.appointmentId or not _ID.fullmatch(request.appointmentId):
             issues.append("appointmentId")
         new_date = new_time = None
@@ -292,9 +295,6 @@ class BookingService:
             return self._invalid(sorted(set(issues)), detail)
         if gate := self._write_gate(ctx, request):
             return gate
-        mobile = identity.authorised_mobile(ctx, self.settings)
-        if mobile is None:
-            return self._identity_unavailable()
         deadline = Deadline(self.settings.write_budget)
         expected_slot = None
         if request.action == "RESCHEDULE":
@@ -334,8 +334,8 @@ class BookingService:
                                           detail="APPOINTMENT_UNAVAILABLE", retryAfterSeconds=retry)
         current = next((a for a in listed.items if a.id == request.appointmentId), None)
         if current is None:
-            # The appointment must be in the verified caller's list, which starts today by owner contract.
-            # Another caller's or a past appointment gets the same neutral NOT_FOUND, with no write.
+            # The appointment must be under the booking mobile in the owner's list from today.
+            # A different mobile's or a past appointment gets neutral NOT_FOUND, with no write.
             return outcomes.BookingResult(outcome="NOT_FOUND", nextStep="SAY_NOT_FOUND")
         if not current.doctorId:
             return outcomes.BookingResult(outcome="COULD_NOT_RECORD", nextStep="SAY_COULD_NOT_RECORD",

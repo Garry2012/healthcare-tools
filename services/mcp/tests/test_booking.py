@@ -257,26 +257,29 @@ async def test_total_deadline_bounds_a_slow_write(make_settings):
         await hh.aclose()
 
 
-async def test_list_uses_the_trusted_number_only(h):
-    await run(h, h.ctx(operation_id="op-1"), **CREATE)
-    listed = await run(h, h.ctx(), action="LIST", patientMobile="9000000999")  # the model's number is ignored
+async def test_list_uses_the_supplied_booking_mobile(h):
+    await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "patientMobile": "9000000999"})
+    h.requests.clear()
+    listed = await run(h, h.ctx(), action="LIST", patientMobile="9000000999")
     assert listed.outcome == "FOUND" and [a.appointmentId for a in listed.appointments]
     assert listed.appointments[0].patientName == "Lakshmi Rao"
     assert "9000000101" not in listed.model_dump_json()
     query = [r for r in h.requests if r.url.path.endswith("/appointments") and r.method == "GET"][0]
-    assert query.url.params["mobile"] == "9000000101"
+    assert query.url.params["mobile"] == "9000000999"
+    assert h.ops_paths() == ["/appointments"]
 
 
 @pytest.mark.parametrize("ctx_kwargs", [
     {"caller": None}, {"caller": "+449000000101"}, {"caller": "+919000000101", "verification": "NONE"},
     {"caller": "9000000101"}, {"caller": "+919000000101", "verification": None},  # bare number: unverified
 ])
-async def test_list_cancel_reschedule_need_an_authorised_number(h, ctx_kwargs):
+async def test_list_cancel_reschedule_need_a_booking_mobile_without_a_verified_default(h, ctx_kwargs):
     for args in ({"action": "LIST"}, {"action": "CANCEL", "appointmentId": "appt_0001", "callerConfirmed": True},
                  {"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "2026-10-05",
                   "callerConfirmed": True}):
         result = await run(h, h.ctx(operation_id="op-1", **ctx_kwargs), **args)
-        assert result.outcome == "IDENTITY_UNAVAILABLE" and result.nextStep == "TRANSFER_DESK", args
+        assert result.outcome == "INVALID_REQUEST" and result.nextStep == "ASK_TO_CORRECT", args
+        assert result.fields == ["patientMobile"]
     assert not [r for r in h.requests if "/appointments" in r.url.path]
 
 
@@ -285,7 +288,11 @@ async def test_stricter_verification_policy_is_honoured(make_settings):
     try:
         sip = await run(hh, hh.ctx(), action="LIST")
         otp = await run(hh, hh.ctx(verification="OTP"), action="LIST")
-        assert sip.outcome == "IDENTITY_UNAVAILABLE" and otp.outcome == "NOT_FOUND"
+        assert sip.outcome == "INVALID_REQUEST" and sip.fields == ["patientMobile"]
+        assert otp.outcome == "NOT_FOUND"
+        supplied = await run(hh, hh.ctx(), action="LIST", patientMobile="9000000999")
+        assert supplied.outcome == "NOT_FOUND"
+        assert hh.requests[-1].url.params["mobile"] == "9000000999"
     finally:
         await hh.aclose()
 
@@ -357,20 +364,19 @@ async def test_cancel_key_is_bound_to_the_appointment_and_operation(h):
     assert key == hashlib.sha256(b"demo-hospital|call-1|CANCEL|op-2").hexdigest()
 
 
-async def test_a_dictated_number_never_reaches_a_lookup_or_change(h):
-    """Family/other-number access is refused in this release: the only number used for LIST/CANCEL/RESCHEDULE
-    is the verified caller's; a dictated patientMobile is contact data on CREATE and ignored elsewhere."""
-    await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "patientMobile": "9000000777"})  # booking for a relative
+async def test_a_dictated_booking_mobile_reaches_lookup_and_change(h):
+    """The booking mobile scopes LIST and CANCEL even when the calling phone is different."""
+    created = await run(h, h.ctx(operation_id="op-1"), **{**CREATE, "patientMobile": "9000000777"})
+    h.requests.clear()
     listed = await run(h, h.ctx(), action="LIST", patientMobile="9000000777")
-    assert listed.outcome == "NOT_FOUND"  # nothing under the caller's own verified number
+    assert listed.outcome == "FOUND"
+    assert [a.appointmentId for a in listed.appointments] == [created.appointment.appointmentId]
     cancel = await run(h, h.ctx(operation_id="op-2"), action="CANCEL", appointmentId="appt_0001",
                        patientMobile="9000000777", callerConfirmed=True)
-    assert cancel.outcome == "NOT_FOUND"
-    for r in h.requests:
-        if "/appointments" in r.url.path and r.method == "GET":
-            assert r.url.params["mobile"] == "9000000101"
-        if r.url.path.endswith("/cancel"):
-            assert json.loads(r.content)["callerMobile"] == "9000000101"
+    assert cancel.outcome == "CANCELLED"
+    assert h.ops_paths() == ["/appointments", "/appointments/appt_0001/cancel"]
+    assert h.requests[0].url.params["mobile"] == "9000000777"
+    assert json.loads(h.requests[1].content)["callerMobile"] == "9000000777"
 
 
 # ------------------------------------------------------------------ review fixes (1 Oct 2026)
@@ -1478,3 +1484,154 @@ async def test_create_beyond_exchange_cap_retries_frozen_write_then_is_uncertain
         {"path": "/appointments", "attempt": 2, "error": "ReadTimeout",
          "elapsedMs": 1000, "remainingMs": 1000, "retry": False},
     ]
+
+
+# Booking-mobile access: explicit contact scopes existing appointments; no name checking in MCP.
+
+
+@pytest.mark.parametrize("mobile", [None, "", "   "])
+@pytest.mark.parametrize("action", ["LIST", "CANCEL", "RESCHEDULE"])
+async def test_booking_mobile_blank_uses_verified_default(h, action, mobile):
+    created = await run(h, **CREATE)
+    h.requests.clear()
+    args = {"action": action, "patientMobile": mobile}
+    if action != "LIST":
+        args.update(appointmentId=created.appointment.appointmentId, callerConfirmed=True)
+    if action == "RESCHEDULE":
+        args.update(newVisitDate="2026-10-05", newPreferredTime="10:45")
+    result = await run(h, h.ctx(operation_id="change"), **args)
+    assert result.outcome == {"LIST": "FOUND", "CANCEL": "CANCELLED", "RESCHEDULE": "NOTED"}[action]
+    for request in h.requests:
+        if request.method == "GET" and request.url.path.endswith("/appointments"):
+            assert request.url.params["mobile"] == "9000000101"
+        elif request.method == "POST":
+            assert json.loads(request.content)["callerMobile"] == "9000000101"
+
+
+@pytest.mark.parametrize("mobile", ["bad", "+919000000101", " 9000000101 ", "90000001"])
+@pytest.mark.parametrize("action", ["LIST", "CANCEL", "RESCHEDULE"])
+async def test_booking_mobile_invalid_never_falls_back_or_calls_owner(h, action, mobile):
+    result = await run(h, action=action, patientMobile=mobile, appointmentId="appt_0001",
+                       newVisitDate="2026-10-05", callerConfirmed=True)
+    assert (result.outcome, result.nextStep, result.fields) == (
+        "INVALID_REQUEST", "ASK_TO_CORRECT", ["patientMobile"])
+    assert h.requests == []
+
+
+@pytest.mark.parametrize("args,want", [
+    ({"action": "RESCHEDULE", "appointmentId": "appt_0001", "newVisitDate": "tomorrow"},
+     ["newVisitDate", "patientMobile"]),
+    ({"action": "LIST", "fromDate": "today", "toDate": "bad"}, ["fromDate", "patientMobile", "toDate"]),
+    ({"action": "CANCEL"}, ["appointmentId", "patientMobile"]),
+])
+async def test_booking_mobile_issue_combines_before_confirmation_and_headers(h, args, want):
+    result = await run(h, h.ctx(call_id=None, operation_id=None), patientMobile="bad", **args)
+    assert (result.outcome, result.nextStep, result.fields) == ("INVALID_REQUEST", "ASK_TO_CORRECT", want)
+    assert h.requests == []
+
+
+async def test_booking_mobile_shared_family_returns_safe_records_and_keeps_date_filters(h):
+    for op, name, day in (("one", "Synthetic Parent", "2026-10-01"),
+                          ("two", "Synthetic Child", "2026-10-01"),
+                          ("three", "Synthetic Parent", "2026-10-05")):
+        result = await run(h, h.ctx(operation_id=op),
+                           **{**CREATE, "patientMobile": "9000000999", "patientName": name, "visitDate": day})
+        assert result.outcome == "NOTED"
+    h.requests.clear()
+    ctx = h.ctx(caller=None, verification=None)
+    listed = await run(h, ctx, action="LIST", patientMobile="9000000999")
+    assert listed.outcome == "FOUND"
+    assert [a.patientName for a in listed.appointments] == ["Synthetic Parent", "Synthetic Child", "Synthetic Parent"]
+    assert h.ops_paths() == ["/appointments"]
+    assert dict(h.requests[0].url.params) == {"mobile": "9000000999"}
+    for private in ("9000000999", "9000000101", "fever for three days", "reasonVerbatim"):
+        assert private not in listed.model_dump_json()
+    h.requests.clear()
+    filtered = await run(h, ctx, action="LIST", patientMobile="9000000999",
+                         fromDate="2026-10-05", toDate="2026-10-05", status="NOTED")
+    assert [a.appointmentId for a in filtered.appointments] == ["appt_0003"]
+    assert h.ops_paths() == ["/appointments"]
+    assert dict(h.requests[0].url.params) == {
+        "mobile": "9000000999", "from": "2026-10-05", "to": "2026-10-05", "status": "NOTED"}
+
+
+@pytest.mark.parametrize("action", ["CANCEL", "RESCHEDULE"])
+@pytest.mark.parametrize("name", [None, "Unrelated Synthetic Name"])
+async def test_booking_mobile_changes_ignore_name_and_keep_exact_owner_calls(h, action, name):
+    created = await run(h, **{**CREATE, "patientMobile": "9000000999"})
+    appointment_id = created.appointment.appointmentId
+    h.requests.clear()
+    result = await run(h, h.ctx(caller=None, verification=None, operation_id="change"), action=action,
+                       appointmentId=appointment_id, patientMobile="9000000999", patientName=name,
+                       newVisitDate="2026-10-05", newPreferredTime="10:45", callerConfirmed=True)
+    assert result.outcome == ("CANCELLED" if action == "CANCEL" else "NOTED")
+    suffix = action.lower()
+    assert h.ops_paths() == ([f"/appointments/{appointment_id}/cancel"] if action == "CANCEL" else [
+        "/appointments", "/doctors/doc_garima", "/availability/doc_garima/slots",
+        f"/appointments/{appointment_id}/reschedule"])
+    [post] = sent(h, f"/{suffix}")
+    body = {"callerMobile": "9000000999", "callId": "call-1"}
+    if action == "RESCHEDULE":
+        body.update(newVisitDate="2026-10-05", newExpectedTime="10:45")
+        assert h.requests[0].url.params["mobile"] == "9000000999"
+    assert json.loads(post.content) == body
+    assert post.headers["idempotency-key"] == hashlib.sha256(
+        f"demo-hospital|call-1|{action}|change".encode()).hexdigest()
+
+
+@pytest.mark.parametrize("action", ["CANCEL", "RESCHEDULE"])
+async def test_booking_mobile_mismatch_is_neutral_not_found(h, action):
+    created = await run(h, **{**CREATE, "patientMobile": "9000000999"})
+    h.requests.clear()
+    result = await run(h, action=action, appointmentId=created.appointment.appointmentId,
+                       patientMobile="9000000101", newVisitDate="2026-10-05", callerConfirmed=True)
+    assert (result.outcome, result.nextStep) == ("NOT_FOUND", "SAY_NOT_FOUND")
+    assert h.ops_paths() == (["/appointments/appt_0001/cancel"] if action == "CANCEL" else ["/appointments"])
+    assert result.appointment is None and result.appointments == []
+
+
+async def test_booking_mobile_reschedule_owner_404_is_neutral(h):
+    created = await run(h, **{**CREATE, "patientMobile": "9000000999"})
+    h.ops_state.write_outcomes["/appointments/appt_0001/reschedule"] = [{"status": 404, "code": "NOT_FOUND"}]
+    h.requests.clear()
+    result = await run(h, action="RESCHEDULE", appointmentId=created.appointment.appointmentId,
+                       patientMobile="9000000999", newVisitDate="2026-10-05", callerConfirmed=True)
+    assert (result.outcome, result.nextStep) == ("NOT_FOUND", "SAY_NOT_FOUND")
+    assert len(sent(h, "/reschedule")) == 1
+
+
+@pytest.mark.parametrize("action", ["CANCEL", "RESCHEDULE"])
+async def test_booking_mobile_changed_on_same_operation_keeps_retry_semantics(h, action):
+    created = await run(h, **{**CREATE, "patientMobile": "9000000999"})
+    args = {"action": action, "appointmentId": created.appointment.appointmentId,
+            "newVisitDate": "2026-10-05", "newPreferredTime": "10:45", "callerConfirmed": True}
+    ctx = h.ctx(operation_id="same-operation")
+    first = await run(h, ctx, patientMobile="9000000999", **args)
+    assert first.outcome == ("CANCELLED" if action == "CANCEL" else "NOTED")
+    first_post = sent(h, f"/{action.lower()}")[0]
+    h.requests.clear()
+    second = await run(h, ctx, patientMobile="9000000101", **args)
+    if action == "CANCEL":
+        assert (second.outcome, second.detail) == ("CONFLICT", "IDEMPOTENCY_CONFLICT")
+        [post] = sent(h, "/cancel")
+        assert post.headers["idempotency-key"] == first_post.headers["idempotency-key"]
+        assert json.loads(post.content) == {"callerMobile": "9000000101", "callId": "call-1"}
+        assert h.ops_paths() == ["/appointments/appt_0001/cancel"]
+    else:
+        assert (second.outcome, second.nextStep) == ("NOT_FOUND", "SAY_NOT_FOUND")
+        assert h.ops_paths() == ["/appointments"] and not sent(h, "/reschedule")
+
+
+async def test_booking_mobile_change_preserves_create_body_paths_and_result(h):
+    result = await run(h, **CREATE)
+    assert h.ops_paths() == [
+        "/doctors/doc_garima", "/availability", "/availability/doc_garima/slots", "/appointments"]
+    assert result.model_dump()["appointment"] == {
+        "appointmentId": "appt_0001", "status": "NOTED", "visitDate": "2026-10-01",
+        "expectedTime": "10:45", "doctorId": "doc_garima", "department": None, "patientName": "Lakshmi Rao",
+        "slotTime": "10:45", "slotMoved": False}
+    assert (result.outcome, result.nextStep) == ("NOTED", "SAY_REQUEST_NOTED")
+    assert json.loads(sent(h, "/appointments")[0].content) == {
+        "patientName": "Lakshmi Rao", "mobile": "9000000101", "doctorId": "doc_garima",
+        "visitDate": "2026-10-01", "expectedTime": "10:45", "reasonVerbatim": "fever for three days",
+        "callId": "call-1"}
