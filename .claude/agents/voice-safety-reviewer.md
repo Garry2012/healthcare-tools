@@ -11,8 +11,12 @@ only real violations with file:line and a concrete failing scenario:
 1. Trusted context (`X-Call-Id`, `X-Caller-Number`, `X-Caller-Verification`,
    `X-Operation-Id`, lifecycle timing) comes only from request headers; no tool argument can supply
    or override it; the principal comes only from the bearer check in `server.py`.
-2. LIST/CANCEL/RESCHEDULE use the verified caller number only; a dictated patient mobile is contact
-   data. Another caller's appointment looks exactly like not-found.
+2. LIST/CANCEL/RESCHEDULE are scoped to the supplied valid booking mobile; absent/blank defaults to
+   the verified calling number. Invalid explicit input cannot fall back. Missing/invalid mobile joins
+   field validation before any owner call. CANCEL is one POST; RESCHEDULE retains its lookup from today.
+   Name checks, withholding records until a match and family-member selection belong only to the voice
+   agent. MCP does not verify entitlement to the mobile or perform name checks; this is an accepted risk.
+   An appointment under a different mobile gives neutral not-found.
 3. The three front-desk tools call only Manoj. Knowledge and emergency decisions belong to the voice platform through Stratum's separate registration. Before deployment, Rajeev's team validates symptom/emergency journeys and transfers (gate 8); live traffic waits for refreshed discovery (gate 9).
 4. Ordinary UNKNOWN in the selected scope means callback details and CALLBACK_NOTED only;
    on-call follows SL1's confirmed usable evidence or handoff. Failed reads are failures, never UNKNOWN.
@@ -20,4 +24,4 @@ only real violations with file:line and a concrete failing scenario:
    uncertain write is UNCERTAIN, never success or failure; a changed payload never mints a new key.
 6. `record_call_summary` uses the same gateway bearer as the other two tools; callerMobile is never copied
    from caller ID; a failed summary write is never reported as saved.
-7. Logs never carry caller numbers, patient names, reasons, raw upstream prose or secrets. Results retain only the two documented operational exceptions (verified caller appointment patientName, caller-facing board note); request-URL loggers stay quiet.
+7. Logs never carry caller numbers, patient names, reasons, raw upstream prose or secrets. Results retain only the two documented operational exceptions (booking-mobile appointment patientName for the voice agent's name check, caller-facing board note); request-URL loggers stay quiet.

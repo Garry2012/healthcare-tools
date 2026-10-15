@@ -2,7 +2,7 @@
 
 Status: source migration implemented; three-tool removal implemented and approved in review on 11 October 2026 (implementation only; not merged to `main` or deployed). Slots rules remain SL1. Slots documentation approval and deployment readiness are separate (gates below). Original plan published 1 October 2026. Start with [the handover README](README.md), [target-state boundaries](TARGET-STATE.md) and [the source audit](CURRENT-STATE.md). The 1 October clarification makes scoped Azure retirement a mandatory completion phase; no cloud deletion is performed by this plan update.
 
-Current availability and booking rules are recorded in [DECISIONS.md SL1](../../DECISIONS.md#sl1--slot-aware-availability-and-booking-9-october-2026) and the [slots plan](implementation/SLOTS-PLAN.md). SL1 supersedes the earlier on-call callback rules in A12/A13; source schema is `2026-10-11.2` (deployed to the canary on 12 October 2026, revision `--0000005`). Earlier migration history below is not release evidence.
+Current availability and booking rules are recorded in [DECISIONS.md SL1](../../DECISIONS.md#sl1--slot-aware-availability-and-booking-9-october-2026) and the [slots plan](implementation/SLOTS-PLAN.md). SL1 supersedes the earlier on-call callback rules in A12/A13; source schema is `2026-10-16.1` for booking-mobile access (source only). The dated deployment record for `2026-10-11.2` remains below. Earlier migration history below is not release evidence.
 
 Updated 30 September 2026 from the user's decisions, the [published Manoj contract](https://healthcare-contract-docs.icytree-6543aaa9.centralindia.azurecontainerapps.io/openapi.yaml), and the [Opus review](OPUS-REVIEW.md). This is the migration plan, including the actionable review recommendations and the user's callback-only UNKNOWN policy. It supersedes earlier ownership proposals, slot requirements and the direct platform-to-REST summary path. Retirement, rollback and acceptance requirements are included here; the historical investigation is source evidence, not an additional implementation checklist. This is an implementation plan, not a claim of verified production readiness.
 
@@ -33,7 +33,7 @@ Manoj's public interface is the adapter's only owner-service dependency: keep co
 ## Source status and pre-deployment gates (11 October 2026)
 
 Phases 1a–4b were built and reviewed; phase 4b is accepted. Phase 5 updates these documents and
-is complete only when their review is approved. The three-tool source schema is `2026-10-11.2`: description text only, per [VOICE-TEAM-DOC-PLAN.md](implementation/VOICE-TEAM-DOC-PLAN.md). The removal implementation was approved in review on 11 October 2026.
+is complete only when their review is approved. The earlier three-tool schema `2026-10-11.2` changed description text only, per [VOICE-TEAM-DOC-PLAN.md](implementation/VOICE-TEAM-DOC-PLAN.md). The removal implementation was approved in review on 11 October 2026.
 **The slots series and the three-tool removal were merged to `main` (pull request #17, `28f11a8`) and schema `2026-10-11.1` was deployed to the canary on 11 October 2026 (revision `--0000004`, image `28f11a8`). Documentation completion is not deployment readiness.**
 
 These release gates are not closed by this source change:
@@ -120,20 +120,33 @@ plan for exact precedence; earlier board-overlay and department-write proposals 
 | Tool | Consumer contract | Behaviour |
 |---|---|---|
 | `get_doctor_availability` | Manoj directory, profile, live board, slots and capabilities reads | Selected-doctor slot-aware availability; department matches before slot checking; WORKING_HOURS without board/slots. SL1 defines on-call and refusal rules. |
-| `manage_booking` | Manoj create/list/cancel/reschedule operations | Slot-aware CREATE/RESCHEDULE validate the chosen time. Identity, truthful lifecycle status, uncertainty and owner write contracts remain unchanged. |
+| `manage_booking` | Manoj create/list/cancel/reschedule operations | Slot-aware CREATE/RESCHEDULE validate the chosen time. Existing-appointment access uses the booking mobile; truthful lifecycle status, uncertainty and owner write contracts are unchanged. |
 | `record_call_summary` | `createCallSummary`, `POST /call-summaries` | LLM-callable through the same gateway bearer; no summary listing or staff tools. |
 
-There are three MCP tools. Schema `2026-10-11.2` is published in the repository; gateway/voice discovery
+There are three MCP tools. Schema `2026-10-16.1` is published in the repository; gateway/voice discovery
 refresh remains a release gate, not proof of deployment. Each appointment output includes nullable
 slotTime and default-false slotMoved; LIST and CANCEL keep slotMoved false.
 
-**Trusted caller identity and appointment access**
+**Booking-mobile access (supersedes Trusted caller identity and appointment access, 15 October 2026)**
 
-Keep patient contact separate from caller authorization. Create accepts the supplied patient name and contact mobile; those fields do not establish authority to view or change existing appointments. LIST, CANCEL and RESCHEDULE must derive `mobile`/`callerMobile` from authenticated, tenant-bound platform context at the agreed verification level. Remove the legacy model-visible LIST phone override; model fields cannot set caller headers, tenant, authorization basis or idempotency keys. Bind forwarded context to the actual call and isolate concurrent callers.
+LIST, CANCEL and RESCHEDULE act on the supplied valid ten-digit patientMobile. Absent or blank input
+defaults to the verified calling number under the configured country rule and accepted verification set.
+Invalid explicit input fails without a fallback. Missing or invalid booking mobile joins the other field
+errors before any owner call. Trusted headers, tenant binding and concurrent-call isolation are unchanged.
 
-Normalize verified phone context using an explicitly configured supported country rule and validate the contract's ten-digit Mobile field. Do not strip arbitrary prefixes or take the last ten digits. A trusted SIP caller-number header alone is not universal proof of ownership; the platform and Manoj must agree what verification the authenticated MCP consumer is asserting. Web/WhatsApp integrations must supply their own authenticated channel context under that same policy.
+LIST returns all matching patients' safe appointment records under that mobile. The voice agent alone
+withholds those records, asks for and compares the patient name, and selects the correct family member
+and appointment. No name checking, entitlement verification or conversational state is implemented by MCP.
+Garima accepted that knowing a mobile permits access to its records and that those records reach the
+model before its name check. A direct CANCEL/RESCHEDULE need not follow LIST or a conversational check.
+Manoj checks mobile-to-appointment scope for both writes; MCP's RESCHEDULE lookup also requires the id
+in the list from today. CANCEL stays exactly one owner POST, including for past appointments.
 
-For the initial release, absent verification, unsupported numbers and requests to manage an appointment under another person's number cannot trigger a lookup or mutation using a dictated substitute. Return a neutral identity-unavailable/not-found result as appropriate and use the established assistance flow; do not implement delegated-family authorization locally. This restriction does not prevent creating a request with an authorized patient's dictated contact information. Define broader family access with Manoj/platform separately. Minimize returned appointment details and never expose symptom text, other contacts or raw upstream errors merely to select an appointment. The UNKNOWN callback flow remains summary-only; its caller-provided callback number is contact data, not authorization.
+CREATE, scheduling/slots, confirmation, operation IDs, frozen bodies, retries, budgets and summary contact
+handling are unchanged. A same-operation changed booking mobile gives CANCEL an owner idempotency conflict;
+RESCHEDULE returns NOT_FOUND without a POST when the new mobile's list does not contain the id.
+Manoj's description/agreement, optional future name verification, lookup monitoring and stored-name format
+remain follow-ups, not blockers to this approved source implementation. Voice acceptance precedes cutover.
 
 **Mutation identity, retries and response validation**
 
@@ -160,8 +173,8 @@ Paths below are relative to the configured service base URL. Manoj's documented 
 | `get_doctor_availability`; `manage_booking` — selected-doctor schedule gate | Manoj | `GET /availability/{doctorId}/slots?date=...` (`getAvailabilitySlots`) | Read uncached blocks for the requested date; `enabled` decides whether slot rules apply. |
 | `get_doctor_availability` — department AVAILABILITY only | Manoj | `GET /capabilities` (`getCapabilities`) | Cached facility capability; no per-doctor slots fan-out or startup/background process. |
 | `manage_booking` — create | Manoj | `POST /appointments` (`createAppointment`) | Record patient details, required doctorId, visit date and preferred time (required when slots enabled). Success is NOTED with returned slotTime/slotMoved, not confirmation. |
-| `manage_booking` — list | Manoj | `GET /appointments?mobile=...` (`findAppointments`) | Retrieve appointments for the authorized number; optional from/to/status filters. |
-| `manage_booking` — cancel | Manoj | `POST /appointments/{appointmentId}/cancel` (`cancelAppointment`) | Cancel using trusted caller identity and the documented request fields. |
+| `manage_booking` — list | Manoj | `GET /appointments?mobile=...` (`findAppointments`) | Retrieve appointments under the booking mobile; optional from/to/status filters. |
+| `manage_booking` — cancel | Manoj | `POST /appointments/{appointmentId}/cancel` (`cancelAppointment`) | Cancel with callerMobile equal to the booking mobile, in one owner POST without a lookup. |
 | `manage_booking` — reschedule | Manoj | `POST /appointments/{appointmentId}/reschedule` (`rescheduleAppointment`) | Change visit date and preferred time (required when slots enabled); no new doctor/department field. session is not sent upstream. |
 | `record_call_summary` | Manoj | `POST /call-summaries` (`createCallSummary`) | Store the completed call's summary, with callId replay protection. |
 
@@ -215,7 +228,7 @@ Quote these descriptions or use block scalars in a Manoj-owned revision. All 25 
 
 For development, prefer a corrected owner-published contract. If that is not yet available, use an explicitly labelled test-only overlay containing the five quoting corrections, with source and overlay hashes; leave the downloaded original unchanged. Do not add guessed endpoint semantics to that overlay. Mark behavior fixtures based on unconfirmed assumptions separately and run the same consumer assertions against Manoj's designated test tenant when available. Neither Prism examples nor a stateful stub proves the owner's authorization, replay, scheduling or performance behavior.
 
-Other earlier engineering gaps remain: exactly-one doctor/department is prose-only; trusted caller authorization differs from dictated mobile; family/delegated access is unspecified; appointment replay retention/scope/current-state semantics need agreement; health/error/rate-limit contracts are incomplete. These should be tracked collectively, not asked as a batch of user questions. Slots are now integrated under SL1; richer interpretation remains deferred.
+Other earlier engineering gaps remain: exactly-one doctor/department is prose-only; booking-mobile access and voice-owned name/family selection are now approved above, with no entitlement proof; appointment replay retention/scope/current-state semantics need agreement; health/error/rate-limit contracts are incomplete. These should be tracked collectively, not asked as a batch of user questions. Slots are now integrated under SL1; richer interpretation remains deferred.
 
 The user has resolved the earlier interpretation-interface question for current planning: use the department endpoint to obtain IDs, use free-text doctor search as supplied, and develop richer interpretation as we proceed. ISO dates, department IDs and free-text queries are not blockers or reasons to require a new endpoint. Track advanced language/ambiguity behavior as deferred work; the interim flow uses returned directory choices and confirmed explicit dates. The legacy backend's interpretation code is historical evidence, not a requirement to preserve it in the new integration.
 
@@ -283,9 +296,9 @@ Keep any temporary legacy test profile explicitly named during migration. The ne
 
 **Prompt and gateway migration**
 
-Maintain `prompt.py` and the healthcare pack around date-aware facts, clarification, CALLBACK_NOTED and truthful appointment states. Remove slotId/newSlotId, capacity/confirmation-code promises and obsolete timingCertainty/outcome branches. CONFIRMED_BY_DESK can be described as desk acknowledgement; it still does not mean a guaranteed time under Manoj's contract. Include explicit instructions for missing identity, routing failures and uncertain mutations.
+Maintain `prompt.py` and the healthcare pack around date-aware facts, clarification, CALLBACK_NOTED and truthful appointment states. Remove slotId/newSlotId, capacity/confirmation-code promises and obsolete timingCertainty/outcome branches. CONFIRMED_BY_DESK can be described as desk acknowledgement; it still does not mean a guaranteed time under Manoj's contract. Keep published descriptions factual. Missing booking-mobile fields and uncertain mutations are described in VOICE-TEAM.md; voice routing remains external.
 
-Keep the three-tool front-desk discovery set and refresh gateway/voice schemas to `2026-10-11.2` after an approved release; handle SL1's new fields/outcomes. The implemented registration script checks names/input schemas only; output schemas require manual comparison through the voice virtual server against `make schema` after separately approved deployment. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
+Keep the three-tool front-desk discovery set and refresh gateway/voice schemas to `2026-10-16.1` after an approved release; handle SL1's new fields/outcomes. The implemented registration script checks names/input schemas only; output schemas require manual comparison through the voice virtual server against `make schema` after separately approved deployment. Verify the supported ContextForge refresh and access controls and refresh LiveKit's cached tool view together. Test concurrent-call header isolation and refusal of model-provided trusted fields. Production smoke checks auth, discovery, expected read-only results and appropriate dependency status; it must never create an appointment or summary just to pass a release check. Synthetic booking/summary tests run only against designated test tenants.
 
 **Active repository retirement inventory**
 
@@ -320,7 +333,7 @@ Execute source removal and infrastructure decommission as distinct steps within 
 | Hours and board | Full two-hour/multiple-session windows; morning IN/evening unconfirmed; LATE without double delay; cancellation; optional end/time fields; expiry with facility timezone; unconfirmed profile data; on-call and future dates. Owner slot facts, never invented capacity; SL1 on-call rules and WORKING_HOURS separation. |
 | UNKNOWN callback | Ordinary UNKNOWN in scope collects name/number and saves CALLBACK_NOTED only, with no appointment, transfer, alternate booking, notification or task. On-call instead follows SL1 handoff; never treat a failed board request as successful UNKNOWN. |
 | Basic lookup | Department IDs, free-text doctor search, multiple-choice clarification, explicit dates, pagination and unknown gender/language. Preserve incompleteness; advanced multilingual/synonym parsing is deferred. |
-| Identity | Model phone/header/tenant override rejected; configured E.164 normalization; missing/unsupported verification; cross-number family access refused; concurrent calls/tenants isolated; patient/callback contact never reused as authorization. |
+| Identity | Trusted header/tenant overrides rejected; explicit booking-mobile precedence and validation; absent/blank verified default; no owner call for invalid fields; concurrent isolation; shared-family records and voice-owned name selection; no MCP name/entitlement check. Summary callback contact is unchanged. |
 | Routing | Front-desk tools call only Manoj. Voice-side Stratum tests prove symptom/emergency coverage and transfer behaviour before deployment; gate 9 prevents traffic before discovery refresh. |
 | Writes | Concurrent same-intent retry, changed payload, correction after definite rejection, uncertain commit, malformed success, replay after later mutation, missing call ID, 429/5xx/401 and total deadlines. Never uncertain write → success; never new key just because a response was lost. |
 | Summaries | Same gateway access as all tools; trusted call/start headers; exact whole-call text within 500 characters, no composition or truncation; verified same-call 200 is ALREADY_SAVED even with changed payload; lost response uncertainty and language validation. Callback detail quality and disconnect recovery belong to the voice platform; no separate callback task. |
@@ -334,7 +347,7 @@ Execute source removal and infrastructure decommission as distinct steps within 
 | Review finding | Incorporated decision |
 |---|---|
 | OPUS-01 | Resolved by user: UNKNOWN → name/number, callback statement, summary only. The review's permissive UNKNOWN-booking alternative is not adopted. |
-| OPUS-02 | Trusted authorization separated from patient contact; model phone override removed; normalization/verification and initial family limitation explicit. |
+| OPUS-02 | Superseded for existing appointments by the 15 October booking-mobile decision above; trusted headers remain separate, verification gates only the default, and name/family selection is voice-owned. |
 | OPUS-03 | Superseded by the user-approved 2 October decision: explicit knowledge tool, emergency guardrail in the voice platform, no scheduling gate. |
 | OPUS-04 | Stable logical operation identity/frozen payload, distinct uncertain outcomes, validated responses and total-deadline retries. Body-hash-only deduplication is not adopted. |
 | OPUS-05 | Superseded by user decision S1 (4 October): LLM-called whole-call summary, one gateway bearer, exact text and owner call-ID deduplication; disconnect handling remains outside this change. |
@@ -345,6 +358,6 @@ Execute source removal and infrastructure decommission as distinct steps within 
 | OPUS-10 | Original spec preserved; any quoting-only test overlay labelled/hashed; stub assumptions separated from owner guarantees. |
 | OPUS-11 | Retirement inventory, rollout/rollback, coordinated CI migration and corrected acceptance checks included in this current plan. |
 
-External items still required before production claims: Rajeev's Stratum symptom/emergency and transfer acceptance; real Manoj host and caller-verification trust agreement; replay/missing-board semantics; approved treatment of profile data; verified gateway access controls; any necessary data handoff; and measured response target/percentile/load. Slots use the pinned contract; advanced interpretation remains deferred. Fixture checks do not establish release readiness; use the slots gates above. Questions are handled one at a time as the relevant dependency is reached.
+External items still required before production claims: Rajeev's Stratum symptom/emergency and transfer acceptance; Manoj service acceptance and optional-default verification agreement; replay/missing-board semantics; approved treatment of profile data; verified gateway access controls; any necessary data handoff; and measured response target/percentile/load. Slots use the pinned contract; advanced interpretation remains deferred. Fixture checks do not establish release readiness; use the slots gates above. Questions are handled one at a time as the relevant dependency is reached.
 
 No source implementation, deletion, deployment, database writes, operational API calls or communications to either team were performed. This revision updates planning documents only. Incorporating review recommendations is not a claim that the resulting implementation has already passed these checks, or that Opus has re-reviewed the revised plan.

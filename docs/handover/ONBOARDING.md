@@ -11,8 +11,9 @@ its owner-service endpoints. Onboarding changes no code.
    needs (`appointments.write`, `calls.write`)
    and stored in Key Vault by `deploy/azure/deploy.sh` on first run; never in files.
 3. **Verification policy.** Agree with Manoj and the voice platform which `X-Caller-Verification`
-   assertions authorise appointment lookups/changes; set `ACCEPTED_CALLER_VERIFICATION` accordingly
-   (default `SIP_CALLER_ID`).
+   assertions permit the verified default booking mobile when patientMobile is absent or blank; set
+   `ACCEPTED_CALLER_VERIFICATION` accordingly (default `SIP_CALLER_ID`). Explicit valid booking mobiles
+   do not require caller verification. The voice team owns name checking and family selection before disclosure.
 4. **Deploy and register.** `deploy/azure/deploy.sh rollouts/<id> --profile live` then `deploy/contextforge/register.py`
    (`AZURE.md`, `CONTEXTFORGE.md`). The smoke must pass against the owners' designated test tenant
    before the hospital's own.

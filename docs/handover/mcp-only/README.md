@@ -1,6 +1,6 @@
 # MCP-only implementation handover
 
-Updated 11 October 2026: the source exposes three front-desk tools over Manoj's operational API.
+Updated 16 October 2026: the source exposes three front-desk tools over Manoj's operational API.
 It contains no operational backend, database or knowledge implementation. The voice team owns
 knowledge, symptom routing and emergency decisions through Stratum's separate ContextForge registration.
 The three-tool removal was approved in review on 11 October 2026; source completion is not deployment or live acceptance.
@@ -8,14 +8,17 @@ The three-tool removal was approved in review on 11 October 2026; source complet
 ## Current integration contract
 
 [VOICE-TEAM.md](../VOICE-TEAM.md) defines the three tools: `get_doctor_availability`,
-`manage_booking` and `record_call_summary`. Source schema is `2026-10-11.2`.
+`manage_booking` and `record_call_summary`. Source schema is `2026-10-16.1` (not deployed by this change).
 Voice prompts, behaviour, guardrails and SDK wiring belong to the voice team.
 
 Current availability and booking policy is DECISIONS.md SL1. Today uses the live board; selected-doctor
 AVAILABILITY also consumes owner slots. Department matching uses cached capabilities without slot
 fan-out. WORKING_HOURS reads no board or slots. Ordinary UNKNOWN in scope means callback-only metadata;
 on-call follows SL1's confirmed usable evidence or handoff. A successful appointment request is NOTED.
-Caller authorization, frozen booking intent, uncertainty and whole-call summary semantics are unchanged.
+LIST/CANCEL/RESCHEDULE are scoped to the supplied booking mobile, with the verified calling number as
+the optional default. The voice agent alone checks the patient's name and selects the family member;
+MCP does not verify entitlement to that mobile. Frozen booking intent, uncertainty and summary semantics
+are unchanged.
 Summary values for symptoms and emergencies remain valid.
 
 ## Read in this order

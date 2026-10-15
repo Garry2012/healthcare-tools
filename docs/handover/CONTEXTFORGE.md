@@ -108,9 +108,11 @@ prefixes. Do not compare the combined tool count to three.
   exactly the three front-desk tools; a combined view may additionally show Stratum's tools.
   Neither view may retain our front-desk `search_knowledge`. Stratum remains untouched.
 - Confirm another team or unauthorized token cannot invoke our tools. Inspect complete input/output
-  schemas and tool descriptions against `make schema` for source schema `2026-10-11.2`.
-- Prove headers reach the adapter and stay isolated between simultaneous calls. Missing identity
-  must be refused; the valid-identity LIST must actually reach Manoj, not merely avoid refusal.
+  schemas and tool descriptions against `make schema` for source schema `2026-10-16.1`.
+- Prove headers reach the adapter and stay isolated between simultaneous calls. LIST without patientMobile
+  or a verified default must return INVALID_REQUEST with fields [patientMobile]. With valid default headers,
+  LIST must actually reach Manoj, not merely avoid refusal. Explicit valid patientMobile must work without
+  caller-number verification; no header forwarding or gateway authentication rule changes.
 - Scheduling requires no transcript header. Verify operation IDs are request-scoped through the local
   booking wrapper and the gateway; no shared-header mutation between concurrent requests.
 - Through the virtual server, complete direct availability and caller-confirmed booking requests
@@ -128,7 +130,7 @@ References: [IBM header passthrough](https://ibm.github.io/mcp-context-forge/1.0
 The request fields and version above were checked against this deployed instance's authenticated
 OpenAPI, not inferred from a different release's examples.
 
-After approved deployment, refresh discovered descriptions/input/output schemas for source schema `2026-10-11.2`.
+After approved deployment, refresh discovered descriptions/input/output schemas for source schema `2026-10-16.1`.
 The forwarding allowlist is exactly the five headers above; remove obsolete transcript and duration entries.
 Refresh both input and output schemas and verify the voice client discovers the new summary result.
 The published tool contract is [VOICE-TEAM.md](VOICE-TEAM.md); server metadata contains neutral tool facts. Voice prompts and behaviour belong to the consuming team.
@@ -154,3 +156,17 @@ with `make schema`. A successful helper run alone is insufficient. Refresh the g
 LiveKit caches and record discovery evidence under gate 9. The five-header allowlist and access
 scopes are unchanged. Keep image, gateway discovery and voice schema aligned on rollback.
 The verified deployment section at the top is historical evidence, not evidence of this release.
+
+## Booking-mobile source release 2026-10-16.1 (not deployed by this change)
+
+After separately approved deployment, refresh only our existing front-desk registration, virtual-server
+tool view and voice cache. Compare full inputs, outputs and descriptions to make schema: patientMobile
+now scopes LIST/CANCEL/RESCHEDULE, with a verified calling number as the optional default; the old
+identity-specific outcome is gone. There are still three tools and the same five trusted headers.
+Do not modify Stratum or other teams' registrations.
+
+Before caller-facing cutover the voice team must demonstrate withholding LIST records, asking for and
+checking the patient name, selecting only the matching family member, and disclosing/acting on nothing
+after a mismatch. MCP does not enforce that conversation or entitlement to the supplied mobile.
+Capture the running image digest and environment before deployment. Rollback restores the prior image,
+environment and matching gateway/voice schema; the previous release requires caller-only appointment access.

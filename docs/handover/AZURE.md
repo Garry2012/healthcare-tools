@@ -71,7 +71,7 @@ az containerapp logs show -g $RG -n mcp-$P --follow
 ## Upgrades and rollback
 
 Re-run `deploy/azure/deploy.sh <rollout> --profile live` for a new adapter version or a settings change. Pin
-together: image tag, `prompt.SCHEMA_VERSION`, the gateway registration (re-run `register.py` so the
+together: captured running image digest and environment, `prompt.SCHEMA_VERSION`, the gateway registration (re-run `register.py` so the
 gateway rediscovers tools) and the owner contract revision. Rollback is
 `az containerapp revision activate` of the previous revision (or `deploy.sh` with `TAG=<previous>`)
 against the same owner services: there is one appointment authority, never two. If a compatible
@@ -81,7 +81,7 @@ flow; do not reactivate the retired backend.
 ## Production checklist
 
 - The operational URL is Manoj's production host; credentials registered by them with exactly
-  `appointments.write` and `calls.write`; `ACCEPTED_CALLER_VERIFICATION` agreed with Manoj and the platform.
+  `appointments.write` and `calls.write`; `ACCEPTED_CALLER_VERIFICATION` agreed for the optional default booking mobile with Manoj and the platform.
 - The voice client token is scoped to its ContextForge team/server; the upstream MCP bearer stays in gateway configuration.
 - ContextForge passthrough covers every trusted header; voice platform forwards them and invokes the
   LLM-called summary through the same gateway authentication.
@@ -109,3 +109,12 @@ The deployment script no longer reads, creates, attaches or deletes a knowledge 
 Leftover app secret references and Key Vault `knowledge-token` require separately approved removal
 after deployment. Legacy runtime settings are ignored by this adapter; a normal update replaces
 runtime settings from the current configuration. No shared resource or Stratum cleanup is authorized.
+
+## Booking-mobile source release 2026-10-16.1
+
+This source change is not a deployment claim. After separate merge/deployment approval, refresh our
+ContextForge input/output schemas and voice cache together. No endpoint, credential, scope, runtime
+setting or trusted-header change is needed. ACCEPTED_CALLER_VERIFICATION gates only the optional
+verified default booking mobile. The voice team's name-check/disclosure flow must be accepted before cutover.
+Capture the running image digest and environment before release; rollback restores both and the prior
+gateway/voice schema. Synthetic live journeys and latency measurements need separate approval.

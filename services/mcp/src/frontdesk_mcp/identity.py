@@ -1,6 +1,6 @@
-"""Caller identity for appointment lookups/changes. Authority comes from the platform's trusted,
-verified caller number under the configured country rule; a dictated patient mobile is contact data
-and never authorises anything. No arbitrary prefix stripping, never "the last ten digits"."""
+"""Contract mobile validation and the optional verified default booking mobile.
+Explicit booking-mobile selection is owned by booking.py; caller verification gates only the default.
+No arbitrary prefix stripping, never "the last ten digits"."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def contract_mobile(e164: str, calling_code: str) -> str | None:
 
 
 def authorised_mobile(ctx: CallContext, settings: Settings) -> str | None:
-    """The mobile the authenticated platform context vouches for, or None (identity unavailable)."""
+    """The verified default booking mobile, or None when the trusted context cannot supply one."""
     if not ctx.caller_number or ctx.caller_verification not in settings.accepted_verification:
         return None
     return contract_mobile(ctx.caller_number, settings.tenant_country_calling_code)

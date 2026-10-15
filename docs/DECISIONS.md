@@ -118,7 +118,7 @@ Today uses only live-board status/times; future and hours queries never fetch th
 always callback. No capacity, slot allocation, end time or confirmed attendance is inferred.
 Owner `status` is preserved; our `decision` and `reason` explain the result. Same-decision sessions
 permit a day-level request; differing decisions need selection. CREATE requires a doctor; RESCHEDULE
-uses the verified caller's appointment doctor. A bookable session with unknown end time and a specific
+uses the appointment doctor under the booking mobile (15 October decision below supersedes caller-only scope). A bookable session with unknown end time and a specific
 requested time requires handoff, not a write. Callback stores only a call summary.
 
 Future department profiles are read in sorted sequential batches, concurrent only within each batch,
@@ -318,15 +318,16 @@ and [LOG-1 revision 6](handover/mcp-only/implementation/LOG-1-PLAN.md).
 
 **Gate 8, 11 October 2026.** Garima approved gate 8: the voice agent is in testing mode and she confirmed that the Stratum knowledge tool works. Separate symptom, emergency and transfer results from Rajeev's team are not recorded here.
 
-## A15 — Reschedule only an appointment in the caller's list (11 October 2026)
+## A15 — Reschedule only an appointment in the mobile's list (11 October 2026; scope updated 15 October)
 
-RESCHEDULE requires the appointment to be in the verified caller's own appointment list, which
-starts today by the owner's default. Any other id, including the caller's past appointment, returns
+The 15 October booking-mobile decision supersedes A15's caller-only scope: RESCHEDULE requires the
+appointment in the booking mobile's list, which starts today by the owner's default. Any other id, including
+a past appointment under that mobile, returns
 `NOT_FOUND`/`SAY_NOT_FOUND` with no write; the desk handles past appointments. Garima approved this
 on 11 October 2026 after the whole-branch review (R-1, option A). It supersedes her 6 October
 acceptance of B-1, under which such a reschedule was sent without a schedule check. The on-call
-(D-8) and slot (K-6) rules made that bypass wider. Another caller's id still looks exactly like an
-unknown id.
+(D-8) and slot (K-6) rules made that bypass wider. An id outside the booking mobile's list still looks
+exactly like an unknown id.
 
 The owner appointment's `expectedTime` is validated as `ApproxTime` (R-2), so a malformed owner
 time maps to `UNCERTAIN` after a write and `COULD_NOT_CHECK` on LIST, never an unexpected error.
