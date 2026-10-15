@@ -1583,11 +1583,17 @@ async def test_booking_mobile_changes_ignore_name_and_keep_exact_owner_calls(h, 
 async def test_booking_mobile_mismatch_is_neutral_not_found(h, action):
     created = await run(h, **{**CREATE, "patientMobile": "9000000999"})
     h.requests.clear()
-    result = await run(h, action=action, appointmentId=created.appointment.appointmentId,
-                       patientMobile="9000000101", newVisitDate="2026-10-05", callerConfirmed=True)
+    result = await run(h, h.ctx(caller=None, verification=None, operation_id="op-1"), action=action,
+                       appointmentId=created.appointment.appointmentId, patientMobile="9000000777",
+                       newVisitDate="2026-10-05", callerConfirmed=True)
     assert (result.outcome, result.nextStep) == ("NOT_FOUND", "SAY_NOT_FOUND")
     assert h.ops_paths() == (["/appointments/appt_0001/cancel"] if action == "CANCEL" else ["/appointments"])
     assert result.appointment is None and result.appointments == []
+    if action == "CANCEL":
+        assert json.loads(sent(h, "/cancel")[0].content)["callerMobile"] == "9000000777"
+    else:
+        assert h.requests[0].url.params["mobile"] == "9000000777"
+        assert not any(request.method == "POST" for request in h.requests)
 
 
 async def test_booking_mobile_reschedule_owner_404_is_neutral(h):
