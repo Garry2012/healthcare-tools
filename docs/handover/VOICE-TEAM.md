@@ -19,6 +19,7 @@ This is the single authoritative handover for calling the front-desk MCP tools.
 - **Knowledge, symptom routing and emergencies** are not handled by these tools. They are handled through Stratum's separate ContextForge registration.
 - **Source versus deployment:** this document describes schema 2026-10-16.1; deployment and gateway/voice refresh require separate approval.
 - **The canary** `mcp-demo-hospital-canary` runs schema `2026-10-11.2` (unchanged since 12 October 2026) on revision `--0000007`, image `42f9873`, deployed on 14 October 2026 with the independent booking write budget (§8).
+- **Until `2026-10-16.1` is deployed,** the canary still uses only the verified caller number for LIST, CANCEL and RESCHEDULE: it ignores `patientMobile` for those actions and returns `IDENTITY_UNAVAILABLE` / `TRANSFER_DESK` when no verified caller number arrives. Test the booking-mobile flow (§3) only after we confirm the deployment and the schema refresh.
 - **Slots:** the hospital (Jayashree) has capacity slots switched on, so results normally follow the "with slots" rules. Slots are still decided per doctor and date (§15): a doctor-specific result for a doctor whose slot plan for that date is disabled follows the "without slots" rules.
 - **Checking the served version:** `GET /ready` returns the served `schemaVersion`. ContextForge shows the schema from its last refresh of our entries, which may be older.
 
@@ -56,8 +57,10 @@ The voice platform sets the trusted headers below; the table shows which tools n
 - missing summary headers: `NOT_SAVED`.
 
 **Booking mobile and the voice agent's name check:** ask for the mobile used for the booking and send it as patientMobile on LIST, CANCEL and RESCHEDULE. A supplied nonblank value must be exactly ten digits; invalid explicit input fails without falling back. Absent or blank input defaults to the verified calling number under the configured country rule. Without either usable number, patientMobile is a field-validation error, combined with any other invalid fields.
+- **Send the booking mobile every time.** The model cannot see whether a verified caller number reached the adapter, so the default is only a fallback. CANCEL and RESCHEDULE must carry the same patientMobile as the LIST that produced the `appointmentId`; without it, the default number is used and the result is `NOT_FOUND`.
 
 LIST returns records under that mobile, potentially for several patients. Keep those records private, ask the caller for the patient's name, compare it in the conversation, and reveal or change only that patient's selected appointment. If the name does not match, disclose nothing and make no change. If several appointments match, ask which one. Count a cancellation only after CANCELLED.
+- **Neutral reply:** a LIST `NOT_FOUND` and a stated name that matches no returned record get the same reply. It does not say which detail was wrong or whether the mobile has other appointments.
 
 **Security boundary:** MCP performs no name matching and does not verify that the caller is entitled to the supplied mobile. Anyone with gateway access and knowledge of a mobile can list its records; CANCEL/RESCHEDULE can be called without a preceding LIST or conversational name check. The records reach the model before its check, and a wrong family-member selection has no MCP name-based safeguard. Manoj checks mobile-to-appointment scope for writes; MCP also checks the RESCHEDULE id in that mobile's list from today. The voice team must implement and accept the disclosure/name-selection flow before caller-facing cutover.
 
@@ -109,9 +112,9 @@ Four actions: CREATE, LIST, CANCEL and RESCHEDULE. Only `action` is schema-requi
 | Action | Required | Optional | Headers |
 |---|---|---|---|
 | CREATE | `patientName`, `patientMobile` (10 digits), `doctorId`, `visitDate` (`today` or `YYYY-MM-DD`), `callerConfirmed: true`; `preferredTime` (`HH:MM`) when the doctor has slots for that date | `session`, `reasonVerbatim`; `preferredTime` without slots | X-Call-Id, X-Operation-Id |
-| LIST | patientMobile unless a verified default exists | `fromDate`, `toDate` (`YYYY-MM-DD`; `today` is refused), `status` | X-Call-Id for correlation; caller headers optional for the default |
-| CANCEL | `appointmentId`, `callerConfirmed: true`; patientMobile unless a verified default exists | `reasonVerbatim` | X-Call-Id, X-Operation-Id; caller headers optional for the default |
-| RESCHEDULE | `appointmentId`, `newVisitDate`, `callerConfirmed: true`; patientMobile unless a verified default exists; `newPreferredTime` when the doctor has slots for that date | `session`; `newPreferredTime` without slots | X-Call-Id, X-Operation-Id; caller headers optional for the default |
+| LIST | `patientMobile` (the booking mobile; omitted only to use the verified caller number, §3) | `fromDate`, `toDate` (`YYYY-MM-DD`; `today` is refused), `status` | X-Call-Id for correlation; caller headers optional for the default |
+| CANCEL | `appointmentId`, `callerConfirmed: true`; `patientMobile` (the same booking mobile as the LIST) | `reasonVerbatim` | X-Call-Id, X-Operation-Id; caller headers optional for the default |
+| RESCHEDULE | `appointmentId`, `newVisitDate`, `callerConfirmed: true`; `patientMobile` (the same booking mobile as the LIST); `newPreferredTime` when the doctor has slots for that date | `session`; `newPreferredTime` without slots | X-Call-Id, X-Operation-Id; caller headers optional for the default |
 
 **Rules:**
 - **`callerConfirmed: true`** records the caller's agreement to the exact details being written.
@@ -163,7 +166,7 @@ The schedule check is the same one `get_doctor_availability` applies, run again 
    - a department request gives `DOCTORS_MATCHED` (slots enabled) with `doctors[]`; a `doctorName` with several matches gives `CLARIFICATION_NEEDED` with `choices[]`;
    - an AVAILABILITY request with the chosen `doctorId` and a date gives that doctor's sessions and `openSlots`. A `doctorName` with exactly one match gives this doctor-specific result directly;
    - CREATE with the same doctor and date, and `preferredTime` inside an open block, gives `NOTED`.
-2. **Changing an appointment:** LIST gives `appointmentId`, then CANCEL or RESCHEDULE.
+2. **Changing an appointment:** LIST with the booking mobile gives `appointmentId`; after the name check, CANCEL or RESCHEDULE sends that `appointmentId` with the **same `patientMobile`**.
 3. **Closing the call:** the last tool result goes into the summary:
 
 | Tool result | Summary `outcome` | Also send |
@@ -222,7 +225,7 @@ MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
 - Repeating with the same id and identical arguments is a safe retry: nothing is written twice. When the retry reaches the hospital and the first attempt was recorded, the hospital returns that original result.
 - For CREATE and RESCHEDULE, the schedule is checked again before the hospital is called. A refused retry (for example `NOT_AVAILABLE`, because the first attempt took the last place) doesn't show whether the first attempt was recorded. LIST may help: it shows the appointment's current state (for RESCHEDULE, its current date and time; for CREATE, the new appointment when LIST carries the same booking mobile as CREATE). It can't prove which attempt recorded it, because LIST results carry no call or operation id.
 - CANCEL has no schedule re-check. After the usual field validation (including booking mobile), confirmation and header checks (§4.2), its retry is sent to the hospital with the same idempotency key.
-- A changed payload under the same operation id returns `CONFLICT` if it reaches the owner's recorded key. With a different booking mobile, CANCEL reaches the owner and returns `CONFLICT/IDEMPOTENCY_CONFLICT`; RESCHEDULE first looks in that mobile's list and returns `NOT_FOUND` without a POST when the id is absent.
+- A changed payload under the same operation id returns `CONFLICT` if it reaches the owner's recorded key. With a different booking mobile, CANCEL reaches the hospital and returns `CONFLICT/IDEMPOTENCY_CONFLICT`, or `NOT_FOUND` if the hospital checks the mobile first (nothing is written either way); RESCHEDULE first looks in that mobile's list and returns `NOT_FOUND` without a POST when the id is absent.
 - A new id is a new write.
 
 **`UNCERTAIN`:** the write may have been recorded, but no verified answer came back. The disposition is desk handoff (`SAY_UNCERTAIN_AND_TRANSFER`), not a new write under a new id. An owner rejection that arrives after an unanswered attempt also stays `UNCERTAIN`.
@@ -236,10 +239,10 @@ MCP never transfers calls, so `TRANSFERRED` records the platform's own action.
 
 **Time budgets:**
 - Availability and LIST have a default 0.30-second adapter deadline. Read failures return COULD_NOT_CHECK.
-- Confirmed CREATE, CANCEL and RESCHEDULE have a default 3.0-second total deadline and 1.0-second per-exchange cap, including schedule checks, caller appointment lookup, authentication and any retry. Responses return when received; the ceiling adds no delay. Failures before a write can be COULD_NOT_RECORD; a sent write without a verified response is UNCERTAIN.
+- Confirmed CREATE, CANCEL and RESCHEDULE have a default 3.0-second total deadline and 1.0-second per-exchange cap, including schedule checks, the RESCHEDULE appointment lookup, authentication and any retry. Responses return when received; the ceiling adds no delay. Failures before a write can be COULD_NOT_RECORD; a sent write without a verified response is UNCERTAIN.
 - Summaries retain an independent 8.0-second total and exchange cap; uncertain saving is NOT_CONFIRMED. A same-body retry happens at most once within the operation's deadline.
 - Before deployment, the voice team must confirm both LiveKit timeout and client_session_timeout_seconds cover the write deadline plus gateway time and margin. The recommendation for 3-second writes is 8–10 seconds. These values are not assumed to be configured. The voice team owns any acknowledgement while waiting; filler is not a useful-result latency measurement.
-- The six values in rollout.env control these ceilings. Tool schema 2026-10-11.2 is unchanged; this budget change does not require tool discovery refresh.
+- The six values in rollout.env control these ceilings. The 14 October budget change did not change the tool schema; the `2026-10-16.1` refresh is a separate step (§11).
 
 | Tool | Read-only | Changes data | Safe to repeat with the same arguments |
 |---|---|---|---|
@@ -304,12 +307,13 @@ get_doctor_availability {"doctorId": "doc_vikram_desai", "date": "today"}   (on-
 **Example 3: list and reschedule**
 
 ```text
-manage_booking {"action": "LIST", "patientMobile": "9000000999"}            X-Call-Id for correlation
+manage_booking {"action": "LIST", "patientMobile": "9000000101"}            X-Call-Id for correlation
 → {"outcome": "FOUND", "nextStep": "OFFER_CHOICES",
-   "appointments": [{"appointmentId": "appt_0001", "visitDate": "2026-10-05", "slotTime": "10:30", "slotMoved": false, …}]}
+   "appointments": [{"appointmentId": "appt_0001", "patientName": "Asha Rao", "visitDate": "2026-10-05", "slotTime": "10:30",
+                     "slotMoved": false, …}]}
 
-After the voice agent has checked the patient name and selected the matching appointment:
-manage_booking {"action": "RESCHEDULE", "patientMobile": "9000000999", "appointmentId": "appt_0001", "newVisitDate": "2026-10-05",
+(the agent keeps the record private, asks for the patient's name, and the caller's answer matches "Asha Rao")
+manage_booking {"action": "RESCHEDULE", "patientMobile": "9000000101", "appointmentId": "appt_0001", "newVisitDate": "2026-10-05",
                 "newPreferredTime": "15:10", "callerConfirmed": true}      + X-Call-Id, X-Operation-Id op-3
 → {"outcome": "NOTED", "nextStep": "SAY_REQUEST_NOTED",
    "appointment": {"status": "CHANGED", "expectedTime": "15:10", "slotTime": "15:00", "slotMoved": false, …}}
@@ -351,7 +355,7 @@ These are the expected results for testing a client end to end. Each one matches
 | 15 | A write without `X-Operation-Id` | `OPERATION_CONTEXT_MISSING` | no write |
 | 16 | LIST with neither a valid supplied mobile nor a verified default | `INVALID_REQUEST` / `ASK_TO_CORRECT` | fields contains patientMobile; no owner call |
 | 17 | RESCHEDULE of an appointment outside the booking mobile's list from today | `NOT_FOUND` / `SAY_NOT_FOUND` | no write |
-| 18 | Same operation id with changed booking mobile | CANCEL: `CONFLICT`; RESCHEDULE: `NOT_FOUND` when absent from the new mobile's list | CANCEL reaches the same owner key; RESCHEDULE performs no POST |
+| 18 | Same operation id with changed booking mobile | CANCEL: `CONFLICT` (or `NOT_FOUND`, depending on the hospital's check order); RESCHEDULE: `NOT_FOUND` when absent from the new mobile's list | no second write; RESCHEDULE performs no POST |
 | 19 | A write with no verified answer | `UNCERTAIN` / `SAY_UNCERTAIN_AND_TRANSFER` | the desk handles it |
 | 20 | The hospital service is slow or down | `COULD_NOT_CHECK` / `SAY_COULD_NOT_CHECK` | not "unavailable" |
 | 21 | The owner records a different block | `NOTED` | `slotMoved: true` |
@@ -368,6 +372,8 @@ These are consuming-agent acceptance scenarios, not MCP-enforced checks or claim
 | Booking mobile supplied and LIST succeeds | Withhold the returned records and ask the caller for the patient's name |
 | Patient name matches | Disclose only the matching patient's selected appointment |
 | Patient name does not match | Reveal no appointment details and make no change |
+| LIST `NOT_FOUND`, or no record matches the stated name | The same neutral reply in both cases, without saying which detail was wrong or whether the mobile has other appointments |
+| No booking mobile given and `INVALID_REQUEST` naming `patientMobile` | Ask for the mobile the appointment was booked under |
 | Several family members share the mobile | Select only the stated patient's records |
 | Several appointments match that patient | Ask which appointment before changing one |
 | Cancellation requested | Confirm the selected appointment and intent; report cancellation only after CANCELLED |
@@ -380,8 +386,7 @@ These are consuming-agent acceptance scenarios, not MCP-enforced checks or claim
 - **RESCHEDULE** applies only to appointments under the booking mobile in the list from today.
 - **Owner appointment times** that aren't `HH:MM` now give `UNCERTAIN` after a write and `COULD_NOT_CHECK` on LIST, never an unexpected error.
 - **`2026-10-11.2`:** clearer descriptions for doctor-specific versus department results and for the choice lists. There are no wire changes.
-
-- **2026-10-16.1 (source, not deployed by this change):** booking mobile scopes LIST/CANCEL/RESCHEDULE; verified headers supply only the optional default. Missing/invalid mobile is a field error. The voice agent owns the name check and family selection; the old identity-specific outcome is removed. Refresh our ContextForge entries and the voice cache after approved deployment.
+- **`2026-10-16.1` (merged; not yet deployed, §1):** booking mobile scopes LIST/CANCEL/RESCHEDULE; verified headers supply only the optional default. Missing/invalid mobile is a field error. The voice agent owns the name check and family selection; the old identity-specific outcome is removed. Refresh our ContextForge entries and the voice cache after approved deployment.
 
 # Part 2: Reference
 
@@ -493,7 +498,7 @@ These are consuming-agent acceptance scenarios, not MCP-enforced checks or claim
 | CALL_ID_MISSING, OPERATION_ID_MISSING | booking | With `OPERATION_CONTEXT_MISSING` |
 | IDEMPOTENCY_CONFLICT, STATE_CONFLICT | booking | With `CONFLICT` |
 | NO_VERIFIED_RESPONSE, MALFORMED_SUCCESS | booking | With `UNCERTAIN`: no answer, or an invalid success answer after a write attempt |
-| APPOINTMENT_UNAVAILABLE | booking | The caller's appointments couldn't be read before a RESCHEDULE |
+| APPOINTMENT_UNAVAILABLE | booking | The booking mobile's appointments couldn't be read before a RESCHEDULE |
 | MALFORMED | booking | The hospital's data was invalid (LIST, or an appointment with no doctor) |
 | DEADLINE, TIMEOUT, TRANSPORT, AUTH, UPSTREAM | booking | Why the hospital service was unavailable (`COULD_NOT_CHECK`/`COULD_NOT_RECORD`) |
 | the hospital's error code | booking | With `REJECTED`: the hospital's own code |
